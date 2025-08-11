@@ -14,59 +14,59 @@ Rshell是一款开源的golang编写的支持多平台的C2框架，旨在帮助
 
 **默认账号密码：admin/admin123**
 
-![屏幕截图_20250811_114928](/home/Rubby/Data/Pentest/Creating/Rshell/Rshell/assets/屏幕截图_20250811_114928.png)
+![屏幕截图_20250811_114928](./assets/屏幕截图_20250811_114928.png)
 
-![image-20250811115038528](/home/Rubby/Data/Pentest/Creating/Rshell/Rshell/assets/image-20250811115038528.png)
+![image-20250811115038528](./assets/image-20250811115038528.png)
 
 ## 添加listener
 
 目前支持websocker、tcp、kcp、http、oss协议监听：
 
-![image-20250811115155092](/home/Rubby/Data/Pentest/Creating/Rshell/Rshell/assets/image-20250811115155092.png)
+![image-20250811115155092](./assets/image-20250811115155092.png)
 
 ## 生成客户端
 
 支持windows、linux（darwin未充分测试）
 
-![image-20250811122429552](/home/Rubby/Data/Pentest/Creating/Rshell/Rshell/assets/image-20250811122429552.png)
+![image-20250811122429552](./assets/image-20250811122429552.png)
 
 ## Webdelivery
 
-![image-20250811122549734](/home/Rubby/Data/Pentest/Creating/Rshell/Rshell/assets/image-20250811122549734.png)
+![image-20250811122549734](./assets/image-20250811122549734.png)
 
-![image-20250811122616667](/home/Rubby/Data/Pentest/Creating/Rshell/Rshell/assets/image-20250811122616667.png)
+![image-20250811122616667](./assets/image-20250811122616667.png)
 
 ## 客户端管理
 
 ### 支持Note、颜色标记
 
-![image-20250811122806585](/home/Rubby/Data/Pentest/Creating/Rshell/Rshell/assets/image-20250811122806585.png)
+![image-20250811122806585](./assets/image-20250811122806585.png)
 
 ### 命令执行
 
-![image-20250811122858841](/home/Rubby/Data/Pentest/Creating/Rshell/Rshell/assets/image-20250811122858841.png)
+![image-20250811122858841](./assets/image-20250811122858841.png)
 
 ### 文件管理
 
 双击进入文件夹：
 
-![image-20250811122933247](/home/Rubby/Data/Pentest/Creating/Rshell/Rshell/assets/image-20250811122933247.png)
+![image-20250811122933247](./assets/image-20250811122933247.png)
 
 双击预览文本文件：
 
-![image-20250811123026475](/home/Rubby/Data/Pentest/Creating/Rshell/Rshell/assets/image-20250811123026475.png)
+![image-20250811123026475](./assets/image-20250811123026475.png)
 
 ### PID查看
 
-![image-20250811123120401](/home/Rubby/Data/Pentest/Creating/Rshell/Rshell/assets/image-20250811123120401.png)
+![image-20250811123120401](./assets/image-20250811123120401.png)
 
 ### 文件下载
 
-![image-20250811123147926](/home/Rubby/Data/Pentest/Creating/Rshell/Rshell/assets/image-20250811123147926.png)
+![image-20250811123147926](./assets/image-20250811123147926.png)
 
 ### 笔记
 
-![image-20250811123203135](/home/Rubby/Data/Pentest/Creating/Rshell/Rshell/assets/image-20250811123203135.png)
+![image-20250811123203135](./assets/image-20250811123203135.png)
 
 # 免责声明
 
