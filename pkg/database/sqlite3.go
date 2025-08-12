@@ -31,6 +31,7 @@ type Clients struct {
 	Arch       string
 	Note       string
 	Sleep      string
+	Online     string
 	Color      string
 }
 type Notes struct {
