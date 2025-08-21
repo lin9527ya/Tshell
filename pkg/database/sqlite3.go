@@ -42,6 +42,15 @@ type Shell struct {
 	Uid          string
 	ShellContent string
 }
+type Socks5 struct {
+	Uid            string
+	Type           string
+	ConnectAddress string
+	Socks5port     string
+	UserName       string
+	Password       string
+	Status         int
+}
 
 type Downloads struct {
 	Uid            string
@@ -72,7 +81,7 @@ func ConnectDateBase() {
 	if err != nil {
 		log.Fatalf("连接sqlite3数据库失败: %v", err)
 	}
-	err = Engine.Sync2(new(Users), new(Clients), new(Notes), new(Shell), new(Downloads), new(Listener), new(WebDelivery))
+	err = Engine.Sync2(new(Users), new(Clients), new(Notes), new(Shell), new(Downloads), new(Listener), new(WebDelivery), new(Socks5))
 	if err != nil {
 		log.Fatalf("初始化数据库失败: %v", err)
 	}

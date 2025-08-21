@@ -136,6 +136,7 @@ func GetHttp(w http.ResponseWriter, r *http.Request) {
 		// 编码 JSON 并写入响应
 		json.NewEncoder(w).Encode(response)
 	} else { // PullCommands
+		database.Engine.Where("uid = ?", uid).Update(&database.Clients{Online: "1"})
 		clientTime := &ClientTime{
 			lastHeartbeat: time.Now(),
 			timeoutCount:  0,

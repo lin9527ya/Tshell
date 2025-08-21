@@ -120,6 +120,7 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 				database.Engine.Insert(&database.Shell{Uid: uid, ShellContent: ""})
 				database.Engine.Insert(&database.Notes{Uid: uid, Note: ""})
 			}
+			database.Engine.Where("uid = ?", uid).Update(&database.Clients{Online: "1"})
 			clientTime := &ClientTime{
 				lastHeartbeat: time.Now(),
 				timeoutCount:  0,

@@ -32,10 +32,13 @@ func main() {
 	database.ConnectDateBase()
 	defer database.Engine.Close()
 
+	database.Engine.Update(&database.Clients{Online: "2"})
 	database.Engine.Update(&database.Listener{Status: 2})
+	database.Engine.Update(&database.Socks5{Status: 2})
 	database.Engine.Update(&database.WebDelivery{Status: 2})
 
 	r := gin.New()
+	//r := gin.Default()
 	// 配置 CORS
 	r.Use(Cors())
 
@@ -103,6 +106,12 @@ func main() {
 	protected.POST("/webdelivery/close", api.CloseWebDelivery)
 	protected.POST("/webdelivery/open", api.OpenWebDelivery)
 	protected.POST("/webdelivery/delete", api.DeleteWebDelivery)
+
+	protected.GET("/socks5/list", api.Socks5List)
+	protected.POST("/socks5/start", api.Socks5Start)
+	protected.POST("/socks5/open", api.Socks5Open)
+	protected.POST("/socks5/close", api.Socks5Close)
+	protected.POST("/socks5/delete", api.Socks5Delete)
 
 	//t := r.Group("/tencent")
 	//{
