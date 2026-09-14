@@ -10,8 +10,7 @@ node_modules/
 *.log
 
 # ===== 本地构建的二进制(不入库)=====
-/tshell
-/tshell-server
+/tshell-server*
 /rshell-server
 /clientA
 verify_*.exe

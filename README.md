@@ -28,6 +28,16 @@ Tshell/
 
 > 预编译客户端模板(约 515MB)**不在版本库内**,必须先重建模板,服务端才能编译(`go:embed` 依赖)。
 
+**一键构建**(推荐):
+
+```bash
+./build.sh                          # Linux / macOS / Git Bash:全量(前端 + 服务端 + 模板)
+./build.sh --skip-templates         # 模板未变时跳过耗时的模板重建
+powershell -ExecutionPolicy Bypass -File build.ps1   # Windows PowerShell 等价入口
+```
+
+**分步执行**(与一键脚本等价):
+
 ```bash
 # 1. 客户端模板(166 EXE + 24 DLL,输出到 Tshell-server/pkg/api/server/)
 cd Tshell-client/implant
@@ -38,10 +48,10 @@ cd ../../Tshell-web
 npm ci --legacy-peer-deps
 npm run build:embed              # 写入 Tshell-server/dist
 
-# 3. 服务端
+# 3. 服务端(CGO 必需,go-sqlite3 依赖)
 cd ../Tshell-server
 cp config.example.yaml config.yaml   # 按需修改(密钥/通知凭证等)
-go build -o tshell-server .
+CGO_ENABLED=1 CC=<gcc路径> GOPROXY=https://goproxy.cn,direct go build -o tshell-server .
 ```
 
 前置要求:Go ≥ 1.24、Node ≥ 18、GCC(仅 DLL 模板需要,如 mingw-w64/TDM-GCC)。
