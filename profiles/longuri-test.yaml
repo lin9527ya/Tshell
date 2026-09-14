@@ -1,0 +1,19 @@
+# 长 URI 兼容性验证画像（占位符 128 字符升级后的回归用）
+name: longuri-test
+description: "验证长 URI 注入（>31 字符，旧占位符不可容纳）"
+
+useragent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+sleeptime_ms: 1000
+jitter_percent: 20
+
+http:
+  get:
+    uri: "/api/v2/cdn/static/assets/mcp/pcsearch/list?client=web&ver=2"
+  post:
+    uri: "/api/v2/cdn/static/assets/sensearch/collection/item/check?ver=2"
+
+ws:
+  path: "/ws"
+
+tls:
+  ja3: "chrome_120"

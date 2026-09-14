@@ -2,14 +2,20 @@ package utils
 
 import (
 	"bytes"
+	"embed"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"net"
 	"os"
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 )
+
+//go:embed av.json
+var avDataFS embed.FS
 
 func BytesCombine(pBytes ...[]byte) []byte {
 	return bytes.Join(pBytes, []byte(""))
@@ -75,28 +81,105 @@ func Paginate(slice interface{}, page, pageSize int) interface{} {
 
 // ProcessInfo 结构体代表一行进程信息
 type ProcessInfo struct {
-	Pid  string `json:"PID"`
-	PPid string `json:"PPID"`
-	Name string `json:"Name"`
-	Arch string `json:"Arch"`
-	User string `json:"User"`
+	Pid         string `json:"PID"`
+	PPid        string `json:"PPID"`
+	Name        string `json:"Name"`
+	Arch        string `json:"Arch"`
+	User        string `json:"User"`
+	ProcessInfo string `json:"ProcessInfo"` // 新增进程信息字段
 }
 
+// AV信息结构体
+type AVInfo struct {
+	Processes []string `json:"processes"`
+	URL       string   `json:"url"`
+}
+
+// AV数据缓存
+var (
+	avDataCache   map[string]AVInfo
+	avCacheMutex  sync.RWMutex
+	avCacheLoaded bool = false
+)
+
+// 加载av.json文件
+func LoadAVData() error {
+	avCacheMutex.Lock()
+	defer avCacheMutex.Unlock()
+
+	if avCacheLoaded {
+		return nil
+	}
+
+	// 从嵌入文件读取av.json
+	data, err := avDataFS.ReadFile("av.json")
+	if err != nil {
+		return fmt.Errorf("failed to read embedded av.json: %v", err)
+	}
+
+	// 解析JSON
+	avData := make(map[string]AVInfo)
+	if err := json.Unmarshal(data, &avData); err != nil {
+		return fmt.Errorf("failed to parse av.json: %v", err)
+	}
+
+	avDataCache = avData
+	avCacheLoaded = true
+	return nil
+}
+
+// 根据进程名称获取AV信息
+func GetProcessAVInfo(processName string) string {
+	// 先检查是否已加载，如果没有则加载
+	if !avCacheLoaded {
+		if err := LoadAVData(); err != nil {
+			return ""
+		}
+	}
+
+	avCacheMutex.RLock()
+	defer avCacheMutex.RUnlock()
+
+	// 遵循大小写不敏感匹配逻辑
+	lowerProcessName := strings.ToLower(processName)
+
+	for avName, avInfo := range avDataCache {
+		for _, process := range avInfo.Processes {
+			if strings.ToLower(process) == lowerProcessName {
+				return avName
+			}
+		}
+	}
+
+	return ""
+}
+
+// ParsePid 解析进程信息字符串并返回ProcessInfo切片
 func ParsePid(input string) []ProcessInfo {
 	var processes []ProcessInfo
 	lines := strings.Split(strings.TrimSpace(input), "\n")
 
 	lines = lines[1:]
 
+	// 确保 AV 数据已加载
+	if !avCacheLoaded {
+		LoadAVData()
+	}
+
 	for _, line := range lines {
 		fields := strings.Split(line, "\t")
 
+		// 获取进程名称并查询AV信息
+		processName := fields[0]
+		avInfo := GetProcessAVInfo(processName)
+
 		processes = append(processes, ProcessInfo{
-			Name: fields[0],
-			PPid: fields[1],
-			Pid:  fields[2],
-			Arch: fields[3],
-			User: fields[4],
+			Name:        processName,
+			PPid:        fields[1],
+			Pid:         fields[2],
+			Arch:        fields[3],
+			User:        fields[4],
+			ProcessInfo: avInfo, // 填充AV信息
 		})
 	}
 
@@ -156,20 +239,15 @@ func InitFunction() {
 // getExistingDrives 从给定的掩码中提取存在的逻辑驱动器
 func GetExistingDrives(drivesMask []byte) []string {
 	var existingDrives []string
-	//
-	//// 遍历 A 到 Z 的驱动器
-	//for drive := 'A'; drive <= 'Z'; drive++ {
-	//	// 计算当前驱动器的位掩码
-	//	bit := 7 - (drive-'A')%8
-	//	byteIndex := (drive - 'A') / 8
-	//	mask := 1 << uint(bit)
-	//
-	//	// 检查当前驱动器是否存在
-	//	if int(byteIndex) < len(drivesMask) && (drivesMask[byteIndex]&byte(mask) != 0) {
-	//		existingDrives = append(existingDrives, string(drive)+":")
-	//	}
-	//}
 	drivers := string(drivesMask)
+	
+	// 修复Linux根目录处理问题
+	// 如果驱动器字符串是"/"，表示Linux系统，直接返回根目录
+	if drivers == "/" {
+		return []string{"/"}
+	}
+	
+	// Windows系统处理：为每个驱动器字符添加冒号
 	for _, driver := range drivers {
 		existingDrives = append(existingDrives, string(driver)+":")
 	}

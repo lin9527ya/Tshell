@@ -36,10 +36,19 @@ func (q *DrivesQueue) GetOrCreateQueue(uid string) chan []string {
 }
 
 func ParseDrives(uid string, drives []string) []*FileNode {
+	// J1: 与 ParseDirectoryString/ClearUidFileBrowser 共用 fileBrowserMu 锁（原无锁 append → map 竞争）
+	fileBrowserMu.Lock()
+	defer fileBrowserMu.Unlock()
 	for _, drive := range drives {
 		if !exsitPan(UidFileBrowser[uid], drive) {
 			UidFileBrowser[uid] = append(UidFileBrowser[uid], &FileNode{Name: drive, Type: "D", Path: drive})
 		}
 	}
 	return UidFileBrowser[uid]
+}
+// Remove 删除指定客户端的通道（断线/删除客户端时调用）
+func (q *DrivesQueue) Remove(uid string) {
+	q.mutex.Lock()
+	defer q.mutex.Unlock()
+	delete(q.Queues, uid)
 }

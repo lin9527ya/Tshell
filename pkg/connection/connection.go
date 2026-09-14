@@ -1,14 +1,16 @@
 package connection
 
 import (
-	"github.com/xtaci/kcp-go/v5"
 	"net"
 	"net/http"
 	"sync"
+
+	"github.com/xtaci/kcp-go/v5"
 )
 
 var MuClientListenerType sync.Mutex
 var ClientListenerType = make(map[string]string)
+var ClientListenerAddr = make(map[string]string)
 
 var HttpServer = make(map[string]*http.Server)
 var TCPServer = make(map[string]net.Listener)

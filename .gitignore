@@ -15,12 +15,14 @@ sessions/
 # ===== 运行时目录 =====
 Downloads/
 Plugins/
-av.json
 
 # ===== 备份与临时文件 =====
 *.bak
 temp
 
-# ===== 本地构建产物(不入库;模板 exe 由 build_templates.sh 重新生成)=====
+# ===== 本地构建产物(不入库)=====
+# 预编译客户端模板(515MB,go:embed 依赖):克隆后先跑 Tshell-client/implant/build_templates.sh
+# 重建到本目录,再编译服务端(见根目录 DEPLOYMENT.md 构建顺序)
+pkg/api/server/
 /tshell-server
 /rshell-server

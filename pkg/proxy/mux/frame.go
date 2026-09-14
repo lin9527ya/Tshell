@@ -2,7 +2,6 @@ package mux
 
 import (
 	"crypto/cipher"
-	"crypto/rand"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -77,7 +76,7 @@ func readFrame(reader io.Reader, aead cipher.AEAD, frameBuf []byte) (frameHeader
 
 // appendFrame writs and encrypts a frame to buf
 func appendFrame(buf []byte, aead cipher.AEAD, h frameHeader, payload []byte) []byte {
-	rand.Read(h.nonce[:])
+	// nonce 由调用方通过 mux.nextNonce() 设置（前缀+计数器），不再每帧 crypto/rand
 	frame := buf[len(buf):][:frameHeaderSize+len(payload)+aead.Overhead()]
 	encodeFrameHeader(frame[:frameHeaderSize], h)
 	aead.Seal(frame[frameHeaderSize:][:0], h.nonce[:], payload, frame[:frameHeaderSize])

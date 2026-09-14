@@ -1,7 +1,6 @@
 package mux
 
 import (
-	"bytes"
 	"io"
 	"log"
 	"net"
@@ -10,6 +9,11 @@ import (
 	"time"
 )
 
+// streamRecvQueueCap 每个流待消费帧的队列上限。原始实现每流仅缓冲 1 帧（readLoop 每帧都
+// 阻塞等待消费=队头阻塞，一个慢流会卡死所有其他流）。改为有界队列后，readLoop 仅在队列满时
+// 才背压阻塞，慢流不再阻塞其他流，多流并发吞吐显著提升。
+const streamRecvQueueCap = 32
+
 // A Stream is a duplex connection multiplexed over a net.Conn. It implements
 // the net.Conn interface.
 type Stream struct {
@@ -17,7 +21,7 @@ type Stream struct {
 	id      uint32
 	cond    sync.Cond // guards + synchronizes subsequent fields
 	err     error
-	readBuf []byte
+	readBuf [][]byte
 	rd, wd  time.Time // deadlines
 }
 
@@ -80,13 +84,21 @@ func (s *Stream) consumeFrame(h frameHeader, payload []byte) {
 	case flagCloseStream:
 		s.err = ErrPeerClosedStream
 		s.mux.deleteStream(s.id)
+		s.cond.Broadcast() // wake Read to observe EOF
 
 	case flagData:
-		s.readBuf = payload
-		s.cond.Broadcast() // wake Read
-		for len(s.readBuf) > 0 && s.err == nil && (s.rd.IsZero() || time.Now().Before(s.rd)) {
+		// 背压：仅当队列已满时才阻塞 readLoop，避免每帧都阻塞导致队头阻塞(HOL)
+		for len(s.readBuf) >= streamRecvQueueCap && s.err == nil && (s.rd.IsZero() || time.Now().Before(s.rd)) {
 			s.cond.Wait()
 		}
+		if s.err == nil {
+			// 必须拷贝：readLoop 复用同一个 frameBuf，payload 是其子切片，
+			// 不拷贝的话下一帧会覆盖队列里这片数据导致静默损坏。
+			cp := make([]byte, len(payload))
+			copy(cp, payload)
+			s.readBuf = append(s.readBuf, cp)
+		}
+		s.cond.Broadcast() // wake Read
 
 	default:
 		// The flags are mutually exclusive, we should never be here
@@ -119,9 +131,17 @@ func (s *Stream) Read(p []byte) (int, error) {
 	// return the data before indicating the closure of the stream to keep the
 	// order of events correct.
 	if len(s.readBuf) > 0 {
-		n := copy(p, s.readBuf)
-		s.readBuf = s.readBuf[n:]
-		s.cond.Broadcast() // wake consumeFrame
+		frame := s.readBuf[0]
+		n := copy(p, frame)
+		if n < len(frame) {
+			// 部分消费：保留该帧剩余部分
+			s.readBuf[0] = frame[n:]
+		} else {
+			// 整帧消费完：出队
+			s.readBuf[0] = nil // help GC
+			s.readBuf = s.readBuf[1:]
+		}
+		s.cond.Broadcast() // wake consumeFrame (queue has space)
 		return n, nil
 	}
 
@@ -142,15 +162,23 @@ func (s *Stream) Read(p []byte) (int, error) {
 
 // Write writes data to the Stream.
 func (s *Stream) Write(p []byte) (int, error) {
+	// 直接按下标切片，避免每次 Write 都 bytes.NewBuffer 分配
+	total := 0
+	for total < len(p) {
 
-	buf := bytes.NewBuffer(p)
-	for buf.Len() > 0 {
-
-		if s.err != nil {
-			return len(p) - buf.Len(), s.err
+		// s.err 由 setErr/Close/consumeFrame 在 cond.L 下写入，读取需加锁
+		s.cond.L.Lock()
+		err := s.err
+		s.cond.L.Unlock()
+		if err != nil {
+			return total, err
 		}
 
-		payload := buf.Next(maxPayloadSize)
+		end := total + maxPayloadSize
+		if end > len(p) {
+			end = len(p)
+		}
+		payload := p[total:end]
 		h := frameHeader{
 			id:     s.id,
 			length: uint16(len(payload)),
@@ -159,10 +187,11 @@ func (s *Stream) Write(p []byte) (int, error) {
 
 		// write next frame's worth of data
 		if err := s.mux.bufferFrame(h, payload); err != nil {
-			return len(p) - buf.Len() - len(payload), err
+			return total, err
 		}
+		total = end
 	}
-	return len(p), nil
+	return total, nil
 }
 
 // Close closes the Stream. The underlying connection is not closed.

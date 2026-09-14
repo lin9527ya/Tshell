@@ -1,0 +1,50 @@
+# Tshell 默认 CNA 脚本（Aggressor Script 兼容子集演示）
+# 客户端上线时自动执行 whoami 并弹出告警
+
+sub banner {
+  println("Tshell CNA engine ready");
+}
+
+sub send_whoami {
+  exec(beacon_id(), "whoami");
+}
+
+on ready {
+  banner();
+}
+
+on beacon_initial {
+  alert("New beacon connected: " . $1);
+  send_whoami();
+}
+
+# 自定义函数：拼接问候
+sub greet {
+  $who = $1;
+  return "hello " . $who;
+}
+
+# alias：Beacon 控制台输入 greeting 触发
+alias greeting {
+  println("greeting: " . greet("beacon"));
+}
+
+# alias：带参数示例（控制台输入 diag <目标>）
+alias diag {
+  $target = $1;
+  println("diag target: " . $target . " (arg count: " . $2 . ")");
+}
+
+# menu：Beacon 右键菜单注册（"插件"子菜单）
+menu beacon {
+  item "Run Diag" {
+    println("menu diag triggered");
+    exec(beacon_id(), "whoami");
+  }
+  separator;
+  menu "Nested" {
+    item "Nested Item A" {
+      println("nested menu item executed");
+    }
+  }
+}

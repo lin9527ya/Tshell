@@ -38,3 +38,9 @@ func (q *PidQueue) GetOrCreateQueue(uid string) chan string {
 	}
 	return q.Queues[uid]
 }
+// Remove 删除指定客户端的通道（断线/删除客户端时调用）
+func (q *PidQueue) Remove(uid string) {
+	q.mutex.Lock()
+	defer q.mutex.Unlock()
+	delete(q.Queues, uid)
+}

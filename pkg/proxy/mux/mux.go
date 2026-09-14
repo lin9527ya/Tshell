@@ -2,6 +2,8 @@ package mux
 
 import (
 	"crypto/cipher"
+	"crypto/rand"
+	"encoding/binary"
 	"errors"
 	"log"
 	"net"
@@ -34,6 +36,7 @@ type Mux struct {
 	conn       net.Conn
 	aead       cipher.AEAD
 	acceptChan chan *Stream
+	done       chan struct{} // 在 setErr(连接关闭)时 close,供外部检测 mux 终止
 
 	readMutex sync.Mutex
 	// subsequent fields are used by readLoop() and guarded by readMutex
@@ -43,36 +46,58 @@ type Mux struct {
 
 	writeMutex sync.Mutex
 	// subsequent fields are used by writeLoop() and guarded by writeMutex
-	writeErr   error
-	writeCond  sync.Cond
-	bufferCond sync.Cond
-	writeBuf   []byte
-	sendBuf    []byte
-	writeBufA  []byte
-	writeBufB  []byte
+	writeErr    error
+	writeCond   sync.Cond
+	bufferCond  sync.Cond
+	writeBuf    []byte
+	sendBuf     []byte
+	writeBufA   []byte
+	writeBufB   []byte
+	noncePrefix [16]byte // 每 mux 一次性随机前缀，保证 nonce 在同一密钥下全局唯一
+	nonceSeq    uint64   // 单调递增计数器（与 noncePrefix 组合生成 24 字节 nonce）
 }
+
+// nextNonce 生成下一个 AEAD nonce：16 字节随机前缀 + 8 字节大端计数器。
+// 替代 appendFrame 里每帧 crypto/rand.Read 的 syscall；调用方持 writeMutex，nonceSeq 自增无竞争。
+func (m *Mux) nextNonce() [chacha20poly1305.NonceSizeX]byte {
+	var n [chacha20poly1305.NonceSizeX]byte
+	copy(n[:16], m.noncePrefix[:])
+	binary.BigEndian.PutUint64(n[16:], m.nonceSeq)
+	m.nonceSeq++
+	return n
+}
+
+// Done 返回一个在 mux 终止(底层连接关闭/对端关闭)时被 close 的通道,用于检测连接断开。
+func (m *Mux) Done() <-chan struct{} { return m.done }
 
 // setErr sets the Mux error and wakes up all Mux-related goroutines. If m.err
 // is already set, setErr is a no-op.
 func (m *Mux) setErr(err error) error {
-
-	// Set readErr
+	// 先在 readMutex 下快照流列表并释放锁，
+	// 避免"持 readMutex 再锁各流 cond.L"与 consumeFrame 的
+	// "持 cond.L 再 deleteStream→readMutex"构成 ABBA 死锁。
 	m.readMutex.Lock()
-	defer m.readMutex.Unlock()
 	if m.readErr != nil {
+		m.readMutex.Unlock()
 		return m.readErr
 	}
 	m.readErr = err
+	streams := make([]*Stream, 0, len(m.streams))
+	for _, s := range m.streams {
+		streams = append(streams, s)
+	}
+	m.readMutex.Unlock()
 
 	// Set writeErr
 	m.writeMutex.Lock()
-	defer m.writeMutex.Unlock()
 	if m.writeErr != nil {
+		m.writeMutex.Unlock()
 		return m.writeErr
 	}
 	m.writeErr = err
+	m.writeMutex.Unlock()
 
-	for _, s := range m.streams {
+	for _, s := range streams {
 		s.cond.L.Lock()
 		s.err = err
 		s.cond.L.Unlock()
@@ -82,6 +107,7 @@ func (m *Mux) setErr(err error) error {
 	m.writeCond.Broadcast()
 	m.bufferCond.Broadcast()
 	close(m.acceptChan)
+	close(m.done)
 	return err
 }
 
@@ -100,6 +126,7 @@ func (m *Mux) bufferFrame(h frameHeader, payload []byte) error {
 	}
 
 	// queue our frame
+	h.nonce = m.nextNonce()
 	m.writeBuf = appendFrame(m.writeBuf, m.aead, h, payload)
 	m.writeMutex.Unlock()
 
@@ -137,7 +164,9 @@ func (m *Mux) writeLoop() {
 		// NOTE: even if we were woken by the keepalive timer, there might be a
 		// normal frame ready to send, in which case we don't need a keepalive
 		if len(m.writeBuf) == 0 {
-			m.writeBuf = appendFrame(m.writeBuf[:0], m.aead, frameHeader{flags: flagKeepalive}, nil)
+			kh := frameHeader{flags: flagKeepalive}
+			kh.nonce = m.nextNonce()
+			m.writeBuf = appendFrame(m.writeBuf[:0], m.aead, kh, nil)
 		}
 
 		// to avoid blocking bufferFrame while we Write, swap writeBufA and writeBufB
@@ -195,7 +224,13 @@ func (m *Mux) readLoop() {
 			s := newStream(header.id, m)
 			m.streams[header.id] = s
 			m.readMutex.Unlock()
-			m.acceptChan <- s
+			// select 发送：setErr 可能已 close(acceptChan)，此时走 done 分支退出，
+			// 避免向已关闭通道发送导致 panic
+			select {
+			case m.acceptChan <- s:
+			case <-m.done:
+				return
+			}
 
 		case flagCloseMux:
 			m.setErr(ErrPeerClosedConn)
@@ -220,9 +255,13 @@ func (m *Mux) Close() error {
 	h := frameHeader{flags: flagCloseMux}
 	m.bufferFrame(h, nil)
 
-	// if there's a buffered Write, wait for it to be sent
+	// if there's a buffered Write, wait for it to be sent（带超时：对端停止读取时避免永久阻塞）
+	deadline := time.Now().Add(5 * time.Second)
 	m.writeMutex.Lock()
 	for len(m.writeBuf) > 0 && m.writeErr == nil {
+		if time.Now().After(deadline) {
+			break // 对端不读取，放弃等待，直接关闭
+		}
 		m.bufferCond.Wait()
 	}
 	m.writeMutex.Unlock()
@@ -262,6 +301,7 @@ func newMux(conn net.Conn, startID uint32, psk string) *Mux {
 	m := &Mux{
 		conn:       conn,
 		acceptChan: make(chan *Stream, 256),
+		done:       make(chan struct{}),
 		streams:    make(map[uint32]*Stream),
 		nextID:     startID,
 		writeBufA:  make([]byte, 0, maxPayloadSize*10),
@@ -273,6 +313,8 @@ func newMux(conn net.Conn, startID uint32, psk string) *Mux {
 	m.bufferCond.L = &m.writeMutex //
 	m.writeBuf = m.writeBufA       // initial writeBuf is writeBufA
 	m.sendBuf = m.writeBufB        // initial sendBuf is writeBufB
+	// 一次性生成随机 nonce 前缀（每 mux 唯一），后续每帧用 前缀+计数器 组合 nonce
+	rand.Read(m.noncePrefix[:])
 
 	go m.readLoop()
 	go m.writeLoop()

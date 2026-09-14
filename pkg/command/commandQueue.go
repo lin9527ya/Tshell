@@ -2,44 +2,84 @@ package command
 
 import "sync"
 
+// clientQueue 单个客户端的下行命令队列（独立锁，消除全局锁争用）
+type clientQueue struct {
+	mu   sync.Mutex
+	data [][]byte
+}
+
 type ClientCommandQueue struct {
-	mu     sync.Mutex          // 互斥锁，保证并发安全
-	queues map[string][][]byte // 客户端ID -> 命令队列
+	queues sync.Map // clientID -> *clientQueue（分片锁，各客户端互不阻塞）
 }
 
-var CommandQueues = &ClientCommandQueue{
-	queues: make(map[string][][]byte),
-}
+var CommandQueues = &ClientCommandQueue{}
 
-func (c *ClientCommandQueue) AddCommand(clientID string, command []byte) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	// 检查是否存在clientID的队列，如果不存在则初始化
-	if _, exists := c.queues[clientID]; !exists {
-		c.queues[clientID] = [][]byte{} // 初始化为空切片
-	}
-
-	// 将命令添加到对应的队列
-	c.queues[clientID] = append(c.queues[clientID], command)
-}
-func (c *ClientCommandQueue) GetCommand(clientID string) (command []byte, ok bool) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	// 获取队列，如果不存在则初始化
-	queue, exists := c.queues[clientID]
+// QueueLen 返回客户端当前队列长度(任务可视化用)
+func (c *ClientCommandQueue) QueueLen(clientID string) int {
+	v, exists := c.queues.Load(clientID)
 	if !exists {
-		c.queues[clientID] = [][]byte{}
+		return 0
+	}
+	cq := v.(*clientQueue)
+	cq.mu.Lock()
+	defer cq.mu.Unlock()
+	return len(cq.data)
+}
+
+// MaxQueuePerClient 单个客户端命令队列上限（块），防止大文件上传全量驻留内存
+const MaxQueuePerClient = 1024
+
+// AddCommand 追加命令到客户端队列。
+// 队列满时返回 false（背压信号，不丢弃旧命令）——调用方据此告警/放弃，
+// 避免旧实现"丢最旧"导致分块上传/长命令静默损坏。
+func (c *ClientCommandQueue) AddCommand(clientID string, command []byte) bool {
+	v, _ := c.queues.LoadOrStore(clientID, &clientQueue{})
+	cq := v.(*clientQueue)
+	cq.mu.Lock()
+	defer cq.mu.Unlock()
+
+	if len(cq.data) >= MaxQueuePerClient {
+		return false
+	}
+	cq.data = append(cq.data, command)
+	// 任务队列可视化:记录入队命令
+	if GlobalCmdHistory != nil {
+		GlobalCmdHistory.Record(clientID, string(command))
+	}
+	return true
+}
+
+// GetCommand 取出并移除队列首条命令
+func (c *ClientCommandQueue) GetCommand(clientID string) (command []byte, ok bool) {
+	v, exists := c.queues.Load(clientID)
+	if !exists {
+		return []byte{}, false
+	}
+	cq := v.(*clientQueue)
+	cq.mu.Lock()
+	defer cq.mu.Unlock()
+
+	if len(cq.data) == 0 {
 		return []byte{}, false
 	}
 
-	// 如果队列为空，返回空命令和false
-	if len(queue) == 0 {
-		return []byte{}, false
+	// queue[0]=nil 释放引用，防止底层数组残留已弹出命令（长连接积压的内存泄漏）
+	command = cq.data[0]
+	cq.data[0] = nil
+	// 任务队列可视化:标记已取走
+	if GlobalCmdHistory != nil {
+		GlobalCmdHistory.MarkRemoved(clientID, string(command))
 	}
-
-	// 返回并移除队列中的第一个命令
-	command, c.queues[clientID] = queue[0], queue[1:]
+	newData := cq.data[1:]
+	if len(newData) == 0 {
+		cq.data = nil // 空队列整体释放底层数组
+	} else {
+		cq.data = newData
+	}
 	return command, true
+}
+
+// DeleteClient 删除指定客户端的命令队列（断线/删除客户端时调用）
+func (c *ClientCommandQueue) DeleteClient(clientID string) {
+	c.queues.Delete(clientID)
 }
