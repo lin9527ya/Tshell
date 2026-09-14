@@ -12,3 +12,9 @@ implant/single
 # 系统
 .DS_Store
 Thumbs.db
+
+# 历史归档(本地保留,不入库;implant 为当前活跃代码)
+_archived_reacon/
+Reacon_dns/
+# 与 implant/core/disguise 分叉的过期副本
+pkg/
