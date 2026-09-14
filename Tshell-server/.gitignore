@@ -1,0 +1,28 @@
+# ===== 敏感配置与运行时数据(本地保留,禁止入库)=====
+config.yaml
+config.yaml.new
+database.db
+database.db-shm
+database.db-wal
+jwt_key.hex
+jwt_private.pem
+jwt_public.pem
+jwt_state.json
+certs/
+logs/
+sessions/
+
+# ===== 运行时目录 =====
+Downloads/
+Plugins/
+
+# ===== 备份与临时文件 =====
+*.bak
+temp
+
+# ===== 本地构建产物(不入库)=====
+# 预编译客户端模板(515MB,go:embed 依赖):克隆后先跑 Tshell-client/implant/build_templates.sh
+# 重建到本目录,再编译服务端(见根目录 DEPLOYMENT.md 构建顺序)
+pkg/api/server/
+/tshell-server
+/rshell-server

