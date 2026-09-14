@@ -1,0 +1,647 @@
+<template>
+  <div class="event-log cs-font-mono">
+    <!-- Event Log Toolbar -->
+    <div class="el-toolbar">
+      <span class="el-title">{{ isZh ? '团队服务器事件日志' : 'TeamServer Event Log' }}</span>
+
+      <!-- Filter Buttons -->
+      <div class="el-filter-group">
+        <button
+          class="el-filter-btn"
+          :class="{ active: currentFilter === 'all' }"
+          @click="currentFilter = 'all'"
+        >
+          {{ isZh ? '全部' : 'All' }}
+        </button>
+        <button
+          class="el-filter-btn"
+          :class="{ active: currentFilter === 'client' }"
+          @click="currentFilter = 'client'"
+        >
+          {{ isZh ? '客户端' : 'Beacons' }}
+        </button>
+        <button
+          class="el-filter-btn"
+          :class="{ active: currentFilter === 'user' }"
+          @click="currentFilter = 'user'"
+        >
+          {{ isZh ? '操作员' : 'Users' }}
+        </button>
+        <button
+          class="el-filter-btn"
+          :class="{ active: currentFilter === 'system' }"
+          @click="currentFilter = 'system'"
+        >
+          {{ isZh ? '系统与服务' : 'System' }}
+        </button>
+        <button
+          class="el-filter-btn"
+          :class="{ active: currentFilter === 'chat' }"
+          @click="currentFilter = 'chat'"
+        >
+          {{ isZh ? '聊天' : 'Chat' }}
+        </button>
+      </div>
+
+      <div class="el-spacer" />
+
+      <button class="el-btn" @click="loadAuditAndClientLogs">{{ isZh ? '刷新' : 'Refresh' }}</button>
+      <button class="el-btn" @click="clearLog">{{ isZh ? '清空' : 'Clear' }}</button>
+      <button class="el-btn" :class="{ active: follow }" @click="follow = !follow">
+        {{ follow ? (isZh ? '自动滚动：开' : 'Auto-Scroll: ON') : (isZh ? '自动滚动：关' : 'Auto-Scroll: OFF') }}
+      </button>
+      <span class="el-count">{{ filteredLines.length }} / {{ lines.length }} {{ isZh ? '条' : 'events' }}</span>
+    </div>
+
+    <!-- Events Body -->
+    <div ref="logEl" class="el-body">
+      <div
+        v-for="(e, i) in filteredLines"
+        :key="i"
+        :class="['el-line', `el-type-${e.type}`]"
+      >
+        <span class="el-time">[{{ fmtTime(e.time) }}]</span>
+        <span v-if="e.user" class="el-user">&lt;{{ e.user }}&gt;</span>
+        <span v-else-if="e.type === 'beacon_online' || e.type === 'client_online'" class="el-prefix-online">***</span>
+        <span v-else-if="e.type === 'beacon_offline' || e.type === 'client_offline'" class="el-prefix-offline">***</span>
+        <span v-else-if="e.type === 'user_login' || e.type === 'user_logout'" class="el-prefix-user">***</span>
+        <span v-else-if="e.type === 'cred'" class="el-prefix-cred">***</span>
+        <span v-else-if="e.type === 'error'" class="el-prefix-error">***</span>
+        <span v-else class="el-prefix">***</span>
+        <span class="el-text">{{ e.text }}</span>
+      </div>
+      <div v-if="!filteredLines.length" class="el-empty">
+        {{ isZh ? '暂无匹配的事件日志。' : 'No matching event logs.' }}
+      </div>
+    </div>
+
+    <!-- Bottom Operator Chat Row -->
+    <div class="el-chat-row">
+      <span class="chat-prompt">&lt;{{ currentUser }}&gt;</span>
+      <input
+        v-model="chatInput"
+        class="chat-input"
+        :placeholder="isZh ? '向团队服务器所有操作员发送消息...' : 'Send message to all operators in Event Log...'"
+        @keydown.enter="sendChat"
+      />
+      <button class="cs-btn cs-btn-xs" @click="sendChat">{{ isZh ? '发送' : 'Send' }}</button>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { useEventsStore } from '@/stores/events'
+import { useUserStore } from '@/stores/user'
+import { useClientsStore, type ClientData } from '@/stores/clients'
+import { useI18nStore } from '@/stores/i18n'
+import { detectClientOs } from '@/utils/clientUtils'
+import AuditAPI from '@/api/audit'
+
+const eventsStore = useEventsStore()
+const userStore = useUserStore()
+const clientsStore = useClientsStore()
+const i18nStore = useI18nStore()
+const isZh = computed(() => i18nStore.isZh)
+
+const follow = ref(true)
+const logEl = ref<HTMLElement | null>(null)
+const chatInput = ref('')
+const currentFilter = ref<'all' | 'client' | 'user' | 'system' | 'chat'>('all')
+
+const currentUser = computed(() => userStore.username || 'admin')
+
+interface Line {
+  id?: string | number
+  time: number
+  type: string
+  category: 'client' | 'user' | 'system' | 'chat'
+  user?: string
+  text: string
+}
+
+const lines = ref<Line[]>([])
+const seenIds = new Set<string>()
+const clientStates = new Map<string, string>()
+
+const filteredLines = computed(() => {
+  if (currentFilter.value === 'all') return lines.value
+  return lines.value.filter((l) => l.category === currentFilter.value)
+})
+
+function addLogLine(line: Line) {
+  const dedupeKey = line.id ? String(line.id) : `${line.time}-${line.type}-${line.text}`
+  if (seenIds.has(dedupeKey)) return
+  seenIds.add(dedupeKey)
+
+  lines.value.push(line)
+  // 保持按时间升序
+  lines.value.sort((a, b) => a.time - b.time)
+
+  if (lines.value.length > 2000) {
+    lines.value.splice(0, lines.value.length - 2000)
+  }
+  if (follow.value) scroll()
+}
+
+// 格式化时间
+function fmtTime(t: number) {
+  if (!t) return '--:--:--'
+  const d = new Date(t)
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mm = String(d.getMinutes()).padStart(2, '0')
+  const ss = String(d.getSeconds()).padStart(2, '0')
+  return `${hh}:${mm}:${ss}`
+}
+
+function clearLog() {
+  lines.value = []
+  seenIds.clear()
+}
+
+function scroll() {
+  nextTick(() => {
+    if (logEl.value) logEl.value.scrollTop = logEl.value.scrollHeight
+  })
+}
+
+function sendChat() {
+  const msg = chatInput.value.trim()
+  if (!msg) return
+  addLogLine({
+    time: Date.now(),
+    type: 'chat',
+    category: 'chat',
+    user: currentUser.value,
+    text: msg,
+  })
+  chatInput.value = ''
+}
+
+// 1. 加载服务端审计日志与客户端初始上线状态（过滤掉纯 API 轮询，仅保留用户、会话与核心系统事件）
+async function loadAuditAndClientLogs() {
+  try {
+    const res = await AuditAPI.getAuditLogs({ page: 1, page_size: 100 })
+    if (res.data?.status === 200 && res.data.data?.logs) {
+      const logs = res.data.data.logs as any[]
+      for (const row of logs) {
+        const time = row.timestamp ? new Date(row.timestamp).getTime() : Date.now()
+        const cat = (row.category || '').toUpperCase()
+        const act = (row.action || '').toUpperCase()
+        const user = row.username || ''
+        const ip = row.client_ip || ''
+        const msg = row.message || ''
+
+        // 过滤掉常规的前端 REST API 轮询流水（如 /api/client/clientslist 等，这属于 Web 日志或审计日志，而非团队事件日志）
+        if (
+          cat === 'API' ||
+          cat === 'HTTP' ||
+          act.includes('API') ||
+          act.includes('ACCESS') ||
+          act.includes('QUERY') ||
+          msg.includes('/api/') ||
+          msg.includes('GET ') ||
+          msg.includes('POST ')
+        ) {
+          continue
+        }
+
+        let logType = 'system'
+        let logCategory: Line['category'] = 'system'
+        let text = ''
+
+        if (cat === 'AUTH' || act.includes('LOGIN') || act.includes('LOGOUT')) {
+          logCategory = 'user'
+          if (act.includes('LOGIN')) {
+            logType = 'user_login'
+            text = isZh.value
+              ? `操作员 <${user}> 登录成功 (来源 IP: ${ip || '-'})`
+              : `Operator <${user}> logged in from ${ip || '-'}`
+          } else {
+            logType = 'user_logout'
+            text = isZh.value
+              ? `操作员 <${user}> 注销退出`
+              : `Operator <${user}> logged out`
+          }
+        } else if (cat === 'CLIENT' || cat === 'BEACON' || act.includes('ONLINE') || act.includes('OFFLINE')) {
+          logCategory = 'client'
+          if (act.includes('ONLINE')) {
+            logType = 'beacon_online'
+            text = isZh.value ? `客户端已上线: ${msg || user}` : `Beacon online: ${msg || user}`
+          } else {
+            logType = 'beacon_offline'
+            text = isZh.value ? `客户端已离线: ${msg || user}` : `Beacon offline: ${msg || user}`
+          }
+        } else if (cat === 'CREDENTIAL' || act.includes('CRED')) {
+          logType = 'cred'
+          logCategory = 'client'
+          text = isZh.value ? `抓取到凭据: ${msg}` : `Credential captured: ${msg}`
+        } else if (cat === 'LISTENER' || act.includes('LISTENER')) {
+          logType = 'system'
+          logCategory = 'system'
+          text = isZh.value ? `监听器事件: [${act}] ${msg}` : `Listener event: [${act}] ${msg}`
+        } else if (cat === 'PAYLOAD' || cat === 'GEN' || act.includes('PAYLOAD')) {
+          logType = 'system'
+          logCategory = 'system'
+          text = isZh.value ? `载荷生成: ${msg}` : `Payload generated: ${msg}`
+        } else if (cat === 'TUNNEL' || cat === 'SOCKS' || act.includes('TUNNEL') || act.includes('SOCKS')) {
+          logType = 'system'
+          logCategory = 'system'
+          text = isZh.value ? `代理隧道: ${msg}` : `Tunnel event: ${msg}`
+        } else if (cat === 'SECURITY' || act.includes('SECURITY') || act.includes('BLOCK')) {
+          logType = 'error'
+          logCategory = 'system'
+          text = isZh.value ? `安全中心事件: ${msg}` : `Security event: ${msg}`
+        } else {
+          // 其他常规系统里程碑
+          logType = 'system'
+          logCategory = 'system'
+          text = `[${cat || 'SYS'}] ${act}: ${msg}`
+        }
+
+        addLogLine({
+          id: row.id || `${time}-${row.action}-${text}`,
+          time,
+          type: logType,
+          category: logCategory,
+          text,
+        })
+      }
+    }
+  } catch (e) {
+    // 忽略加载错误
+  }
+
+  // 检查客户端初始上线状态
+  if (clientsStore.clientsList && clientsStore.clientsList.length > 0) {
+    for (const c of clientsStore.clientsList) {
+      clientStates.set(c.Uid, c.Online)
+      if (c.Online === '1') {
+        const extIp = c.ExternalIP || '-'
+        const intIp = c.InternalIP ? `, 内网: ${c.InternalIP}` : ''
+        const arch = c.Arch || 'x64'
+        const osType = detectClientOs(c)
+        const os = c.Os || (osType === 'windows' ? 'Windows' : (osType === 'linux' ? 'Linux' : (osType === 'darwin' ? 'macOS' : 'Unknown')))
+        const proc = c.ProcessName || c.Computer || ''
+        addLogLine({
+          id: `init-beacon-${c.Uid}`,
+          time: Date.now() - 3600000,
+          type: 'beacon_online',
+          category: 'client',
+          text: isZh.value
+            ? `会话就绪: ${c.Username || 'user'}@${c.Computer || 'host'} [UID: ${c.Uid.slice(0, 8)}, 外网: ${extIp}${intIp}, PID: ${c.Pid || '?'}, 架构: ${arch}, 系统: ${os}, 监听器: ${c.Listener || 'TCP'}${proc ? `, 进程: ${proc}` : ''}]`
+            : `Beacon active: ${c.Username || 'user'}@${c.Computer || 'host'} [UID: ${c.Uid.slice(0, 8)}, Ext: ${extIp}${intIp}, PID: ${c.Pid || '?'}, Arch: ${arch}, OS: ${os}, Listener: ${c.Listener || 'TCP'}${proc ? `, Proc: ${proc}` : ''}]`,
+        })
+      }
+    }
+  }
+}
+
+// 2. 监听 WebSocket 实时推送事件
+watch(
+  () => eventsStore.events,
+  () => {
+    for (const e of eventsStore.events) {
+      const raw = e as any
+      const time = e.timestamp ? e.timestamp * 1000 : Date.now()
+      const t = String(e.type || '').toLowerCase()
+      const detail = e.detail || {}
+
+      if (t === 'client_online' || t === 'client_new') {
+        const uid = e.uid || detail.uid || raw.uid || ''
+        const foundClient = uid ? clientsStore.getClientByUid(uid) : null
+        const u = detail.username || raw.username || foundClient?.Username || 'user'
+        const comp = detail.computer || raw.computer || foundClient?.Computer || 'host'
+        const extIp = detail.external_ip || detail.ip || raw.ip || foundClient?.ExternalIP || '-'
+        const intIp = (detail.internal_ip || foundClient?.InternalIP) ? `, 内网: ${detail.internal_ip || foundClient?.InternalIP}` : ''
+        const pid = detail.pid || raw.pid || foundClient?.Pid || '?'
+        const arch = detail.arch || raw.arch || foundClient?.Arch || 'x64'
+        const osType = detectClientOs(foundClient || { Os: detail.os || raw.os, Arch: arch, Computer: comp, Username: u })
+        const os = detail.os || raw.os || foundClient?.Os || (osType === 'windows' ? 'Windows' : (osType === 'linux' ? 'Linux' : (osType === 'darwin' ? 'macOS' : 'Unknown')))
+        const listener = detail.listener || raw.listener || foundClient?.Listener || 'TCP'
+        const proc = detail.process || raw.process || foundClient?.ProcessName || ''
+
+        addLogLine({
+          time,
+          type: 'beacon_online',
+          category: 'client',
+          text: isZh.value
+            ? `客户端首次上线: ${u}@${comp} [UID: ${uid ? uid.slice(0, 8) : '?'}, 外网: ${extIp}${intIp}, PID: ${pid}, 架构: ${arch}, 系统: ${os}, 监听器: ${listener}${proc ? `, 进程: ${proc}` : ''}]`
+            : `Initial Beacon from ${u}@${comp} [UID: ${uid ? uid.slice(0, 8) : '?'}, Ext: ${extIp}${intIp}, PID: ${pid}, Arch: ${arch}, OS: ${os}, Listener: ${listener}${proc ? `, Proc: ${proc}` : ''}]`,
+        })
+      } else if (t === 'client_offline') {
+        const uid = e.uid || detail.uid || raw.uid || ''
+        const foundClient = uid ? clientsStore.getClientByUid(uid) : null
+        const u = detail.username || raw.username || foundClient?.Username || 'user'
+        const comp = detail.computer || raw.computer || foundClient?.Computer || ''
+        const extIp = detail.external_ip || detail.ip || raw.ip || foundClient?.ExternalIP || '-'
+        const pid = detail.pid || raw.pid || foundClient?.Pid || ''
+        addLogLine({
+          time,
+          type: 'beacon_offline',
+          category: 'client',
+          text: isZh.value
+            ? `客户端已离线: ${u}${comp ? '@' + comp : ''} [UID: ${uid ? uid.slice(0, 8) : '?'}, IP: ${extIp}${pid ? `, PID: ${pid}` : ''}]`
+            : `Beacon offline: ${u}${comp ? '@' + comp : ''} [UID: ${uid ? uid.slice(0, 8) : '?'}, IP: ${extIp}${pid ? `, PID: ${pid}` : ''}]`,
+        })
+      } else if (t === 'user_login' || t === 'operator_login') {
+        const op = detail.username || raw.user || raw.operator || 'operator'
+        const ip = detail.ip || raw.ip || ''
+        addLogLine({
+          time,
+          type: 'user_login',
+          category: 'user',
+          text: isZh.value
+            ? `操作员 <${op}> 已连接到团队服务器 (来源 IP: ${ip || '-'})`
+            : `Operator <${op}> connected to TeamServer (IP: ${ip || '-'})`,
+        })
+      } else if (t === 'user_logout' || t === 'operator_logout') {
+        const op = detail.username || raw.user || raw.operator || 'operator'
+        addLogLine({
+          time,
+          type: 'user_logout',
+          category: 'user',
+          text: isZh.value
+            ? `操作员 <${op}> 已断开连接`
+            : `Operator <${op}> disconnected`,
+        })
+      } else if (t === 'cred' || t === 'cred_new') {
+        addLogLine({
+          time,
+          type: 'cred',
+          category: 'client',
+          text: isZh.value
+            ? `抓取到新凭证: ${detail.username || ''}@${detail.realm || ''} (${detail.source || 'mimikatz'})`
+            : `Credential harvested: ${detail.username || ''}@${detail.realm || ''} (${detail.source || 'mimikatz'})`,
+        })
+      } else if (t === 'listener_open' || t === 'listener_start') {
+        addLogLine({
+          time,
+          type: 'system',
+          category: 'system',
+          text: isZh.value
+            ? `监听器已启动: ${detail.name || detail.type || ''} (地址: ${detail.listenAddress || detail.connectAddress || ''})`
+            : `Listener started: ${detail.name || detail.type || ''} (${detail.listenAddress || detail.connectAddress || ''})`,
+        })
+      } else if (t === 'listener_close' || t === 'listener_stop') {
+        addLogLine({
+          time,
+          type: 'system',
+          category: 'system',
+          text: isZh.value
+            ? `监听器已关闭: ${detail.name || detail.type || ''}`
+            : `Listener stopped: ${detail.name || detail.type || ''}`,
+        })
+      } else if (t === 'chat') {
+        addLogLine({
+          time,
+          type: 'chat',
+          category: 'chat',
+          user: raw.user || raw.operator || 'operator',
+          text: detail.message || raw.message || raw.text || '',
+        })
+      } else if (
+        t !== 'auth' &&
+        t !== 'pong' &&
+        !t.includes('api') &&
+        !t.includes('http') &&
+        !t.includes('poll')
+      ) {
+        const detailStr = e.detail
+          ? Object.entries(e.detail).map(([k, v]) => `${k}=${String(v)}`).join(' ')
+          : ''
+        const msg = detailStr || raw.message || raw.text || t
+        if (
+          !msg.includes('/api/') &&
+          !msg.includes('GET ') &&
+          !msg.includes('POST ') &&
+          !msg.includes('API_ACCESS')
+        ) {
+          addLogLine({
+            time,
+            type: 'system',
+            category: 'system',
+            user: raw.operator || raw.user,
+            text: `${e.uid ? `[${e.uid.slice(0, 8)}] ` : ''}${msg}`,
+          })
+        }
+      }
+    }
+  },
+  { deep: true },
+)
+
+// 3. 监控 clientsStore 状态跃迁（离线->上线 / 上线->离线）
+watch(
+  () => clientsStore.clientsList,
+  (newList) => {
+    if (!newList || newList.length === 0) return
+    for (const c of newList) {
+      const prev = clientStates.get(c.Uid)
+      if (prev !== undefined && prev !== c.Online) {
+        if (c.Online === '1') {
+          const ip = c.ExternalIP || c.InternalIP || '-'
+          addLogLine({
+            time: Date.now(),
+            type: 'beacon_online',
+            category: 'client',
+            text: isZh.value
+              ? `客户端已上线: ${c.Username || 'user'}@${c.Computer || 'host'} (IP: ${ip}, PID: ${c.Pid || '?'}, 监听器: ${c.Listener || 'TCP'})`
+              : `Beacon online: ${c.Username || 'user'}@${c.Computer || 'host'} (IP: ${ip}, PID: ${c.Pid || '?'}, Listener: ${c.Listener || 'TCP'})`,
+          })
+        } else {
+          addLogLine({
+            time: Date.now(),
+            type: 'beacon_offline',
+            category: 'client',
+            text: isZh.value
+              ? `客户端连接断开/离线: ${c.Username || 'user'}@${c.Computer || 'host'} (UID: ${c.Uid.slice(0, 8)})`
+              : `Beacon disconnected: ${c.Username || 'user'}@${c.Computer || 'host'} (UID: ${c.Uid.slice(0, 8)})`,
+          })
+        }
+      }
+      clientStates.set(c.Uid, c.Online)
+    }
+  },
+  { deep: true },
+)
+
+onMounted(async () => {
+  addLogLine({
+    id: 'sys-start',
+    time: Date.now(),
+    type: 'system',
+    category: 'system',
+    text: isZh.value
+      ? `团队服务器已连接：${window.location.host || '127.0.0.1:8083'}，系统日志已就绪。`
+      : `TeamServer connected at ${window.location.host || '127.0.0.1:8083'}. Ready.`,
+  })
+
+  await loadAuditAndClientLogs()
+  scroll()
+})
+</script>
+
+<style scoped>
+.event-log {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--cs-panel);
+  overflow: hidden;
+}
+
+.el-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--cs-border);
+  background: var(--cs-titlebar-bg);
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.el-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--cs-text-dim);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.el-filter-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 12px;
+}
+
+.el-filter-btn {
+  background: transparent;
+  border: 1px solid var(--cs-border);
+  border-radius: 2px;
+  color: var(--cs-text-dim);
+  font-size: 16px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+
+.el-filter-btn:hover {
+  color: var(--cs-text-bright);
+  background: var(--cs-hover);
+}
+
+.el-filter-btn.active {
+  background: #1a5c9a;
+  border-color: #1a5c9a;
+  color: #ffffff;
+  font-weight: bold;
+}
+
+.el-btn {
+  background: transparent;
+  border: 1px solid var(--cs-border);
+  border-radius: 2px;
+  color: var(--cs-text);
+  font-size: 16px;
+  padding: 2px 10px;
+  cursor: pointer;
+}
+
+.el-btn:hover {
+  background: var(--cs-hover);
+  color: var(--cs-text-bright);
+}
+
+.el-btn.active {
+  background: color-mix(in srgb, var(--cs-active) 25%, transparent);
+  border-color: var(--cs-active);
+  color: var(--cs-active);
+}
+
+.el-spacer { flex: 1; }
+.el-count { color: var(--cs-text-dim); font-size: 16px; }
+
+.el-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 12px;
+  font-size: 18px;
+  line-height: 1.6;
+  background: #111111;
+  color: #c8c8c8;
+}
+
+.el-line {
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin-bottom: 2px;
+}
+
+.el-time { color: #777777; margin-right: 6px; }
+
+.el-prefix { color: #3884ff; margin-right: 6px; font-weight: bold; }
+.el-prefix-online { color: #50fa7b; margin-right: 6px; font-weight: bold; }
+.el-prefix-offline { color: #ff5555; margin-right: 6px; font-weight: bold; }
+.el-prefix-user { color: #ffb86c; margin-right: 6px; font-weight: bold; }
+.el-prefix-cred { color: #f1fa8c; margin-right: 6px; font-weight: bold; }
+.el-prefix-error { color: #ff5555; margin-right: 6px; font-weight: bold; }
+
+.el-user { color: #50fa7b; margin-right: 6px; font-weight: bold; }
+.el-text { color: #e0e0e0; }
+
+.el-type-beacon_online .el-text { color: #50fa7b; }
+.el-type-beacon_offline .el-text { color: #ff5555; }
+.el-type-user_login .el-text { color: #ffb86c; }
+.el-type-user_logout .el-text { color: #e5c07b; }
+.el-type-cred .el-text { color: #f1fa8c; }
+.el-type-system .el-text { color: #8be9fd; }
+.el-type-chat .el-text { color: #ffffff; }
+.el-type-error .el-text { color: #ff5555; }
+
+.el-empty {
+  color: #555;
+  text-align: center;
+  margin-top: 40px;
+  font-size: 18px;
+}
+
+.el-chat-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 40px;
+  padding: 0 12px;
+  background: #181818;
+  border-top: 1px solid var(--cs-border);
+  flex-shrink: 0;
+}
+
+.chat-prompt {
+  color: #50fa7b;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.chat-input {
+  flex: 1;
+  background: transparent;
+  border: 0;
+  outline: 0;
+  color: #f0f0f0;
+  font-family: var(--cs-font-mono);
+  font-size: 18px;
+}
+
+.chat-input::placeholder {
+  color: #555;
+  font-family: var(--cs-font-ui);
+}
+
+.cs-btn-xs {
+  font-size: 16px;
+  padding: 3px 10px;
+}
+</style>

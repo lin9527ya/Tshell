@@ -1,0 +1,18 @@
+{
+  "extends": "./tsconfig.app.json",
+  "exclude": [],
+  "compilerOptions": {
+    "composite": true,
+    "allowJs": true,
+    "lib": [],
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "skipLibCheck": true,
+    "types": [
+      "node",
+      /** Element Plus 的 Volar 插件支持 */
+      "element-plus",
+      "jsdom"
+    ]
+  }
+}
