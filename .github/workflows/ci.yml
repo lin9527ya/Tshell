@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  server:
+    name: Server (Go)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Tshell-server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.21"
+          cache: true
+      - name: Build
+        run: go build ./...
+      - name: Vet
+        run: go vet ./pkg/...
+      - name: Test
+        run: go test ./pkg/... -count=1
+
+  implant:
+    name: Implant (Go, 12 transports)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Tshell-client/implant
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.21"
+          cache: true
+      - name: Build all transports
+        run: |
+          for t in tcp kcp http https oss websocket dns \
+                   tcp_forward kcp_forward ws_forward http_forward https_forward; do
+            go build -tags transport_$t -o /dev/null ./cmd/single || exit 1
+          done
+      - name: Test
+        run: go test ./core/... -count=1
+
+  web:
+    name: Web (Vue3 + TS)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Tshell-web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: Tshell-web/package-lock.json
+      - name: Install
+        run: npm ci --legacy-peer-deps
+      - name: Type check
+        run: npm run type-check
+      - name: Unit tests
+        run: npx vitest run
+      - name: Build
+        run: npm run build

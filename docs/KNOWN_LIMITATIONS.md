@@ -1,0 +1,68 @@
+# Tshell 已知限制项（Known Limitations）
+
+> 状态约定：✅ 已实现 | ⏳ 待实现（实现时更新）
+
+## 1. inject 隐蔽注入
+- 现状：✅ 已实现（阶段三-1）：最小权限句柄 + RW 写入→执行前 RX + 写后校验 + LastError 细节。
+- 遗留：间接 syscall（NtCreateThreadEx 直调）未做，CreateRemoteThread 仍可被检测。进一步隐蔽需替换为线程劫持/APC 注入。
+- 状态：✅（核心）/ ⏳（深度隐蔽）
+
+## 2. BOF token API
+- 现状：✅ 已实现（阶段三-2）：BeaconIsAdmin（TokenElevation）、BeaconUseToken（ImpersonateLoggedOnUser）、BeaconRevertToken（RevertToSelf）。
+- 状态：✅
+
+## 3. inline-bin patchExit 对直接 syscall 无效
+- 现状：patch 劫持导出函数入口；shellcode 走直接 syscall（绕过 ntdll 导出）时 patch 无效。
+- 计划：syscall 级 patch 涉及内核调用表/重定位层，工程量大且稳定性风险高。
+- 状态：⏳（接受现有限制，文档化）
+
+## 4. inline-bin 子进程 stdout 句柄继承
+- 现状：✅ 已实现（阶段三-4）：CreateFile 传 SECURITY_ATTRIBUTES{bInheritHandle:1}。
+- 状态：✅
+
+## 5. keylog 完整 IME/中文输入
+- 现状：✅ 已实现（阶段三-5）：ToUnicodeEx + GetKeyboardState + GetKeyboardLayout，支持中文 IME 组合；保留 ASCII 回退。
+- 状态：✅
+
+## 6. execute-assembly 单例 CLR
+- 现状：✅ 部分实现（阶段三-6）：全局执行互斥消除并发句柄竞争；go-clr 单例 host 限制仍存在（restore 后旧管道写入，输出捕获不受影响）。
+- 状态：✅（互斥）/ ⏳（多实例需替换 go-clr）
+
+## 7. 双引擎架构重构
+- 现状：✅ 部分实现：currentProc 赋值（中断生效）、去 .bat 落盘（参数传递）、人为延迟移除。
+- 遗留：WMI OLE 固定 goroutine + CoInitialize 配对、输出统一 cmdType 36、与 ConPTY 共享会话注册表。
+- 状态：✅（核心）/ ⏳（深度收敛）
+
+## 8. 遗留弱加密
+- 现状：✅ 已实现（阶段三-8）：`AllowLegacyCommandFallback` 默认 false（新客户端全部使用会话密钥）。
+- 遗留：旧加密函数（Encrypt/Decrypt）代码保留用于 FirstBlood 元数据解析；彻底移除需改 FirstBlood 协议。
+- 状态：✅（禁用）/ ⏳（代码移除）
+
+## 9. 密钥轮换协议（notifyKeyUpdate）
+- 现状：`notifyKeyUpdate` 仍为 TODO；24h 会话密钥过期后通道降级风险。
+- 计划：完成密钥协商消息类型，或移除轮换 UI 入口避免误导。
+- 状态：⏳
+
+## 10. VKey 密钥口径统一
+- 现状：GenerateListenerKeyConfig 返回 base64(32B)，消费方取字符串前 32/16 字符（熵 192bit）；手动设置 VKey 直接按字符串使用。
+- 计划：统一"先 base64 解码再取字节"（破坏性，需迁移现有 DB 监听器密钥，部署环境迁移风险高）。
+- 状态：⏳（破坏性变更，谨慎评估）
+
+## 11. 前端 GBK 修复映射表
+- 现状：encoding.js 硬编码乱码→中文映射表（几十条）。
+- 计划：统一为字节级 TextDecoder('gb18030') 流式方案。
+- 状态：⏳
+
+## 12. 审计日志落库
+- 现状：审计落文件，查询"读全部→内存过滤"。
+- 计划：启用 AuditLogDB 落 SQLite + 索引 + 预聚合。
+- 状态：⏳
+
+## 13. 级联 C2（B9，二级中继）
+- 状态：⏳（重架构，需设计中继协议与链路加密）
+
+## 14. 多协议热切换（B10，单二进制多协议）
+- 状态：⏳（需合并各 cmd/*/main.go 为统一入口 + 适配器热切换）
+
+## 15. TLS 证书自动签发（ACME）
+- 状态：⏳

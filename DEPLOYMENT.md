@@ -1,0 +1,87 @@
+# Tshell 部署说明
+
+## 一、构建
+
+### 前置
+- Go ≥ 1.21(服务端/客户端)
+- Node ≥ 18(前端,建议 20)
+- GCC(仅 Windows DLL 模板需要)
+
+### 构建步骤
+
+```bash
+# 1. 客户端模板(166 EXE + 24 DLL,输出到 Tshell-server/pkg/api/server/{proto}/)
+cd Tshell-client/implant
+bash build_templates.sh
+
+# 2. 前端(dist 自动嵌入服务端)
+cd Tshell-web
+npm ci --legacy-peer-deps
+npm run build:embed        # 产物写入 Tshell-server/dist 并生成 build-report.json
+
+# 3. 服务端(嵌入前端 + 模板;大二进制建议限制编译内存)
+cd Tshell-server
+GOMEMLIMIT=3GiB go build -gcflags="all=-l" -o tshell-server .
+```
+
+> 大二进制说明:服务端约 1.3~1.4GB(含全部平台模板 + 前端 embed)。内存不足时用 `GOMEMLIMIT=2-3GiB` 构建,或临时精简 `pkg/api/server/{proto}` 目录(仅保留常用协议模板)。
+
+## 二、配置(config.yaml)
+
+| 项 | 说明 |
+|----|------|
+| `port` | API 服务端口(默认 8089) |
+| `database.path` | SQLite 路径(WAL 模式自动开启) |
+| `secret_key_file` | JWT 签名私钥文件(首次启动自动生成,须妥善保管) |
+| `auth.default_username/password` | 首次启动创建的管理员 |
+| `auth.force_change_password` | 是否强制首次改密 |
+| `auth.enable_hidden_access` | 隐藏访问入口(**默认关闭**;开启时需 ≥8 字符强密钥,自动限流) |
+| `logging.level` | debug/info/warn/error(排障时建议 info) |
+
+### 必读安全配置
+1. **监听器密钥**:每个监听器在"监听管理"页配置独立 VKey(≥32B)/加密盐(≥16B)。**默认/空密钥会被拒绝**(监听器启动、客户端生成、firstBlood 三处强制)。客户端模板未替换占位符时拒绝运行。
+2. **初始密码**:首次启动后立即改密(默认密码策略:≥8 位含大小写与数字)。
+3. **JWT 私钥**:`jwt_key.hex`/`jwt_private.pem` 不要提交到仓库或泄露。
+
+## 三、启动
+
+```bash
+./tshell-server -p 8089                # 使用默认 config.yaml
+./tshell-server -config /path/config.yaml -p 8099
+```
+
+启动日志出现 `Listening on port 8089` 即就绪。Web 界面:http://服务器:8089
+
+### 监听器说明
+- **重启服务端后监听器不会自动恢复**:需在 Web 界面"监听管理"点击启用,或调用 `POST /api/listener/open`。
+- 反向隧道(*_forward)在"正向监听"页生成客户端后由客户端侧建立。
+
+## 四、部署拓扑
+
+```
+浏览器 ──HTTP──> Nginx(可选: TLS 终结 / CSP / 静态缓存)──> Tshell-Server:8089
+                                                            │
+                     ┌──────────────────────────────────────┤
+                     ▼                                      ▼
+             持久监听器(TCP/KCP/WS)                 轮询监听器(HTTP/HTTPS/OSS/DNS)
+                     │                                      │
+             受害机植入体(模板由 GenServer 生成,含自定义密钥)
+```
+
+- Nginx 参考配置见 `Tshell-web/nginx.conf`(已含收紧的 CSP)。
+- 建议 Nginx 层启用 HTTPS 并代理 `/api/`(含 WebSocket Upgrade 头)。
+
+## 五、日常运维
+
+| 操作 | 方式 |
+|------|------|
+| 生成客户端 | Web"客户端生成"页(必须填 VKey/盐,与服务端监听器一致) |
+| 会话密钥轮换 | 密钥管理页可轮换监听器密钥;会话密钥 24h 自动过期 |
+| 审计 | 审计日志页(操作/登录/安全拦截);交付访问日志自动保留 30 天 |
+| 离线清理 | 断线客户端由离线检测器标记 + 队列自动清理 |
+| 回归验证 | `bash scripts/e2e.sh`(一键:启动→监听器→客户端→唯一化+命令) |
+
+## 六、升级注意事项
+
+- **三端同步**:模板(build_templates.sh)→ 前端(build:embed)→ 服务端重建。加密/协议变更(如会话唯一化、nonce 协商)要求服务端与客户端**同时升级**,旧客户端无法与新版服务端通信。
+- 修改监听器密钥后,已生成的客户端需重新生成。
