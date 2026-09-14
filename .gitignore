@@ -1,0 +1,14 @@
+# 构建产物与二进制(由 build_templates.sh 重新生成)
+implant/build/
+implant/single
+*.exe
+*.bin
+*.dll
+
+# IDE
+.idea/
+.vscode/
+
+# 系统
+.DS_Store
+Thumbs.db
