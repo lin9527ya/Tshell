@@ -5,6 +5,9 @@
   "compilerOptions": {
     "composite": true,
     "baseUrl": ".",
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "skipLibCheck": true,
     "paths": {
       "@/*": ["./src/*"]
     }

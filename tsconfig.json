@@ -12,7 +12,9 @@
     }
   ],
   "compilerOptions": {
-    // ...
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "skipLibCheck": true,
     "types": [
       "element-plus/global"
     ]

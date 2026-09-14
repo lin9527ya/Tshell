@@ -4,3 +4,6 @@ dist
 auto-imports.d.ts
 components.d.ts
 npm-debug.log*
+
+# Claude Code 本地工作区
+.claude/

@@ -1,0 +1,200 @@
+<template>
+  <el-dialog
+    v-model="visible"
+    :title="isZh ? '内存执行' : 'Memory Execute'"
+    width="540px"
+    :close-on-click-modal="false"
+    append-to-body
+    class="cs-dialog"
+  >
+    <div class="cs-dialog-body">
+      <div class="dialog-row">
+        <label class="dialog-label">{{ isZh ? '目标客户端:' : 'Target:' }}</label>
+        <span class="dialog-val cs-font-mono">{{ clientLabel }}</span>
+      </div>
+
+      <div class="dialog-row">
+        <label class="dialog-label">{{ isZh ? '执行模式:' : 'Mode:' }}</label>
+        <el-select v-model="mode" size="small" style="width: 100%">
+          <el-option v-for="m in modeOptions" :key="m.value" :label="m.label" :value="m.value" />
+        </el-select>
+      </div>
+
+      <div class="dialog-row">
+        <label class="dialog-label">{{ isZh ? '载荷文件:' : 'Payload File:' }}</label>
+        <div class="dialog-file-row">
+          <el-upload
+            :auto-upload="false"
+            :limit="1"
+            :on-change="onFileChange"
+            :on-remove="onFileRemove"
+            :on-exceed="onFileExceed"
+          >
+            <el-button size="small">{{ isZh ? '选择文件' : 'Select File' }}</el-button>
+          </el-upload>
+          <span v-if="selectedFile" class="dialog-hint cs-font-mono">{{ selectedFile.name }} ({{ (selectedFile.size / 1024).toFixed(1) }} KB)</span>
+          <span v-else class="dialog-hint">{{ fileHint }}</span>
+        </div>
+      </div>
+
+      <div class="dialog-row">
+        <label class="dialog-label">{{ isZh ? '参数:' : 'Arguments:' }}</label>
+        <el-input v-model="args" size="small" :placeholder="isZh ? '可选执行参数' : 'Optional arguments'" />
+      </div>
+    </div>
+
+    <template #footer>
+      <div class="cs-dialog-footer">
+        <button class="cs-btn cs-btn-primary" :disabled="submitting || !selectedFile" @click="doExecute">
+          {{ submitting ? (isZh ? '下发中...' : 'Sending...') : (isZh ? '执行' : 'Execute') }}
+        </button>
+        <button class="cs-btn" @click="close">{{ isZh ? '取消' : 'Cancel' }}</button>
+      </div>
+    </template>
+  </el-dialog>
+</template>
+
+<script setup lang="ts">
+import { computed, ref, watch } from 'vue'
+import { ElMessage, type UploadFile } from 'element-plus'
+import { useWorkspaceStore } from '@/stores/workspace'
+import { useClientsStore } from '@/stores/clients'
+import { useI18nStore } from '@/stores/i18n'
+import ClientAPI from '@/api/clients'
+
+const workspace = useWorkspaceStore()
+const clientsStore = useClientsStore()
+const i18nStore = useI18nStore()
+const isZh = computed(() => i18nStore.isZh)
+
+const visible = computed({
+  get: () => workspace.dialogs.binExecute.visible,
+  set: (val) => {
+    if (!val) workspace.closeDialog('binExecute')
+  },
+})
+
+const uid = computed(() => workspace.dialogs.binExecute.uid)
+const client = computed(() => clientsStore.getClientByUid(uid.value))
+const clientLabel = computed(() => {
+  if (!client.value) return uid.value.slice(0, 8)
+  return `${client.value.Username || 'user'}@${client.value.Computer || 'host'}`
+})
+
+const modeOptions = [
+  { value: 'execute-assembly', label: 'execute-assembly (.NET Assembly)' },
+  { value: 'inline-bin', label: 'inline-bin (Donut 转 Shellcode)' },
+  { value: 'shellcode-inject', label: 'shellcode-inject' },
+  { value: 'bof', label: 'bof (COFF Beacon Object)' },
+  { value: 'script', label: 'script (Linux Shell 脚本)' },
+  { value: 'binary', label: 'binary (Linux 二进制)' },
+  { value: 'exec-file', label: 'exec-file (文件执行)' },
+]
+
+const mode = ref('execute-assembly')
+const args = ref('')
+const selectedFile = ref<File | null>(null)
+const submitting = ref(false)
+
+const fileHint = computed(() => {
+  switch (mode.value) {
+    case 'execute-assembly': return isZh.value ? '选择 .NET 程序集 (exe/dll)' : 'Select .NET assembly (exe/dll)'
+    case 'inline-bin': return isZh.value ? '选择可转换 Shellcode 的 PE (exe/dll)' : 'Select a PE convertible to shellcode'
+    case 'shellcode-inject': return isZh.value ? '选择原始 Shellcode 文件' : 'Select raw shellcode file'
+    case 'bof': return isZh.value ? '选择 BOF 目标文件 (COFF)' : 'Select BOF object file (COFF)'
+    case 'script': return isZh.value ? '选择 Linux Shell 脚本 (sh)' : 'Select Linux shell script (sh)'
+    case 'binary': return isZh.value ? '选择 Linux 二进制文件 (ELF)' : 'Select Linux binary (ELF)'
+    case 'exec-file': return isZh.value ? '选择可执行文件 (Windows .exe / Linux ELF)' : 'Select executable (Windows .exe / Linux ELF)'
+    default: return ''
+  }
+})
+
+watch(
+  () => workspace.dialogs.binExecute.visible,
+  (val) => {
+    if (val) {
+      mode.value = workspace.dialogs.binExecute.mode || 'execute-assembly'
+      args.value = ''
+      selectedFile.value = null
+    }
+  },
+)
+
+function onFileChange(file: UploadFile) {
+  selectedFile.value = (file.raw as File) || null
+}
+
+function onFileRemove() {
+  selectedFile.value = null
+}
+
+function onFileExceed() {
+  ElMessage.warning(isZh.value ? '仅支持选择一个文件' : 'Only one file allowed')
+}
+
+function close() {
+  workspace.closeDialog('binExecute')
+}
+
+async function doExecute() {
+  if (!uid.value) return
+  if (!selectedFile.value) {
+    ElMessage.warning(isZh.value ? '请先选择载荷文件' : 'Select a payload file first')
+    return
+  }
+  submitting.value = true
+  try {
+    const res = await ClientAPI.execute_bin(uid.value, selectedFile.value, args.value.trim(), mode.value)
+    if (res.status === 200 && res.data && res.data.status === 200) {
+      ElMessage.success(isZh.value ? `已下发 ${mode.value} 执行请求` : `${mode.value} execution dispatched`)
+      close()
+      // 跳转到 Beacon 控制台：后端已把 `$ mode file args` 写入 shell 历史，控制台 3s 轮询自动回显
+      workspace.openTab({
+        id: `beacon:${uid.value}`,
+        title: isZh.value ? `会话交互: ${clientLabel.value}` : `Beacon: ${clientLabel.value}`,
+        component: 'beacon',
+        params: { uid: uid.value },
+      })
+    } else {
+      const msg = res.data?.data || res.data?.error || (isZh.value ? '执行失败' : 'Execution failed')
+      ElMessage.error(String(msg))
+    }
+  } catch (err: any) {
+    console.error('内存执行失败:', err)
+    ElMessage.error(err instanceof Error ? err.message : (isZh.value ? '执行失败' : 'Execution failed'))
+  } finally {
+    submitting.value = false
+  }
+}
+</script>
+
+<style scoped>
+.cs-dialog-body {
+  padding: 10px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.dialog-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.dialog-label {
+  font-size: 12px;
+  color: var(--cs-text-dim);
+}
+.dialog-val {
+  font-size: 12px;
+  color: var(--cs-text-bright);
+}
+.dialog-file-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.dialog-hint {
+  font-size: 11px;
+  color: var(--cs-text-dim);
+}
+</style>

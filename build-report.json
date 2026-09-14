@@ -1,0 +1,17 @@
+{
+  "timestamp": "2026-08-21T04:09:07.070Z",
+  "frontend": {
+    "framework": "Vue 3 + TypeScript + Element Plus + Vite",
+    "distSize": 2588046,
+    "distPath": "E:\\Code\\Tshell\\Tshell-web\\dist"
+  },
+  "backend": {
+    "framework": "Go + Gin + SQLite + JWT",
+    "embedPath": "E:\\Code\\Tshell\\Tshell-server\\dist",
+    "mainFile": "E:\\Code\\Tshell\\Tshell-server\\main.go"
+  },
+  "integration": {
+    "success": true,
+    "method": "go:embed"
+  }
+}

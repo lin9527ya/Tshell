@@ -1,0 +1,431 @@
+/**
+ * CS 主题令牌（CobaltStrike 风格）
+ * 默认暗色 Darcula 主题；支持 CS 经典明亮。
+ */
+:root {
+  /* 基础色（明亮） */
+  --cs-bg: #f0f0f0;
+  --cs-panel: #ffffff;
+  --cs-console: #ffffff;
+  --cs-border: #c8c8c8;
+  --cs-hover: #e4e4e4;
+  --cs-active: #007acc;
+
+  /* 标题栏/菜单栏/工具栏 */
+  --cs-titlebar-bg: #e6e6e6;
+  --cs-menubar-bg: #e6e6e6;
+  --cs-menubar-hover: #d5d5d5;
+  --cs-tab-active-bg: #ffffff;
+  --cs-tab-inactive-bg: #e2e2e2;
+  --cs-tab-hover-bg: #ececec;
+
+  /* 状态色 */
+  --cs-online: #2e7d32;
+  --cs-offline: #888888;
+  --cs-warning: #f9a825;
+  --cs-error: #d32f2f;
+
+  /* 文本 */
+  --cs-text: #333333;
+  --cs-text-bright: #111111;
+  --cs-text-dim: #777777;
+
+  /* 字体 */
+  --cs-font-mono: 'JetBrains Mono', 'Consolas', 'Menlo', 'Monaco', monospace;
+  --cs-font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+
+  /* 尺寸 */
+  --cs-titlebar-h: 36px;
+  --cs-statusbar-h: 30px;
+  --cs-sidebar-w: 260px;
+}
+
+/* 暗黑主题（CS 经典 Darcula） */
+:root[data-theme="dark"] {
+  --cs-bg: #1e1f22;
+  --cs-panel: #2b2d30;
+  --cs-console: #141414;
+  --cs-border: #3c3f41;
+  --cs-hover: #35383c;
+  --cs-active: #007acc;
+
+  --cs-titlebar-bg: #2b2d30;
+  --cs-menubar-bg: #2b2d30;
+  --cs-menubar-hover: #3c3f41;
+  --cs-tab-active-bg: #2b2d30;
+  --cs-tab-inactive-bg: #222426;
+  --cs-tab-hover-bg: #323538;
+
+  --cs-online: #4caf50;
+  --cs-offline: #757575;
+  --cs-warning: #ffc107;
+  --cs-error: #f44336;
+
+  --cs-text: #c0c0c0;
+  --cs-text-bright: #ffffff;
+  --cs-text-dim: #888888;
+}
+
+/* 字体工具类（已整体增大 50%） */
+.cs-font-ui {
+  font-family: var(--cs-font-ui);
+  font-size: 18px;
+}
+.cs-font-mono {
+  font-family: var(--cs-font-mono);
+  font-size: 18px;
+}
+
+/* CS 经典按钮样式 (Rectangular bevel / FlatLaf) */
+.cs-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 14px;
+  font-size: 16.5px;
+  font-family: var(--cs-font-ui);
+  font-weight: 500;
+  color: var(--cs-text);
+  background: var(--cs-panel);
+  border: 1px solid var(--cs-border);
+  border-radius: 2px;
+  cursor: pointer;
+  user-select: none;
+  transition: all 120ms ease;
+  white-space: nowrap;
+}
+
+.cs-btn:hover:not(:disabled) {
+  background: var(--cs-hover);
+  border-color: var(--cs-active);
+  color: var(--cs-text-bright);
+}
+
+.cs-btn:active:not(:disabled) {
+  background: var(--cs-titlebar-bg);
+}
+
+.cs-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.cs-btn-primary {
+  background: var(--cs-active);
+  border-color: var(--cs-active);
+  color: #ffffff;
+}
+
+.cs-btn-primary:hover:not(:disabled) {
+  background: #1a8cd8;
+  border-color: #1a8cd8;
+  color: #ffffff;
+}
+
+.cs-btn-danger {
+  color: var(--cs-error);
+  border-color: color-mix(in srgb, var(--cs-error) 40%, var(--cs-border));
+}
+
+.cs-btn-danger:hover:not(:disabled) {
+  background: var(--cs-error);
+  border-color: var(--cs-error);
+  color: #ffffff;
+}
+
+.cs-btn-xs {
+  height: 24px;
+  padding: 0 8px;
+  font-size: 15px;
+}
+
+/* CS 对话框样式 */
+.cs-dialog {
+  border: 1px solid var(--cs-border) !important;
+  border-radius: 2px !important;
+  background: var(--cs-panel) !important;
+  box-shadow: 2px 4px 16px rgba(0, 0, 0, 0.6) !important;
+}
+
+.cs-dialog .el-dialog__header {
+  padding: 10px 14px !important;
+  margin: 0 !important;
+  background: var(--cs-titlebar-bg) !important;
+  border-bottom: 1px solid var(--cs-border) !important;
+}
+
+.cs-dialog .el-dialog__title {
+  font-size: 18px !important;
+  font-weight: 600 !important;
+  color: var(--cs-text-bright) !important;
+}
+
+.cs-dialog .el-dialog__headerbtn {
+  top: 8px !important;
+  right: 8px !important;
+  width: 18px !important;
+  height: 18px !important;
+}
+
+.cs-dialog .el-dialog__body {
+  padding: 12px 14px !important;
+  background: var(--cs-panel) !important;
+  color: var(--cs-text) !important;
+}
+
+.cs-dialog .el-dialog__footer {
+  padding: 8px 12px !important;
+  background: var(--cs-titlebar-bg) !important;
+  border-top: 1px solid var(--cs-border) !important;
+}
+
+/* CS Dialog Global Form & Typography Standardization (1.5x scaling) */
+.cs-dialog-body {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 14px !important;
+}
+
+.cs-dialog-desc {
+  font-size: 15.5px !important;
+  color: var(--cs-text-dim) !important;
+  line-height: 1.6 !important;
+  margin-bottom: 8px !important;
+}
+
+.cs-form-row {
+  display: flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+  margin-bottom: 8px !important;
+}
+
+.cs-form-label {
+  min-width: 130px !important;
+  max-width: 155px !important;
+  font-size: 15.5px !important;
+  color: var(--cs-text) !important;
+  text-align: right !important;
+  flex-shrink: 0 !important;
+}
+
+.cs-form-input-wrap,
+.cs-form-input {
+  flex: 1 !important;
+}
+
+.cs-form-hint {
+  font-size: 14px !important;
+  color: var(--cs-text-dim) !important;
+  line-height: 1.6 !important;
+}
+
+.cs-dialog-footer-center {
+  display: flex !important;
+  justify-content: center !important;
+  gap: 12px !important;
+}
+
+/* Standardized Code Highlighting / Command Output Block */
+.cs-cmd-box,
+.cs-code-block {
+  background: #0d1117 !important;
+  border: 1px solid var(--cs-border) !important;
+  border-radius: 4px !important;
+  padding: 10px 14px !important;
+  font-family: var(--cs-font-mono) !important;
+  font-size: 15px !important;
+  color: #58a6ff !important;
+  word-break: break-all !important;
+  white-space: pre-wrap !important;
+  position: relative !important;
+  line-height: 1.6 !important;
+}
+
+.cs-cmd-box code,
+.cs-code-block code {
+  font-family: inherit !important;
+  color: inherit !important;
+  background: transparent !important;
+}
+
+.cs-dialog .el-form-item__label {
+  font-size: 15.5px !important;
+  color: var(--cs-text) !important;
+  line-height: 32px !important;
+}
+
+.cs-dialog .el-form-item {
+  margin-bottom: 14px !important;
+}
+
+/* CS 滚动条规范 */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--cs-bg);
+}
+
+::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--cs-border) 80%, transparent);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--cs-active);
+}
+
+/* 覆盖既有业务组件在 CS 壳中的样式 */
+.cs-shell {
+  --theme-bg-primary: var(--cs-bg);
+  --theme-bg-secondary: var(--cs-panel);
+  --theme-text-primary: var(--cs-text-bright);
+  --theme-text-secondary: var(--cs-text);
+  --theme-text-tertiary: var(--cs-text-dim);
+  --theme-border-primary: var(--cs-border);
+  --bg-primary: var(--cs-bg);
+  --bg-secondary: var(--cs-bg);
+  --bg-panel: var(--cs-panel);
+  --bg-hover: var(--cs-hover);
+  --border-color: var(--cs-border);
+  --text-primary: var(--cs-text-bright);
+  --text-secondary: var(--cs-text);
+}
+
+:root[data-theme="dark"] .cs-shell {
+  --el-bg-color: var(--cs-panel);
+  --el-bg-color-page: var(--cs-bg);
+  --el-fill-color-blank: var(--cs-panel);
+  --el-fill-color-light: var(--cs-hover);
+  --el-text-color-primary: var(--cs-text-bright);
+  --el-text-color-regular: var(--cs-text);
+  --el-text-color-secondary: var(--cs-text-dim);
+  --el-border-color: var(--cs-border);
+  --el-color-primary: var(--cs-active);
+}
+
+.cs-shell .el-card,
+.cs-shell .el-dialog,
+.cs-shell .el-drawer,
+.cs-shell .el-popover {
+  background: var(--cs-panel);
+  border-color: var(--cs-border);
+  border-radius: 2px;
+  box-shadow: none;
+}
+
+.cs-shell .el-card__header {
+  border-bottom-color: var(--cs-border);
+}
+
+.cs-shell .el-table,
+.cs-shell .el-table__expanded-cell,
+.cs-shell .el-table tr,
+.cs-shell .el-table th.el-table__cell,
+.cs-shell .el-table td.el-table__cell {
+  background: var(--cs-panel);
+  border-color: var(--cs-border);
+  color: var(--cs-text);
+  font-size: 16.5px;
+}
+
+.cs-shell .el-table th.el-table__cell {
+  color: var(--cs-text-dim);
+  font-weight: 600;
+  font-size: 16.5px;
+}
+
+.cs-shell .el-button {
+  border-radius: 2px;
+}
+
+.cs-shell .el-input__wrapper,
+.cs-shell .el-textarea__inner,
+.cs-shell .el-select__wrapper {
+  background: var(--cs-bg);
+  box-shadow: 0 0 0 1px var(--cs-border) inset;
+  border-radius: 2px;
+}
+
+/* =========================================================================
+   CS 表格排序按钮优雅隐式规范：
+   1. 常态(未排序)时完全隐藏双箭头，保持表头清爽整洁
+   2. 表头悬停时轻微显现
+   3. 点击激活时：升序仅显示上箭头、降序仅显示下箭头、还原时再次隐藏
+   ========================================================================= */
+.el-table .caret-wrapper {
+  opacity: 0 !important;
+  width: 14px !important;
+  height: 18px !important;
+  transition: opacity 120ms ease;
+  vertical-align: middle;
+}
+
+.el-table th.is-sortable:hover .caret-wrapper {
+  opacity: 0.45 !important;
+}
+
+.el-table th.ascending .caret-wrapper,
+.el-table th.descending .caret-wrapper {
+  opacity: 1 !important;
+}
+
+/* 升序时隐藏无用的降序下箭头 */
+.el-table th.ascending .sort-caret.descending {
+  display: none !important;
+}
+
+/* 降序时隐藏无用的升序上箭头 */
+.el-table th.descending .sort-caret.ascending {
+  display: none !important;
+}
+
+.el-table th.ascending .sort-caret.ascending {
+  border-bottom-color: var(--cs-active) !important;
+  top: 4px !important;
+}
+
+.el-table th.descending .sort-caret.descending {
+  border-top-color: var(--cs-active) !important;
+  bottom: 4px !important;
+}
+
+/* CS 表格会话与条目颜色标记支持 */
+.cs-session-table .el-table__row {
+  background-color: var(--el-table-tr-bg-color, var(--cs-panel));
+  color: var(--cs-text-bright);
+}
+
+.cs-session-table .el-table__row td.el-table__cell {
+  background-color: transparent !important;
+  color: inherit;
+}
+
+.cs-session-table .el-table__row:hover td.el-table__cell {
+  background-color: var(--cs-hover) !important;
+}
+
+/* 选中行：CS 经典深蓝底纯白字，保持绝对高对比度 */
+.cs-session-table .el-table__row.current-row > td.el-table__cell,
+.cs-session-table .el-table__row.is-selected > td.el-table__cell {
+  background-color: #1a5c9a !important;
+  color: #ffffff !important;
+}
+
+.cs-session-table .el-table__row.current-row .cs-cell-text,
+.cs-session-table .el-table__row.current-row .cs-cell-last,
+.cs-session-table .el-table__row.current-row .cs-cell-note,
+.cs-session-table .el-table__row.current-row span,
+.cs-session-table .el-table__row.is-selected .cs-cell-text,
+.cs-session-table .el-table__row.is-selected .cs-cell-last,
+.cs-session-table .el-table__row.is-selected .cs-cell-note,
+.cs-session-table .el-table__row.is-selected span {
+  color: #ffffff !important;
+}
+
+

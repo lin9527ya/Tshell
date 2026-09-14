@@ -1,0 +1,644 @@
+<template>
+  <div class="cs-security-center-view cs-font-ui">
+    <!-- CS Toolbar -->
+    <div class="sc-toolbar">
+      <div class="sc-title-group">
+        <span class="sc-title">{{ isZh ? '安全中心' : 'Security Center' }}</span>
+        <span class="sc-stats">
+          ({{ whitelist.length }} {{ isZh ? '个白名单' : 'whitelisted' }} / {{ blockedIPs.length }} {{ isZh ? '个封禁' : 'blocked' }})
+        </span>
+      </div>
+
+      <div class="sc-spacer" />
+
+      <button class="cs-btn" :disabled="loading" @click="fetchData">
+        {{ isZh ? '刷新' : 'Refresh' }}
+      </button>
+    </div>
+
+    <!-- Master-Detail Body -->
+    <div class="sc-body">
+      <!-- Left Navigation -->
+      <div class="sc-sidebar">
+        <div
+          v-for="t in tabs"
+          :key="t.id"
+          class="sc-nav-item"
+          :class="{ active: currentTab === t.id }"
+          @click="currentTab = t.id"
+        >
+          <span class="nav-icon">{{ t.icon }}</span>
+          <span class="nav-label">{{ t.name }}</span>
+        </div>
+      </div>
+
+      <!-- Right Content Panel -->
+      <div class="sc-content">
+        <!-- 1. IP 白名单 (IP Whitelist) -->
+        <div v-if="currentTab === 'whitelist'" class="sc-panel">
+          <div class="sc-panel-header">
+            <span class="panel-title">{{ isZh ? '可信 IP 白名单' : 'Trusted IP Whitelist' }}</span>
+            <button class="cs-btn cs-btn-primary" @click="showAddWhitelistDialog = true">{{ isZh ? '添加 IP / CIDR' : 'Add IP / CIDR' }}</button>
+          </div>
+          <div class="sc-table-wrap">
+            <el-table
+              :data="whitelist"
+              size="small"
+              height="100%"
+              highlight-current-row
+              class="cs-session-table"
+              @current-change="(r: any) => selectedWhitelistRow = r"
+            >
+              <el-table-column prop="ip" :label="isZh ? 'IP 地址 / 网段' : 'IP Address / Network'" min-width="220" sortable show-overflow-tooltip>
+                <template #default="{ row }">
+                  <span class="cs-font-mono font-bold">{{ row.ip }}</span>
+                </template>
+              </el-table-column>
+              <el-table-column prop="network" :label="isZh ? '子网掩码' : 'Subnet Mask'" width="160" show-overflow-tooltip />
+              <el-table-column prop="created_at" :label="isZh ? '添加时间' : 'Added When'" width="180" show-overflow-tooltip />
+              <el-table-column :label="isZh ? '操作' : 'Actions'" width="110" align="center">
+                <template #default="{ row }">
+                  <button class="cs-btn cs-btn-xs cs-btn-danger" @click="handleRemoveWhitelist(row)">{{ isZh ? '移除' : 'Remove' }}</button>
+                </template>
+              </el-table-column>
+            </el-table>
+          </div>
+        </div>
+
+        <!-- 2. 封禁 IP (Blocked IPs) -->
+        <div v-else-if="currentTab === 'blocked'" class="sc-panel">
+          <div class="sc-panel-header">
+            <span class="panel-title">{{ isZh ? '恶意封禁 IP 防御列表' : 'Blocked IP Defense List' }}</span>
+            <button class="cs-btn cs-btn-danger" :disabled="!selectedBlockedRow" @click="selectedBlockedRow && handleUnblock(selectedBlockedRow)">
+              {{ isZh ? '解除选中封禁' : 'Unblock Selected' }}
+            </button>
+          </div>
+          <div class="sc-table-wrap">
+            <el-table
+              :data="blockedIPs"
+              size="small"
+              height="100%"
+              highlight-current-row
+              class="cs-session-table"
+              @current-change="(r: any) => selectedBlockedRow = r"
+            >
+              <el-table-column prop="ip" :label="isZh ? '封禁 IP' : 'Blocked IP'" min-width="200" sortable show-overflow-tooltip>
+                <template #default="{ row }">
+                  <span class="cs-font-mono text-danger font-bold">{{ row.ip }}</span>
+                </template>
+              </el-table-column>
+              <el-table-column prop="reason" :label="isZh ? '封禁原因' : 'Block Reason'" min-width="180" show-overflow-tooltip />
+              <el-table-column prop="blocked_at" :label="isZh ? '封禁时间' : 'Blocked At'" width="170" show-overflow-tooltip>
+                <template #default="{ row }">
+                  <span class="cs-font-mono">{{ row.blocked_at || '-' }}</span>
+                </template>
+              </el-table-column>
+              <el-table-column prop="attempts" :label="isZh ? '失败尝试' : 'Attempts'" width="90" align="right" sortable>
+                <template #default="{ row }">
+                  <span class="cs-font-mono">{{ row.attempts ?? '-' }}</span>
+                </template>
+              </el-table-column>
+              <el-table-column :label="isZh ? '操作' : 'Actions'" width="110" align="center">
+                <template #default="{ row }">
+                  <button class="cs-btn cs-btn-xs" @click="handleUnblock(row)">{{ isZh ? '解除封禁' : 'Unblock' }}</button>
+                </template>
+              </el-table-column>
+            </el-table>
+          </div>
+        </div>
+
+        <!-- 3. 限流与防爆破策略 (Rate Limiting) -->
+        <div v-else-if="currentTab === 'rate_limit'" class="sc-panel">
+          <div class="sc-panel-header">
+            <span class="panel-title">{{ isZh ? '防爆破与请求限流策略' : 'Anti-Bruteforce & Rate Limiting Policy' }}</span>
+          </div>
+
+          <div class="cs-form-container">
+            <div class="cs-form-row">
+              <label class="cs-form-label">{{ isZh ? '登录防爆破阈值（次/分钟）' : 'Login Max Attempts / min' }}:</label>
+              <el-input-number v-model="rateLimitForm.login_rate_limit" :min="1" :max="100" size="small" />
+            </div>
+
+            <div class="cs-form-row">
+              <label class="cs-form-label">{{ isZh ? 'API 限流阈值（次/分钟）' : 'API Max Requests / min' }}:</label>
+              <el-input-number v-model="rateLimitForm.api_rate_limit" :min="10" :max="1000" size="small" />
+            </div>
+
+            <div class="cs-form-row">
+              <label class="cs-form-label">{{ isZh ? '自动封禁时长（分钟）' : 'Auto Block Duration in Minutes' }}:</label>
+              <el-input-number v-model="rateLimitForm.block_duration" :min="1" :max="1440" size="small" />
+            </div>
+
+            <div style="margin-top: 14px">
+              <button class="cs-btn cs-btn-primary" @click="handleSaveRateLimit">{{ isZh ? '保存策略' : 'Save Policy' }}</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 4. 实时防御统计 (Realtime Stats) -->
+        <div v-else-if="currentTab === 'stats'" class="sc-panel">
+          <div class="sc-panel-header">
+            <span class="panel-title">{{ isZh ? '实时威胁防御指标' : 'Realtime Threat Defense Metrics' }}</span>
+          </div>
+
+          <div class="sc-stats-grid">
+            <div class="stat-card">
+              <div class="stat-num">{{ stats.total_blocked || blockedIPs.length }}</div>
+              <div class="stat-lbl">{{ isZh ? '已封禁攻击总数' : 'Total Blocked Attacks' }}</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-num">{{ stats.whitelist_count || whitelist.length }}</div>
+              <div class="stat-lbl">{{ isZh ? '白名单条目数' : 'Active Whitelist Entries' }}</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-num">{{ stats.active_defense || 'ON' }}</div>
+              <div class="stat-lbl">{{ isZh ? 'WAF 与限流状态' : 'WAF & Rate Limiter State' }}</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-num">{{ stats.rate_limit_hits || 0 }}</div>
+              <div class="stat-lbl">{{ isZh ? '被限流请求数' : 'Rate Limit Throttled Requests' }}</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 5. 近 1 小时实时访问 IP（后端 /security/realtime-stats，5s 自动刷新） -->
+        <div v-else class="sc-panel">
+          <div class="sc-panel-header">
+            <span class="panel-title">{{ isZh ? '近 1 小时活跃访问 IP' : 'Active Access IPs (Last 1 Hour)' }}</span>
+            <div class="sc-header-actions">
+              <span class="sc-rt-hint">{{ realtimeStats.timestamp || (isZh ? '等待数据...' : 'Awaiting data...') }}</span>
+              <button class="cs-btn cs-btn-xs" :disabled="realtimeLoading" @click="fetchRealtimeStats">
+                {{ isZh ? '立即刷新' : 'Refresh Now' }}
+              </button>
+            </div>
+          </div>
+
+          <div class="sc-rt-stats">
+            <div class="stat-card">
+              <div class="stat-num">{{ realtimeStats.total_active ?? 0 }}</div>
+              <div class="stat-lbl">{{ isZh ? '最近活跃来源数' : 'Recent Active Sources' }}</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-num">{{ realtimeStats.timeframe || 'last 1 hour' }}</div>
+              <div class="stat-lbl">{{ isZh ? '统计时间窗' : 'Timeframe' }}</div>
+            </div>
+          </div>
+
+          <div class="sc-table-wrap" style="margin-top: 10px">
+            <el-table
+              :data="realtimeStats.recent_active_ips || []"
+              size="small"
+              height="100%"
+              highlight-current-row
+              class="cs-session-table"
+              v-loading="realtimeLoading"
+            >
+              <el-table-column type="index" label="#" width="50" align="center" />
+              <el-table-column prop="ip" :label="isZh ? '来源 IP' : 'Source IP'" min-width="220" sortable>
+                <template #default="{ row }">
+                  <span class="cs-font-mono font-bold">{{ row.ip }}</span>
+                </template>
+              </el-table-column>
+              <el-table-column prop="count" :label="isZh ? '请求次数' : 'Requests'" width="120" align="right" sortable>
+                <template #default="{ row }">
+                  <span class="cs-font-mono">{{ row.count ?? row.request_count ?? '-' }}</span>
+                </template>
+              </el-table-column>
+              <el-table-column prop="last_seen" :label="isZh ? '最后活跃' : 'Last Seen'" width="180" sortable>
+                <template #default="{ row }">
+                  <span class="cs-font-mono">{{ row.last_seen || row.last_active || '-' }}</span>
+                </template>
+              </el-table-column>
+            </el-table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bottom Action Bar (CS Native Button Row) -->
+    <div class="sc-bottom-bar">
+      <button class="cs-btn cs-btn-primary" @click="showAddWhitelistDialog = true">
+        {{ isZh ? '添加白名单 IP' : 'Add Whitelist IP' }}
+      </button>
+      <button class="cs-btn" :disabled="!selectedBlockedRow" @click="selectedBlockedRow && handleUnblock(selectedBlockedRow)">
+        {{ isZh ? '解除封禁' : 'Unblock IP' }}
+      </button>
+      <button class="cs-btn" @click="fetchData">
+        {{ isZh ? '全部刷新' : 'Refresh All' }}
+      </button>
+      <button class="cs-btn" @click="handleHelp">
+        {{ isZh ? '帮助' : 'Help' }}
+      </button>
+    </div>
+
+    <!-- Add Whitelist Dialog -->
+    <el-dialog v-model="showAddWhitelistDialog" :title="isZh ? '添加 IP 白名单' : 'Add IP Whitelist'" width="420px" class="cs-dialog" append-to-body>
+      <div class="cs-form-row">
+        <label class="cs-form-label">{{ isZh ? 'IP 地址 / CIDR' : 'IP Address / CIDR' }}:</label>
+        <el-input v-model="newWhitelistIP" :placeholder="isZh ? '例如 192.168.1.100 或 10.0.0.0/24' : 'e.g. 192.168.1.100 or 10.0.0.0/24'" size="small" />
+      </div>
+      <template #footer>
+        <div class="cs-dialog-footer">
+          <button class="cs-btn cs-btn-primary" @click="handleAddWhitelist">{{ isZh ? '添加' : 'Add' }}</button>
+          <button class="cs-btn" @click="showAddWhitelistDialog = false">{{ isZh ? '取消' : 'Cancel' }}</button>
+        </div>
+      </template>
+    </el-dialog>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import SecurityAPI from '@/api/security'
+import { useI18nStore } from '@/stores/i18n'
+
+const i18nStore = useI18nStore()
+const isZh = computed(() => i18nStore.isZh)
+
+const currentTab = ref('whitelist')
+const loading = ref(false)
+
+const tabs = computed(() => [
+  { id: 'whitelist', name: isZh.value ? 'IP 白名单' : 'IP Whitelist', icon: '🛡️' },
+  { id: 'blocked', name: isZh.value ? '封禁列表' : 'Blocked IPs', icon: '🚫' },
+  { id: 'rate_limit', name: isZh.value ? '限流策略' : 'Rate Limiting', icon: '⚡' },
+  { id: 'stats', name: isZh.value ? '防御统计' : 'Defense Stats', icon: '📊' },
+  { id: 'realtime', name: isZh.value ? '实时访问' : 'Realtime Access', icon: '🕒' },
+])
+
+// 初始为空，真实数据来自后端（失败时保持空 + 报错，不再展示假占位）
+const whitelist = ref<any[]>([])
+
+const blockedIPs = ref<any[]>([])
+
+const rateLimitForm = reactive({
+  login_rate_limit: 5,
+  api_rate_limit: 60,
+  block_duration: 30,
+})
+
+const stats = reactive<any>({
+  total_blocked: 0,
+  whitelist_count: 0,
+  active_defense: '',
+  rate_limit_hits: 0,
+})
+
+// 近 1 小时实时访问 IP（/security/realtime-stats）
+const realtimeStats = ref<Record<string, any>>({})
+const realtimeLoading = ref(false)
+let realtimeTimer: ReturnType<typeof setInterval> | null = null
+
+async function fetchRealtimeStats() {
+  realtimeLoading.value = true
+  try {
+    const res = await SecurityAPI.getRealtimeStats()
+    if (res.data?.status === 200) {
+      realtimeStats.value = res.data.data || {}
+    } else {
+      realtimeStats.value = {}
+    }
+  } catch {
+    /* 静默失败：轮询接口在切页/服务忙时不应反复弹全局错误 */
+  } finally {
+    realtimeLoading.value = false
+  }
+}
+
+const selectedWhitelistRow = ref<any>(null)
+const selectedBlockedRow = ref<any>(null)
+const showAddWhitelistDialog = ref(false)
+const newWhitelistIP = ref('')
+
+async function fetchData() {
+  loading.value = true
+  try {
+    const [wlRes, blRes, stRes] = await Promise.allSettled([
+      SecurityAPI.getWhitelist(),
+      SecurityAPI.getBlockedIPs(),
+      SecurityAPI.getSecurityStats(),
+    ])
+    if (wlRes.status === 'fulfilled' && wlRes.value?.data?.data) {
+      // 后端契约 {whitelist:[string...], count:n}（handlers.go:34-40）；字符串归一化为行对象
+      const wlRaw = Array.isArray(wlRes.value.data.data)
+        ? wlRes.value.data.data
+        : wlRes.value.data.data.whitelist || []
+      whitelist.value = wlRaw.map((item: any) =>
+        typeof item === 'string' ? { ip: item, network: '', created_at: '-' } : item,
+      )
+    } else {
+      whitelist.value = []
+      ElMessage.error(isZh.value ? '获取白名单失败' : 'Failed to load whitelist')
+    }
+    if (blRes.status === 'fulfilled' && blRes.value?.data?.data) {
+      // 后端契约 {blocked_ips:[{ip,blocked_at,attempts,...}], count:n}（handlers.go:125-133）
+      const blRaw = Array.isArray(blRes.value.data.data)
+        ? blRes.value.data.data
+        : blRes.value.data.data.blocked_ips || []
+      blockedIPs.value = blRaw.map((item: any) => ({
+        ...item,
+        reason: item.reason || (isZh.value ? '登录爆破触发自动封禁' : 'Auto-blocked for login bruteforce'),
+        expires_at: item.expires_at || '-',
+      }))
+    } else {
+      blockedIPs.value = []
+      ElMessage.error(isZh.value ? '获取封禁列表失败' : 'Failed to load blocked IPs')
+    }
+    if (stRes.status === 'fulfilled' && stRes.value?.data?.data) {
+      Object.assign(stats, stRes.value.data.data)
+    }
+  } catch {} finally {
+    loading.value = false
+  }
+}
+
+async function handleAddWhitelist() {
+  if (!newWhitelistIP.value.trim()) return
+  try {
+    await SecurityAPI.addWhitelist({ ip: newWhitelistIP.value.trim() })
+    whitelist.value.push({ ip: newWhitelistIP.value.trim(), network: '255.255.255.255', created_at: new Date().toLocaleString() })
+    ElMessage.success(isZh.value ? `已将 ${newWhitelistIP.value} 添加到白名单` : `Added ${newWhitelistIP.value} to Whitelist`)
+    newWhitelistIP.value = ''
+    showAddWhitelistDialog.value = false
+  } catch (e: any) {
+    ElMessage.error((isZh.value ? '添加失败：' : 'Add failed: ') + (e?.message || (isZh.value ? '错误' : 'Error')))
+  }
+}
+
+async function handleRemoveWhitelist(row: any) {
+  ElMessageBox.confirm(
+      isZh.value ? `从白名单移除 ${row.ip} 吗？` : `Remove ${row.ip} from Whitelist?`,
+      isZh.value ? '移除白名单' : 'Remove Whitelist',
+      {
+        confirmButtonText: isZh.value ? '移除' : 'Remove',
+        cancelButtonText: isZh.value ? '取消' : 'Cancel',
+        type: 'warning',
+      },
+    ).then(async () => {
+    try {
+      await SecurityAPI.removeWhitelist({ ip: row.ip })
+      whitelist.value = whitelist.value.filter((w) => w.ip !== row.ip)
+      ElMessage.success(isZh.value ? `已移除 ${row.ip}` : `Removed ${row.ip}`)
+    } catch (e: any) {
+      ElMessage.error(e?.message || (isZh.value ? `移除 ${row.ip} 失败` : `Failed to remove ${row.ip}`))
+    }
+  }).catch(() => {})
+}
+
+async function handleUnblock(row: any) {
+  ElMessageBox.confirm(
+      isZh.value ? `解除封禁 IP ${row.ip} 吗？` : `Unblock IP ${row.ip}?`,
+      isZh.value ? '解除封禁' : 'Unblock IP',
+      {
+        confirmButtonText: isZh.value ? '解除' : 'Unblock',
+        cancelButtonText: isZh.value ? '取消' : 'Cancel',
+        type: 'info',
+      },
+    ).then(async () => {
+    try {
+      await SecurityAPI.unblockIP(row.ip)
+      blockedIPs.value = blockedIPs.value.filter((b) => b.ip !== row.ip)
+      selectedBlockedRow.value = null
+      ElMessage.success(isZh.value ? `已解除封禁 ${row.ip}` : `Unblocked ${row.ip}`)
+    } catch (e: any) {
+      ElMessage.error(e?.message || (isZh.value ? `解除封禁 ${row.ip} 失败` : `Failed to unblock ${row.ip}`))
+    }
+  }).catch(() => {})
+}
+
+async function handleSaveRateLimit() {
+  try {
+    const res = await SecurityAPI.updateRateLimit(rateLimitForm)
+    if (res?.data?.success || res?.data?.status === 200) {
+      ElMessage.success(isZh.value ? '限流策略已更新' : 'Rate limit policy updated')
+    } else {
+      ElMessage.error(res?.data?.message || (isZh.value ? '更新限流策略失败' : 'Failed to update rate limit'))
+    }
+  } catch (e: any) {
+    ElMessage.error(e?.message || (isZh.value ? '更新限流策略失败' : 'Failed to update rate limit'))
+  }
+}
+
+function handleHelp() {
+  ElMessage.info(isZh.value ? '安全中心与 IP 白名单说明' : 'Security Center & IP Whitelist Manual')
+}
+
+onMounted(() => {
+  fetchData()
+  fetchRealtimeStats()
+  // 实时访问页 5 秒自动刷新；切到该 Tab 时立即抓取一次
+  realtimeTimer = setInterval(() => {
+    if (currentTab.value === 'realtime') fetchRealtimeStats()
+  }, 5000)
+})
+
+onBeforeUnmount(() => {
+  if (realtimeTimer) {
+    clearInterval(realtimeTimer)
+    realtimeTimer = null
+  }
+})
+</script>
+
+<style scoped>
+.cs-security-center-view {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--cs-bg);
+  overflow: hidden;
+}
+
+.sc-toolbar {
+  height: 32px;
+  background: var(--cs-panel);
+  border-bottom: 1px solid var(--cs-border);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  flex-shrink: 0;
+}
+
+.sc-title-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sc-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--cs-text-bright);
+}
+
+.sc-stats {
+  font-size: 11px;
+  color: var(--cs-text-dim);
+}
+
+.sc-spacer { flex: 1; }
+
+.sc-body {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+.sc-sidebar {
+  width: 220px;
+  background: var(--cs-panel);
+  border-right: 1px solid var(--cs-border);
+  display: flex;
+  flex-direction: column;
+  padding: 6px 0;
+}
+
+.sc-nav-item {
+  height: 30px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  cursor: pointer;
+  color: var(--cs-text);
+  font-size: 12px;
+  transition: all 120ms ease;
+  user-select: none;
+}
+
+.sc-nav-item:hover {
+  background: var(--cs-hover);
+  color: var(--cs-text-bright);
+}
+
+.sc-nav-item.active {
+  background: var(--cs-active);
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.sc-content {
+  flex: 1;
+  background: var(--cs-bg);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sc-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 12px 16px;
+}
+
+.sc-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.panel-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--cs-text-bright);
+}
+
+.sc-table-wrap {
+  flex: 1;
+  overflow: hidden;
+  border: 1px solid var(--cs-border);
+}
+
+.cs-form-container {
+  max-width: 500px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.cs-form-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cs-form-label {
+  font-size: 11px;
+  color: var(--cs-text);
+}
+
+.sc-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.stat-card {
+  background: var(--cs-panel);
+  border: 1px solid var(--cs-border);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.stat-num {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--cs-active);
+  font-family: var(--cs-font-mono);
+}
+
+.stat-lbl {
+  font-size: 11px;
+  color: var(--cs-text-dim);
+}
+
+.text-danger { color: var(--cs-error); }
+
+.sc-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sc-rt-hint {
+  font-size: 11px;
+  color: var(--cs-text-dim);
+  font-family: var(--cs-font-mono);
+}
+
+.sc-rt-stats {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.sc-rt-stats .stat-card {
+  padding: 10px 14px;
+}
+
+.sc-rt-stats .stat-num {
+  font-size: 18px;
+  word-break: break-all;
+}
+
+.sc-bottom-bar {
+  height: 38px;
+  background: var(--cs-panel);
+  border-top: 1px solid var(--cs-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 12px;
+  flex-shrink: 0;
+}
+</style>

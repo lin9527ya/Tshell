@@ -1,435 +1,2067 @@
 <template>
-  <div>
-  <div class="file-explorer">
-    <el-tree
-        ref="fileTreeRef"
-        :data="filteredFileTree"
-        :props="defaultProps"
-        node-key="path"
-        @node-click="handleNodeClick"
-        highlight-current>
-      <template #default="{ node, data }">
-        <span v-if="data.type === 'D'" @dblclick="()=>dblClickFileFolder(data)">📁 {{ data.name }}</span>
-        <span v-else @dblclick="()=>dblClickFile(data)">📄 {{ data.name }}</span>
-      </template>
-    </el-tree>
+  <div class="cs-file-manager cs-font-ui" @click="handleGlobalClick">
+    <!-- 主体双栏区域 -->
+    <div class="fm-main-container">
+      <!-- 左侧文件树导航栏 -->
+      <div class="fm-sidebar" :style="{ width: sidebarWidth + 'px' }">
+        <div class="fm-sidebar-header">
+          <span class="fm-sidebar-title">
+            <el-icon class="folder-gold"><Folder /></el-icon>
+            {{ isZh ? '文件系统' : 'Filesystem' }}
+          </span>
+          <div class="fm-tree-btns">
+            <button class="cs-btn cs-btn-xs" :title="isZh ? '展开全部目录' : 'Expand All'" @click.stop="expandAllTree">
+              <el-icon><FolderOpened /></el-icon>
+            </button>
+            <button class="cs-btn cs-btn-xs" :title="isZh ? '折叠全部目录' : 'Collapse All'" @click.stop="collapseAllTree">
+              <el-icon><Fold /></el-icon>
+            </button>
+          </div>
+        </div>
 
-    <!-- 右侧文件夹内容 -->
-    <div class="file-details">
-      <!-- 当前文件夹内容展示 -->
-      <div v-if="currentFolder" class="folder-content">
-        <el-row :gutter="10">
-          <el-col :span="18">
-            <el-input
-                v-model="currentFolder.path"
-                @keyup.enter="navigateToFolder(currentFolder.path)"
-            ></el-input>
-          </el-col>
-          <el-col :span="3">
-            <el-upload
-                v-model:file-list="fileList"
-                :limit="1"
-                ref="uploadRef"
-                class="upload"
-                action=""
-                :on-change="(file) => handleChange(file, currentFolder.path)"
-                :before-upload="beforeUpload"
-            >
-              <template #trigger>
-                <el-button type="success">上传文件</el-button>
+        <div class="fm-tree-search-wrap">
+          <el-input
+            v-model="treeSearchText"
+            :placeholder="isZh ? '搜索目录...' : 'Filter directories...'"
+            :prefix-icon="Search"
+            size="small"
+            clearable
+            class="fm-search-input"
+          />
+        </div>
+
+        <div class="fm-tree-content">
+          <el-tree
+            ref="fileTreeRef"
+            :data="filteredFileTree"
+            :props="treeProps"
+            node-key="path"
+            :expand-on-click-node="false"
+            :highlight-current="true"
+            :default-expanded-keys="expandedKeys"
+            :filter-node-method="filterNode"
+            class="fm-file-tree"
+            @node-click="handleTreeNodeClick"
+            @node-expand="handleNodeExpand"
+            @node-collapse="handleNodeCollapse"
+          >
+            <template #default="{ node, data }">
+              <div class="fm-tree-node" :class="{ active: data.path === currentPath }">
+                <el-icon class="fm-node-icon">
+                  <Monitor v-if="data.type === 'group'" />
+                  <Loading v-else-if="loadingNodes.has(data.path)" class="is-loading" />
+                  <Folder v-else class="folder-gold" />
+                </el-icon>
+                <span class="fm-node-label" :title="data.name">{{ data.name }}</span>
+              </div>
+            </template>
+          </el-tree>
+        </div>
+      </div>
+
+      <!-- Resizer handle -->
+      <div class="fm-sidebar-resizer" @mousedown="startResizeSidebar" />
+
+      <!-- 右侧内容区域 -->
+      <div class="fm-content">
+        <!-- 顶部工具栏 -->
+        <div class="fm-toolbar">
+          <!-- 导航按键 -->
+          <div class="fm-nav-group">
+            <button class="cs-btn cs-btn-xs" :title="isZh ? '磁盘驱动器 / 根目录' : 'Drives / Home'" @click="goClientHome">
+              <el-icon><HomeFilled /></el-icon>
+            </button>
+            <button class="cs-btn cs-btn-xs" :disabled="!canGoUp" :title="isZh ? '上一级目录' : 'Up'" @click="goUpLevel">
+              <el-icon><Top /></el-icon>
+            </button>
+            <button class="cs-btn cs-btn-xs" :title="isZh ? '刷新目录' : 'Refresh'" @click="refreshCurrentFolder">
+              <el-icon><Refresh /></el-icon>
+            </button>
+          </div>
+
+          <!-- 路径导航与面包屑 -->
+          <div class="fm-path-container">
+            <div v-if="!isPathEditMode" class="fm-breadcrumbs-bar cs-font-mono" @click="isPathEditMode = true">
+              <el-icon class="folder-gold fm-path-icon"><FolderOpened /></el-icon>
+              <span class="crumb-root" :title="isZh ? '点击返回根目录' : 'Root'" @click.stop="goClientHome">/</span>
+              <template v-for="seg in pathSegments" :key="seg.fullPath">
+                <span class="crumb-sep">/</span>
+                <span class="crumb-item" :title="seg.fullPath" @click.stop="jumpToSegment(seg.fullPath)">{{ seg.name }}</span>
               </template>
-            </el-upload>
-          </el-col>
-          <el-col :span="3">
-            <el-button type="primary" @click="handleMkDir(currentFolder.path)">新建文件夹</el-button>
-          </el-col>
-        </el-row>
-        <br>
-        <el-table :data="currentFolderContent" style="width: 100%">
-          <el-table-column prop="name" label="文件名" sortable>
-            <template #default="{ row }">
-              <span @dblclick="handleContentItemDblClick(row)" style="cursor: pointer;">
-                <span v-if="row.type === 'D'">📁 {{ row.name }}</span>
-                <span v-else>📄 {{ row.name }}</span>
-              </span>
-            </template>
-          </el-table-column>
-          <el-table-column prop="size" label="大小" sortable>
-            <template #default="{ row }">
-              {{ row.size }}
-            </template>
-          </el-table-column>
-          <el-table-column prop="modifiedTime" label="修改时间" sortable></el-table-column>
-          <el-table-column prop="action" label="操作">
-            <template #default="{ row }">
-              <el-button v-if="row.type === 'F'" @click="handleDownload(row)" type="primary" size="small">下载</el-button>
-              <el-button @click="handleDelete(row)" type="danger" size="small">删除</el-button>
-            </template>
-          </el-table-column>
-        </el-table>
-      </div>
+              <el-icon class="crumb-edit-icon" :title="isZh ? '点击手动输入路径' : 'Click to type path'"><Edit /></el-icon>
+            </div>
+            <el-input
+              v-else
+              ref="pathInputRef"
+              v-model="currentPath"
+              size="small"
+              class="fm-path-el-input cs-font-mono"
+              :placeholder="isZh ? '输入文件路径，按回车或点击前往切换目录...' : 'Enter file path and press Enter...'"
+              clearable
+              @blur="isPathEditMode = false"
+              @keydown.enter="navigateToInputPath(); isPathEditMode = false"
+              @keydown.esc="isPathEditMode = false"
+            >
+              <template #prefix>
+                <el-icon class="folder-gold"><FolderOpened /></el-icon>
+              </template>
+              <template #append>
+                <button class="cs-btn cs-btn-primary cs-btn-xs fm-go-btn" @click="navigateToInputPath(); isPathEditMode = false">
+                  {{ isZh ? '前往' : 'Go' }}
+                </button>
+              </template>
+            </el-input>
+          </div>
 
-      <!-- 选定文件内容展示 -->
-      <div v-if="selectedFileContent" class="file-content">
-        <h3>{{ selectedFile.path }}</h3>
-        <pre>{{ selectedFileContent }}</pre>
-      </div>
+          <!-- 快速过滤搜索 -->
+          <div class="fm-filter-wrap">
+            <el-input
+              v-model="tableSearchKeyword"
+              :placeholder="isZh ? '过滤当前列表...' : 'Filter list...'"
+              :prefix-icon="Search"
+              size="small"
+              clearable
+              class="fm-table-search"
+            />
+          </div>
 
+          <!-- 顶部快捷操作 -->
+          <div class="fm-quick-actions">
+            <button class="cs-btn cs-btn-xs" @click="createNewFolder">
+              <el-icon><FolderAdd /></el-icon>
+              <span>{{ isZh ? '新建文件夹' : 'New Folder' }}</span>
+            </button>
+            <button class="cs-btn cs-btn-xs" @click="createNewFile">
+              <el-icon><DocumentAdd /></el-icon>
+              <span>{{ isZh ? '新建文件' : 'New File' }}</span>
+            </button>
+            <button class="cs-btn cs-btn-xs" @click="showUploadDialog">
+              <el-icon><Upload /></el-icon>
+              <span>{{ isZh ? '上传文件' : 'Upload' }}</span>
+            </button>
+            <button class="cs-btn cs-btn-xs" @click="showWgetDialog">
+              <el-icon><Download /></el-icon>
+              <span>{{ isZh ? 'wget 下载' : 'wget File' }}</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 文件列表表格 -->
+        <div class="fm-table-wrap" v-loading="treeLoading">
+          <el-table
+            ref="tableRef"
+            :data="paginatedFiles"
+            row-key="path"
+            size="small"
+            height="100%"
+            highlight-current-row
+            class="cs-session-table"
+            :default-sort="{ prop: 'modifiedTime', order: 'descending' }"
+            @selection-change="handleSelectionChange"
+            @row-dblclick="handleRowDoubleClick"
+            @row-contextmenu="handleRowContextMenu"
+            @sort-change="handleSortChange"
+          >
+            <el-table-column type="selection" width="38" align="center" :reserve-selection="true" />
+
+            <el-table-column prop="name" :label="isZh ? '文件名' : 'Name'" min-width="160" sortable show-overflow-tooltip>
+              <template #default="{ row }">
+                <div class="fm-file-cell">
+                  <el-icon class="fm-item-icon" :class="getFileIconClass(row)">
+                    <Folder v-if="row.type === 'D'" />
+                    <Document v-else />
+                  </el-icon>
+                  <span class="fm-file-name" :class="getFileNameClass(row)">{{ row.name }}</span>
+                </div>
+              </template>
+            </el-table-column>
+
+            <el-table-column prop="size" :label="isZh ? '大小' : 'Size'" width="115" sortable align="right">
+              <template #default="{ row }">
+                <span class="fm-size-text cs-font-mono" :class="{ 'is-dir': row.type === 'D' }">
+                  {{ row.type === 'D' ? '<DIR>' : formatFileSize(row.size) }}
+                </span>
+              </template>
+            </el-table-column>
+
+            <el-table-column prop="modifiedTime" :label="isZh ? '修改时间' : 'Modified Date'" width="230" sortable align="center">
+              <template #default="{ row }">
+                <span class="cs-font-mono text-dim fm-time-text">{{ formatDateTime(row) }}</span>
+              </template>
+            </el-table-column>
+
+            <el-table-column prop="permissions" :label="isZh ? '权限' : 'Mode'" width="145" align="center">
+              <template #default="{ row }">
+                <span class="cs-font-mono text-dim fm-perm-text">{{ formatPermissions(row.permissions) }}</span>
+              </template>
+            </el-table-column>
+
+            <template #empty>
+              <div class="fm-empty-state">
+                <div class="empty-title">{{ isZh ? '当前目录无文件或尚未加载' : 'Directory Empty or Not Loaded' }}</div>
+                <div class="empty-desc">{{ isZh ? '点击【刷新列表】或输入路径加载文件系统。' : 'Click List or enter path to browse files.' }}</div>
+              </div>
+            </template>
+          </el-table>
+        </div>
+
+        <!-- 底部 Cobalt Strike 4.x 操作按钮栏 -->
+        <div class="fm-bottom-bar">
+          <button class="cs-btn" @click="refreshCurrentFolder">
+            {{ isZh ? '刷新列表 (List)' : 'List' }}
+          </button>
+          <button class="cs-btn" @click="fetchDrives">
+            {{ isZh ? '驱动器 (Drives)' : 'Drives' }}
+          </button>
+          <button class="cs-btn cs-btn-primary" @click="showUploadDialog">
+            {{ isZh ? '上传 (Upload)...' : 'Upload...' }}
+          </button>
+          <button class="cs-btn" @click="createNewFolder">
+            {{ isZh ? '新建文件夹' : 'Make Directory' }}
+          </button>
+          <button class="cs-btn" @click="createNewFile">
+            {{ isZh ? '新建文件' : 'New File' }}
+          </button>
+          <button class="cs-btn" :disabled="selectedFiles.length === 0" @click="handleFileView()">
+            {{ isZh ? '查看/编辑 (View)' : 'View' }}
+          </button>
+          <button class="cs-btn" :disabled="selectedFiles.length === 0" @click="handleFileDownload()">
+            {{ isZh ? '下载 (Download)' : 'Download' }}
+          </button>
+          <button class="cs-btn" :disabled="selectedFiles.length === 0" @click="handleFileExecute()">
+            {{ isZh ? '执行 (Execute)...' : 'Execute...' }}
+          </button>
+          <button class="cs-btn cs-btn-danger" :disabled="selectedFiles.length === 0" @click="deleteSelectedFiles">
+            {{ isZh ? '删除 (Delete)' : 'Delete' }}
+          </button>
+          <button class="cs-btn" @click="handleHelp">
+            {{ isZh ? '帮助 (Help)' : 'Help' }}
+          </button>
+
+          <div class="fm-spacer" />
+
+          <span class="fm-status-info">
+            {{ isZh ? `共 ${filteredFiles.length} 项 | 路径: ${currentPath || '/'}` : `${filteredFiles.length} items | ${currentPath || '/'}` }}
+          </span>
+        </div>
+      </div>
     </div>
-  </div>
-    <el-button type="success" @click="handleDrives">Drives</el-button>
+
+    <!-- 右键菜单 (CS FlatLaf Context Menu) -->
+    <Teleport to="body">
+      <div
+        v-if="contextMenuVisible"
+        ref="contextMenuRef"
+        class="cs-file-ctx-menu cs-font-ui"
+        :style="{ left: contextMenuX + 'px', top: contextMenuY + 'px' }"
+        @click.stop
+        @contextmenu.prevent
+      >
+        <div class="ctx-item" @click="handleFileView(contextMenuItem)">
+          <span class="ctx-text">{{ contextMenuItem?.type === 'D' ? (isZh ? '进入目录 (O)' : 'Open (O)') : (isZh ? '查看 / 编辑文件 (V)' : 'View / Edit (V)') }}</span>
+        </div>
+        <div v-if="contextMenuItem?.type !== 'D'" class="ctx-item" @click="handleFileDownload(contextMenuItem)">
+          <span class="ctx-text">{{ isZh ? '下载文件 (D)' : 'Download (D)' }}</span>
+        </div>
+        <div v-if="contextMenuItem?.type !== 'D'" class="ctx-item" @click="handleFileExecute(contextMenuItem)">
+          <span class="ctx-text">{{ isZh ? '执行文件 (E)...' : 'Execute (E)...' }}</span>
+        </div>
+        <div class="ctx-item" @click="renameItem(contextMenuItem)">
+          <span class="ctx-text">{{ isZh ? '重命名 (R)...' : 'Rename (R)...' }}</span>
+        </div>
+        <div class="ctx-item" @click="copyItem(contextMenuItem)">
+          <span class="ctx-text">{{ isZh ? '复制到 (C)...' : 'Copy (C)...' }}</span>
+        </div>
+        <div class="ctx-item" @click="moveItem(contextMenuItem)">
+          <span class="ctx-text">{{ isZh ? '移动到 (M)...' : 'Move (M)...' }}</span>
+        </div>
+        <div class="ctx-item" @click="copyPath(contextMenuItem)">
+          <span class="ctx-text">{{ isZh ? '拷贝完整路径 (P)' : 'Copy Path (P)' }}</span>
+        </div>
+        <div class="ctx-item" @click="modifyTime(contextMenuItem)">
+          <span class="ctx-text">{{ isZh ? '修改时间 (T)...' : 'Touch (T)...' }}</span>
+        </div>
+        <div class="ctx-divider" />
+        <div class="ctx-item" @click="createNewFile">
+          <span class="ctx-text">{{ isZh ? '新建文件 (N)...' : 'New File (N)...' }}</span>
+        </div>
+        <div class="ctx-item" @click="makeDirItem">
+          <span class="ctx-text">{{ isZh ? '新建文件夹 (F)...' : 'Make Directory (F)...' }}</span>
+        </div>
+        <div class="ctx-item" @click="uploadToHere">
+          <span class="ctx-text">{{ isZh ? '上传文件到此目录 (U)...' : 'Upload Here (U)...' }}</span>
+        </div>
+        <div class="ctx-item" @click="refreshCurrentFolder">
+          <span class="ctx-text">{{ isZh ? '刷新当前目录 (R)' : 'Refresh (R)' }}</span>
+        </div>
+        <div class="ctx-divider" />
+        <div class="ctx-item" @click="hideItem(contextMenuItem)">
+          <span class="ctx-text">{{ isZh ? '隐藏此项' : 'Hide' }}</span>
+        </div>
+        <div class="ctx-item" @click="unhideItem(contextMenuItem)">
+          <span class="ctx-text">{{ isZh ? '取消隐藏' : 'Unhide' }}</span>
+        </div>
+        <div class="ctx-divider" />
+        <div class="ctx-item ctx-danger" @click="deleteItem(contextMenuItem)">
+          <span class="ctx-text">{{ isZh ? '删除 (Del)' : 'Delete (Del)' }}</span>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- 文件查看与编辑对话框 -->
+    <el-dialog
+      v-model="editDialogVisible"
+      :title="`${isZh ? '文件查看/编辑: ' : 'Edit File: '}${editingFile?.name || ''}`"
+      width="820px"
+      :close-on-click-modal="false"
+      class="cs-dialog"
+      append-to-body
+    >
+      <div class="cs-dialog-body cs-font-ui" v-loading="editLoading">
+        <div class="fm-editor-meta">
+          <span><b>{{ isZh ? '路径: ' : 'Path: ' }}</b><code class="cs-font-mono">{{ editingFile?.path }}</code></span>
+          <span><b>{{ isZh ? '大小: ' : 'Size: ' }}</b>{{ formatFileSize(editingFile?.size) }}</span>
+        </div>
+        <div class="fm-editor-box">
+          <div ref="editorLineNumbers" class="fm-editor-lines cs-font-mono">
+            <div v-for="n in editorLinesCount" :key="n" class="editor-line-num">{{ n }}</div>
+          </div>
+          <textarea
+            ref="editorTextarea"
+            v-model="fileContent"
+            wrap="off"
+            class="fm-editor-textarea cs-font-mono"
+            spellcheck="false"
+            :placeholder="isZh ? '文件内容为空...' : 'File is empty...'"
+            @scroll="syncEditorScroll"
+            @input="updateEditorLineNumbers"
+          ></textarea>
+        </div>
+      </div>
+      <template #footer>
+        <div class="cs-dialog-footer-center">
+          <button class="cs-btn cs-btn-primary" :disabled="editLoading" @click="saveFile">{{ isZh ? '保存 (Save)' : 'Save' }}</button>
+          <button class="cs-btn" @click="refreshEditContent">{{ isZh ? '重新读取' : 'Reload' }}</button>
+          <button class="cs-btn" @click="editDialogVisible = false">{{ isZh ? '关闭' : 'Close' }}</button>
+        </div>
+      </template>
+    </el-dialog>
+
+    <!-- 执行文件对话框 -->
+    <el-dialog
+      v-model="executeDialogVisible"
+      :title="isZh ? '执行文件 (Execute)' : 'Execute File'"
+      width="480px"
+      :close-on-click-modal="false"
+      class="cs-dialog"
+      append-to-body
+    >
+      <div class="cs-dialog-body cs-font-ui">
+        <div class="cs-dialog-desc">
+          {{ isZh ? '向目标 Beacon 下发执行指令，在宿主操作系统上调用运行指定程序。' : 'Task beacon to execute the selected binary/script on the target.' }}
+        </div>
+        <div class="cs-form-row">
+          <label class="cs-form-label">{{ isZh ? '程序路径:' : 'Program:' }}</label>
+          <div class="cs-form-input-wrap">
+            <el-input v-model="executeForm.path" size="small" readonly />
+          </div>
+        </div>
+        <div class="cs-form-row">
+          <label class="cs-form-label">{{ isZh ? '运行参数:' : 'Arguments:' }}</label>
+          <div class="cs-form-input-wrap">
+            <el-input v-model="executeForm.args" size="small" :placeholder="isZh ? '命令行参数（可选）' : 'CLI arguments (optional)'" />
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <div class="cs-dialog-footer-center">
+          <button class="cs-btn cs-btn-primary" @click="submitExecute">{{ isZh ? '执行' : 'Execute' }}</button>
+          <button class="cs-btn" @click="executeDialogVisible = false">{{ isZh ? '取消' : 'Cancel' }}</button>
+        </div>
+      </template>
+    </el-dialog>
+
+    <!-- 文件上传对话框 -->
+    <el-dialog
+      v-model="uploadDialogVisible"
+      :title="isZh ? '上传文件到目标机器' : 'Upload Files to Target'"
+      width="560px"
+      :close-on-click-modal="false"
+      class="cs-dialog"
+      append-to-body
+    >
+      <div class="cs-dialog-body cs-font-ui">
+        <div class="fm-upload-path-hint">
+          <b>{{ isZh ? '目标目录: ' : 'Target Dir: ' }}</b>
+          <code class="cs-font-mono">{{ currentPath || '/' }}</code>
+        </div>
+        <el-upload
+          ref="uploadDialogRef"
+          v-model:file-list="uploadFileList"
+          :auto-upload="false"
+          :limit="10"
+          drag
+          multiple
+          class="fm-upload-dragger"
+        >
+          <el-icon class="el-icon--upload"><Upload /></el-icon>
+          <div class="el-upload__text">{{ isZh ? '将文件拖到此处，或点击选择' : 'Drop files here or click to select' }}</div>
+        </el-upload>
+
+        <div v-if="uploadFileList.length > 0" class="fm-upload-list">
+          <div v-for="(f, i) in uploadFileList" :key="i" class="fm-upload-item">
+            <span class="fm-upload-name">{{ f.name }}</span>
+            <span class="fm-upload-size cs-font-mono">{{ formatUploadFileSize(f.size) }}</span>
+            <button class="cs-btn cs-btn-xs cs-btn-danger" @click="uploadFileList.splice(i, 1)">{{ isZh ? '移除' : 'Remove' }}</button>
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <div class="cs-dialog-footer-center">
+          <button class="cs-btn cs-btn-primary" :disabled="uploadFileList.length === 0" @click="startUpload">
+            {{ isZh ? '开始上传' : 'Upload' }}
+          </button>
+          <button class="cs-btn" @click="closeUploadDialog">{{ isZh ? '取消' : 'Cancel' }}</button>
+        </div>
+      </template>
+    </el-dialog>
+
+    <!-- wget 远程下载对话框 -->
+    <el-dialog
+      v-model="wgetDialogVisible"
+      :title="isZh ? 'wget 远程下载到目标机' : 'wget Download File'"
+      width="500px"
+      :close-on-click-modal="false"
+      class="cs-dialog"
+      append-to-body
+    >
+      <div class="cs-dialog-body cs-font-ui">
+        <div class="cs-form-row">
+          <label class="cs-form-label">URL:</label>
+          <div class="cs-form-input-wrap">
+            <el-input v-model="wgetForm.url" size="small" placeholder="http://example.com/payload.exe" />
+          </div>
+        </div>
+        <div class="cs-form-row">
+          <label class="cs-form-label">{{ isZh ? '保存路径:' : 'Save Path:' }}</label>
+          <div class="cs-form-input-wrap">
+            <el-input v-model="wgetForm.path" size="small" :placeholder="currentPath" />
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <div class="cs-dialog-footer-center">
+          <button class="cs-btn cs-btn-primary" :disabled="!wgetForm.url" @click="executeWget">{{ isZh ? '下载' : 'Download' }}</button>
+          <button class="cs-btn" @click="wgetDialogVisible = false">{{ isZh ? '取消' : 'Cancel' }}</button>
+        </div>
+      </template>
+    </el-dialog>
+
+    <!-- 下载进度对话框 -->
+    <el-dialog
+      v-model="downloadDialogVisible"
+      :title="isZh ? '文件下载进度' : 'Download Progress'"
+      width="480px"
+      :close-on-click-modal="false"
+      class="cs-dialog"
+      append-to-body
+    >
+      <div class="cs-dialog-body cs-font-ui">
+        <div style="font-size: 12px; margin-bottom: 10px;">
+          <b>{{ isZh ? '下载文件: ' : 'File: ' }}</b><code>{{ currentDownloadFile?.name }}</code>
+        </div>
+        <el-progress
+          :percentage="downloadProgress"
+          :status="downloadStatus === 'success' ? 'success' : (downloadStatus === 'error' ? 'exception' : '')"
+          :stroke-width="12"
+        />
+        <div v-if="downloadSpeed" style="font-size: 11px; color: var(--cs-text-dim); margin-top: 8px;">
+          {{ isZh ? `下载速度: ${downloadSpeed}` : `Speed: ${downloadSpeed}` }}
+        </div>
+      </div>
+      <template #footer>
+        <div class="cs-dialog-footer-center">
+          <button v-if="downloadStatus === 'success'" class="cs-btn cs-btn-primary" @click="openDownloadFolder">
+            {{ isZh ? '保存到本地' : 'Save Locally' }}
+          </button>
+          <button class="cs-btn" @click="downloadDialogVisible = false">{{ isZh ? '关闭' : 'Close' }}</button>
+        </div>
+      </template>
+    </el-dialog>
+
+    <!-- 帮助对话框 -->
+    <el-dialog
+      v-model="helpDialogVisible"
+      :title="isZh ? '文件管理帮助' : 'File Browser Help'"
+      width="460px"
+      :close-on-click-modal="true"
+      class="cs-dialog"
+      append-to-body
+    >
+      <div class="cs-dialog-body cs-font-ui" style="line-height: 1.6; font-size: 12px; color: var(--cs-text);">
+        <p><b>{{ isZh ? '刷新列表 (List):' : 'List:' }}</b> {{ isZh ? '获取并展示当前目录的所有文件与子目录。' : 'Query and list files in current directory.' }}</p>
+        <p><b>{{ isZh ? '驱动器 (Drives):' : 'Drives:' }}</b> {{ isZh ? '列出目标系统的所有盘符与挂载点。' : 'Query all logical drives and mount points.' }}</p>
+        <p><b>{{ isZh ? '上传/下载 (Upload/Download):' : 'Upload/Download:' }}</b> {{ isZh ? '在操作机与被控主机之间安全传输文件。' : 'Transfer files between server and beacon.' }}</p>
+        <p><b>{{ isZh ? '执行 (Execute):' : 'Execute:' }}</b> {{ isZh ? '在被控主机后台运行指定的程序或脚本。' : 'Execute program on target system.' }}</p>
+      </div>
+      <template #footer>
+        <div class="cs-dialog-footer-center">
+          <button class="cs-btn cs-btn-primary" @click="helpDialogVisible = false">{{ isZh ? '确定' : 'OK' }}</button>
+        </div>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
-<script setup>
-import {computed, onMounted, ref,onBeforeUnmount} from 'vue';
-import axios from 'axios';
-import ClientAPI from "@/api/clients";
-import {useRoute} from "vue-router";
-import {useGlobalFileTreeStore} from "@/stores/fileTree";
-import {useCurrentFileNode} from '@/stores/currentFileNode'
-const fileList = ref([]);
-const route = useRoute();
-const uid = String(route.query.uid);
-const loading = ref(true);
+<script setup lang="ts">
+import { computed, inject, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import {
+  Search, Refresh, FolderAdd, DocumentAdd, Download, Upload,
+  Folder, Document, Fold, FolderOpened, Monitor, HomeFilled, Top, Loading
+} from '@element-plus/icons-vue'
+import ClientAPI from '@/api/clients'
+import { useGlobalFileTreeStore } from '@/stores/fileTree'
+import { useCurrentFileNode } from '@/stores/currentFileNode'
+import { useClientsStore } from '@/stores/clients'
+import { useI18nStore } from '@/stores/i18n'
+import { detectClientOs } from '@/utils/clientUtils'
 
-const fileTree = ref([]);
-const currentFolder = ref(null);
-const currentFolderContent = ref([]);
-const selectedFile = ref(null);
-const selectedFileContent = ref('');
-const fileTreeRef = ref(null);
+const i18nStore = useI18nStore()
+const isZh = computed(() => i18nStore.isZh)
 
-const globalFileTree = useGlobalFileTreeStore();
-const currentFileNode = useCurrentFileNode();
+const route = useRoute()
+const clientsStore = useClientsStore()
+const globalFileTree = useGlobalFileTreeStore()
+const currentFileNode = useCurrentFileNode()
 
-const defaultProps = {
+const realUid = inject<any>('realUid', null)
+const uid = computed(() => {
+  if (realUid && realUid.value) return String(realUid.value)
+  return String(route.params.uid || route.query.uid || '')
+})
+
+// 状态管理
+const fileTreeRef = ref<any>(null)
+const pathInputRef = ref<any>(null)
+const contextMenuRef = ref<HTMLElement | null>(null)
+const treeSearchText = ref('')
+const tableSearchKeyword = ref('')
+const treeLoading = ref(false)
+const loadingNodes = ref(new Set<string>())
+const fileTree = ref<any[]>([])
+const expandedKeys = ref<string[]>([])
+const currentPath = ref('C:/')
+const currentFiles = ref<any[]>([])
+const selectedFiles = ref<any[]>([])
+const pathHistory = ref<string[]>([])
+const historyIndex = ref(-1)
+
+// 侧边栏拖拽与面包屑状态
+const sidebarWidth = ref(250)
+const isResizingSidebar = ref(false)
+const isPathEditMode = ref(false)
+
+const pathSegments = computed(() => {
+  const p = currentPath.value.replace(/\\/g, '/')
+  if (!p) return []
+  const isWin = /^[a-zA-Z]:/.test(p)
+  const parts = p.split('/').filter(Boolean)
+  const segments: { name: string; fullPath: string }[] = []
+  let acc = isWin ? '' : '/'
+  for (let i = 0; i < parts.length; i++) {
+    if (i === 0 && isWin) {
+      acc = parts[0] + '/'
+    } else {
+      acc = acc.endsWith('/') ? acc + parts[i] : acc + '/' + parts[i]
+    }
+    segments.push({ name: parts[i], fullPath: acc })
+  }
+  return segments
+})
+
+function jumpToSegment(segPath: string) {
+  currentPath.value = segPath
+  navigateToInputPath()
+}
+
+function startResizeSidebar(e: MouseEvent) {
+  isResizingSidebar.value = true
+  const startX = e.clientX
+  const startW = sidebarWidth.value
+  const onMove = (moveEvent: MouseEvent) => {
+    const newW = Math.max(160, Math.min(500, startW + (moveEvent.clientX - startX)))
+    sidebarWidth.value = newW
+  }
+  const onUp = () => {
+    isResizingSidebar.value = false
+    window.removeEventListener('mousemove', onMove)
+    window.removeEventListener('mouseup', onUp)
+  }
+  window.addEventListener('mousemove', onMove)
+  window.addEventListener('mouseup', onUp)
+}
+
+// 排序
+const sortColumn = ref('modifiedTime')
+const sortOrder = ref('descending')
+
+// 对话框状态
+const editDialogVisible = ref(false)
+const editLoading = ref(false)
+const editingFile = ref<any>(null)
+const fileContent = ref('')
+const editorLineNumbers = ref<HTMLElement | null>(null)
+const editorTextarea = ref<HTMLTextAreaElement | null>(null)
+const editorLinesCount = ref(1)
+
+const executeDialogVisible = ref(false)
+const executeForm = reactive({
+  path: '',
+  name: '',
+  args: '',
+})
+
+const uploadDialogVisible = ref(false)
+const uploadFileList = ref<any[]>([])
+const uploadDialogRef = ref<any>(null)
+
+const wgetDialogVisible = ref(false)
+const wgetForm = reactive({
+  url: '',
+  path: '',
+})
+
+const downloadDialogVisible = ref(false)
+const downloadProgress = ref(0)
+const downloadStatus = ref('')
+const currentDownloadFile = ref<any>(null)
+const downloadSpeed = ref('')
+
+const helpDialogVisible = ref(false)
+
+// 右键菜单
+const contextMenuVisible = ref(false)
+const contextMenuX = ref(0)
+const contextMenuY = ref(0)
+const contextMenuItem = ref<any>(null)
+
+// 树属性
+const treeProps = {
   children: 'children',
-  label: 'name'
-};
-const handleChange = async (file,path) => {
-  const res = await ClientAPI.upload_file({uid:uid,file:file.raw,uploadPath:path+"/"+file.name});
-  if (res.data.status === 200){
-    ElMessage.success("后台上传中");
-  }
-};
+  label: 'name',
+}
 
-const beforeUpload = () => {
-  return false; // 阻止默认的上传行为，手动处理上传
-};
+const groupNodeKey = computed(() => `group:${uid.value}`)
 
+const clientGroupLabel = computed(() => {
+  const info = clientsStore.getClientByUid(uid.value)
+  const id = info?.Uid ? info.Uid.slice(0, 8) : 'Host'
+  const ip = info?.ExternalIP || info?.InternalIP || '0.0.0.0'
+  return `${id} (${ip})`
+})
 
-
-// 过滤掉 `.` 和 `..` 节点
 const filteredFileTree = computed(() => {
-  const filterDots = (nodes) => nodes
-      .filter(node => node.name !== '.' && node.name !== '..')
-      .map(node => ({
+  const filterNodes = (nodes: any[]): any[] => {
+    if (!nodes || !Array.isArray(nodes)) return []
+    return nodes
+      .filter((node) => (node.type === 'D' || node.type === 'drive' || node.path?.endsWith(':')) && node.name !== '.' && node.name !== '..')
+      .map((node) => ({
         ...node,
-        children: node.children ? filterDots(node.children) : []
-      }));
-  return filterDots(fileTree.value);
-});
+        name: node.path?.match(/^[a-zA-Z]:$/) ? node.name.toUpperCase() : node.name,
+        path: node.path?.match(/^[a-zA-Z]:$/) ? node.path.toUpperCase() : node.path,
+        children: Array.isArray(node.children) ? filterNodes(node.children) : [],
+      }))
+  }
 
-// 获取文件树数据
-const fetchFileTree = async (dirPath) => {
-  try {
-    const res = await ClientAPI.get_file_tree({ uid: uid, dirPath: dirPath });
-    if (res.data) {
-      fileTree.value = res.data.data;
-      globalFileTree.updateEntry(uid, fileTree.value);
+  const children = filterNodes(fileTree.value)
+  return [
+    {
+      name: clientGroupLabel.value,
+      path: groupNodeKey.value,
+      type: 'group',
+      children,
+    },
+  ]
+})
+
+const canGoUp = computed(() => {
+  const p = currentPath.value || ''
+  return p.includes('/') || p.includes('\\') || p.length > 2
+})
+
+const filteredFiles = computed(() => {
+  let files = [...currentFiles.value]
+
+  // 按关键字过滤
+  if (tableSearchKeyword.value.trim()) {
+    const kw = tableSearchKeyword.value.toLowerCase().trim()
+    files = files.filter((f) => (f.name || '').toLowerCase().includes(kw))
+  }
+
+  // 排序：默认目录在前，文件在后
+  files.sort((a, b) => {
+    if (a.type !== b.type) {
+      return a.type === 'D' ? -1 : 1
     }
-  } catch (error) {
-    console.error('Error fetching file tree:', error);
-  }
-};
-const handleDrives = async()=>{
-  try {
-    const res = await ClientAPI.get_drives({uid: uid});
-    fileTree.value = res.data.data;
-    globalFileTree.updateEntry(uid,fileTree.value);
-  } catch (error) {
-    console.error("Error fetching file tree:", error);
-  }
-}
-const navigateToFolder = async(path) => {
-  await fetchFileTree(path); // 调用 fetchFileTree 发送请求
-
-  // 确保文件树的内容更新，重新获取该文件夹内容
-  const updatedItem = findTreeNodeByPath(path, fileTree.value);
-  if (updatedItem) {
-    currentFolder.value = updatedItem;
-    currentFolderContent.value = updatedItem.children || []; // 更新文件夹内容
-  }
-
-  if (updatedItem && fileTreeRef.value) {
-    currentFileNode.setFileNode(uid,updatedItem.path)
-    fileTreeRef.value.setCurrentKey(updatedItem.path);
-    fileTreeRef.value.store.nodesMap[updatedItem.path].expanded = true
-  }
-};
-
-// 点击文件树节点处理逻辑
-const handleNodeClick = async (node) => {
-  if (node.type === 'D') {
-    currentFolder.value = node;
-    currentFolderContent.value = node.children || [];
-    selectedFile.value = null;
-    selectedFileContent.value = '';
-    currentFileNode.setFileNode(uid,node.path)
-  } else if (node.type === 'F') {
-    // await fetchFileContent(node);
-  }
-};
-const handleNodeDoubleClick = async(node)=>{
-  if (node.type === 'D') {
-    await fetchFileTree(node.path);
-    currentFolder.value = node;
-    currentFolderContent.value = node.children || [];
-    selectedFile.value = null;
-    selectedFileContent.value = '';
-  }
-}
-// 双击右侧文件夹内容中的文件夹
-const handleContentItemDblClick = async (item) => {
-  if (item.type === 'D') {
-    await fetchFileTree(item.path); // 调用 fetchFileTree 发送请求
-
-    // 确保文件树的内容更新，重新获取该文件夹内容
-    const updatedItem = findTreeNodeByPath(item.path, fileTree.value);
-    if (updatedItem) {
-      currentFolder.value = updatedItem;
-      currentFolderContent.value = updatedItem.children || []; // 更新文件夹内容
+    if (sortColumn.value === 'size') {
+      const aSize = parseFileSize(a.size)
+      const bSize = parseFileSize(b.size)
+      return sortOrder.value === 'ascending' ? aSize - bSize : bSize - aSize
     }
-
-    if (updatedItem && fileTreeRef.value) {
-      currentFileNode.setFileNode(uid,updatedItem.path)
-      fileTreeRef.value.setCurrentKey(updatedItem.path);
-      fileTreeRef.value.store.nodesMap[updatedItem.path].expanded = true
+    if (sortColumn.value === 'modifiedTime') {
+      const aTime = parseRowToTs(a)
+      const bTime = parseRowToTs(b)
+      return sortOrder.value === 'ascending' ? aTime - bTime : bTime - aTime
     }
-  } else if (item.type === 'F') {
-    await fetchFileContent(item);
-  }
-};
-const dblClickFileFolder = async(item) =>{
-  await fetchFileTree(item.path); // 调用 fetchFileTree 发送请求
+    const aName = (a.name || '').toLowerCase()
+    const bName = (b.name || '').toLowerCase()
+    return sortOrder.value === 'descending' ? bName.localeCompare(aName) : aName.localeCompare(bName)
+  })
 
-  // 确保文件树的内容更新，重新获取该文件夹内容
-  const updatedItem = findTreeNodeByPath(item.path, fileTree.value);
-  if (updatedItem) {
-    currentFolder.value = updatedItem;
-    currentFolderContent.value = updatedItem.children || []; // 更新文件夹内容
-  }
+  return files
+})
 
-  if (updatedItem && fileTreeRef.value) {
-    currentFileNode.setFileNode(uid,updatedItem.path)
-    fileTreeRef.value.setCurrentKey(updatedItem.path);
-    // fileTreeRef.value.store.nodesMap[updatedItem.path].expanded = true
-    fileTreeRef.value.store.nodesMap[updatedItem.path].expanded = true
+const paginatedFiles = computed(() => filteredFiles.value)
 
-  }
-}
-const dblClickFile = async(item) =>{
-  await fetchFileContent(item);
+function parseRowToTs(row: any): number {
+  if (!row) return 0
+  const val = row.modifiedTime ?? row.modified_time ?? row.time ?? row.Time ?? row.mtime ?? row.ModifiedTime
+  if (!val) return 0
+  const d = parseToDate(val)
+  return d ? d.getTime() : 0
 }
 
-// 根据路径查找节点
-const findTreeNodeByPath = (path, root) => {
-  // 如果 root 是一个数组，遍历数组中的每个元素
+function parseToDate(t: any): Date | null {
+  if (!t || t === '-' || t === 'undefined') return null
+  if (typeof t === 'number') {
+    return new Date(t > 1e11 ? t : t * 1000)
+  }
+  const s = String(t).trim()
+  if (/^\d+$/.test(s)) {
+    const n = parseInt(s, 10)
+    return new Date(n > 1e11 ? n : n * 1000)
+  }
+  // Check DD/MM/YYYY or DD-MM-YYYY (e.g. 17/08/2026 14:32:00)
+  const ddmmyyyy = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/)
+  if (ddmmyyyy) {
+    const day = parseInt(ddmmyyyy[1], 10)
+    const month = parseInt(ddmmyyyy[2], 10) - 1
+    const year = parseInt(ddmmyyyy[3], 10)
+    const hour = parseInt(ddmmyyyy[4] || '0', 10)
+    const minute = parseInt(ddmmyyyy[5] || '0', 10)
+    const second = parseInt(ddmmyyyy[6] || '0', 10)
+    return new Date(year, month, day, hour, minute, second)
+  }
+  // Check YYYY/MM/DD or YYYY-MM-DD (e.g. 2026-08-17 14:32:00)
+  const yyyymmdd = s.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/)
+  if (yyyymmdd) {
+    const year = parseInt(yyyymmdd[1], 10)
+    const month = parseInt(yyyymmdd[2], 10) - 1
+    const day = parseInt(yyyymmdd[3], 10)
+    const hour = parseInt(yyyymmdd[4] || '0', 10)
+    const minute = parseInt(yyyymmdd[5] || '0', 10)
+    const second = parseInt(yyyymmdd[6] || '0', 10)
+    return new Date(year, month, day, hour, minute, second)
+  }
+  const d = new Date(s)
+  return isNaN(d.getTime()) ? null : d
+}
+
+function formatDateTime(rowOrTime: any): string {
+  const t = typeof rowOrTime === 'object' && rowOrTime !== null
+    ? (rowOrTime.modifiedTime ?? rowOrTime.modified_time ?? rowOrTime.time ?? rowOrTime.Time ?? rowOrTime.mtime ?? rowOrTime.ModifiedTime)
+    : rowOrTime
+  if (!t || t === '-' || t === 'undefined') return '-'
+  const d = parseToDate(t)
+  if (!d || isNaN(d.getTime())) {
+    return String(t).replace(/-/g, '/')
+  }
+  const yy = d.getFullYear()
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const dd = String(d.getDate()).padStart(2, '0')
+  const hh = String(d.getHours()).padStart(2, '0')
+  const min = String(d.getMinutes()).padStart(2, '0')
+  const ss = String(d.getSeconds()).padStart(2, '0')
+  return `${yy}/${mm}/${dd} ${hh}:${min}:${ss}`
+}
+
+function parseFileSize(sizeStr: any): number {
+  if (!sizeStr || sizeStr === '-' || sizeStr === '<DIR>') return 0
+  const match = String(sizeStr).match(/^([\d.]+)\s*(B|KB|MB|GB|TB)$/i)
+  if (!match) return 0
+  const val = parseFloat(match[1])
+  const unit = match[2].toUpperCase()
+  const map: Record<string, number> = { B: 1, KB: 1024, MB: 1024 ** 2, GB: 1024 ** 3, TB: 1024 ** 4 }
+  return val * (map[unit] || 1)
+}
+
+function getFileIconClass(row: any) {
+  if (row.type === 'D') return 'icon-folder'
+  const ext = (row.name || '').split('.').pop()?.toLowerCase()
+  if (['exe', 'bin', 'dll', 'so', 'elf', 'dylib'].includes(ext)) return 'icon-binary'
+  if (['sh', 'ps1', 'bat', 'cmd', 'py', 'vbs', 'cna'].includes(ext)) return 'icon-script'
+  if (['zip', 'tar', 'gz', '7z', 'rar'].includes(ext)) return 'icon-zip'
+  return 'icon-doc'
+}
+
+function getFileNameClass(row: any) {
+  if (row.type === 'D') return 'name-folder'
+  const ext = (row.name || '').split('.').pop()?.toLowerCase()
+  if (['exe', 'bin', 'dll', 'so', 'elf'].includes(ext)) return 'name-binary'
+  if (['sh', 'ps1', 'bat', 'cmd', 'py', 'cna'].includes(ext)) return 'name-script'
+  return 'name-doc'
+}
+
+function filterNode(value: string, data: any) {
+  if (!value) return true
+  return (data.name || '').toLowerCase().includes(value.toLowerCase())
+}
+
+watch(treeSearchText, (val) => {
+  fileTreeRef.value?.filter(val)
+})
+
+function handleNodeExpand(data: any) {
+  if (data?.path && !expandedKeys.value.includes(data.path)) {
+    expandedKeys.value.push(data.path)
+  }
+}
+
+function handleNodeCollapse(data: any) {
+  if (data?.path) {
+    expandedKeys.value = expandedKeys.value.filter((k) => k !== data.path)
+  }
+}
+
+function expandAllTree() {
+  const tree = fileTreeRef.value
+  if (!tree?.store?.nodesMap) return
+  const allKeys: string[] = []
+  Object.values(tree.store.nodesMap).forEach((node: any) => {
+    if (node.childNodes && node.childNodes.length > 0) {
+      node.expanded = true
+      if (node.data?.path) allKeys.push(node.data.path)
+    }
+  })
+  expandedKeys.value = Array.from(new Set([...expandedKeys.value, ...allKeys]))
+}
+
+function collapseAllTree() {
+  const tree = fileTreeRef.value
+  if (!tree?.store?.nodesMap) return
+  Object.values(tree.store.nodesMap).forEach((node: any) => {
+    if (node.data?.type === 'group') {
+      node.expanded = true
+    } else if (node.childNodes && node.childNodes.length > 0) {
+      node.expanded = false
+    }
+  })
+  expandedKeys.value = [groupNodeKey.value]
+}
+
+function findTreeNodeByPath(path: string, root: any): any {
   if (Array.isArray(root)) {
     for (const node of root) {
-      const result = findTreeNodeByPath(path, node);
-      if (result) return result;
+      const res = findTreeNodeByPath(path, node)
+      if (res) return res
     }
-    return null;
+    return null
   }
-
-  // 如果当前节点的路径匹配，返回当前节点
-  if (root.path === path) return root;
-
-  // 如果当前节点有子节点，递归查找子节点
-  if (root.children) {
+  if (!root) return null
+  if (root.path === path) return root
+  if (Array.isArray(root.children)) {
     for (const child of root.children) {
-      const result = findTreeNodeByPath(path, child);
-      if (result) return result;
+      const res = findTreeNodeByPath(path, child)
+      if (res) return res
     }
   }
+  return null
+}
 
-  // 如果没有找到匹配的节点，返回 null
-  return null;
-};
-// 加载文件内容
-const fetchFileContent = async (file) => {
-  selectedFile.value = file;
-  try {
-    const res = await ClientAPI.fetch_file_content({uid:uid,path:file.path});
-    selectedFileContent.value = res.data.content;
-  } catch (error) {
-    console.error("Error fetching file content:", error);
-    selectedFileContent.value = "Failed to load content.";
+function ensureAncestorsExpanded(path: string) {
+  if (!path) return
+  if (!expandedKeys.value.includes(groupNodeKey.value)) {
+    expandedKeys.value.push(groupNodeKey.value)
   }
-};
-
-const deleteFile = async (filePath) => {
-  try {
-    const res = await ClientAPI.delete_file({uid:uid,filePath:filePath});
-    fileTree.value = res.data.data;
-    globalFileTree.updateEntry(uid,fileTree.value);
-  } catch (error) {
-    console.error("Error fetching file tree:", error);
+  if (!expandedKeys.value.includes(path)) {
+    expandedKeys.value.push(path)
   }
-};
-
-const makeDir = async(dirPath) => {
-  try {
-    const res = await ClientAPI.make_dir({uid:uid,dirPath:dirPath});
-    fileTree.value = res.data.data;
-    globalFileTree.updateEntry(uid,fileTree.value);
-  } catch (error) {
-    console.error("Error fetching file tree:", error);
+  // 分解父路径
+  const normalized = path.replace(/\\/g, '/')
+  const parts = normalized.split('/').filter(Boolean)
+  let curr = normalized.startsWith('/') ? '' : parts[0]
+  for (let i = 0; i < parts.length - 1; i++) {
+    if (normalized.startsWith('/')) {
+      curr += '/' + parts[i]
+    } else if (i > 0) {
+      curr += '/' + parts[i]
+    }
+    if (curr && !expandedKeys.value.includes(curr)) {
+      expandedKeys.value.push(curr)
+    }
   }
-};
+}
 
-const handleMkDir = async(path) =>{
-  const { value } = await ElMessageBox.prompt(
-      '请输入新文件夹的名称',
-      '新建文件夹',
-      {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
-        inputPlaceholder: '文件夹名称',
+async function fetchFileTree(dirPath: string) {
+  if (!uid.value) return
+  loadingNodes.value.add(dirPath)
+  treeLoading.value = true
+  try {
+    const res = await ClientAPI.get_file_tree({ uid: uid.value, dirPath })
+    if (res.data && res.data.data) {
+      fileTree.value = res.data.data
+      globalFileTree.updateEntry(uid.value, fileTree.value)
+
+      ensureAncestorsExpanded(dirPath)
+
+      const currentNode = findTreeNodeByPath(dirPath, fileTree.value)
+      if (currentNode && Array.isArray(currentNode.children)) {
+        currentFiles.value = currentNode.children
+      } else {
+        currentFiles.value = []
       }
-  )
-  // 检查输入值
-  if (!value) {
-    ElMessage.warning('文件夹名称不能为空')
+    }
+  } catch (err: any) {
+    ElMessage.error(isZh.value ? '获取文件列表失败: ' + (err?.message || err) : 'Failed to list files: ' + (err?.message || err))
+  } finally {
+    loadingNodes.value.delete(dirPath)
+    treeLoading.value = false
+  }
+}
+
+async function navigateToPath(path: string) {
+  if (!path || !path.trim()) return
+  const normalized = path.trim()
+  currentPath.value = normalized
+  pathHistory.value.push(normalized)
+  historyIndex.value = pathHistory.value.length - 1
+  await fetchFileTree(normalized)
+  currentFileNode.setFileNode(uid.value, normalized)
+}
+
+function navigateToInputPath() {
+  if (!currentPath.value || !currentPath.value.trim()) {
+    ElMessage.warning(isZh.value ? '请输入有效路径' : 'Please enter a valid path')
     return
   }
-  await makeDir(path+"/"+value);
-  ElMessage.success('新建成功');
-  const updatedItem = findTreeNodeByPath(path, fileTree.value);
-  if (updatedItem) {
-    currentFolder.value = updatedItem;
-    currentFolderContent.value = updatedItem.children || []; // 更新文件夹内容
-  }
-  if (updatedItem && fileTreeRef.value) {
-    currentFileNode.setFileNode(uid,updatedItem.path)
-    fileTreeRef.value.setCurrentKey(updatedItem.path);
-    fileTreeRef.value.store.nodesMap[updatedItem.path].expanded = true
-  }
-
-
+  navigateToPath(currentPath.value)
 }
-const handleDelete = (row) => {
-  const itemType = row.type === 'F' ? '文件' : '文件夹'
-  ElMessageBox.confirm(`是否删除${itemType}：${row.name}?`, '删除确认', {
-    confirmButtonText: '确定',
-    cancelButtonText: '取消',
-    type: 'warning',
-  })
-      .then(async () => {
-        await deleteFile(row.path);
-        ElMessage.success('删除'+row.name+'成功');
-        let beforeLastSlash = "";
-        // 查找最后一个斜杠的位置
-        let lastSlashIndex = row.path.lastIndexOf('/');
 
-        // 如果找到了斜杠
-        if (lastSlashIndex !== -1) {
-          // 获取最后一个斜杠之前的部分
-          beforeLastSlash = row.path.substring(0, lastSlashIndex);
-        }
+function goClientHome() {
+  const c = clientsStore.getClientByUid(uid.value)
+  const isWin = detectClientOs(c) === 'windows'
+  navigateToPath(isWin ? 'C:' : '/')
+}
 
-        const updatedItem = findTreeNodeByPath(beforeLastSlash, fileTree.value);
-        if (updatedItem) {
-          currentFolder.value = updatedItem;
-          currentFolderContent.value = updatedItem.children || []; // 更新文件夹内容
-        }
-        if (updatedItem && fileTreeRef.value) {
-          currentFileNode.setFileNode(uid,updatedItem.path)
-          fileTreeRef.value.setCurrentKey(updatedItem.path);
-          fileTreeRef.value.store.nodesMap[updatedItem.path].expanded = true
-        }
+function goUpLevel() {
+  const p = currentPath.value || ''
+  if (!p) return
+  let parent = '/'
+  if (/^[a-zA-Z]:[\\/]?$/.test(p)) {
+    parent = p[0].toUpperCase() + ':'
+  } else {
+    const norm = p.replace(/\\/g, '/').replace(/\/+$/, '')
+    const idx = norm.lastIndexOf('/')
+    parent = idx <= 0 ? '/' : norm.substring(0, idx)
+  }
+  navigateToPath(parent)
+}
 
-      })
-};
+function refreshCurrentFolder() {
+  fetchFileTree(currentPath.value)
+}
 
-const handleDownload = (row) => {
-  ElMessageBox.confirm(`是否下载文件：${row.name}?`, '下载确认', {
-    confirmButtonText: '确定',
-    cancelButtonText: '取消',
-    type: 'warning',
-  })
-      .then(async ({ value }) => {
-        try {
-          const res = await ClientAPI.download_file({uid:uid,filePath:row.path});
-          if(res.data.status === 200){
-            ElMessage.success('后台下载'+row.path+'中');
-          }else{
-            ElMessage.error('下载'+row.path+'失败');
-          }
-        } catch (error) {
-          ElMessage.error('下载'+row.path+'失败');
-        }
-      })
-      .catch(() => {
-        // 取消下载操作
-        ElMessage.info('已取消下载');
-      });
-};
+async function fetchDrives() {
+  if (!uid.value) return
+  treeLoading.value = true
+  try {
+    const res = await ClientAPI.get_drives({ uid: uid.value })
+    if (res.data && res.data.status === 200 && Array.isArray(res.data.data)) {
+      fileTree.value = res.data.data
+      globalFileTree.updateEntry(uid.value, res.data.data)
+      if (res.data.data.length > 0) {
+        const first = res.data.data[0].path || res.data.data[0].name
+        currentPath.value = first
+        await fetchFileTree(first)
+      }
+      ElMessage.success(isZh.value ? `成功获取 ${res.data.data.length} 个驱动器` : `Loaded ${res.data.data.length} drives`)
+    }
+  } catch {
+    ElMessage.warning(isZh.value ? '无法获取驱动器列表' : 'Failed to query drives')
+  } finally {
+    treeLoading.value = false
+  }
+}
 
-// 组件挂载时获取文件树
-onMounted(
-    () => {
-      const tmp = globalFileTree.getEntry(uid);
-      if (Array.isArray(tmp) && tmp.length === 0) {
-        fetchFileTree("./");
-      } else{
-        fileTree.value = globalFileTree.getEntry(uid);
-        const currentNodePath = currentFileNode.getFileNode(uid);
+function handleTreeNodeClick(node: any) {
+  if (node.type === 'group') return
+  if (node.type === 'D' || node.type === 'drive') {
+    navigateToPath(node.path)
+  }
+}
 
-        // 确保文件树的内容更新，重新获取该文件夹内容
-        const updatedItem = findTreeNodeByPath(currentNodePath, fileTree.value);
-        if (updatedItem) {
-          currentFolder.value = updatedItem;
-          currentFolderContent.value = updatedItem.children || []; // 更新文件夹内容
-        }
-        setTimeout(() => {
-          if (updatedItem && fileTreeRef.value) {
-            fileTreeRef.value.setCurrentKey(updatedItem.path);
-            fileTreeRef.value.store.nodesMap[updatedItem.path].expanded = true
-          }
-        }, 100); // 等待 500 毫秒
-        // if (updatedItem && fileTreeRef.value) {
-        //   fileTreeRef.value.setCurrentKey(updatedItem.path);
-        //   fileTreeRef.value.store.nodesMap[updatedItem.path].expanded = true
-        // }
+function handleRowDoubleClick(row: any) {
+  if (row.type === 'D') {
+    navigateToPath(row.path)
+  } else {
+    editFile(row)
+  }
+}
+
+function handleSelectionChange(selection: any[]) {
+  selectedFiles.value = selection
+}
+
+function handleSortChange({ prop, order }: any) {
+  sortColumn.value = prop || 'modifiedTime'
+  sortOrder.value = order || 'descending'
+}
+
+async function handleRowContextMenu(row: any, col: any, e: MouseEvent) {
+  e.preventDefault()
+  e.stopPropagation()
+  contextMenuItem.value = row
+
+  const menuWidth = 190
+  const menuHeight = 440
+  const pad = 12
+
+  let x = e.clientX
+  let y = e.clientY
+
+  if (x + menuWidth > window.innerWidth - pad) {
+    x = Math.max(pad, window.innerWidth - menuWidth - pad)
+  }
+
+  if (y + menuHeight > window.innerHeight - pad) {
+    if (e.clientY - menuHeight >= pad) {
+      y = e.clientY - menuHeight
+    } else {
+      y = Math.max(pad, window.innerHeight - menuHeight - pad)
+    }
+  }
+
+  contextMenuX.value = x
+  contextMenuY.value = y
+  contextMenuVisible.value = true
+
+  await nextTick()
+  if (contextMenuRef.value) {
+    const rect = contextMenuRef.value.getBoundingClientRect()
+    if (rect.bottom > window.innerHeight - pad) {
+      contextMenuY.value = Math.max(pad, window.innerHeight - rect.height - pad)
+    }
+    if (rect.right > window.innerWidth - pad) {
+      contextMenuX.value = Math.max(pad, window.innerWidth - rect.width - pad)
+    }
+  }
+}
+
+function closeContextMenu() {
+  contextMenuVisible.value = false
+}
+
+function handleGlobalClick() {
+  closeContextMenu()
+}
+
+// 监听窗口大小与点击关闭右键菜单
+onMounted(() => {
+  window.addEventListener('click', closeContextMenu)
+  window.addEventListener('blur', closeContextMenu)
+  if (uid.value) {
+    fetchDrives()
+  }
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('click', closeContextMenu)
+  window.removeEventListener('blur', closeContextMenu)
+  fileTree.value = []
+  currentFiles.value = []
+  selectedFiles.value = []
+})
+
+// 文件操作
+async function createNewFolder() {
+  closeContextMenu()
+  try {
+    const { value } = await ElMessageBox.prompt(
+      isZh.value ? '请输入新文件夹名称:' : 'Enter folder name:',
+      isZh.value ? '新建文件夹' : 'Make Directory',
+      { confirmButtonText: isZh.value ? '创建' : 'Create', cancelButtonText: isZh.value ? '取消' : 'Cancel' }
+    )
+    if (!value?.trim()) return
+    const newPath = `${currentPath.value}/${value.trim()}`
+    const res = await ClientAPI.make_dir({ uid: uid.value, dirPath: newPath })
+    if (res.data?.status === 200) {
+      ElMessage.success(isZh.value ? '文件夹创建成功' : 'Directory created')
+      await refreshCurrentFolder()
+    } else {
+      ElMessage.error(res.data?.message || '创建失败')
+    }
+  } catch {}
+}
+
+async function createNewFile() {
+  closeContextMenu()
+  try {
+    const { value } = await ElMessageBox.prompt(
+      isZh.value ? '请输入新文件名称:' : 'Enter file name:',
+      isZh.value ? '新建文件' : 'New File',
+      { confirmButtonText: isZh.value ? '创建' : 'Create', cancelButtonText: isZh.value ? '取消' : 'Cancel' }
+    )
+    if (!value?.trim()) return
+    const filePath = `${currentPath.value}/${value.trim()}`
+    const res = await ClientAPI.create_file({ uid: uid.value, filePath })
+    if (res.data?.status === 200) {
+      ElMessage.success(isZh.value ? '文件创建成功' : 'File created')
+      await refreshCurrentFolder()
+    } else {
+      ElMessage.error(res.data?.message || '创建失败')
+    }
+  } catch {}
+}
+
+function handleFileView(file?: any) {
+  closeContextMenu()
+  const target = file || (selectedFiles.value.length > 0 ? selectedFiles.value[0] : null)
+  if (!target) return
+  if (target.type === 'D') {
+    navigateToPath(target.path)
+  } else {
+    editFile(target)
+  }
+}
+
+async function editFile(file: any) {
+  closeContextMenu()
+  editingFile.value = file
+  fileContent.value = ''
+  editLoading.value = true
+  editDialogVisible.value = true
+
+  try {
+    const res = await ClientAPI.fetch_file_content({ uid: uid.value, path: file.path })
+    let raw = ''
+    if (res?.data) {
+      if (typeof res.data === 'string') {
+        raw = res.data
+      } else if (typeof res.data.data === 'string') {
+        raw = res.data.data
+      } else if (res.data.data?.content !== undefined) {
+        raw = res.data.data.content
+      } else if (res.data.content !== undefined) {
+        raw = res.data.content
+      } else if (res.data.data?.fileContent !== undefined) {
+        raw = res.data.data.fileContent
+      } else if (typeof res.data.data === 'object') {
+        raw = JSON.stringify(res.data.data, null, 2)
       }
     }
-);
-onBeforeUnmount(() => {
-  // 清理文件树等状态
-  fileTree.value = [];
-  currentFolder.value = null;
-  currentFolderContent.value = [];
-  selectedFile.value = null;
-  selectedFileContent.value = '';
-});
+
+    // 处理 base64 解码
+    if (raw && typeof raw === 'string' && /^[A-Za-z0-9+/=]+$/.test(raw.trim()) && raw.trim().length % 4 === 0 && !raw.includes('\n') && raw.length > 24) {
+      try {
+        const decoded = atob(raw.trim())
+        if (decoded) {
+          raw = decodeURIComponent(escape(decoded))
+        }
+      } catch {}
+    }
+
+    fileContent.value = String(raw ?? '')
+    updateEditorLineNumbers()
+  } catch (err: any) {
+    ElMessage.error(isZh.value ? '读取文件内容失败: ' + (err?.message || err) : 'Failed to read file')
+  } finally {
+    editLoading.value = false
+  }
+}
+
+function refreshEditContent() {
+  if (editingFile.value) {
+    editFile(editingFile.value)
+  }
+}
+
+function updateEditorLineNumbers() {
+  const text = fileContent.value || ''
+  const lines = text.split(/\r\n|\r|\n/)
+  editorLinesCount.value = Math.max(1, lines.length)
+}
+
+function syncEditorScroll() {
+  if (editorLineNumbers.value && editorTextarea.value) {
+    editorLineNumbers.value.scrollTop = editorTextarea.value.scrollTop
+  }
+}
+
+async function saveFile() {
+  if (!editingFile.value) return
+  editLoading.value = true
+  try {
+    const res = await ClientAPI.save_file_content({
+      uid: uid.value,
+      path: editingFile.value.path,
+      content: fileContent.value,
+    })
+    if (res.data?.status === 200 || res.status === 200) {
+      ElMessage.success(isZh.value ? '文件保存成功' : 'File saved')
+      editDialogVisible.value = false
+      await refreshCurrentFolder()
+    } else {
+      ElMessage.error(res.data?.message || '保存失败')
+    }
+  } catch (err: any) {
+    ElMessage.error(isZh.value ? '保存文件失败: ' + (err?.message || err) : 'Save failed')
+  } finally {
+    editLoading.value = false
+  }
+}
+
+function handleFileDownload(file?: any) {
+  closeContextMenu()
+  const target = file || (selectedFiles.value.length > 0 ? selectedFiles.value[0] : null)
+  if (!target) return
+  if (target.type === 'D') {
+    ElMessage.warning(isZh.value ? '无法直接下载目录' : 'Cannot download directory directly')
+    return
+  }
+  downloadFile(target)
+}
+
+async function downloadFile(file: any) {
+  currentDownloadFile.value = file
+  downloadProgress.value = 0
+  downloadStatus.value = 'downloading'
+  downloadSpeed.value = ''
+  downloadDialogVisible.value = true
+
+  try {
+    await ClientAPI.download_file({ uid: uid.value, filePath: file.path })
+    const interval = setInterval(async () => {
+      try {
+        const infoRes = await ClientAPI.get_downloads_info({ uid: uid.value })
+        const downloads = infoRes.data?.data || []
+        const target = downloads.find((d: any) => d.filePath === file.path)
+        if (target) {
+          const pct = parseInt(target.downloadPart, 10) || 0
+          downloadProgress.value = Math.min(pct, 100)
+          if (pct >= 100) {
+            clearInterval(interval)
+            downloadStatus.value = 'success'
+            ElMessage.success(isZh.value ? `文件 ${file.name} 已下载至团队服务器` : `Downloaded ${file.name}`)
+          }
+        }
+      } catch {}
+    }, 1500)
+  } catch (e: any) {
+    downloadStatus.value = 'error'
+    ElMessage.error(isZh.value ? '下发下载任务失败' : 'Download failed')
+  }
+}
+
+async function openDownloadFolder() {
+  if (!currentDownloadFile.value) return
+  try {
+    const res = await ClientAPI.download_downloaded_file({
+      uid: uid.value,
+      filePath: currentDownloadFile.value.path,
+    })
+    if (res.status === 200 && res.data) {
+      // responseType='blob' 时 res.data 已是 Blob；兼容字符串/JSON 兜底包装
+      const blob = res.data instanceof Blob
+        ? res.data
+        : new Blob([res.data as any], { type: 'application/octet-stream' })
+      const link = document.createElement('a')
+      link.href = URL.createObjectURL(blob)
+      link.download = currentDownloadFile.value.name || 'download'
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      // 延迟 revoke：立即调用会在部分浏览器触发下载前释放对象 URL 导致保存失败
+      setTimeout(() => URL.revokeObjectURL(link.href), 2000)
+      ElMessage.success(isZh.value ? '文件已保存到本地' : 'Saved locally')
+    } else {
+      ElMessage.error(isZh.value ? '下载到本地失败（文件不存在或已被清理）' : 'Failed to save (file missing or cleaned up)')
+    }
+  } catch (e: any) {
+    ElMessage.error(e?.message || (isZh.value ? '下载到本地失败' : 'Failed to save'))
+  }
+}
+
+function handleFileExecute(file?: any) {
+  closeContextMenu()
+  const target = file || (selectedFiles.value.length > 0 ? selectedFiles.value[0] : null)
+  if (!target) return
+  if (target.type === 'D') {
+    ElMessage.warning(isZh.value ? '无法直接执行文件夹' : 'Cannot execute folder')
+    return
+  }
+  executeForm.path = target.path
+  executeForm.name = target.name
+  executeForm.args = ''
+  executeDialogVisible.value = true
+}
+
+async function submitExecute() {
+  if (!executeForm.path) return
+  const cmd = executeForm.args.trim()
+    ? `execute "${executeForm.path}" ${executeForm.args.trim()}`
+    : `execute "${executeForm.path}"`
+  try {
+    await ClientAPI.send_commands({ uid: uid.value, command: cmd })
+    ElMessage.success(isZh.value ? `已下发执行指令 (${executeForm.name})，回显见会话控制台` : `Execution tasked for ${executeForm.name}`)
+    executeDialogVisible.value = false
+  } catch (err: any) {
+    ElMessage.error(isZh.value ? '执行失败: ' + (err?.message || err) : 'Execution failed')
+  }
+}
+
+async function deleteItem(item: any) {
+  closeContextMenu()
+  if (!item) return
+  ElMessageBox.confirm(
+    isZh.value ? `确定删除 ${item.type === 'D' ? '文件夹' : '文件'} "${item.name}" 吗？` : `Delete "${item.name}"?`,
+    isZh.value ? '删除确认' : 'Delete Confirm',
+    { confirmButtonText: isZh.value ? '删除' : 'Delete', cancelButtonText: isZh.value ? '取消' : 'Cancel', type: 'warning' }
+  ).then(async () => {
+    try {
+      await ClientAPI.delete_file({ uid: uid.value, filePath: item.path })
+      ElMessage.success(isZh.value ? '删除成功' : 'Deleted')
+      await refreshCurrentFolder()
+    } catch {
+      ElMessage.error(isZh.value ? '删除失败' : 'Failed to delete')
+    }
+  }).catch(() => {})
+}
+
+async function deleteSelectedFiles() {
+  if (selectedFiles.value.length === 0) return
+  const count = selectedFiles.value.length
+  ElMessageBox.confirm(
+    isZh.value ? `确定删除选中的 ${count} 个项目吗？此操作不可撤销。` : `Delete ${count} selected item(s)?`,
+    isZh.value ? '批量删除' : 'Delete Items',
+    { confirmButtonText: isZh.value ? '删除' : 'Delete', cancelButtonText: isZh.value ? '取消' : 'Cancel', type: 'warning' }
+  ).then(async () => {
+    let succ = 0
+    for (const item of selectedFiles.value) {
+      try {
+        await ClientAPI.delete_file({ uid: uid.value, filePath: item.path })
+        succ++
+      } catch {}
+    }
+    ElMessage.success(isZh.value ? `已删除 ${succ} / ${count} 项` : `Deleted ${succ} of ${count} items`)
+    selectedFiles.value = []
+    await refreshCurrentFolder()
+  }).catch(() => {})
+}
+
+async function renameItem(item: any) {
+  closeContextMenu()
+  if (!item) return
+  ElMessageBox.prompt(
+    isZh.value ? '输入新名称:' : 'Enter new name:',
+    isZh.value ? '重命名' : 'Rename',
+    { inputValue: item.name, confirmButtonText: isZh.value ? '确定' : 'OK', cancelButtonText: isZh.value ? '取消' : 'Cancel' }
+  ).then(async ({ value }) => {
+    if (!value?.trim() || value.trim() === item.name) return
+    const parts = item.path.split('/')
+    parts[parts.length - 1] = value.trim()
+    const newPath = parts.join('/')
+    const res = await ClientAPI.rename_file({ uid: uid.value, oldPath: item.path, newPath })
+    if (res.data?.status === 200) {
+      ElMessage.success(isZh.value ? '重命名成功' : 'Renamed')
+      await refreshCurrentFolder()
+    } else {
+      ElMessage.error(res.data?.message || '重命名失败')
+    }
+  }).catch(() => {})
+}
+
+async function copyItem(item: any) {
+  closeContextMenu()
+  if (!item) return
+  ElMessageBox.prompt(
+    isZh.value ? '输入目标路径:' : 'Enter target path:',
+    isZh.value ? '复制' : 'Copy',
+    { inputValue: item.path, confirmButtonText: isZh.value ? '确定' : 'OK', cancelButtonText: isZh.value ? '取消' : 'Cancel' }
+  ).then(async ({ value }) => {
+    if (!value?.trim() || value.trim() === item.path) return
+    const res = await ClientAPI.copy_file({ uid: uid.value, oldPath: item.path, newPath: value.trim() })
+    if (res.data?.status === 200) {
+      ElMessage.success(isZh.value ? '复制成功' : 'Copied')
+      await refreshCurrentFolder()
+    } else {
+      ElMessage.error(res.data?.message || '复制失败')
+    }
+  }).catch(() => {})
+}
+
+async function moveItem(item: any) {
+  closeContextMenu()
+  if (!item) return
+  ElMessageBox.prompt(
+    isZh.value ? '输入新目标路径:' : 'Enter new target path:',
+    isZh.value ? '移动' : 'Move',
+    { inputValue: item.path, confirmButtonText: isZh.value ? '确定' : 'OK', cancelButtonText: isZh.value ? '取消' : 'Cancel' }
+  ).then(async ({ value }) => {
+    if (!value?.trim() || value.trim() === item.path) return
+    const res = await ClientAPI.rename_file({ uid: uid.value, oldPath: item.path, newPath: value.trim() })
+    if (res.data?.status === 200) {
+      ElMessage.success(isZh.value ? '移动成功' : 'Moved')
+      await refreshCurrentFolder()
+    } else {
+      ElMessage.error(res.data?.message || '移动失败')
+    }
+  }).catch(() => {})
+}
+
+function copyPath(item: any) {
+  closeContextMenu()
+  if (!item?.path) return
+  navigator.clipboard.writeText(item.path)
+  ElMessage.success(isZh.value ? '路径已复制到剪贴板' : 'Path copied to clipboard')
+}
+
+async function modifyTime(item: any) {
+  closeContextMenu()
+  if (!item) return
+  ElMessageBox.prompt(
+    isZh.value ? '设置新时间 (YYYY/MM/DD HH:mm:ss):' : 'Set timestamp (YYYY/MM/DD HH:mm:ss):',
+    isZh.value ? '修改文件时间' : 'Touch File Time',
+    { confirmButtonText: isZh.value ? '确定' : 'OK', cancelButtonText: isZh.value ? '取消' : 'Cancel' }
+  ).then(async ({ value }) => {
+    if (!value?.trim()) return
+    await ClientAPI.modify_file_time({ uid: uid.value, filePath: item.path, newTime: value.trim() })
+    ElMessage.success(isZh.value ? '修改时间指令已发送' : 'Time updated')
+    setTimeout(refreshCurrentFolder, 1000)
+  }).catch(() => {})
+}
+
+async function hideItem(item: any) {
+  closeContextMenu()
+  if (!item) return
+  await ClientAPI.hide_file({ uid: uid.value, filePath: item.path })
+  ElMessage.success(isZh.value ? '已发送隐藏指令' : 'Hidden')
+  refreshCurrentFolder()
+}
+
+async function unhideItem(item: any) {
+  closeContextMenu()
+  if (!item) return
+  await ClientAPI.unhide_file({ uid: uid.value, filePath: item.path })
+  ElMessage.success(isZh.value ? '已发送取消隐藏指令' : 'Unhidden')
+  refreshCurrentFolder()
+}
+
+function makeDirItem() {
+  closeContextMenu()
+  createNewFolder()
+}
+
+function uploadToHere() {
+  closeContextMenu()
+  showUploadDialog()
+}
+
+function showUploadDialog() {
+  uploadFileList.value = []
+  uploadDialogVisible.value = true
+}
+
+function closeUploadDialog() {
+  uploadFileList.value = []
+  uploadDialogVisible.value = false
+}
+
+async function startUpload() {
+  if (uploadFileList.value.length === 0) return
+  let succ = 0
+  for (const f of uploadFileList.value) {
+    try {
+      const res = await ClientAPI.upload_file({
+        uid: uid.value,
+        file: f.raw,
+        uploadPath: `${currentPath.value}/${f.name}`,
+      })
+      if (res.data?.status === 200 || res.status === 200) succ++
+    } catch {}
+  }
+  ElMessage.success(isZh.value ? `成功上传 ${succ} 个文件` : `Uploaded ${succ} file(s)`)
+  closeUploadDialog()
+  await refreshCurrentFolder()
+}
+
+function showWgetDialog() {
+  wgetForm.url = ''
+  wgetForm.path = currentPath.value
+  wgetDialogVisible.value = true
+}
+
+async function executeWget() {
+  if (!wgetForm.url) return
+  const cmd = `wget -O "${wgetForm.path}/${wgetForm.url.split('/').pop() || 'download'}" "${wgetForm.url}"`
+  try {
+    await ClientAPI.send_commands({ uid: uid.value, command: cmd })
+    ElMessage.success(isZh.value ? '已下发 wget 下载指令' : 'wget task dispatched')
+    wgetDialogVisible.value = false
+    setTimeout(refreshCurrentFolder, 2000)
+  } catch {
+    ElMessage.error(isZh.value ? '下发失败' : 'Failed')
+  }
+}
+
+function formatFileSize(size: any) {
+  if (typeof size === 'string' && size !== '0' && size !== '') {
+    if (/^\d+(\.\d+)?(B|KB|MB|GB)$/.test(size)) return size.replace(/(\d+(?:\.\d+)?)(B|KB|MB|GB)$/, '$1 $2')
+    return size
+  }
+  const n = parseInt(size, 10)
+  if (isNaN(n) || n === 0) return '0 B'
+  if (n < 1024) return `${n} B`
+  if (n < 1024 ** 2) return `${(n / 1024).toFixed(1)} KB`
+  if (n < 1024 ** 3) return `${(n / 1024 ** 2).toFixed(1)} MB`
+  return `${(n / 1024 ** 3).toFixed(2)} GB`
+}
+
+function formatUploadFileSize(size: number) {
+  if (!size) return '0 B'
+  if (size < 1024) return `${size} B`
+  if (size < 1024 ** 2) return `${(size / 1024).toFixed(1)} KB`
+  return `${(size / 1024 ** 2).toFixed(1)} MB`
+}
+
+function formatPermissions(perm: any) {
+  if (!perm || perm === '-' || perm === 'undefined') return '-'
+  return String(perm)
+}
+
+function handleHelp() {
+  helpDialogVisible.value = true
+}
 </script>
 
 <style scoped>
-.file-explorer {
+.cs-file-manager {
+  height: 100%;
   display: flex;
+  flex-direction: column;
+  background: var(--cs-bg, #f0f0f0);
+  overflow: hidden;
 }
 
-.el-tree {
-  width: 30%;
-  border-right: 1px solid #ddd;
-  padding-right: 10px;
+.fm-main-container {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
 }
 
-.file-details {
-  width: 70%;
-  padding-left: 10px;
+/* 左侧文件树 */
+.fm-sidebar {
+  width: 280px;
+  background: var(--cs-panel, #ffffff);
+  border-right: 1px solid var(--cs-border, #c8c8c8);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+
+.fm-sidebar-header {
+  height: 32px;
+  background: var(--cs-titlebar-bg, #e6e6e6);
+  border-bottom: 1px solid var(--cs-border, #c8c8c8);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px;
+}
+
+.fm-sidebar-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--cs-text-bright, #111111);
+}
+
+.fm-tree-btns {
+  display: flex;
+  gap: 4px;
+}
+
+.fm-tree-search-wrap {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--cs-border, #c8c8c8);
+  background: var(--cs-panel, #ffffff);
+}
+
+.fm-search-input {
+  width: 100%;
+}
+
+.fm-tree-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.fm-file-tree {
+  background: transparent !important;
+  color: var(--cs-text, #333333) !important;
+  font-size: 12px;
+}
+
+.fm-tree-node {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fm-node-icon {
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.fm-node-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 右侧主内容 */
+.fm-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--cs-bg, #f0f0f0);
+}
+
+.fm-toolbar {
+  height: 36px;
+  background: var(--cs-panel, #ffffff);
+  border-bottom: 1px solid var(--cs-border, #c8c8c8);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+  flex-shrink: 0;
+}
+
+.fm-nav-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.fm-sidebar-resizer {
+  width: 4px;
+  background: var(--cs-border, #c8c8c8);
+  cursor: col-resize;
+  transition: background 150ms ease;
+  user-select: none;
+  flex-shrink: 0;
+}
+.fm-sidebar-resizer:hover {
+  background: var(--cs-active, #007acc);
+}
+
+.fm-path-container {
+  flex: 1;
+  min-width: 200px;
+}
+
+.fm-breadcrumbs-bar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 28px;
+  padding: 0 8px;
+  background: var(--cs-bg, #f0f0f0);
+  border: 1px solid var(--cs-border, #c8c8c8);
+  border-radius: 2px;
+  cursor: pointer;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.fm-breadcrumbs-bar::-webkit-scrollbar {
+  display: none;
+}
+.fm-path-icon {
+  margin-right: 4px;
+  flex-shrink: 0;
+}
+.crumb-root,
+.crumb-item {
+  padding: 1px 4px;
+  border-radius: 2px;
+  font-size: 13px;
+  color: var(--cs-text-bright, #111111);
+  white-space: nowrap;
+  transition: all 100ms ease;
+}
+.crumb-root:hover,
+.crumb-item:hover {
+  background: var(--cs-hover, #e4e4e4);
+  color: var(--cs-active, #007acc);
+  text-decoration: underline;
+}
+.crumb-sep {
+  color: var(--cs-text-dim, #777777);
+  font-size: 12px;
+  user-select: none;
+}
+.crumb-edit-icon {
+  margin-left: auto;
+  padding-left: 6px;
+  color: var(--cs-text-dim, #777777);
+  font-size: 13px;
+  opacity: 0.7;
+  flex-shrink: 0;
+}
+.crumb-edit-icon:hover {
+  color: var(--cs-active, #007acc);
+  opacity: 1;
+}
+
+.fm-path-el-input {
+  width: 100%;
+}
+
+:deep(.fm-path-el-input .el-input__wrapper) {
+  background: var(--cs-panel, #ffffff) !important;
+  border: 1px solid var(--cs-border, #c8c8c8) !important;
+  box-shadow: none !important;
+  padding: 0 8px !important;
+}
+
+:deep(.fm-path-el-input .el-input__inner) {
+  color: var(--cs-text-bright, #111111) !important;
+  font-family: var(--cs-font-mono) !important;
+  font-size: 12px !important;
+}
+
+:deep(.fm-path-el-input .el-input-group__append) {
+  background: var(--cs-panel, #ffffff) !important;
+  border: 1px solid var(--cs-border, #c8c8c8) !important;
+  border-left: none !important;
+  padding: 0 4px !important;
+}
+
+.fm-go-btn {
+  border-radius: 0 !important;
+  padding: 2px 8px !important;
+  height: 22px !important;
+}
+
+.fm-filter-wrap {
+  width: 140px;
+}
+
+:deep(.fm-table-search .el-input__wrapper),
+:deep(.fm-search-input .el-input__wrapper) {
+  background: var(--cs-panel, #ffffff) !important;
+  border: 1px solid var(--cs-border, #c8c8c8) !important;
+  box-shadow: none !important;
+}
+
+:deep(.fm-table-search .el-input__inner),
+:deep(.fm-search-input .el-input__inner) {
+  color: var(--cs-text, #333333) !important;
+  font-size: 12px !important;
+}
+
+.fm-quick-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.fm-table-wrap {
+  flex: 1;
+  overflow: hidden;
+}
+
+.fm-file-cell {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.fm-file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fm-time-text {
+  white-space: nowrap;
+}
+
+.fm-perm-text {
+  white-space: nowrap;
+}
+
+.fm-item-icon {
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.icon-folder { color: #ffc107; }
+.icon-binary { color: #52c41a; }
+.icon-script { color: #13c2c2; }
+.icon-zip { color: #fa8c16; }
+.icon-doc { color: #8c8c8c; }
+
+.folder-gold { color: #ffc107; }
+
+.name-folder { color: var(--cs-text-bright, #111111); font-weight: 500; }
+.name-binary { color: #52c41a; font-weight: 500; }
+.name-script { color: #13c2c2; }
+.name-doc { color: var(--cs-text, #333333); }
+
+.fm-size-text.is-dir {
+  color: var(--cs-text-dim, #777777);
+  font-weight: bold;
+}
+
+.fm-empty-state {
+  padding: 30px;
+  text-align: center;
+}
+
+.fm-empty-state .empty-title {
+  font-size: 13px;
+  color: var(--cs-text-bright, #111111);
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.fm-empty-state .empty-desc {
+  font-size: 11px;
+  color: var(--cs-text-dim, #777777);
+}
+
+/* 底部操作栏 */
+.fm-bottom-bar {
+  height: 38px;
+  background: var(--cs-panel, #ffffff);
+  border-top: 1px solid var(--cs-border, #c8c8c8);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  flex-shrink: 0;
+}
+
+.fm-spacer {
+  flex: 1;
+}
+
+.fm-status-info {
+  font-size: 11px;
+  color: var(--cs-text-dim, #777777);
+  font-family: var(--cs-font-mono);
+}
+
+/* 编辑器对话框 */
+.fm-editor-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--cs-text, #333333);
+  background: var(--cs-panel, #ffffff);
+  padding: 6px 10px;
+  border: 1px solid var(--cs-border, #c8c8c8);
+  border-radius: 2px;
+  margin-bottom: 8px;
+}
+
+.fm-editor-box {
+  display: flex;
+  height: 460px;
+  background: var(--cs-panel, #ffffff);
+  border: 1px solid var(--cs-border, #c8c8c8);
+  border-radius: 2px;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.fm-editor-lines {
+  width: 52px;
+  min-width: 52px;
+  padding: 8px 8px 8px 0;
+  background: var(--cs-hover, #f0f0f0);
+  border-right: 1px solid var(--cs-border, #c8c8c8);
+  color: var(--cs-text-dim, #888888);
+  font-family: var(--cs-font-mono, monospace) !important;
+  font-size: 12px !important;
+  line-height: 20px !important;
+  text-align: right;
+  overflow: hidden;
+  user-select: none;
+  box-sizing: border-box;
+}
+
+.editor-line-num {
+  height: 20px !important;
+  line-height: 20px !important;
+  font-size: 12px !important;
+  box-sizing: border-box;
+}
+
+.fm-editor-textarea {
+  flex: 1;
+  padding: 8px 10px;
+  background: var(--cs-panel, #ffffff);
+  border: none;
+  color: var(--cs-text-bright, #111111);
+  font-family: var(--cs-font-mono, monospace) !important;
+  font-size: 12px !important;
+  line-height: 20px !important;
+  outline: none;
+  resize: none;
+  white-space: pre !important;
+  word-break: normal !important;
+  overflow-wrap: normal !important;
+  overflow: auto !important;
+  box-sizing: border-box;
+  tab-size: 4;
+}
+
+:root[data-theme="dark"] .fm-editor-box {
+  background: #141414;
+  border-color: #3c3f41;
+}
+
+:root[data-theme="dark"] .fm-editor-lines {
+  background: #1c1d20;
+  border-right-color: #3c3f41;
+  color: #666666;
+}
+
+:root[data-theme="dark"] .fm-editor-textarea {
+  background: #141414;
+  color: #e0e0e0;
+}
+
+/* 上传列表 */
+.fm-upload-path-hint {
+  font-size: 12px;
+  color: var(--cs-text, #333333);
+  padding: 4px 0 8px 0;
+}
+
+.fm-upload-dragger {
+  width: 100%;
+}
+
+.fm-upload-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 140px;
+  overflow-y: auto;
+  margin-top: 10px;
+}
+
+.fm-upload-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px;
+  background: var(--cs-panel, #ffffff);
+  border: 1px solid var(--cs-border, #c8c8c8);
+  border-radius: 2px;
+  font-size: 11px;
+}
+
+.fm-upload-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fm-upload-size {
+  color: var(--cs-text-dim, #777777);
+  margin: 0 8px;
+}
+</style>
+
+<!-- 右键上下文菜单全局样式（自适应主题明亮/暗黑） -->
+<style>
+.cs-file-ctx-menu {
+  position: fixed !important;
+  z-index: 999999 !important;
+  background: var(--cs-panel, #ffffff) !important;
+  border: 1px solid var(--cs-border, #c8c8c8) !important;
+  border-radius: 3px !important;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.18) !important;
+  padding: 4px 0 !important;
+  min-width: 185px !important;
+  max-height: calc(100vh - 20px) !important;
+  overflow-y: auto !important;
+  user-select: none !important;
+}
+
+.cs-file-ctx-menu .ctx-item {
+  display: flex !important;
+  align-items: center !important;
+  padding: 6px 14px !important;
+  font-size: 12px !important;
+  color: var(--cs-text, #333333) !important;
+  cursor: pointer !important;
+  transition: background 0.1s, color 0.1s !important;
+}
+
+.cs-file-ctx-menu .ctx-item:hover {
+  background: var(--cs-hover, #e4e4e4) !important;
+  color: var(--cs-text-bright, #000000) !important;
+}
+
+.cs-file-ctx-menu .ctx-item.ctx-danger {
+  color: var(--cs-error, #d32f2f) !important;
+}
+
+.cs-file-ctx-menu .ctx-item.ctx-danger:hover {
+  background: rgba(211, 47, 47, 0.1) !important;
+  color: #d32f2f !important;
+}
+
+.cs-file-ctx-menu .ctx-divider {
+  height: 1px !important;
+  background: var(--cs-border, #e0e0e0) !important;
+  margin: 4px 0 !important;
+}
+
+/* 暗色主题下的右键菜单微调 */
+:root[data-theme="dark"] .cs-file-ctx-menu {
+  background: #2b2d30 !important;
+  border: 1px solid #3c3f41 !important;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6) !important;
+}
+
+:root[data-theme="dark"] .cs-file-ctx-menu .ctx-item {
+  color: #dcdcdc !important;
+}
+
+:root[data-theme="dark"] .cs-file-ctx-menu .ctx-item:hover {
+  background: #3875d7 !important;
+  color: #ffffff !important;
+}
+
+:root[data-theme="dark"] .cs-file-ctx-menu .ctx-divider {
+  background: #3c3f41 !important;
 }
 </style>

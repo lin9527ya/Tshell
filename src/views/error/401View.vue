@@ -1,55 +1,79 @@
-<script setup lang="ts">
-import {useRouter} from "vue-router";
-
-const router = useRouter();
-</script>
-
 <template>
-  <div class="error-page">
-    <div class="error-code">4<span>0</span>1</div>
-    <div class="error-desc">啊哦~ 你无权限访问</div>
-    <div class="error-handle">
-      <router-link to="/login">
-        <el-button type="primary" size="large">返回登陆</el-button>
-      </router-link>
-      <el-button class="error-btn" type="primary" size="large" @click="router.push('/')">返回上一页</el-button>
+  <div class="cs-error-page cs-font-ui">
+    <div class="cs-error-window">
+      <div class="cs-error-titlebar">
+        <span>BladeShell - 401 Unauthorized</span>
+      </div>
+      <div class="cs-error-body">
+        <div class="error-code cs-font-mono">401</div>
+        <div class="error-msg">Authentication required or session has expired on the Team Server.</div>
+        <div class="cs-error-buttons">
+          <button class="cs-btn cs-btn-primary" @click="router.push('/login')">
+            Connect to Team Server
+          </button>
+        </div>
+      </div>
     </div>
   </div>
 </template>
 
+<script setup lang="ts">
+import { useRouter } from 'vue-router'
+
+const router = useRouter()
+</script>
+
 <style scoped>
-.error-page {
+.cs-error-page {
   display: flex;
   justify-content: center;
   align-items: center;
+  width: 100vw;
+  height: 100vh;
+  background: #111111;
+}
+
+.cs-error-window {
+  width: 460px;
+  background: var(--cs-dialog-bg);
+  border: 1px solid var(--cs-border);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.7);
+}
+
+.cs-error-titlebar {
+  height: 28px;
+  background: var(--cs-titlebar-bg);
+  border-bottom: 1px solid var(--cs-border);
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--cs-text-bright);
+}
+
+.cs-error-body {
+  padding: 32px 24px;
+  display: flex;
   flex-direction: column;
-  width: 100%;
-  height: 100%;
-  box-sizing: border-box;
+  align-items: center;
+  text-align: center;
 }
 
 .error-code {
+  font-size: 54px;
+  font-weight: 700;
+  color: #faad14;
   line-height: 1;
-  font-size: 250px;
-  font-weight: bolder;
-  color: #2d8cf0;
 }
 
-.error-code span {
-  color: #00a854;
+.error-msg {
+  font-size: 12px;
+  color: var(--cs-text);
+  margin-top: 14px;
 }
 
-.error-desc {
-  font-size: 30px;
-  color: #777;
-}
-
-.error-handle {
-  margin-top: 30px;
-  padding-bottom: 200px;
-}
-
-.error-btn {
-  margin-left: 100px;
+.cs-error-buttons {
+  margin-top: 24px;
 }
 </style>

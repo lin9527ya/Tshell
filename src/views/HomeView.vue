@@ -1,50 +1,13 @@
 <script setup lang="ts">
-import Header from "@/components/HeaDer.vue";
-import SideBar from "@/components/SideBar.vue";
-import TagsView from "@/components/TagsView.vue";
+import { onMounted } from 'vue'
+import CsShell from '@/layout/CsShell.vue'
+import { useThemeStore } from '@/stores/theme'
 
-import {useTagsStore} from "@/stores/tags";
-import {useUserStore} from "@/stores/user";
-
-import {computed, reactive, watch} from 'vue'
-import {useRoute} from 'vue-router';
-
-const tags = useTagsStore();
-const users = useUserStore();
-const route = useRoute();
-
-const wartermarkText = computed(() => {
-  return `Rshell-${users.username}`;
-});
-let watermark = reactive({
-  text: wartermarkText.value,
-  show: true, // 控制水印的显示
-});
-// 监听路由变化
-watch(route, (newRoute) => {
-  // 设置不需要水印的白名单路由
-  watermark.show = newRoute.path !== '/login';
-});
+// Home 现在只负责挂载 CS 工作台，不再保留旧的 TopHeader/TagsView/router-view 布局。
+const themeStore = useThemeStore()
+onMounted(() => themeStore.init())
 </script>
+
 <template>
-  <div v-if="watermark.show" v-watermark="watermark">
-    <Header></Header>
-    <SideBar></SideBar>
-    <div class="content-box" :class="{ 'content-collapse': SideBar.collapse }">
-<!--      <TagsView></TagsView>-->
-      <div class="content">
-        <router-view v-slot="{ Component }">
-          <transition name="move" mode="out-in">
-            <keep-alive :include="tags.nameList">
-              <component :is="Component"></component>
-            </keep-alive>
-          </transition>
-        </router-view>
-      </div>
-    </div>
-  </div>
+  <CsShell />
 </template>
-
-<style>
-
-</style>
