@@ -1,0 +1,26 @@
+# ===== 敏感配置与运行时数据(本地保留,禁止入库)=====
+config.yaml
+config.yaml.new
+database.db
+database.db-shm
+database.db-wal
+jwt_key.hex
+jwt_private.pem
+jwt_public.pem
+jwt_state.json
+certs/
+logs/
+sessions/
+
+# ===== 运行时目录 =====
+Downloads/
+Plugins/
+av.json
+
+# ===== 备份与临时文件 =====
+*.bak
+temp
+
+# ===== 本地构建产物(不入库;模板 exe 由 build_templates.sh 重新生成)=====
+/tshell-server
+/rshell-server
