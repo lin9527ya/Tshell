@@ -151,6 +151,8 @@ func TestHandleClientReplyScreenshotDataURI(t *testing.T) {
 	database.Engine.Insert(&database.Shell{Uid: uid, ShellContent: ""})
 	database.Engine.Insert(&database.Clients{Uid: uid, Online: "1"})
 
+	// 真实消费方流程：先建队列再触发回包（Add 仅向已存在的队列投递，无消费者时丢弃）
+	shotQueue := VarScreenshotQueue.GetOrCreateQueue(uid)
 	VarScreenshotQueue.SetScreenshotExpected(uid, true)
 	dataURI := "data:image/png;base64," + strings.Repeat("A", 2048)
 	if err := HandleClientReply("http", uid, 0, []byte(dataURI), nil, nil); err != nil {
@@ -158,7 +160,7 @@ func TestHandleClientReplyScreenshotDataURI(t *testing.T) {
 	}
 
 	select {
-	case got := <-VarScreenshotQueue.GetOrCreateQueue(uid):
+	case got := <-shotQueue:
 		if !strings.HasPrefix(got, "data:image/") {
 			t.Fatalf("截图队列内容非 data URI: %.40q", got)
 		}

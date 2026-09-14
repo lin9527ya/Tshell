@@ -694,10 +694,10 @@ func cleanupClientsForListener(listenerType string, listenerAddress string) {
 				conn.WriteMessage(gorillaws.CloseMessage, gorillaws.FormatCloseMessage(gorillaws.CloseNormalClosure, "监听器关闭"))
 				conn.Close()
 				delete(websocket.ClientManager, uid)
-				delete(websocket.ClientTimeManager, uid)
 				logx.Infof("🔌 [客户端清理] WebSocket连接已断开: %s\n", uid)
 			}
 			websocket.MuClientManager.Unlock()
+			// 其余状态(队列/离线检测器/监听类型映射/DB)由连接读循环退出的 defer 统一清理
 
 		case "http":
 			communication.MuClientManager.Lock()
