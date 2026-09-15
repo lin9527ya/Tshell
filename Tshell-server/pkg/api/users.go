@@ -6,6 +6,7 @@ import (
 	"BackendTemplate/pkg/errors"
 	"BackendTemplate/pkg/security"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"net/http"
@@ -40,8 +41,10 @@ func generateDeviceID(c *gin.Context) string {
 	}
 
 	data := fmt.Sprintf("%s|%s|%d", fingerprint.UserAgent, fingerprint.IP, fingerprint.Timestamp/3600)
-	hash := hex.EncodeToString([]byte(data))
-	return hash[:16] // 取前16个字符作为设备ID
+	// B10 修复: 原为 hex.EncodeToString([]byte(data)) —— 只是原文十六进制编码而非摘要,
+	// 泄露 UA/IP 原文且分布无雪崩;改 SHA-256 真摘要
+	sum := sha256.Sum256([]byte(data))
+	return hex.EncodeToString(sum[:])[:16] // 取前16个字符作为设备ID
 }
 
 // 生成安全密钥

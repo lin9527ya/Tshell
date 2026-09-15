@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -22,8 +23,19 @@ import (
 )
 
 var upgrader = websocket.Upgrader{
+	// 【安全修复】校验 Origin 与请求 Host 同源,防止任意网页跨站连接(CSWSH):
+	// 恶意页面可用受害者浏览器凭据发起 WS 连接占用连接/污染会话。
+	// 空 Origin(非浏览器客户端)放行,与 HVNC upgrader 同款策略。
 	CheckOrigin: func(r *http.Request) bool {
-		return true
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			return true
+		}
+		u, err := url.Parse(origin)
+		if err != nil {
+			return false
+		}
+		return u.Host == r.Host
 	},
 }
 

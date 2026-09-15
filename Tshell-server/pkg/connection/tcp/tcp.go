@@ -21,13 +21,13 @@ import (
 	"time"
 )
 
-// XTerm浼氳瘽骞挎挱鍑芥暟锛岀敱api鍖呭湪鍒濆鍖栨椂璁剧疆
+// XTerm会话广播函数，由api包在初始化时设置
 var BroadcastToXTermSessions func(uid string, data []byte)
 
-// HVNC浼氳瘽骞挎挱鍑芥暟锛岀敱api鍖呭湪鍒濆鍖栨椂璁剧疆
+// HVNC会话广播函数，由api包在初始化时设置
 var BroadcastToHVNCSessions func(uid, sid string, frame []byte)
 
-// 闅ч亾绠＄悊鍣ㄦ敞鍐屽洖璋冨嚱鏁帮紝鐢眒ain.go鍦ㄥ垵濮嬪寲鏃惰缃?
+// 隧道管理器注册回调函数，由main.go在初始化时设置
 var RegisterTunnelConnection func(uid string, conn net.Conn)
 var UnregisterTunnelConnection func(uid string)
 
@@ -92,32 +92,32 @@ type ClientTime struct {
 
 var ClientTimeManager = make(map[string]*ClientTime)
 
-// gbkToUtf8 灏咷BK缂栫爜杞崲涓篣TF-8 (宸茶縼绉诲埌utils.ProcessShellOutput)
+// gbkToUtf8 将GBK缂栫爜杞崲涓篣TF-8 (已迁移到utils.ProcessShellOutput)
 func gbkToUtf8(data []byte) ([]byte, error) {
 	// 浣跨敤鏂扮殑缁熶竴缂栫爜澶勭悊鍣?
 	return utils.ProcessShellOutput(data)
 }
 
-// HandleTcpConnection 鍙嶅悜 TCP 瀹㈡埛绔繛鎺ュ鐞嗭紙鐩戝惉鍣?Accept 寰楀埌锛?
+// HandleTcpConnection 反向 TCP 客户端连接处理（监听器 Accept 得到）
 func HandleTcpConnection(conn net.Conn) {
 	HandleTcpConnectionForWithKeys(conn, "tcp", nil, nil)
 }
 
-// HandleTcpConnectionFor 鎸夌洃鍚櫒绫诲瀷澶勭悊 TCP 杩炴帴锛堝弽鍚?tcp / 姝ｅ悜 tcp_forward 鍏辩敤锛?
+// HandleTcpConnectionFor 按监听器类型处理 TCP 连接（反向 tcp / 正向 tcp_forward 共用）
 func HandleTcpConnectionFor(conn net.Conn, listenerType string) {
 	HandleTcpConnectionForWithKeys(conn, listenerType, nil, nil)
 }
 
-// HandleTcpConnectionForWithKeys 鏀寔鏄惧紡浼氳瘽瀵嗛挜瑕嗙洊锛堟鍚戣繛鎺ヨ嚜瀹氫箟瀵嗛挜鏃朵娇鐢紱nil 鍒欑敤 GetListenerKeyConfig锛?
+// HandleTcpConnectionForWithKeys 支持显式会话密钥覆盖（正向连接自定义密钥时使用；nil 则用 GetListenerKeyConfig）
 func HandleTcpConnectionForWithKeys(conn net.Conn, listenerType string, masterKeyOverride, saltOverride []byte) {
-	// 宕╂簝闃叉姢锛氫换浣?panic 閮借褰曞苟鍏抽棴杩炴帴锛屼笉璁╁紓甯告墿鏁ｅ埌鏁翠釜杩涚▼
+// 崩溃防护：任何 panic 都记录并关闭连接，不让异常扩散到整个进程
 	defer func() {
 		if r := recover(); r != nil {
-			logx.Infof("鉂?[TCP-RECOVER] 杩炴帴澶勭悊panic宸叉崟鑾? %v (listener=%s, remote=%s)\n", r, listenerType, conn.RemoteAddr().String())
+			logx.Infof("鉂?[TCP-RECOVER] 连接处理panic宸叉崟鑾? %v (listener=%s, remote=%s)\n", r, listenerType, conn.RemoteAddr().String())
 		}
 	}()
 
-	// 璁剧疆杩炴帴瓒呮椂
+	// 设置连接超时
 	if connection.GlobalConnectionManager != nil {
 		connection.GlobalConnectionManager.SetConnectionTimeout(conn)
 	}
@@ -129,10 +129,10 @@ func HandleTcpConnectionForWithKeys(conn net.Conn, listenerType string, masterKe
 	// 璁板綍瀹㈡埛绔疷ID锛岀敤浜庤繛鎺ユ柇寮€鏃舵竻鐞?
 	var currentUID string
 
-	// 寤惰繜娓呯悊杩炴帴 - 涓嶹ebSocket淇濇寔涓€鑷寸殑瀹屾暣娓呯悊鏈哄埗
+// 延迟清理连接 - 与TCP/WebSocket保持一致的完整清理机制
 	defer func() {
 		if currentUID != "" {
-			logx.Infof("馃攲 [TCP鏂紑] 瀹㈡埛绔嬭繛鎺ユ柇寮€锛屾竻鐞嗙姸鎬? %s\n", currentUID)
+			logx.Infof("🔌 [TCP鏂紑] 瀹㈡埛绔嬭繛鎺ユ柇寮€锛屾竻鐞嗙姸鎬? %s\n", currentUID)
 
 			// 【振荡修复】仅当映射仍指向本连接时才删除：客户端重连后
 			// TCPClientManger[uid] 已指向新连接，旧连接 defer 清理误删新连接映射
@@ -159,13 +159,13 @@ func HandleTcpConnectionForWithKeys(conn net.Conn, listenerType string, masterKe
 			}
 			connection.MuClientListenerType.Unlock()
 
-			// 銆愬叧閿慨澶嶃€戜粠闅ч亾绠＄悊鍣ㄤ腑娓呯悊TCP杩炴帴
+// 【关键修复】从隧道管理器中清理TCP连接
 			if UnregisterTunnelConnection != nil {
 				UnregisterTunnelConnection(currentUID)
 				logx.Infof("馃棏锔?[TCP鏂紑] 宸蹭粠闅ч亾绠＄悊鍣ㄤ腑娓呯悊: %s\n", currentUID[:16]+"...")
 			}
 
-			// 鍦ㄦ暟鎹簱涓爣璁颁负绂荤嚎
+// 在数据库中标记为离线
 			// LogUpdate 统一记结果日志；不用 MarkOffline——其无条件删 ClientListenerType 会破坏上方振荡修复守卫的语义
 			affected, err := database.Engine.Where("uid = ?", currentUID).Update(&database.Clients{Online: "2"})
 			database.LogUpdate(affected, err, "TCP断连置离线 uid="+currentUID)
@@ -185,68 +185,70 @@ func HandleTcpConnectionForWithKeys(conn net.Conn, listenerType string, masterKe
 		}
 	}()
 
-	// 杩炴帴淇濇椿璁剧疆 - 涓撻棬涓烘湰鍦扮幆澧冧紭鍖?
+// 连接保活设置 - 专门为本地环境优化
 	if tcpConn, ok := conn.(*net.TCPConn); ok {
 		tcpConn.SetKeepAlive(true)
-		tcpConn.SetKeepAlivePeriod(15 * time.Second) // 鏇撮绻佺殑淇濇椿妫€鏌?
+		tcpConn.SetKeepAlivePeriod(15 * time.Second) // 更频繁的保活检查
 
-		// 璁剧疆璇诲啓缂撳啿鍖?- 澧炲姞缂撳啿鍖哄ぇ灏?
+		// 设置读写缓冲区 - 增加缓冲区大小
 		tcpConn.SetReadBuffer(65536)  // 64KB
 		tcpConn.SetWriteBuffer(65536) // 64KB
 
-		// 绂佺敤Nagle绠楁硶锛屾彁楂樺疄鏃舵€?
+		// 禁用Nagle算法，提高实时性
 		tcpConn.SetNoDelay(true)
 
-		// 璁剧疆鍒濆鍐欏叆瓒呮椂
+		// 设置初始写入超时
 		conn.SetWriteDeadline(time.Now().Add(30 * time.Second))
 
-		logx.Infof("鈿欙笍 鏈湴TCP杩炴帴浼樺寲瀹屾垚: %s\n", clientIP)
+		logx.Infof("🌐 本地TCP连接优化完成: %s\n", clientIP)
 	}
 
-	// 闅ч亾鍙嬪ソ鐨勮繛鎺ョ鐞?- 鏇寸ǔ瀹氱殑绛栫暐
+// 隧道友好的连接管理 - 更稳定的策略
 	lastActivityTime := time.Now()
 
 	for {
-		// 璁剧疆鏇撮暱鐨勮鍙栬秴鏃讹紝鍑忓皯棰戠箒鏂紑
-		conn.SetReadDeadline(time.Now().Add(10 * time.Minute)) // 10鍒嗛挓瓒呮椂
-		// 鍐欏叆瓒呮椂淇濇寔鐩稿杈冪煭
+		// 设置更长的读取超时，减少频繁断开
+		conn.SetReadDeadline(time.Now().Add(10 * time.Minute)) // 10分钟超时
+		// 写入超时保持相对较短
 		conn.SetWriteDeadline(time.Now().Add(60 * time.Second))
 
-		// 鐩存帴澶勭悊娑堟伅
+		// 直接处理消息
 		ctx := context.Background()
 		uid, err := processMessage(ctx, reader, conn, connectionID, clientIP, listenerType, masterKeyOverride, saltOverride)
 		if err != nil {
-			// 妫€鏌ユ槸鍚︽槸姝ｅ父鐨勮繛鎺ュ叧闂?
+			// 检查是否是正常的连接关闭
 			if strings.Contains(err.Error(), "use of closed network connection") ||
 				strings.Contains(err.Error(), "connection reset by peer") ||
 				strings.Contains(err.Error(), "EOF") ||
 				strings.Contains(err.Error(), "connection was forcibly closed") {
-				logx.Infof("馃攲 TCP瀹㈡埛绔繛鎺ユ柇寮€: %s\n", clientIP)
+				logx.Infof("🔌 TCP客户端连接断开: %s\n", clientIP)
 				break
 			} else if strings.Contains(err.Error(), "i/o timeout") {
-				// 妫€鏌ヨ窛绂讳笂娆℃椿鍔ㄧ殑鏃堕棿
+				// 检查距离上次活动的时间
 				timeSinceLastActivity := time.Since(lastActivityTime)
 
-				// 鍙湁鍦ㄩ暱鏃堕棿鏃犳椿鍔ㄦ椂鎵嶈€冭檻鏂紑
+				// 只有在长时间无活动时才考虑断开
 				if timeSinceLastActivity > 15*time.Minute {
-					logx.Infof("鈴?闀挎椂闂存棤娲诲姩锛屾柇寮€杩炴帴: %s (%.1f鍒嗛挓鏃犳椿鍔?\n", clientIP, timeSinceLastActivity.Minutes())
+					logx.Infof("⏰ 长时间无活动，断开连接: %s (%.1f分钟无活动)\n", clientIP, timeSinceLastActivity.Minutes())
 					break
 				}
 
-				// 鐭湡瓒呮椂鏃讹紝浠呰褰曞苟缁х画绛夊緟
-				logx.Infof("鈴?TCP璇诲彇瓒呮椂锛屼絾杩炴帴淇濇寔: %s (璺濅笂娆℃椿鍔?%.1f鍒嗛挓)\n", clientIP, timeSinceLastActivity.Minutes())
+				// 短期超时时，仅记录并继续等待
+				logx.Infof("⏰ TCP读取超时，但连接保持: %s (距上次活动%.1f分钟)\n", clientIP, timeSinceLastActivity.Minutes())
 				continue
 			} else {
-				// 鍏朵粬绫诲瀷鐨勯敊璇紝璁板綍鍚庢柇寮€
-				logx.Infof("鉂?澶勭悊TCP娑堟伅澶辫触: %v\n", err)
+				// 其他类型的错误，记录后断开
+				logx.Infof("❌ 处理TCP消息失败: %v\n", err)
 				break
 			}
 		} else {
+			// 成功处理消息，更新活动时间和UID
+			// 成功处理消息，更新活动时间和UID
 			// 鎴愬姛澶勭悊娑堟伅锛屾洿鏂版椿鍔ㄦ椂闂村拰UID
 			lastActivityTime = time.Now()
 			if uid != "" {
-				currentUID = uid // 璁板綍UID渚沝efer浣跨敤
-				// 缁熶竴绂荤嚎妫€娴嬪櫒 Touch锛堜换浣曟秷鎭兘琛ㄧず瀹㈡埛绔椿璺冿級
+				currentUID = uid // 记录UID供defer使用
+				// 缁熶竴绂荤嚎妫€测器 Touch锛堜换浣曟秷鎭兘琛ㄧず瀹㈡埛绔椿璺冿級
 				if connection.GlobalOfflineDetector != nil {
 					connection.GlobalOfflineDetector.Touch(uid)
 				}
@@ -255,17 +257,15 @@ func HandleTcpConnectionForWithKeys(conn net.Conn, listenerType string, masterKe
 	}
 }
 
-// HandleForwardConnection 姝ｅ悜 TCP 瀹㈡埛绔繛鎺ュ鐞嗭紙鏈嶅姟绔嫧鍙疯繛鍏ョ洰鏍囷級
+// HandleForwardConnection 正向 TCP 客户端连接处理（服务端拨号连入目标）
 func HandleForwardConnection(conn net.Conn) {
 	HandleTcpConnectionFor(conn, "tcp_forward")
 }
-
-// HandleForwardConnectionWithKeys 姝ｅ悜 TCP 杩炴帴澶勭悊锛堟樉寮忎細璇濆瘑閽ワ級
 func HandleForwardConnectionWithKeys(conn net.Conn, masterKey, salt []byte) {
 	HandleTcpConnectionForWithKeys(conn, "tcp_forward", masterKey, salt)
 }
 
-// processMessage 澶勭悊鍗曚釜娑堟伅锛岃繑鍥瀠id浠ヤ究鍦╠efer涓竻鐞?
+// processMessage 处理单个消息，返回uid浠ヤ究鍦╠efer涓竻鐞?
 // sendSessionNonce 生成并下发每连接会话 nonce（type=4|nonce，初始密钥加密）
 func sendSessionNonce(conn net.Conn, uid string, salt, masterKey []byte) {
 	b64 := command.BuildSessionNonceMsg(uid, salt, masterKey)
@@ -298,14 +298,14 @@ func processMessage(ctx context.Context, reader *bufio.Reader, conn net.Conn, co
 	default:
 	}
 
-	// 璇诲彇娑堟伅闀垮害
+	// 读取消息长度
 	var length uint32
 	err := binary.Read(reader, binary.BigEndian, &length)
 	if err != nil {
 		if connection.GlobalConnectionManager != nil {
 			connection.GlobalConnectionManager.RecordConnectionError(connectionID)
 		}
-		return "", fmt.Errorf("璇诲彇娑堟伅闀垮害澶辫触: %v", err)
+		return "", fmt.Errorf("读取消息长度失败: %v", err)
 	}
 
 	// 闀垮害涓婇檺鏍￠獙锛岄槻姝㈡伓鎰忓鎴风鏃犵晫鍒嗛厤鍐呭瓨
@@ -314,7 +314,7 @@ func processMessage(ctx context.Context, reader *bufio.Reader, conn net.Conn, co
 		if connection.GlobalConnectionManager != nil {
 			connection.GlobalConnectionManager.RecordConnectionError(connectionID)
 		}
-		return "", fmt.Errorf("娑堟伅闀垮害瓒呰繃涓婇檺: %d", length)
+		return "", fmt.Errorf("消息长度超过上限: %d", length)
 	}
 
 	// 鏍规嵁闀垮害璇诲彇娑堟伅鍐呭
@@ -332,9 +332,9 @@ func processMessage(ctx context.Context, reader *bufio.Reader, conn net.Conn, co
 		connection.GlobalConnectionManager.UpdateConnectionActivity(connectionID, int64(len(message)), 0)
 	}
 
-	// 鑷冲皯闇€瑕?4 瀛楄妭娑堟伅绫诲瀷澶达紝闃叉瓒婄晫
+		// 至少需要 4 字节消息类型头，防止越界
 	if len(message) < 4 {
-		return "", fmt.Errorf("娑堟伅闀垮害涓嶈冻: %d", len(message))
+		return "", fmt.Errorf("消息长度不足: %d", len(message))
 	}
 	msgTypeBytes := message[:4]
 	msgType := binary.BigEndian.Uint32(msgTypeBytes)
@@ -343,13 +343,13 @@ func processMessage(ctx context.Context, reader *bufio.Reader, conn net.Conn, co
 		msg := message[4:]
 		tmpMetainfo, err := encrypt.DecodeBase64(msg)
 		if err != nil {
-			return "", fmt.Errorf("瑙ｇ爜base64澶辫触: %v", err)
+			return "", fmt.Errorf("瑙ｇ爜base64失败: %v", err)
 		}
 		metainfo, err := encrypt.DecryptWithMasterKeyRaw(tmpMetainfo, metaMasterKey)
 		if err != nil {
 			return "", fmt.Errorf("瑙ｅ瘑澶辫触: %v", err)
 		}
-		// FirstBlood 鍏冩暟鎹暱搴︽牎楠岋細鑷冲皯闇€瑕?9 瀛楄妭锛坧id4+flag1+ip4锛変笖鏈?OS 淇℃伅
+		// FirstBlood 鍏冩暟鎹暱搴︽牎楠岋細鑷冲皯闇€瑕?9 字节（pid4+flag1+ip4锛変笖鏈?OS 淇℃伅
 		if len(metainfo) < 10 {
 			return "", fmt.Errorf("FirstBlood鍏冩暟鎹暱搴︿笉瓒? %d", len(metainfo))
 		}
@@ -357,7 +357,7 @@ func processMessage(ctx context.Context, reader *bufio.Reader, conn net.Conn, co
 
 		// 绔嬪嵆涓哄鎴风鐢熸垚浼氳瘽瀵嗛挜锛堢‘淇濅笌瀹㈡埛绔悓姝ワ級
 		if encrypt.GlobalKeyManager != nil {
-			// 鑾峰彇鐩戝惉鍣ㄧ壒瀹氱殑瀵嗛挜閰嶇疆锛堟鍚戣繛鎺ュ彲鏄惧紡瑕嗙洊锛?
+		// 获取监听器特定的密钥配置（正向连接可显式覆盖）
 			masterKey, encryptionSalt := encrypt.GetListenerKeyConfigForForward(listenerType)
 			if len(masterKeyOverride) > 0 && len(saltOverride) > 0 {
 				// 规范化为 32/16 字节，与客户端占位符切片规则一致
@@ -385,7 +385,7 @@ func processMessage(ctx context.Context, reader *bufio.Reader, conn net.Conn, co
 			}
 		}
 
-		// 淇濇寔鍚戝悗鍏煎
+				// 保持向后兼容
 		Mutex.Lock()
 		TCPClientManger[uid] = conn
 		Mutex.Unlock()
@@ -413,7 +413,7 @@ func processMessage(ctx context.Context, reader *bufio.Reader, conn net.Conn, co
 		// 銆愬叧閿慨澶嶃€戞敞鍐孴CP杩炴帴鍒伴毀閬撶鐞嗗櫒
 		if RegisterTunnelConnection != nil {
 			RegisterTunnelConnection(uid, conn)
-			logx.Infof("馃敆 [TCP杩炴帴] 宸叉敞鍐屽埌闅ч亾绠＄悊鍣? %s\n", uid[:16]+"...")
+			logx.Infof("🔗 [TCP连接] 宸叉敞鍐屽埌闅ч亾绠＄悊鍣? %s\n", uid[:16]+"...")
 		}
 
 		var client database.Clients
@@ -437,7 +437,7 @@ func processMessage(ctx context.Context, reader *bufio.Reader, conn net.Conn, co
 				clientOs = osArray[3]
 			}
 
-			// 澶栫綉 IP
+			// 外网 IP
 			remoteAddr := conn.RemoteAddr().String()
 			externalIp, _, err := net.SplitHostPort(remoteAddr)
 			if err != nil {
@@ -462,7 +462,7 @@ func processMessage(ctx context.Context, reader *bufio.Reader, conn net.Conn, co
 				arch = "x64"
 			}
 
-			// 浠庣洃鍚櫒閰嶇疆涓幏鍙栧績璺冲弬鏁?
+			// 从监听器配置中获取心跳参数
 			heartbeatTimeout, heartbeatInterval := database.GetListenerHeartbeatConfigByType(listenerType)
 
 			database.Engine.Insert(&database.Clients{Uid: uid, FirstStart: formattedTime, ExternalIP: externalIp, InternalIP: localIP, Username: UserName, Computer: hostName, Process: processName, Pid: strconv.Itoa(int(processID)), Address: address, Arch: arch, Note: "", Sleep: strconv.Itoa(connection.ResolveSleepSeconds(osArray, heartbeatInterval)), Online: "1", Color: "", Listener: listenerType, Os: clientOs, HeartbeatTimeout: heartbeatTimeout, HeartbeatInterval: heartbeatInterval})
@@ -491,7 +491,7 @@ func processMessage(ctx context.Context, reader *bufio.Reader, conn net.Conn, co
 		}
 		database.SetClientOnline(uid, listenerType)
 
-		// 娣诲姞鍒板鎴风鏃堕棿绠＄悊鍣?
+		// 添加到客户端时间管理器
 		clientTime := &ClientTime{
 			LastHeartbeat: time.Now(),
 			TimeoutCount:  0,
@@ -518,7 +518,7 @@ func processMessage(ctx context.Context, reader *bufio.Reader, conn net.Conn, co
 			})
 		}
 
-		// 杩斿洖uid渚涗富鍑芥暟璁板綍
+		// 返回uid供主函数记录
 		return uid, nil
 
 	case 3: // heartBeat
@@ -572,7 +572,7 @@ func processMessage(ctx context.Context, reader *bufio.Reader, conn net.Conn, co
 		}
 		writeLock.Unlock()
 
-		// 杩斿洖uid
+		// 返回uid
 		return uid, nil
 
 	case 2: // otherMsg
@@ -605,12 +605,12 @@ func processMessage(ctx context.Context, reader *bufio.Reader, conn net.Conn, co
 			// 【加密体系改造】不再回落旧加密
 			return "", fmt.Errorf("会话密钥解密失败: %v", err)
 		} else {
-			logx.Infof("馃敁 [TCP] 浣跨敤楂樼骇浼氳瘽瀵嗛挜瑙ｅ瘑: %s\n", uid)
+			logx.Infof("🔓 [TCP] 浣跨敤楂樼骇浼氳瘽瀵嗛挜瑙ｅ瘑: %s\n", uid)
 		}
 
 		// 娣诲姞鏁版嵁闀垮害妫€鏌ワ紝闃叉 slice bounds out of range 閿欒
 		if len(dataBytes) < 4 {
-			logx.Infof("鈿狅笍 鏁版嵁闀垮害涓嶈冻 - UID: %s, 鏁版嵁闀垮害: %d, 闇€瑕佽嚦灏?瀛楄妭\n", uid, len(dataBytes))
+			logx.Infof("⚠️ 数据长度不足 - UID: %s, 数据长度: %d, 闇€瑕佽嚦灏?字节\n", uid, len(dataBytes))
 			return "", fmt.Errorf("数据长度不足，无法提取消息类型，需要至少 4 字节，实际收到%d字节", len(dataBytes))
 		}
 
@@ -626,7 +626,7 @@ func processMessage(ctx context.Context, reader *bufio.Reader, conn net.Conn, co
 			logx.Warnf("⚠️ [%s] 处理客户端回包失败 (type=%d): %v\n", listenerType, replyType, err)
 		}
 
-		// 杩斿洖uid
+		// 返回uid
 		return uid, nil
 	}
 	return "", nil

