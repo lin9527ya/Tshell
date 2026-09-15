@@ -1,36 +1,107 @@
 /**
  * 编码转换工具类
  * 专门用于处理中文乱码问题
+ *
+ * 【KNOWN_LIMITATIONS #11 修复】原实现为硬编码乱码→中文映射表(数十条,只能覆盖
+ * 固定词组,任意输出仍乱码)。现改为字节级 TextDecoder('gb18030') 解码为主:
+ * 服务端回传的 shell 输出若为 GBK 系编码被误按 UTF-8/Latin-1 解释,前端将其
+ * charCode 还原为字节后按 gb18030(GBK 超集,兼容 GB2312/GBK)重新解码,
+ * 并以"解码后中文占比/可读性"置信度判定是否采纳。
  */
 
 /**
  * 检测字符串是否包含中文乱码
- * @param {string} str 
+ * @param {string} str
  * @returns {boolean}
  */
 export function hasGarbledText(str) {
   if (!str) return false
-  
-  // 检测常见的乱码特征
+
+  // GBK 误读形态: 双字节序列(B1: 0x81-0xFE, B2: 0x40-0xFE)被按 Latin-1 解释为
+  // 连续高位拉丁/符号字符。B2 可低至 0x40('@')故不能只查 À-ÿ 区间
+  // (原模式漏检 Ä¿Â¼ 之类 B2<0xC0 的形态)。
   const garbledPatterns = [
-    /\ufffd/,                    // 替换字符 (replacement character)
-    /[À-ÿ]{2,}/,                 // 连续的拉丁扩展字符
-    /[Â¡Â¢Â£Â¤Â¥Â¦Â§Â¨Â©ÂªÂ«Â¬Â­Â®Â¯Â°Â±Â²Â³Â´ÂµÂ¶Â·Â¸Â¹ÂºÂ»Â¼Â½Â¾Â¿]/, // GBK转UTF-8常见乱码
-    /æ[°±²³´µ¶·¸¹º»¼½¾¿][\x80-\xBF]/, // 中文转UTF-8的常见乱码模式
-    /[èéêëìíîï][€‚ƒ„…†‡ˆ‰Š‹ŒŽ''""•–—˜™š›œžŸ][\x80-\xBF]/, // 另一种常见模式
+    /�/,                    // 替换字符 (replacement character)
+    /[À-ÿ][@-ÿ]/, // GBK 双字节被 Latin-1 误读的典型形态
+    /[-¿][-¿]/, // 连续高位符号
   ]
-  
+
   return garbledPatterns.some(pattern => pattern.test(str))
 }
 
 /**
+ * 统计字符串中 CJK 字符占比(解码质量置信度用)
+ * @param {string} str
+ * @returns {number} 0-1
+ */
+function cjkRatio(str) {
+  if (!str) return 0
+  let cjk = 0
+  let total = 0
+  for (const ch of str) {
+    const c = ch.codePointAt(0)
+    if (c < 0x20 && c !== 0x0a && c !== 0x0d && c !== 0x09) continue // 控制字符不计
+    if (c <= 0x7f) { total++; continue }                              // ASCII
+    total++
+    if ((c >= 0x4e00 && c <= 0x9fff) ||   // CJK 统一表意
+        (c >= 0x3000 && c <= 0x303f) ||   // CJK 标点
+        (c >= 0xff00 && c <= 0xffef)) {   // 全角形式
+      cjk++
+    }
+  }
+  return total === 0 ? 0 : cjk / total
+}
+
+// gb18030 解码器缓存(解码器有状态,每次新建;TextDecoder 构造成本低,不做全局缓存)
+let gb18030Supported = null
+
+/**
+ * 尝试按 gb18030 解码"被误读的字节"
+ * @param {string} str
+ * @returns {string|null} 解码成功且置信度达标返回新串,否则 null
+ */
+function tryDecodeGb18030(str) {
+  if (typeof TextDecoder === 'undefined') return null
+  if (gb18030Supported === null) {
+    try {
+      new TextDecoder('gb18030')
+      gb18030Supported = true
+    } catch {
+      gb18030Supported = false
+    }
+  }
+  if (!gb18030Supported) return null
+
+  // charCode & 0xFF 还原单字节序列;>0xFF 的码点说明串中已有真正的 Unicode
+  // 字符(非 GBK 误读形态),字节级还原无意义
+  const bytes = new Uint8Array(str.length)
+  for (let i = 0; i < str.length; i++) {
+    const c = str.charCodeAt(i)
+    if (c > 0xff) return null
+    bytes[i] = c
+  }
+
+  try {
+    const decoded = new TextDecoder('gb18030', { fatal: false }).decode(bytes)
+    if (!decoded || decoded === str) return null
+    // 置信度: 解码后应出现合理比例的 CJK(纯 ASCII 输入不含中文,解码后与原文
+    // 相同或无 CJK,均不采纳);且不应引入新的替换字符
+    if (/�/.test(decoded)) return null
+    if (cjkRatio(decoded) < 0.05) return null
+    return decoded
+  } catch {
+    return null
+  }
+}
+
+/**
  * 尝试修复GBK编码的乱码
- * @param {string} str 
+ * @param {string} str
  * @returns {string}
  */
 export function fixGBKEncoding(str) {
   if (!str) return str
-  
+
   try {
     // 方法1: 处理URL编码后的GBK
     if (str.includes('%')) {
@@ -39,93 +110,20 @@ export function fixGBKEncoding(str) {
         if (decoded !== str && !hasGarbledText(decoded)) {
           return decoded
         }
-      } catch (e) {
+      } catch {
         // 继续尝试其他方法
       }
     }
-    
-    // 方法2: 手动处理常见的GBK->UTF-8乱码
-    let fixed = str
-    
-    // 常见的GBK乱码字符映射
-    const gbkFixes = {
-      'ä¸­æ–‡': '中文',
-      'æµ‹è¯•': '测试',
-      'ä½ å¥½': '你好',
-      'ç³»ç»Ÿ': '系统',
-      'æ–‡ä»¶': '文件',
-      'ç›®å½•': '目录',
-      'é"™è¯¯': '错误',
-      'æˆåŠŸ': '成功',
-      'å¤±è´¥': '失败',
-      'å®Œæˆ': '完成',
-      'æ­£åœ¨': '正在',
-      'è¯·ç­‰å¾…': '请等待',
-      'å·²å®Œæˆ': '已完成',
-      // 新增更多常见乱码模式
-      '扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁': '目录',
-      '扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁扁': '存放的目录',
-      'æ˜ä»¶': '文件',
-      'ç®å½•': '目录',
-      'é”™è¯¯': '错误',
-      'æˆ’åž': '成功',
-      'å¤±è´¥': '失败',
-      'ç³»ç»Ÿ': '系统',
-      'è¿žæ¥': '连接',
-      'æˆ­æ­': '断开',
-      'çˆæ¬': '版本',
-      'è¾å‡º': '输出',
-      'è¾å…¥': '输入',
-      'ä¸»æº': '主机',
-      'å®¢æˆ·ç«¯': '客户端',
-      'æˆä»¤': '命令',
-      'æˆ†è¡': '执行',
-      'å®æ˜‚': '完成',
-      'å¤„ç«¯': '终端',
-      'å¨æ˜ƒ': '动态',
-      'é…œç½®': '配置'
-    }
-    
-    // 应用修复映射
-    for (const [garbled, correct] of Object.entries(gbkFixes)) {
-      fixed = fixed.replace(new RegExp(garbled, 'g'), correct)
-    }
-    
-    // 方法3: 使用字节级别的转换
-    if (hasGarbledText(fixed) && typeof TextDecoder !== 'undefined') {
-      try {
-        // 将字符串转换为字节数组
-        const bytes = new Uint8Array(str.length)
-        for (let i = 0; i < str.length; i++) {
-          bytes[i] = str.charCodeAt(i) & 0xFF
-        }
-        
-        // 尝试不同的编码解码
-        const encodings = ['gbk', 'gb2312', 'gb18030', 'big5']
-        
-        for (const encoding of encodings) {
-          try {
-            const decoder = new TextDecoder(encoding, { fatal: false })
-            const decoded = decoder.decode(bytes)
-            
-            // 检查解码结果是否包含中文且没有乱码
-            if (decoded && 
-                decoded !== str && 
-                /[\u4e00-\u9fff]/.test(decoded) && 
-                !hasGarbledText(decoded)) {
-              console.log(`成功使用${encoding}编码修复乱码`)
-              return decoded
-            }
-          } catch (e) {
-            // 继续尝试下一种编码
-          }
-        }
-      } catch (e) {
-        console.warn('字节级编码转换失败:', e)
+
+    // 方法2: 字节级 gb18030 流式解码(GB2312/GBK 超集,替代原硬编码映射表)
+    if (hasGarbledText(str)) {
+      const decoded = tryDecodeGb18030(str)
+      if (decoded !== null) {
+        return decoded
       }
     }
-    
-    return fixed
+
+    return str
   } catch (error) {
     console.warn('编码修复失败:', error)
     return str
@@ -134,53 +132,49 @@ export function fixGBKEncoding(str) {
 
 /**
  * 智能编码检测和修复
- * @param {string} content 
+ * @param {string} content
  * @returns {string}
  */
 export function smartDecodeContent(content) {
   if (!content) return content
-  
+
   // 如果没有乱码，直接返回
   if (!hasGarbledText(content)) {
     return content
   }
-  
-  console.log('检测到可能的编码问题，尝试修复...')
-  
+
   // 尝试修复GBK编码
   const fixed = fixGBKEncoding(content)
-  
+
   // 如果修复成功，返回修复后的内容
   if (fixed !== content && !hasGarbledText(fixed)) {
-    console.log('编码修复成功')
     return fixed
   }
-  
-  console.warn('无法自动修复编码问题，返回原始内容')
+
   return content
 }
 
 /**
  * 处理终端输出的编码问题
- * @param {string} output 
+ * @param {string} output
  * @returns {string}
  */
 export function processTerminalOutput(output) {
   if (!output) return output
-  
+
   try {
     // 先进行智能编码修复
     let processed = smartDecodeContent(output)
-    
+
     // 移除Linux交互式标识符（避免用户看到技术标记）
     processed = processed.replace(/\[LINUX_INTERACTIVE\]\s*/g, '')
-    
+
     // 处理特殊的终端控制字符
     // 将ANSI颜色代码转换为HTML而不是移除它们
     processed = convertAnsiToHtml(processed)
     processed = processed.replace(/\r\n/g, '\n') // 标准化换行符
     processed = processed.replace(/\r/g, '\n') // 处理回车符
-    
+
     return processed
   } catch (error) {
     console.warn('终端输出处理失败:', error)
@@ -190,7 +184,7 @@ export function processTerminalOutput(output) {
 
 /**
  * 将ANSI转义序列转换为HTML颜色标签
- * @param {string} text 
+ * @param {string} text
  * @returns {string}
  */
 function convertAnsiToHtml(text) {
@@ -209,7 +203,7 @@ function convertAnsiToHtml(text) {
   const ansiColorMap = {
     // 前景色
     '30': 'color: #2e3436;',    // 黑色
-    '31': 'color: #cc0000;',    // 红色  
+    '31': 'color: #cc0000;',    // 红色
     '32': 'color: #4e9a06;',    // 绿色
     '33': 'color: #c4a000;',    // 黄色
     '34': 'color: #3465a4;',    // 蓝色
@@ -240,14 +234,14 @@ function convertAnsiToHtml(text) {
     '4': 'text-decoration: underline;',
     '0': '' // 重置
   }
-  
+
   // 处理ANSI转义序列
   return text.replace(/\x1b\[([0-9;]*)m/g, (match, codes) => {
     if (!codes) return '<span style="color: #d3d7cf;">'
-    
+
     const codeList = codes.split(';')
     const styles = []
-    
+
     for (const code of codeList) {
       if (code === '0' || code === '') {
         return '</span><span style="color: #d3d7cf;">'
@@ -256,11 +250,11 @@ function convertAnsiToHtml(text) {
         styles.push(ansiColorMap[code])
       }
     }
-    
+
     if (styles.length > 0) {
       return `</span><span style="${styles.join(' ')}">`
     }
-    
+
     return '<span style="color: #d3d7cf;">'
   })
 }

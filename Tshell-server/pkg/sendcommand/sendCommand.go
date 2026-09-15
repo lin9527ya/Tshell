@@ -61,6 +61,7 @@ var commandTable = []cmdSpec{
 	{prefix: "mv ", typ: command1.MV, build: rawArg},
 	{prefix: "execute ", typ: command1.EXECUTE, build: rawArg},
 	{prefix: "filebrowse ", typ: command1.FileBrowse, build: rawArg},
+	{prefix: "filesearch ", typ: command1.FILE_SEARCH, build: rawArg},
 	{prefix: "download ", typ: command1.DOWNLOAD, build: rawArg},
 	{prefix: "filecontent ", typ: command1.FileContent, build: rawArg},
 	{prefix: "socks5 ", typ: command1.ReverseSocks5Start, build: rawArg},

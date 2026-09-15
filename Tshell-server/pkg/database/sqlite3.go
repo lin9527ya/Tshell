@@ -390,6 +390,21 @@ type Plugin struct {
 	UploadTime time.Time `json:"upload_time" xorm:"datetime notnull"`
 }
 
+// Loot 凭据/制品库(功能批): 行动中获取的凭据与制品集中管理。
+// 来源: 手动录入 / 命令产出自动识别(WiFi 密码等) / 后续提取命令族(LSASS/DPAPI/浏览器)。
+type Loot struct {
+	Id        int64  `json:"id" xorm:"pk autoincr"`
+	Uid       string `json:"uid" xorm:"index"`         // 来源会话
+	Type      string `json:"type" xorm:"varchar(20) index"` // pwd 明文 / hash NTLM哈希 / domain 域账号 / note 备忘
+	User      string `json:"user" xorm:"varchar(255)"`      // 用户名
+	Realm     string `json:"realm" xorm:"varchar(255)"`     // 域/REALM
+	Host      string `json:"host" xorm:"varchar(255)"`      // 主机名
+	Secret    string `json:"secret" xorm:"text"`            // 密码/哈希/密钥
+	Note      string `json:"note" xorm:"text"`              // 备注
+	Source    string `json:"source" xorm:"varchar(50)"`     // 来源: manual/wifi/keylog/lsass/...
+	CreatedAt string `json:"created_at" xorm:"varchar(32) index"`
+}
+
 // MigrateDatabase 数据库迁移函数，为现有表添加新字段
 func MigrateDatabase() error {
 	if Engine == nil {
@@ -1089,7 +1104,7 @@ _, _ = Engine.Exec("PRAGMA mmap_size=268435456")
 	// 原实现用第二个连接池操作同一 SQLite 文件（双池竞争）、可能开启 ShowSQL 刷屏，
 	// 且夜间 VACUUM 会锁库阻塞；API 层统一使用全局 Engine。
 
-	err = Engine.Sync2(new(Users), new(Clients), new(Notes), new(Shell), new(Downloads), new(Listener), new(WebDelivery), new(DeliveryAccessLog), new(Socks5), new(TunnelProxy), new(AuditLogDB), new(Plugin), new(StagerToken))
+	err = Engine.Sync2(new(Users), new(Clients), new(Notes), new(Shell), new(Downloads), new(Listener), new(WebDelivery), new(DeliveryAccessLog), new(Socks5), new(TunnelProxy), new(AuditLogDB), new(Plugin), new(StagerToken), new(Loot))
 _, _ = Engine.Exec("CREATE INDEX IF NOT EXISTS idx_clients_uid ON clients(uid)")  
 _, _ = Engine.Exec("CREATE INDEX IF NOT EXISTS idx_clients_online ON clients(online)")  
 _, _ = Engine.Exec("CREATE INDEX IF NOT EXISTS idx_clients_listener ON clients(listener)")  

@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import { listLoot, addLoot, deleteLoot, type LootItem } from '@/api/loot'
 
 export interface CredentialItem {
   id: string
@@ -154,6 +155,74 @@ export const useCredentialsStore = defineStore('cs-credentials', {
               source: 'hashdump',
             })
           }
+        }
+      }
+    },
+
+    // ===== 服务端 Loot 库同步(功能批) =====
+    // 服务端为凭据的持久层: 拉取合并到内存 store(去重),本地新增/删除同步写回。
+    // 内存态仍在(刷新即重新拉取),与服务端"审计可追溯"要求兼容。
+
+    /** 从服务端 loot 库拉取并合并(uid 维度去重) */
+    async fetchFromServer() {
+      try {
+        const res = await listLoot({ page: 1, size: 1000 })
+        const data = res.data?.data?.list
+        if (!Array.isArray(data)) return
+        for (const item of data as LootItem[]) {
+          // uid/user/realm/host 相同视为同一条(与 addCredential 的去重键一致)
+          const typeMap: Record<string, string> = { pwd: 'manual', hash: 'hashdump', domain: 'vault', note: 'vault' }
+          this.addCredential({
+            id: `loot_${item.id}`, // 服务端条目以 loot_ 前缀标识
+            realm: item.realm || '',
+            user: item.user || '',
+            // pwd: secret 即明文密码;hash: secret 即哈希
+            password: item.type === 'pwd' ? (item.secret || '') : '',
+            hash: item.type === 'hash' || item.type === 'domain' ? (item.secret || '') : '',
+            host: item.host || '',
+            source: item.source || typeMap[item.type] || 'vault',
+            note: item.note || '',
+            updatedAt: item.created_at || '',
+          })
+        }
+      } catch {
+        // 拉取失败静默(离线/权限),本地内存态仍可用
+      }
+    },
+
+    /** 新增凭据并写回服务端(uid 来源会话可选) */
+    async addCredentialPersistent(cred: Omit<CredentialItem, 'id' | 'updatedAt'> & { id?: string; updatedAt?: string }, uid?: string) {
+      const local = this.addCredential(cred)
+      // 已是服务端条目则不重复写
+      if (local.id.startsWith('loot_')) return local
+      try {
+        // 密码与哈希分两条存(pwd/hash),域账号归 domain
+        const type = cred.password ? 'pwd' : (cred.hash ? (cred.realm && cred.realm !== 'WORKGROUP' ? 'domain' : 'hash') : 'note')
+        const res = await addLoot({
+          uid: uid || '',
+          type,
+          user: cred.user || '',
+          realm: cred.realm || '',
+          host: cred.host || '',
+          secret: cred.password || cred.hash || '',
+          note: cred.note || '',
+          source: cred.source || 'manual',
+        })
+        const sid = res.data?.data?.id
+        if (sid) local.id = `loot_${sid}` // 落库成功后改为服务端 id,后续删除走服务端
+      } catch {
+        // 写回失败保留本地态
+      }
+      return local
+    },
+
+    /** 删除凭据(服务端条目同步删库;本地条目仅删内存) */
+    async removeCredentialPersistent(id: string) {
+      this.removeCredential(id)
+      if (id.startsWith('loot_')) {
+        const sid = parseInt(id.slice(5), 10)
+        if (!isNaN(sid)) {
+          try { await deleteLoot(sid) } catch { /* 删库失败不影响本地态 */ }
         }
       }
     },

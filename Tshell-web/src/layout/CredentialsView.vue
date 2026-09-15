@@ -380,8 +380,8 @@ function saveCredential() {
     })
     ElMessage.success(isZh.value ? '凭证已更新' : 'Credential updated')
   } else {
-    credsStore.addCredential({
-      id: `cred_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    // 新增: 同步写服务端 loot 库(持久化+审计可追溯)
+    credsStore.addCredentialPersistent({
       realm: formCred.realm.trim(),
       user: formCred.user.trim(),
       password: formCred.password.trim(),
@@ -389,7 +389,6 @@ function saveCredential() {
       host: formCred.host.trim(),
       source: 'manual',
       note: formCred.note.trim(),
-      updatedAt: now,
     })
     ElMessage.success(isZh.value ? '凭证已添加' : 'Credential added')
   }
@@ -409,7 +408,7 @@ function deleteSelected() {
       type: 'warning',
     },
   ).then(() => {
-    credsStore.removeCredential(id)
+    credsStore.removeCredentialPersistent(id)
     selectedRow.value = null
     ElMessage.success(isZh.value ? '已删除凭证' : 'Credential deleted')
   }).catch(() => {})
@@ -467,6 +466,8 @@ function closeContextMenu() {
 
 onMounted(() => {
   window.addEventListener('click', closeContextMenu)
+  // 从服务端 loot 库拉取凭据(持久层;失败静默保持本地内存态)
+  credsStore.fetchFromServer()
 })
 
 onBeforeUnmount(() => {

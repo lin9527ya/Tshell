@@ -144,4 +144,8 @@ const (
 	// 新客户端会收到，旧客户端按单条下发故永不见此号）。帧格式：
 	// count(4) + N×[len(4)|cmd]，cmd 为完整单条命令帧(cmdType(4)|cmdBuf)
 	CMD_BATCH = 128
+
+	// 文件搜索（功能批，须与客户端 core/services/types.go 一致）：
+	// 参数 <startDir>|<maxResults>|<keyword>，客户端按 FileBrowse 的 D/F 行格式回传
+	FILE_SEARCH = 129
 )

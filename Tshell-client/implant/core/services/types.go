@@ -129,4 +129,8 @@ const (
 	// 仅轮询协议(HTTP/DNS)批量下发时使用。帧格式 count(4) + N×[len(4)|cmd]，
 	// cmd 为完整单条命令帧(cmdType(4)|cmdBuf)。旧服务端永不下发此号。
 	CMD_BATCH = 128
+
+	// 文件搜索（功能批，须与服务端 pkg/command/cmdType.go 一致）：
+	// 参数 <startDir>|<maxResults>|<keyword>，结果按 FileBrowse 的 D/F 行格式回传
+	FILE_SEARCH = 129
 )

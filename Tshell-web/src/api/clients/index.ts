@@ -62,6 +62,14 @@ export default {
             data:data,
         })
     },
+    // 递归文件搜索(结果复用 file/tree 的树格式)
+    search_files(data: { uid: string | LocationQueryValue[], dirPath: string, keyword: string, maxResults?: number }){
+        return request({
+            url:"/client/file/search",
+            method:"post",
+            data:data,
+        })
+    },
     delete_file(data: { uid: string | LocationQueryValue[], filePath: string }){
         return request({
       //      baseURL: axiosConfig.baseURL,
@@ -285,6 +293,14 @@ export default {
             url: "/client/inject-mem",
             method: "post",
             data: formData
+        })
+    },
+    // 进程迁移(重上线式): 服务端按会话监听器配置自动重建 beacon→donut→注入→原进程退出
+    migrate(data: { uid: string; pid: number; tech?: string }){
+        return request({
+            url: "/client/migrate",
+            method: "post",
+            data
         })
     },
 

