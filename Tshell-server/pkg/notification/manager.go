@@ -186,10 +186,11 @@ func (nm *NotificationManager) sendClientOnlineNotification(clientUID string) {
 		}
 	}
 
-	// 如果启用了语音通知，可以在这里添加语音播放逻辑
+	// 语音/提示音(P1-7): 服务端为无头进程播音频无意义,提示音由前端播放
+	// (Tshell-web events store 收 client_online 事件时经 Web Audio 播放,
+	// 开关在 preferences.audioNotify)。此处仅保留日志说明,不做系统级播放。
 	if notificationConfig.EnableAudio && successCount > 0 {
-		// TODO: 实现语音通知功能
-		logx.Infof("[INFO] 🔊 客户端 %s 语音通知已触发\n", clientUID)
+		logx.Infof("[INFO] 🔊 客户端 %s 语音通知已触发(前端播放)\n", clientUID)
 	}
 }
 

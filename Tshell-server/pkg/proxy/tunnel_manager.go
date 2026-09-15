@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"BackendTemplate/pkg/utils/logx"
 )
 
 // TunnelManager 隧道代理管理器
@@ -139,39 +138,11 @@ func (tm *TunnelManager) StopTunnel(tunnelID int64) error {
 		// 停止UDP转发
 		return tm.stopUDPTunnel(tunnelID)
 	default:
-		// 默认停止逻辑
-		return tm.stopGenericTunnel(tunnelID)
+		// 未知协议(与 StartTunnel 对称报错;原走 generic 停止逻辑,已随死代码移除)
+		return fmt.Errorf("不支持的隧道协议: %s", tunnel.Protocol)
 	}
 }
 
-// handleTunnelConnections 处理隧道连接（简化实现）
-func (tm *TunnelManager) handleTunnelConnections(instance *TunnelInstance) {
-	for {
-		conn, err := instance.Listener.Accept()
-		if err != nil {
-			// 监听器关闭或出错，退出
-			return
-		}
-
-		// 简单的连接处理（可以根据协议类型进行不同处理）
-		go tm.handleConnection(conn, instance)
-	}
-}
-
-// handleConnection 处理单个连接（简化实现）
-func (tm *TunnelManager) handleConnection(conn net.Conn, instance *TunnelInstance) {
-	defer conn.Close()
-
-	// 这里应该根据协议类型进行不同的处理
-	// 目前是简化实现，仅做基本的回显
-	logx.Infof("隧道代理接收到连接: %s -> %s (协议: %s)\n",
-		conn.RemoteAddr(), conn.LocalAddr(), instance.Protocol)
-
-	// 可以在这里添加具体的代理逻辑
-	// 例如：SOCKS5代理、HTTP代理、TCP转发等
-}
-
-// RegisterClientConnection 注册客户端连接
 func (tm *TunnelManager) RegisterClientConnection(clientUID string, conn net.Conn) {
 	tm.mu.Lock()
 	defer tm.mu.Unlock()
@@ -201,85 +172,6 @@ func (tm *TunnelManager) GetClientConnection(clientUID string) (net.Conn, bool) 
 	return conn, exists
 }
 
-// startGenericTunnel 启动通用隧道（原有的简化实现）
-func (tm *TunnelManager) startGenericTunnel(tunnel database.TunnelProxy) error {
-	// 启动监听器（简化实现）
-	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", tunnel.ServerPort))
-	if err != nil {
-		return fmt.Errorf("启动监听器失败: %v", err)
-	}
-
-	// 创建隧道实例
-	instance := &TunnelInstance{
-		ID:         tunnel.ID,
-		ClientUID:  tunnel.ClientUID,
-		Protocol:   tunnel.Protocol,
-		ServerPort: tunnel.ServerPort,
-		Username:   tunnel.Username,
-		Password:   tunnel.Password,
-		Status:     1,
-		Listener:   listener,
-		CreatedAt:  tunnel.CreatedAt,
-		UpdatedAt:  time.Now(),
-	}
-
-	// 保存到管理器
-	tm.tunnels[tunnel.ID] = instance
-	tm.listeners[tunnel.ServerPort] = &listener
-
-	// 启动代理处理（在后台运行）
-	go tm.handleTunnelConnections(instance)
-
-	// 记录审计日志
-	if audit.GlobalAuditLogger != nil {
-		audit.GlobalAuditLogger.Log(audit.LogLevelInfo, audit.CategorySystem, "TUNNEL_START", "SUCCESS",
-			fmt.Sprintf("隧道代理 %d 启动成功，协议: %s，端口: %d", tunnel.ID, tunnel.Protocol, tunnel.ServerPort),
-			map[string]interface{}{
-				"tunnel_id":  tunnel.ID,
-				"protocol":   tunnel.Protocol,
-				"port":       tunnel.ServerPort,
-				"client_uid": tunnel.ClientUID,
-			})
-	}
-
-	return nil
-}
-
-// stopGenericTunnel 停止通用隧道（原有的简化实现）
-func (tm *TunnelManager) stopGenericTunnel(tunnelID int64) error {
-	// 检查隧道是否存在
-	instance, exists := tm.tunnels[tunnelID]
-	if !exists {
-		// 【关键修复】隧道不存在时返回成功，而不是错误
-		logx.Infof("💫 [隧道停止] 隧道 %d 不存在或已停止，跳过停止操作\n", tunnelID)
-		return nil
-	}
-
-	// 关闭监听器
-	if instance.Listener != nil {
-		instance.Listener.Close()
-	}
-
-	// 从管理器中移除
-	delete(tm.tunnels, tunnelID)
-	delete(tm.listeners, instance.ServerPort)
-
-	// 记录审计日志
-	if audit.GlobalAuditLogger != nil {
-		audit.GlobalAuditLogger.Log(audit.LogLevelInfo, audit.CategorySystem, "TUNNEL_STOP", "SUCCESS",
-			fmt.Sprintf("隧道代理 %d 停止成功，协议: %s，端口: %d", tunnelID, instance.Protocol, instance.ServerPort),
-			map[string]interface{}{
-				"tunnel_id":  tunnelID,
-				"protocol":   instance.Protocol,
-				"port":       instance.ServerPort,
-				"client_uid": instance.ClientUID,
-			})
-	}
-
-	return nil
-}
-
-// startSocks5Tunnel 启动SOCKS5隧道
 func (tm *TunnelManager) startSocks5Tunnel(tunnel database.TunnelProxy) error {
 	log.Printf("[TUNNEL-SOCKS5] 🚀 启动SOCKS5隧道，端口: %d", tunnel.ServerPort)
 
@@ -440,9 +332,3 @@ func (tm *TunnelManager) stopSocks5Tunnel(tunnelID int64) error {
 // stopTCPTunnel 实现已移至 tcp_tunnel.go
 
 // startUDPTunnel / stopUDPTunnel 实现已移至 udp_tunnel.go（基于反向mux的真UDP转发，经客户端穿透）
-
-// startDirectSocks5Tunnel 启动直连SOCKS5隧道
-func (tm *TunnelManager) startDirectSocks5Tunnel(tunnel database.TunnelProxy) error {
-	// TODO: 实现直连SOCKS5隧道启动逻辑
-	return tm.startGenericTunnel(tunnel)
-}

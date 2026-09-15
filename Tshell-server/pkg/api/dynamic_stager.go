@@ -287,7 +287,7 @@ func GetStagerBuildInfo(c *gin.Context) {
 		"os":          wd.OS,
 		"arch":        wd.Arch,
 		"server_url":  wd.ServerAddress,
-		"last_build":  time.Now().Format("2006-01-02 15:04:05"),
+		"last_build":  wd.LastBuild, // P2-10: 真实构建时间(空=从未构建;原恒返回 time.Now() 假数据)
 		"build_count": getBuildCount(port),
 	}
 
@@ -301,6 +301,7 @@ func logStagerBuild(port, format, sourceHash string, size int) {
 	var wd database.WebDelivery
 	if has, _ := database.Engine.Where("listening_port = ?", port).Get(&wd); has {
 		wd.BuildCount++
+		wd.LastBuild = time.Now().Format("2006-01-02 15:04:05") // P2-10: 真实构建时间(原 stager-info 返回假数据)
 		database.Engine.Where("listening_port = ?", port).Update(&wd)
 	}
 }

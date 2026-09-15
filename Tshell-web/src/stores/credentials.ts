@@ -91,14 +91,17 @@ export const useCredentialsStore = defineStore('cs-credentials', {
 
     /**
      * 解析 Mimikatz / logonpasswords 输出并自动提取凭据
+     * 【断链修复】自动抓取的凭据同步写服务端 loot 库(原仅内存态,刷新即丢);
+     * uid 为来源会话(落库溯源用),auditor 角色写库 403 已静默
      */
-    parseMimikatzOutput(text: string, host: string) {
+    parseMimikatzOutput(text: string, host: string, uid?: string) {
       if (!text) return
       const lines = text.split('\n')
       let currentDomain = ''
       let currentUser = ''
       let currentPassword = ''
       let currentNtlm = ''
+      const pending: Array<Omit<CredentialItem, 'id' | 'updatedAt'>> = []
 
       for (const rawLine of lines) {
         const line = rawLine.trim()
@@ -117,7 +120,7 @@ export const useCredentialsStore = defineStore('cs-credentials', {
           currentNtlm = parts[1]?.trim() || ''
 
           if (currentUser && (currentPassword || currentNtlm)) {
-            this.addCredential({
+            pending.push({
               realm: currentDomain,
               user: currentUser,
               password: currentPassword,
@@ -131,12 +134,17 @@ export const useCredentialsStore = defineStore('cs-credentials', {
           }
         }
       }
+      // 批量入库(不阻塞轮询循环;内部静默失败)
+      for (const cred of pending) {
+        this.addCredentialPersistent(cred, uid)
+      }
     },
 
     /**
      * 解析 Hashdump 输出（格式：user:rid:lmhash:nthash:::）
+     * 【断链修复】同 parseMimikatzOutput,同步落 loot 库
      */
-    parseHashdumpOutput(text: string, host: string) {
+    parseHashdumpOutput(text: string, host: string, uid?: string) {
       if (!text) return
       const lines = text.split('\n')
       for (const rawLine of lines) {
@@ -146,14 +154,14 @@ export const useCredentialsStore = defineStore('cs-credentials', {
           const user = parts[0]?.trim()
           const nthash = parts[3]?.trim()
           if (user && nthash && nthash.length === 32) {
-            this.addCredential({
+            this.addCredentialPersistent({
               realm: '',
               user,
               password: '',
               hash: `${parts[2] || 'aad3b435b51404eeaad3b435b51404ee'}:${nthash}`,
               host,
               source: 'hashdump',
-            })
+            }, uid)
           }
         }
       }

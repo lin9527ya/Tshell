@@ -388,7 +388,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useClientsStore } from '@/stores/clients'
 import { useWorkspaceStore } from '@/stores/workspace'
@@ -444,8 +444,15 @@ const discoveredServices = ref([
   { port: 3389, proto: 'tcp', service: 'ms-wbt-server', banner: 'Remote Desktop Protocol' },
 ])
 
-// 手动添加的目标列表
+// 手动添加的目标列表(localStorage 持久化,P2-12;仅存 IP/备注等非敏感字段)
 const manualTargets = ref<TargetRow[]>([])
+try {
+  const saved = localStorage.getItem('cs-manual-targets')
+  if (saved) manualTargets.value = JSON.parse(saved)
+} catch { /* 忽略损坏数据 */ }
+watch(manualTargets, (v) => {
+  try { localStorage.setItem('cs-manual-targets', JSON.stringify(v)) } catch { /* 配额满忽略 */ }
+}, { deep: true })
 
 // 后端 /graph/data 同步回来的目标节点（来自隧道代理 target 节点）
 const syncedTargets = ref<TargetRow[]>([])
@@ -638,7 +645,38 @@ function openCustomAction() {
 }
 
 function importTargets() {
-  ElMessage.warning(isZh.value ? '演示功能：目标导入未实现（后端无 targets API），仅提示' : 'Demo only: target import is not implemented (no backend targets API)')
+  // 粘贴导入(P2-12,纯前端): 每行一个 IP 或 IP/24 网段,支持逗号/空格/分号分隔
+  ElMessageBox.prompt(
+    isZh.value ? '粘贴目标列表(每行一个 IP 或网段,如 192.168.1.10 / 10.0.0.0/24):' : 'Paste target list (one IP or CIDR per line):',
+    isZh.value ? '导入目标' : 'Import Targets',
+    {
+      confirmButtonText: isZh.value ? '导入' : 'Import',
+      cancelButtonText: isZh.value ? '取消' : 'Cancel',
+      inputType: 'textarea',
+      inputPlaceholder: '192.168.1.10\n192.168.1.11\n10.0.0.0/24',
+    },
+  ).then(({ value }) => {
+    if (!value) return
+    const seen = new Set(manualTargets.value.map((t) => t.ip))
+    let added = 0
+    for (const raw of value.split(/[\n,;]+/)) {
+      const ip = raw.trim()
+      if (!ip || seen.has(ip)) continue
+      // 合法性粗检: IPv4 / CIDR / 主机名
+      if (!/^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$|^[a-zA-Z0-9._-]+$/.test(ip)) continue
+      manualTargets.value.push({
+        ip,
+        computer: `HOST-${ip.split('.').slice(-1)[0]}`,
+        os: 'Windows',
+        version: '',
+        note: isZh.value ? '导入' : 'Imported',
+      })
+      seen.add(ip)
+      added++
+    }
+    if (added > 0) ElMessage.success(isZh.value ? `已导入 ${added} 个目标` : `Imported ${added} targets`)
+    else ElMessage.warning(isZh.value ? '未解析到有效目标' : 'No valid targets found')
+  }).catch(() => {})
 }
 
 function openAddTarget() {

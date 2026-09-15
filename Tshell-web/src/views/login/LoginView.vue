@@ -77,6 +77,7 @@ import { ElMessage } from 'element-plus'
 import { usePermissStore } from '@/stores/userpermiss'
 import { useUserStore } from '@/stores/user'
 import UserApi from '@/api/user'
+import { primeAudio } from '@/utils/notifyAudio'
 
 const router = useRouter()
 const permiss = usePermissStore()
@@ -112,6 +113,9 @@ function submitLogin() {
         userinfo.setRefresh(responseData.refresh_token)
         userinfo.setRoles(role === 'admin' ? '超级管理员' : role === 'auditor' ? '审计员' : '操作员')
         userinfo.setUserName(responseData.username)
+
+        // 解锁音频上下文(登录点击=用户交互,此后提示音可播;P1-7)
+        primeAudio()
 
         router.push('/')
       } else {

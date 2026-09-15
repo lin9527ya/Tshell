@@ -9,35 +9,21 @@
   >
     <div class="cs-dialog-body cs-font-ui">
       <div class="cs-dialog-desc">
-        {{ isZh ? '通过 BladeShell 内置 Web 服务器托管并对外分发任意载荷或文件。' : 'Host a file through Cobalt Strike\'s web server.' }}
+        {{ isZh ? '上传文件经投递通道(/d/)对外分发,支持 MIME 伪装、一次性下载与配额限制;托管记录出现在站点管理列表,可随时关闭/删除。单文件上限 50MB。' : 'Host a file via the delivery hub (/d/). 50MB max per file.' }}
       </div>
 
       <div class="cs-form-row">
         <label class="cs-form-label"><span class="req">*</span> {{ isZh ? '托管文件:' : 'File:' }}</label>
         <div class="cs-form-input-wrap has-append">
-          <el-input v-model="form.file" size="small" placeholder="/opt/payloads/update.exe" />
+          <el-input v-model="form.fileName" size="small" :placeholder="isZh ? '点击右侧选择文件…' : 'Choose a file…'" readonly />
           <button class="cs-btn cs-btn-xs" :title="isZh ? '选择文件' : 'Choose File'" @click="chooseFile">📄</button>
         </div>
       </div>
 
       <div class="cs-form-row">
-        <label class="cs-form-label"><span class="req">*</span> {{ isZh ? '本地 URI:' : 'Local URI:' }}</label>
+        <label class="cs-form-label">{{ isZh ? 'URI 伪装:' : 'URI Path:' }}</label>
         <div class="cs-form-input-wrap">
-          <el-input v-model="form.localUri" size="small" placeholder="/download/file.ext" />
-        </div>
-      </div>
-
-      <div class="cs-form-row">
-        <label class="cs-form-label"><span class="req">*</span> {{ isZh ? '本地主机:' : 'Local Host:' }}</label>
-        <div class="cs-form-input-wrap">
-          <el-input v-model="form.localHost" size="small" placeholder="192.168.10.4" />
-        </div>
-      </div>
-
-      <div class="cs-form-row">
-        <label class="cs-form-label"><span class="req">*</span> {{ isZh ? '本地端口:' : 'Local Port:' }}</label>
-        <div class="cs-form-input-wrap">
-          <el-input-number v-model="form.localPort" size="small" :min="1" :max="65535" style="width: 100%" />
+          <el-input v-model="form.uriPath" size="small" placeholder="/download/file.ext" />
         </div>
       </div>
 
@@ -57,9 +43,18 @@
       </div>
 
       <div class="cs-form-row">
-        <label class="cs-form-label">SSL:</label>
-        <div class="cs-form-input-wrap">
-          <el-checkbox v-model="form.ssl">{{ isZh ? '启用 SSL (HTTPS)' : 'Enable SSL' }}</el-checkbox>
+        <label class="cs-form-label">{{ isZh ? '下载限制:' : 'Limits:' }}</label>
+        <div class="cs-form-input-wrap" style="display:flex; align-items:center; gap:14px;">
+          <el-checkbox v-model="form.oneTime">{{ isZh ? '一次性下载' : 'One-time' }}</el-checkbox>
+          <el-input-number v-model="form.maxDownloads" size="small" :min="0" :max="99999" :placeholder="isZh ? '次数上限(0=不限)' : 'Max downloads'" style="width: 170px" />
+        </div>
+      </div>
+
+      <div v-if="resultUrl" class="cs-form-row">
+        <label class="cs-form-label">{{ isZh ? '分发链接:' : 'URL:' }}</label>
+        <div class="cs-form-input-wrap has-append">
+          <el-input :model-value="resultUrl" size="small" readonly class="cs-font-mono" />
+          <button class="cs-btn cs-btn-xs" @click="copyUrl">{{ isZh ? '复制' : 'Copy' }}</button>
         </div>
       </div>
     </div>
@@ -67,7 +62,7 @@
     <template #footer>
       <div class="cs-dialog-footer-center">
         <button class="cs-btn cs-btn-primary" :disabled="loading" @click="handleLaunch">
-          {{ isZh ? '启动托管' : 'Launch' }}
+          {{ loading ? (isZh ? '上传中…' : 'Uploading…') : (isZh ? '启动托管' : 'Launch') }}
         </button>
         <button class="cs-btn" @click="handleHelp">
           {{ isZh ? '帮助' : 'Help' }}
@@ -81,7 +76,7 @@
 import { computed, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useI18nStore } from '@/stores/i18n'
-import { useWorkspaceStore } from '@/stores/workspace'
+import ClientAPI from '@/api/clients'
 
 const props = defineProps<{
   modelValue: boolean
@@ -92,17 +87,17 @@ const emit = defineEmits<{
 }>()
 
 const i18nStore = useI18nStore()
-const workspace = useWorkspaceStore()
 const isZh = computed(() => i18nStore.isZh)
 
 const loading = ref(false)
+const resultUrl = ref('')
+const fileObj = ref<File | null>(null)
 const form = ref({
-  file: '/root/payload.exe',
-  localUri: '/download/payload.exe',
-  localHost: '192.168.10.4',
-  localPort: 80,
+  fileName: '',
+  uriPath: '',
   mimeType: 'automatic',
-  ssl: false,
+  oneTime: false,
+  maxDownloads: 0,
 })
 
 function chooseFile() {
@@ -111,25 +106,51 @@ function chooseFile() {
   input.onchange = (e: any) => {
     const file = e.target.files?.[0]
     if (file) {
-      form.value.file = `/uploads/${file.name}`
-      form.value.localUri = `/download/${file.name}`
-      ElMessage.success(isZh.value ? `已选择文件: ${file.name}` : `Selected file: ${file.name}`)
+      fileObj.value = file
+      form.value.fileName = file.name
+      resultUrl.value = ''
     }
   }
   input.click()
 }
 
-function handleLaunch() {
-  if (!form.value.file) {
-    ElMessage.warning(isZh.value ? '请指定要托管的文件' : 'Please specify a file')
+async function handleLaunch() {
+  if (!fileObj.value) {
+    ElMessage.warning(isZh.value ? '请选择要托管的文件' : 'Please choose a file')
     return
   }
-  // 演示功能：后端未实现文件托管 Web 服务
-  ElMessage.warning(isZh.value ? '演示功能：后端未实现文件托管服务（Web 托管未接入），不会实际启动任何服务' : 'Demo only: file hosting is not implemented on the backend (no web hosting), nothing will actually start')
+  loading.value = true
+  try {
+    const res = await ClientAPI.host_file({
+      file: fileObj.value,
+      contentType: form.value.mimeType === 'automatic' ? undefined : form.value.mimeType,
+      uriPath: form.value.uriPath || undefined,
+      oneTime: form.value.oneTime ? '1' : undefined,
+      maxDownloads: form.value.maxDownloads > 0 ? String(form.value.maxDownloads) : undefined,
+    })
+    const url = res.data?.data?.url
+    if (res.data?.status === 200 && url) {
+      resultUrl.value = url
+      ElMessage.success(isZh.value ? `托管成功: ${url}` : `Hosted: ${url}`)
+    } else {
+      ElMessage.error(res.data?.error || (isZh.value ? '托管失败' : 'Failed to host file'))
+    }
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.error || (isZh.value ? '托管失败: ' : 'Failed: ') + (e?.message || e))
+  } finally {
+    loading.value = false
+  }
+}
+
+function copyUrl() {
+  if (!resultUrl.value) return
+  navigator.clipboard?.writeText(resultUrl.value).then(() => {
+    ElMessage.success(isZh.value ? '已复制' : 'Copied')
+  }).catch(() => {})
 }
 
 function handleHelp() {
-  ElMessage.info(isZh.value ? '文件托管工具用于在 Web 服务器上快速提供文件下载链接。' : 'Host File Manual')
+  ElMessage.info(isZh.value ? '文件经投递通道 /d/{key}/full 分发;访问受 UA/令牌控制,一次性下载后链接失效。关闭与删除在「站点管理」列表操作。' : 'Host File Manual')
 }
 </script>
 
@@ -144,14 +165,12 @@ function handleHelp() {
   margin-bottom: 12px;
   line-height: 1.4;
 }
-
 .cs-form-row {
   display: flex;
   align-items: center;
   gap: 12px;
   margin-bottom: 10px;
 }
-
 .cs-form-label {
   width: 130px;
   text-align: right;
@@ -159,20 +178,16 @@ function handleHelp() {
   color: var(--cs-text-dim);
   flex-shrink: 0;
 }
-
 .cs-form-label .req {
   color: #f56c6c;
 }
-
 .cs-form-input-wrap {
   flex: 1;
 }
-
 .cs-form-input-wrap.has-append {
   display: flex;
   gap: 4px;
 }
-
 .cs-dialog-footer-center {
   display: flex;
   justify-content: center;

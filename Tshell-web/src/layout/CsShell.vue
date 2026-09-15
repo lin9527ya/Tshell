@@ -64,9 +64,6 @@
 
     <!-- Attack Dialogs (Screenshots 11-15) -->
     <ForwardConnectDialog v-model="workspace.dialogs.forwardConnect" />
-    <AppletAttackDialog v-model="workspace.dialogs.appletAttack" />
-    <SmartAppletDialog v-model="workspace.dialogs.smartApplet" />
-    <SystemProfilerDialog v-model="workspace.dialogs.systemProfiler" />
     <SpearPhishDialog v-model="workspace.dialogs.spearPhish" />
     <C2ProfileDialog v-model="workspace.dialogs.c2Profile" />
 
@@ -113,12 +110,6 @@ import WindowsStagelessAllDialog from './Dialogs/Payloads/WindowsStagelessAllDia
 
 // Attacks
 import ForwardConnectDialog from './Dialogs/Attacks/ForwardConnectDialog.vue'
-import AppletAttackDialog from './Dialogs/Attacks/AppletAttackDialog.vue'
-import SmartAppletDialog from './Dialogs/Attacks/SmartAppletDialog.vue'
-import SystemProfilerDialog from './Dialogs/Attacks/SystemProfilerDialog.vue'
-import SpearPhishDialog from './Dialogs/Attacks/SpearPhishDialog.vue'
-
-// Sites
 import CloneSiteDialog from './Dialogs/CloneSiteDialog.vue'
 import HostFileDialog from './Dialogs/HostFileDialog.vue'
 import WebDeliveryDialog from './Dialogs/Attacks/WebDeliveryDialog.vue'

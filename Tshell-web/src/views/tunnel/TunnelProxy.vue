@@ -96,7 +96,7 @@
         </el-table-column>
         <el-table-column prop="username" label="用户" width="152" show-overflow-tooltip>
           <template #default="{ row }">
-            <span v-if="row.username && (row.protocol === 'socks5' || row.protocol === 'http' || row.protocol === 'direct_socks5')">
+            <span v-if="row.username && (row.protocol === 'socks5' || row.protocol === 'http')">
               {{ row.username }}
             </span>
             <span v-else style="color: #c0c4cc;">-</span>
@@ -104,7 +104,7 @@
         </el-table-column>
         <el-table-column prop="password" label="密码" width="132">
           <template #default="{ row }">
-            <span v-if="row.password && (row.protocol === 'socks5' || row.protocol === 'http' || row.protocol === 'direct_socks5')">
+            <span v-if="row.password && (row.protocol === 'socks5' || row.protocol === 'http')">
               {{ '*'.repeat(Math.min(row.password.length, 8)) }}
             </span>
             <span v-else style="color: #c0c4cc;">-</span>
@@ -243,14 +243,14 @@
           </div>
         </div>
 
-        <div v-if="tunnelForm.protocol === 'socks5' || tunnelForm.protocol === 'http' || tunnelForm.protocol === 'direct_socks5'" class="cs-form-row">
+        <div v-if="tunnelForm.protocol === 'socks5' || tunnelForm.protocol === 'http'" class="cs-form-row">
           <label class="cs-form-label">{{ isZh ? '用户名' : 'Username' }}</label>
           <div class="cs-form-input-wrap">
             <el-input v-model="tunnelForm.username" size="small" :placeholder="isZh ? '可选认证用户名' : 'Optional username'" />
           </div>
         </div>
 
-        <div v-if="tunnelForm.protocol === 'socks5' || tunnelForm.protocol === 'http' || tunnelForm.protocol === 'direct_socks5'" class="cs-form-row">
+        <div v-if="tunnelForm.protocol === 'socks5' || tunnelForm.protocol === 'http'" class="cs-form-row">
           <label class="cs-form-label">{{ isZh ? '密码' : 'Password' }}</label>
           <div class="cs-form-input-wrap">
             <el-input v-model="tunnelForm.password" type="password" size="small" :placeholder="isZh ? '可选认证密码' : 'Optional password'" show-password />
@@ -500,7 +500,7 @@ const onProtocolChange = (protocol: string) => {
     tunnelForm.value.password = ''
   }
   // 切换到SOCKS5或HTTP协议时，清空目标地址
-  else if (protocol === 'socks5' || protocol === 'http' || protocol === 'direct_socks5') {
+  else if (protocol === 'socks5' || protocol === 'http') {
     tunnelForm.value.targetAddress = ''
   }
 }

@@ -9,6 +9,7 @@ import (
 	"unicode/utf8"
 
 	"golang.org/x/text/encoding/simplifiedchinese"
+	"golang.org/x/text/encoding/traditionalchinese"
 	"golang.org/x/text/transform"
 	"BackendTemplate/pkg/utils/logx"
 )
@@ -97,9 +98,11 @@ func (c *ChineseEncodingProcessor) tryGB18030ToUTF8(data []byte) ([]byte, error)
 }
 
 // tryBig5ToUTF8 尝试Big5到UTF-8转换（台湾繁体）
+// 【P2 补齐】原返回"暂未实现"错误;Big5 与 GBK 双字节区有重叠,放在 GBK/GB18030
+// 尝试之后兜底,误判概率低(containsGarbledText 复核兜底)
 func (c *ChineseEncodingProcessor) tryBig5ToUTF8(data []byte) ([]byte, error) {
-	// 简化实现，实际需要引入Big5编码库
-	return nil, fmt.Errorf("Big5转换暂未实现")
+	reader := transform.NewReader(bytes.NewReader(data), traditionalchinese.Big5.NewDecoder())
+	return io.ReadAll(reader)
 }
 
 // tryByteToByteGBK 尝试字节级别的GBK转换

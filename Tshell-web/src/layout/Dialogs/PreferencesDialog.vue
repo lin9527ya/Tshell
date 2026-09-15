@@ -92,6 +92,10 @@
               <label class="row-label">{{ isZh ? '自动滚动:' : 'Auto-Scroll:' }}</label>
               <el-checkbox v-model="pref.consoleAutoScroll">{{ isZh ? '始终跟随控制台最新输出' : 'Always follow new console output' }}</el-checkbox>
             </div>
+            <div class="form-row">
+              <label class="row-label">{{ isZh ? '上线提示音:' : 'Online Audio:' }}</label>
+              <el-checkbox v-model="pref.audioNotify">{{ isZh ? '客户端上线时播放提示音(浏览器播放,需已登录交互)' : 'Play a chime when a client comes online' }}</el-checkbox>
+            </div>
           </div>
         </div>
 
@@ -186,6 +190,7 @@ import { ElMessage } from 'element-plus'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { useThemeStore } from '@/stores/theme'
 import { useI18nStore } from '@/stores/i18n'
+import { usePreferencesStore } from '@/stores/preferences'
 
 const workspace = useWorkspaceStore()
 const themeStore = useThemeStore()
@@ -236,7 +241,21 @@ const pref = reactive({
   showLag: true,
   showBeaconsCount: true,
   missedHeartbeats: 3,
+  audioNotify: false,
 })
+
+// 打开时从持久化偏好回填(localStorage 持久层,P2-12)
+const prefStore = usePreferencesStore()
+pref.consoleFont = prefStore.consoleFont
+pref.consoleFontSize = prefStore.consoleFontSize
+pref.scrollback = prefStore.scrollback
+pref.consoleAutoScroll = prefStore.consoleAutoScroll
+pref.graphAnimation = prefStore.graphAnimation
+pref.nodeSize = prefStore.nodeSize
+pref.showLag = prefStore.showLag
+pref.showBeaconsCount = prefStore.showBeaconsCount
+pref.missedHeartbeats = prefStore.missedHeartbeats
+pref.audioNotify = prefStore.audioNotify
 
 function cycleColor() {
   const colors = ['#0000ff', '#ff0000', '#00ff00', '#ff9900', '#9900ff']
@@ -257,7 +276,19 @@ function onThemeChange(val: string) {
 }
 
 function savePreferences() {
-  ElMessage.warning(isZh.value ? '仅主题、控制台等本地设置即时生效；其余为演示项，未持久化' : 'Only local theme/console settings take effect immediately; other items are demo-only and not persisted')
+  // 可持久化子集写回 preferences store(localStorage 持久,P2-12);
+  // 主题类设置即时生效;tabActivity/vncPorts 等 CS 形态项不持久化
+  prefStore.consoleFont = pref.consoleFont
+  prefStore.consoleFontSize = pref.consoleFontSize
+  prefStore.scrollback = pref.scrollback
+  prefStore.consoleAutoScroll = pref.consoleAutoScroll
+  prefStore.graphAnimation = pref.graphAnimation
+  prefStore.nodeSize = pref.nodeSize
+  prefStore.showLag = pref.showLag
+  prefStore.showBeaconsCount = pref.showBeaconsCount
+  prefStore.missedHeartbeats = pref.missedHeartbeats
+  prefStore.audioNotify = pref.audioNotify
+  ElMessage.success(isZh.value ? '偏好已保存(控制台/图/提示音设置已持久化)' : 'Preferences saved')
   workspace.closeDialog('preferences')
 }
 </script>

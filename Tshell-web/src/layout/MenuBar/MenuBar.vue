@@ -227,7 +227,6 @@ const menus = computed<{ label: string; items: MenuItem[] }[]>(() => [
       },
       { divider: true },
       { label: t('menu.cs.listeners'), tab: { id: 'listeners', title: isZh.value ? '监听器' : 'Listeners', component: 'listeners' } },
-      { label: t('menu.cs.vpn_interface'), tab: { id: 'interfaces', title: isZh.value ? 'VPN网卡' : 'Interfaces', component: 'interfaces' } },
       { label: t('menu.cs.c2_profile'), action: () => workspace.openDialog('c2Profile') },
       { divider: true },
       { label: t('menu.cs.script_manager'), tab: { id: 'script-manager', title: isZh.value ? '脚本管理器' : 'Scripts', component: 'script-manager' } },

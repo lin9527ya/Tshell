@@ -437,6 +437,16 @@ async function handleStop(item: ListenerItem | null) {
 async function handleRestart(item: ListenerItem | null) {
   if (!item) return
   closeContextMenu()
+  // 重启会断开该监听器下全部客户端连接(客户端将自动重连),需确认
+  try {
+    await ElMessageBox.confirm(
+      isZh.value ? `重启监听器 ${item.ListenAddress} 将断开其下所有客户端连接(客户端会自动重连),确定继续?` : `Restarting ${item.ListenAddress} will disconnect all its clients (they will auto-reconnect). Continue?`,
+      isZh.value ? '确认重启' : 'Confirm Restart',
+      { confirmButtonText: isZh.value ? '重启' : 'Restart', cancelButtonText: isZh.value ? '取消' : 'Cancel', type: 'warning' },
+    )
+  } catch {
+    return
+  }
   try {
     const res = await ListenerAPI.restartListener({ listenAddress: item.ListenAddress })
     if (res.data?.status === 200 || res.status === 200) {

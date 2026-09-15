@@ -273,9 +273,9 @@ async function fetchContent() {
 
         // Auto parse harvested credentials
         if (tail.includes('Domain') && tail.includes('Password')) {
-          credsStore.parseMimikatzOutput(tail, host.value)
+          credsStore.parseMimikatzOutput(tail, host.value, props.uid)
         } else if (tail.includes(':500:') || tail.includes(':1000:')) {
-          credsStore.parseHashdumpOutput(tail, host.value)
+          credsStore.parseHashdumpOutput(tail, host.value, props.uid)
         }
       }
     }

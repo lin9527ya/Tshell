@@ -734,3 +734,65 @@ func auditLogEvent(action, result, message string, details map[string]interface{
 		audit.GlobalAuditLogger.Log(audit.LogLevelInfo, audit.CategoryAPI, action, result, message, details)
 	}
 }
+// RestartListener 重启监听器（断链修复:前端 listener.vue 已有调用,原后端无此路由）。
+// 组合现有原语: 若运行中先走 handleClosePort(断开该监听器全部会话),再 handleOpenPort。
+// 注意: 重启会断开该监听器下全部客户端连接(前端已加确认弹窗),客户端将自动重连。
+func RestartListener(c *gin.Context) {
+	var listener struct {
+		ListenAddress string `json:"listenAddress"`
+	}
+	if err := c.BindJSON(&listener); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	var lis database.Listener
+	has, _ := database.Engine.Where("listen_address = ?", listener.ListenAddress).Get(&lis)
+	if !has {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "监听器不存在"})
+		return
+	}
+
+	// 运行中则先关停。探活句柄:句柄缺失时 handleClosePort 会向 c 写 400(双写风险),
+	// 此处先探测,不存在视为已停,跳过 close。
+	if lis.Status == 1 {
+		if listenerHandleAlive(lis.Type, lis.ListenAddress) {
+			database.Engine.Where("listen_address = ?", lis.ListenAddress).Update(&database.Listener{Status: 2})
+			encrypt.InvalidateListenerKeyCache()
+			handleClosePort(lis.Type, lis.ListenAddress, c)
+		} else {
+			// 状态为 1 但句柄已丢(异常退出残留): 仅落库置 2
+			database.Engine.Where("listen_address = ?", lis.ListenAddress).Update(&database.Listener{Status: 2})
+			encrypt.InvalidateListenerKeyCache()
+			logx.Warnf("⚠️ [监听器重启] %s://%s 状态为运行但句柄缺失,跳过关闭直接重启\n", lis.Type, lis.ListenAddress)
+		}
+	}
+
+	// 重新启动(handleOpenPort 内含 J4 默认密钥拒绝与 panic 防护)
+	database.Engine.Where("listen_address = ?", lis.ListenAddress).Update(&database.Listener{Status: 1})
+	encrypt.InvalidateListenerKeyCache()
+	go handleOpenPort(lis.Type, lis.ListenAddress, lis.VKey, lis.EncryptionSalt)
+	auditLogEvent("LISTENER_RESTART", "SUCCESS", "重启监听器 "+lis.Type+"://"+lis.ListenAddress, nil)
+	c.JSON(http.StatusOK, gin.H{"status": 200, "data": "Listener restarted"})
+}
+
+// listenerHandleAlive 探测监听器运行句柄是否存在(避免 handleClosePort 在句柄
+// 缺失分支写响应造成双写)
+func listenerHandleAlive(listenerType, listenerAddress string) bool {
+	connection.MuClientListenerType.Lock()
+	defer connection.MuClientListenerType.Unlock()
+	switch listenerType {
+	case "websocket", "http", "https":
+		return connection.HttpServer[listenerAddress] != nil
+	case "tcp", "tcp_forward":
+		return connection.TCPServer[listenerAddress] != nil
+	case "kcp", "kcp_forward":
+		return connection.KCPServer[listenerAddress] != nil
+	case "oss":
+		_, ok := connection.StopChan[listenerAddress]
+		return ok
+	case "dns":
+		return true // DNS 单例监听器,句柄由 Stop() 管理
+	default:
+		return false
+	}
+}

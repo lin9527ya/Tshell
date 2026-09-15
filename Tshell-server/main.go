@@ -573,12 +573,15 @@ func main() {
 	protected.GET("/listener/list", api.ListListener)
 	operatorOnly.POST("/listener/open", api.OpenListener)
 	operatorOnly.POST("/listener/close", api.CloseListener)
+	operatorOnly.POST("/listener/restart", api.RestartListener) // 断链修复:前端原有调用,后端补路由
 	operatorOnly.POST("/listener/update", api.UpdateListener) // 添加更新监听器API
 	operatorOnly.POST("/listener/delete", api.DeleteListener)
 	operatorOnly.POST("/listener/batch-delete", api.BatchDeleteListeners)
 
 	protected.GET("/webdelivery/list", api.ListWebDelivery)
 	operatorOnly.POST("/webdelivery/start", api.StartWebDelivery)
+	// 文件托管: 任意文件经 Delivery Hub /d/ 通道对外分发(复用其访问控制)
+	operatorOnly.POST("/webdelivery/host-file", api.HostFileDelivery)
 	operatorOnly.POST("/webdelivery/close", api.CloseWebDelivery)
 	operatorOnly.POST("/webdelivery/open", api.OpenWebDelivery)
 	operatorOnly.POST("/webdelivery/delete", api.DeleteWebDelivery)
@@ -629,26 +632,34 @@ func main() {
 	}
 
 	// SOCKS5代理相关功能
+	// 【权限对齐 J8】读列表留 protected(全角色),写操作收紧 operator+
+	// (原全部挂 protected——auditor 可启停代理,与"auditor 只读"口径不符)
 	socks5 := protected.Group("/socks5")
 	{
 		socks5.GET("/list", api.Socks5List)
-		socks5.POST("/start", api.Socks5Start)
-		socks5.POST("/open", api.Socks5Open)
-		socks5.POST("/close", api.Socks5Close)
-		socks5.POST("/delete", api.Socks5Delete)
-		socks5.POST("/batch-delete", api.Socks5BatchDelete)
-		socks5.PUT("/update", api.Socks5Update)
+	}
+	socks5Write := operatorOnly.Group("/socks5")
+	{
+		socks5Write.POST("/start", api.Socks5Start)
+		socks5Write.POST("/open", api.Socks5Open)
+		socks5Write.POST("/close", api.Socks5Close)
+		socks5Write.POST("/delete", api.Socks5Delete)
+		socks5Write.POST("/batch-delete", api.Socks5BatchDelete)
+		socks5Write.PUT("/update", api.Socks5Update)
 	}
 
-	// 隧道代理管理API
+	// 隧道代理管理API(权限口径同 socks5: 读 protected,写 operator+)
 	tunnelAPI := protected.Group("/tunnel-proxy")
 	{
 		tunnelAPI.GET("/", api.GetTunnelProxyList)
-		tunnelAPI.POST("/", api.CreateTunnelProxy)
-		tunnelAPI.PUT("/:id", api.UpdateTunnelProxy)
-		tunnelAPI.DELETE("/:id", api.DeleteTunnelProxy)
-		tunnelAPI.POST("/:id/start", api.StartTunnelProxy)
-		tunnelAPI.POST("/:id/stop", api.StopTunnelProxy)
+	}
+	tunnelWrite := operatorOnly.Group("/tunnel-proxy")
+	{
+		tunnelWrite.POST("/", api.CreateTunnelProxy)
+		tunnelWrite.PUT("/:id", api.UpdateTunnelProxy)
+		tunnelWrite.DELETE("/:id", api.DeleteTunnelProxy)
+		tunnelWrite.POST("/:id/start", api.StartTunnelProxy)
+		tunnelWrite.POST("/:id/stop", api.StopTunnelProxy)
 	}
 
 	// 安全管理相关路由

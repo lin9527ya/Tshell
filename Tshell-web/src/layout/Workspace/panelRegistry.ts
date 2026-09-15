@@ -58,8 +58,6 @@ const panelRegistry: Record<string, Component> = {
   'server-config': defineAsyncComponent(() => import('@/views/config/ServerConfigView.vue')),
   'server-status': defineAsyncComponent(() => import('@/views/server/ServerStatusView.vue')),
   'connection-pool': defineAsyncComponent(() => import('@/views/connection/ConnectionPoolView.vue')),
-  'interfaces': defineAsyncComponent(() => import('@/views/tunnel/VpnInterfaces.vue')),
-  'vpn-interfaces': defineAsyncComponent(() => import('@/views/tunnel/VpnInterfaces.vue')),
   'about': defineAsyncComponent(() => import('@/views/AboutView.vue')),
 }
 

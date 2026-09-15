@@ -2,6 +2,8 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { useUserStore } from '@/stores/user'
 import { useClientsStore } from '@/stores/clients'
+import { usePreferencesStore } from '@/stores/preferences'
+import { playOnlineChime } from '@/utils/notifyAudio'
 
 // 事件流（B11）：单一 WebSocket 连接源。
 // 原实现多个页面与 EventCenter 各维持一条 /api/events/ws 连接，事件重复接收；
@@ -60,6 +62,10 @@ export const useEventsStore = defineStore('events', () => {
           if (msg.type && msg.type !== 'auth') {
             events.value.unshift(msg)
             if (events.value.length > 100) events.value.pop()
+            // 上线提示音(P1-7: 前端播放,服务端无头进程播音无意义)
+            if (msg.type === 'client_online') {
+              try { if (usePreferencesStore().audioNotify) playOnlineChime() } catch { /* ignore */ }
+            }
             if (CLIENT_STATE_EVENTS.includes(msg.type)) {
               scheduleClientRefresh()
             }

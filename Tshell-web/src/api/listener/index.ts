@@ -35,6 +35,14 @@ export default {
             data:data
         })
     },
+    // 重启监听器(断开后重启,会断开该监听器下全部客户端连接,调用方需确认)
+    restartListener(data:{listenAddress:string}){
+        return request({
+            url:"/listener/restart",
+            method:"POST",
+            data:data
+        })
+    },
     deleteListener(data:{listenAddress:string}){
         return request({
             url:"/listener/delete",

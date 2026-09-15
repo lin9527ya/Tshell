@@ -251,6 +251,7 @@ type WebDelivery struct {
 	ListeningPort  string `json:"listening_port"` // 独立端口模式使用；shared 模式可空或标记 shared
 	Status         int    `json:"status"`         // 1=开启 2=关闭
 	BuildCount     int    `json:"build_count"`    // stager 构建次数（独立字段，避免污染 Status）
+	LastBuild      string `json:"last_build"`     // 最近一次 stager 构建时间(P2-10;原 stager-info 返回假数据)
 	ServerAddress  string `json:"server_address"` // 完整客户端公开 URL
 	FileName       string `json:"file_name"`
 	Pass           string `json:"pass"`
@@ -334,7 +335,6 @@ type Socks5 struct {
 	Password       string    `xorm:"varchar(100)" json:"password"`
 	Note           string    `xorm:"varchar(500)" json:"note"`
 	Status         int       `xorm:"int default(0) index" json:"status"`
-	BuildCount     int    `json:"build_count"`    // stager 构建次数（独立字段，避免污染 Status）
 	CreatedAt      time.Time `xorm:"datetime notnull" json:"created_at"`
 	UpdatedAt      time.Time `xorm:"updated datetime notnull" json:"updated_at"`
 }
@@ -350,7 +350,6 @@ type TunnelProxy struct {
 	Username      string    `json:"username" xorm:"'username' varchar(100)"`
 	Password      string    `json:"password" xorm:"'password' varchar(100)"`
 	Status        int       `json:"status" xorm:"'status' int default(0) index"`
-	BuildCount     int    `json:"build_count"`    // stager 构建次数（独立字段，避免污染 Status）
 	CreatedAt     time.Time `json:"created_at" xorm:"'created_at' datetime notnull index"`
 	UpdatedAt     time.Time `json:"updated_at" xorm:"'updated_at' updated datetime notnull"`
 }
