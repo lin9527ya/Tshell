@@ -139,4 +139,9 @@ const (
 	MAKE_TOKEN  = 124 // 创建令牌并模拟（make_token <user>|<pass>|<domain>）
 	STEAL_TOKEN = 125 // 窃取进程令牌（steal_token <pid>）
 	REV2SELF    = 126 // 恢复原始令牌（rev2self）
+
+	// 批量命令包装（B5，仅轮询协议 HTTP/DNS 批量下发时使用；仅上报 b1 能力的
+	// 新客户端会收到，旧客户端按单条下发故永不见此号）。帧格式：
+	// count(4) + N×[len(4)|cmd]，cmd 为完整单条命令帧(cmdType(4)|cmdBuf)
+	CMD_BATCH = 128
 )

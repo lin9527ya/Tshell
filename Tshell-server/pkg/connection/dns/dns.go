@@ -2,6 +2,7 @@ package dns
 
 import (
 	"BackendTemplate/pkg/command"
+	"BackendTemplate/pkg/config"
 	"BackendTemplate/pkg/connection"
 	"BackendTemplate/pkg/database"
 	"BackendTemplate/pkg/encrypt"
@@ -368,6 +369,8 @@ func registerClient(metainfo []byte, clientIP string) string {
 		if len(osArray) > 2 {
 			procName = osArray[2]
 		}
+		// B5: 记录批量命令能力(MetaInfo 第 6 段 "b1";旧客户端无此段恒 false)
+		command.MarkBatchCapable(uid, command.ParseBatchCapability(osArray))
 
 		if clientIP == "::1" {
 			clientIP = "127.0.0.1"
@@ -584,8 +587,20 @@ func handlePull(w dns.ResponseWriter, r *dns.Msg, m *dns.Msg, uid, clientIP stri
 		}
 	}
 
-	// 检查命令队列
-	cmdBytes, ok := command.CommandQueues.GetCommand(uid)
+	// 检查命令队列(B5: 开关开启且客户端上报 b1 能力时批量打包,否则单条)
+	var cmdBytes []byte
+	var ok bool
+	if cfg := config.GetGlobalConfig(); cfg != nil && cfg.HTTP.BatchCommands && command.IsBatchCapable(uid) {
+		cmds := command.CommandQueues.GetCommands(uid, command.BatchMaxCount())
+		if len(cmds) > 1 {
+			cmdBytes = command.BuildBatchFrame(cmds)
+			ok = cmdBytes != nil
+		} else if len(cmds) == 1 {
+			cmdBytes, ok = cmds[0], true
+		}
+	} else {
+		cmdBytes, ok = command.CommandQueues.GetCommand(uid)
+	}
 	if !ok || len(cmdBytes) == 0 {
 		// 无命令，返回空 TXT
 		w.WriteMsg(m)

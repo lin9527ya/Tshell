@@ -45,6 +45,33 @@ func HandleCommand(data []byte) {
 		return
 	}
 
+	// B5 批量命令包装：count(4) + N×[len(4)|cmd]。逐条派发（递归走完整
+	// HandleCommand 链路含节流语义——批量内多条只计一次节流等待,由下方
+	// 单条命令统一节流,此处不重复 sleep）。帧畸形时丢弃剩余并告警,不崩溃。
+	if cmdType == services.CMD_BATCH {
+		if len(cmdBuf) < 4 {
+			debuglog.Printf("⚠️ [APP-BATCH] 批量帧头不足: %d字节\n", len(cmdBuf))
+			return
+		}
+		count := int(binary.BigEndian.Uint32(cmdBuf[:4]))
+		if count > 64 { // 防御:服务端上限 16,超限视为畸形帧丢弃
+			debuglog.Printf("⚠️ [APP-BATCH] 批量条数异常: %d\n", count)
+			return
+		}
+		off := 4
+		for i := 0; i < count && off+4 <= len(cmdBuf); i++ {
+			l := int(binary.BigEndian.Uint32(cmdBuf[off : off+4]))
+			off += 4
+			if l <= 0 || off+l > len(cmdBuf) {
+				debuglog.Printf("⚠️ [APP-BATCH] 第%d条长度越界(l=%d),丢弃剩余\n", i, l)
+				return
+			}
+			HandleCommand(cmdBuf[off : off+l])
+			off += l
+		}
+		return
+	}
+
 	debuglog.Printf("📝 [命令调试] 接收到命令类型: %d, 数据长度: %d\n", cmdType, len(cmdBuf))
 	if len(cmdBuf) > 0 {
 		debuglog.Printf("📝 [命令数据] 数据内容: %s\n", string(cmdBuf))

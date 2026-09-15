@@ -194,6 +194,11 @@ type HTTPConfig struct {
 	PostClientOutputTypeValue string `json:"post_client_output_type_value" yaml:"post_client_output_type_value" env:"POST_CLIENT_OUTPUT_TYPE_VALUE"`
 	PostServerOutputPrepend   string `json:"post_server_output_prepend" yaml:"post_server_output_prepend" env:"POST_SERVER_OUTPUT_PREPEND"`
 	PostServerOutputAppend    string `json:"post_server_output_append" yaml:"post_server_output_append" env:"POST_SERVER_OUTPUT_APPEND"`
+
+	// 批量命令下发(轮询协议单轮 GET/TXT 只拉 1 条命令,批量任务时每条一个 RTT 极慢)。
+	// 开启后:仅对上报 b1 能力标记(MetaInfo 第 6 段)的新客户端以 CMD_BATCH 帧打包
+	// 多条命令;旧客户端永远单条,零行为变化。默认关闭,灰度后开启;出问题改配置即回退。
+	BatchCommands bool `json:"batch_commands" yaml:"batch_commands" default:"false"`
 }
 
 // NotificationConfig 通知配置

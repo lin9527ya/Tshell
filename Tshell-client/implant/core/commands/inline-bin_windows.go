@@ -305,7 +305,7 @@ func VirtualAlloc(size int) (uintptr, error) {
 		errorMsg := fmt.Sprintf("VirtualAlloc failed: size=%d, alignedSize=%d, error=%v, lastError=%d",
 			size, alignedSize, err, lastError)
 		communication.DataProcess(0, []byte(fmt.Sprintf("[!] %s", errorMsg)))
-		return 0, fmt.Errorf(errorMsg)
+		return 0, fmt.Errorf("%s", errorMsg)
 	}
 
 	communication.DataProcess(0, []byte(fmt.Sprintf("[+] Memory allocated successfully at 0x%x", ret)))
@@ -540,7 +540,7 @@ func InlineBin(buf []byte) ([]byte, error) {
 			if r := recover(); r != nil {
 				errorMsg := fmt.Sprintf("[!] Shellcode execution panic: %v", r)
 				communication.DataProcess(0, []byte(errorMsg))
-				log.Printf(errorMsg)
+				log.Printf("%s", errorMsg)
 			}
 			// 确保在执行完成后停止所有线程
 			select {
@@ -566,7 +566,7 @@ func InlineBin(buf []byte) ([]byte, error) {
 			if err != nil {
 				errorMsg := fmt.Sprintf("[!] %v", err)
 				communication.DataProcess(0, []byte(errorMsg))
-				log.Printf(errorMsg)
+				log.Printf("%s", errorMsg)
 			} else {
 				communication.DataProcess(0, []byte("[+] Shellcode execution completed"))
 			}

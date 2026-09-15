@@ -166,6 +166,8 @@ func GetHttp(w http.ResponseWriter, r *http.Request) {
 		if len(osArray) >= 4 {
 			clientOs = osArray[3]
 		}
+		// B5: 记录批量命令能力(MetaInfo 第 6 段 "b1";旧客户端无此段恒 false)
+		command.MarkBatchCapable(uid, command.ParseBatchCapability(osArray))
 
 		// 外网 ip
 		externalIp, _, err := net.SplitHostPort(r.RemoteAddr)
@@ -303,6 +305,8 @@ func GetHttp(w http.ResponseWriter, r *http.Request) {
 		MuClientManager.Unlock()
 		if !knownOnline {
 			database.SetClientOnline(uid, listenerType)
+			// B5: 重连恢复时刷新批量能力标记(客户端可能换版本)
+			command.MarkBatchCapable(uid, command.ParseBatchCapability(strings.Split(string(metainfo[9:]), "\t")))
 			// 重连恢复：重新注册离线检测器并恢复连接类型映射（否则该客户端永不被离线检测、命令静默丢失）
 			if connection.GlobalOfflineDetector != nil {
 				_, hbInterval := database.GetListenerHeartbeatConfigByType(listenerType)
@@ -351,7 +355,21 @@ func GetHttp(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		cmdBytes, ok := command.CommandQueues.GetCommand(uid)
+		// B5: 批量拉取——开关开启且客户端上报 b1 能力时,一轮 GET 打包多条命令
+		// (CMD_BATCH 帧);否则保持单条(旧客户端/开关关闭,零行为变化)
+		var cmdBytes []byte
+		var ok bool
+		if cfg := config.GetGlobalConfig(); cfg != nil && cfg.HTTP.BatchCommands && command.IsBatchCapable(uid) {
+			cmds := command.CommandQueues.GetCommands(uid, command.BatchMaxCount())
+			if len(cmds) > 1 {
+				cmdBytes = command.BuildBatchFrame(cmds)
+				ok = cmdBytes != nil
+			} else if len(cmds) == 1 {
+				cmdBytes, ok = cmds[0], true
+			}
+		} else {
+			cmdBytes, ok = command.CommandQueues.GetCommand(uid)
+		}
 
 		if ok && len(cmdBytes) > 0 {
 			// 【调试关键】显示原始命令信息
