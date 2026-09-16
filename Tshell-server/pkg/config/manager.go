@@ -318,7 +318,16 @@ func (cm *ConfigManager) loadConfig() error {
 	}
 
 	if err != nil {
-		return fmt.Errorf("解析配置文件失败: %v", err)
+		// 常见故障排查提示: 该错误多为配置文件被非 UTF-8 编辑器保存导致
+		// (编码损坏/换行丢失),或缩进/结构错误——原报错"invalid trailing UTF-8
+		// octet"等过于晦涩。参考 config.example.yaml 重建可快速恢复。
+		hint := ""
+		if strings.Contains(err.Error(), "UTF-8") || strings.Contains(err.Error(), "utf-8") {
+			hint = "(文件含无效 UTF-8 字节,多为此前用非 UTF-8 编辑器保存所致;请转存为 UTF-8 或参照 config.example.yaml 重建)"
+		} else if strings.Contains(err.Error(), "did not find expected key") || strings.Contains(err.Error(), "mapping values") {
+			hint = "(疑似缩进或换行结构损坏;可参照 config.example.yaml 对照修复)"
+		}
+		return fmt.Errorf("解析配置文件失败: %v %s", err, hint)
 	}
 
 	// 覆盖环境变量

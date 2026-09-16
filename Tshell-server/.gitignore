@@ -26,3 +26,4 @@ temp
 pkg/api/server/
 /tshell-server
 /rshell-server
+/tshell-server.exe
