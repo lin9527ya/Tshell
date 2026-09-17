@@ -1109,7 +1109,13 @@ _, _ = Engine.Exec("CREATE INDEX IF NOT EXISTS idx_clients_online ON clients(onl
 _, _ = Engine.Exec("CREATE INDEX IF NOT EXISTS idx_clients_listener ON clients(listener)")  
 _, _ = Engine.Exec("CREATE INDEX IF NOT EXISTS idx_shell_uid ON shell(uid)")  
 _, _ = Engine.Exec("CREATE INDEX IF NOT EXISTS idx_downloads_uid ON downloads(uid)")  
-_, _ = Engine.Exec("CREATE INDEX IF NOT EXISTS idx_clients_online_listener ON clients(online, listener)")  
+	// 【关键修复】原手写复合索引 idx_clients_online_listener 会引发启动死循环:
+	// 本次启动创建该索引 → 下次启动 xorm Sync2 因无法将其匹配到结构体声明的索引,
+	// 生成删除目标 IDX_clients_idx_clients_online_listener(不存在)→ 报
+	// "no such index" → log.Fatalf 启动失败,即"第二次重启必炸"。
+	// 复合索引价值有限(online/listener 各有单列索引,COUNT 聚合走 online 索引即可),
+	// 改为自愈清理:已落库的旧索引在下次启动时被删除,新库不再创建。
+	_, _ = Engine.Exec("DROP INDEX IF EXISTS idx_clients_online_listener")
 	if err != nil {
 		log.Fatalf("初始化数据库失败: %v", err)
 	}
