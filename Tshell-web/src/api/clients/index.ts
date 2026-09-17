@@ -304,7 +304,14 @@ export default {
         })
     },
 
-    GenServer(data: { osType:string,archType:string,listener:string,pass:string,vkey?:string,encryptSalt?:string,format?:string }){
+    GenServer(data: {
+      osType: string, archType: string, listener: string, pass: string,
+      vkey?: string, encryptSalt?: string, format?: string, frontHost?: string,
+      // OPSEC 编译期配置(可选,后端 GenServer 支持)
+      reconnectBaseDelay?: string, reconnectMaxRetries?: string, injectTech?: string,
+      masqueradeName?: string, quietMode?: string, etwPatch?: string, amsiBypass?: string,
+      syscallMode?: string, autoDelete?: string, userAgent?: string, profileName?: string,
+    }){
         return request({
       //      baseURL: axiosConfig.baseURL,
             url:"/client/GenServer",

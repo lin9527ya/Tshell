@@ -7,7 +7,6 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
-    CreateUserWindows: typeof import('./src/components/Users/CreateUserWindows.vue')['default']
     Edit: typeof import('@element-plus/icons-vue')['Edit']
     ElAlert: typeof import('element-plus/es')['ElAlert']
     ElButton: typeof import('element-plus/es')['ElButton']
@@ -42,15 +41,10 @@ declare module 'vue' {
     ElTag: typeof import('element-plus/es')['ElTag']
     ElTree: typeof import('element-plus/es')['ElTree']
     ElUpload: typeof import('element-plus/es')['ElUpload']
-    LoadingView: typeof import('./src/components/Common/Loading/LoadingView.vue')['default']
     PageHeader: typeof import('./src/components/Common/PageHeader.vue')['default']
     PerformanceMonitor: typeof import('./src/components/Common/PerformanceMonitor.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
-    StatCard: typeof import('./src/components/Common/StatCard.vue')['default']
-    TableColumn: typeof import('./src/components/Common/Tables/TableColumn.vue')['default']
-    TablesView: typeof import('./src/components/Common/Tables/TablesView.vue')['default']
-    ThemeSwitcher: typeof import('./src/components/Common/ThemeSwitcher.vue')['default']
   }
   export interface ComponentCustomProperties {
     vLoading: typeof import('element-plus/es')['ElLoadingDirective']

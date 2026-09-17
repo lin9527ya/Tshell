@@ -23,10 +23,8 @@ const panelRegistry: Record<string, Component> = {
   'batch-tasks': markRaw(BatchTasksView),
   'applications': defineAsyncComponent(() => import('../ApplicationsView.vue')),
   'targets': defineAsyncComponent(() => import('../TargetsView.vue')),
-  'sessions': defineAsyncComponent(() => import('../SessionTable.vue')),
   'session-table': defineAsyncComponent(() => import('../SessionTable.vue')),
   'sites': defineAsyncComponent(() => import('../SitesView.vue')),
-  'site-manage': defineAsyncComponent(() => import('../SitesView.vue')),
 
   // Beacon Exploration Panels
   'client-files': defineAsyncComponent(() => import('@/views/client/View/ClientFiles.vue')),
@@ -47,18 +45,15 @@ const panelRegistry: Record<string, Component> = {
   'socks5': defineAsyncComponent(() => import('@/views/tunnel/Socks5View.vue')),
   'plugins': defineAsyncComponent(() => import('@/views/plugins/PluginsView.vue')),
   'script-manager': defineAsyncComponent(() => import('../ScriptManagerPanel.vue')),
-  'scripts': defineAsyncComponent(() => import('../ScriptManagerPanel.vue')),
   'audit': defineAsyncComponent(() => import('@/views/server/AuditLogsView.vue')),
   'security-center': defineAsyncComponent(() => import('@/views/security/SecurityCenterView.vue')),
   'hidden-access': defineAsyncComponent(() => import('@/views/security/HiddenAccessView.vue')),
   'key-management': defineAsyncComponent(() => import('@/views/config/KeyManagementView.vue')),
   'session-keys': defineAsyncComponent(() => import('@/views/config/KeyManagementView.vue')),
-  'session_keys': defineAsyncComponent(() => import('@/views/config/KeyManagementView.vue')),
   'user-management': defineAsyncComponent(() => import('@/views/config/UserManagementView.vue')),
   'server-config': defineAsyncComponent(() => import('@/views/config/ServerConfigView.vue')),
   'server-status': defineAsyncComponent(() => import('@/views/server/ServerStatusView.vue')),
   'connection-pool': defineAsyncComponent(() => import('@/views/connection/ConnectionPoolView.vue')),
-  'about': defineAsyncComponent(() => import('@/views/AboutView.vue')),
 }
 
 export function registerPanel(name: string, component: Component) {

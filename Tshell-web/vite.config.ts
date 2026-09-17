@@ -76,8 +76,7 @@ export default defineConfig(async () => {
             element: ['element-plus', '@element-plus/icons-vue'],
             xterm: ['xterm', 'xterm-addon-fit', 'xterm-addon-web-links', 'xterm-addon-webgl', 'xterm-addon-unicode11'],
             utils: ['axios', 'vue-clipboard3'],
-            dock: ['dockview'],
-            charts: ['echarts', 'vue-echarts']
+            // dock/charts chunk 已移除: dockview/echarts/vue-flow 系依赖零引用,已卸载
           },
           /** 用于从入口点创建的块的打包输出格式[name]表示文件名,[hash]表示该文件内容hash值 */
           entryFileNames: 'js/[name].[hash].js',

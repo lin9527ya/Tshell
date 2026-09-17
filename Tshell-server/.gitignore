@@ -17,7 +17,7 @@ Downloads/
 Plugins/
 
 # ===== 备份与临时文件 =====
-*.bak
+*.bak*
 temp
 
 # ===== 本地构建产物(不入库)=====
@@ -27,3 +27,4 @@ pkg/api/server/
 /tshell-server
 /rshell-server
 /tshell-server.exe
+/tshell.exe

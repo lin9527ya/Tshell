@@ -401,7 +401,8 @@ const screenshotQuality = ref(1)
 
 const selectedTargetUid = ref('')
 const onlineClients = computed(() =>
-  clientsStore.clientsList.filter((c) => c.Online === '1' || c.Online === 'true' || c.Online === true),
+  // Online 为后端字符串标记("1" 在线),无 boolean 形态;原 === true 分支恒 false
+  clientsStore.clientsList.filter((c) => c.Online === '1' || c.Online === 'true'),
 )
 
 // Active target for taking screenshots

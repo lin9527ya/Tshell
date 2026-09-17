@@ -124,7 +124,7 @@ import { useUserStore } from '@/stores/user'
 import { useThemeStore } from '@/stores/theme'
 import { useClientsStore } from '@/stores/clients'
 import { useI18nStore } from '@/stores/i18n'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 
 const workspace = useWorkspaceStore()
 const userStore = useUserStore()
@@ -258,6 +258,7 @@ const menus = computed<{ label: string; items: MenuItem[] }[]>(() => [
       { label: t('menu.view.event_log'), tab: { id: 'event-log', title: isZh.value ? '事件日志' : 'Event Log', component: 'event-log' } },
       { label: t('menu.view.keystrokes'), tab: { id: 'global-keystrokes', title: isZh.value ? '键盘记录' : 'Keystrokes', component: 'global-keystrokes' } },
       { label: t('menu.view.proxy_pivots'), tab: { id: 'tunnel-proxy', title: isZh.value ? '代理转发' : 'Tunnel Proxy', component: 'tunnel-proxy' } },
+      { label: isZh.value ? 'SOCKS5代理' : 'SOCKS5 Proxy', tab: { id: 'socks5', title: isZh.value ? 'SOCKS5代理' : 'SOCKS5 Proxy', component: 'socks5' } },
       { label: t('menu.view.screenshots'), tab: { id: 'global-screenshots', title: isZh.value ? '屏幕截图' : 'Screenshots', component: 'global-screenshots' } },
       {
         label: t('menu.view.targets'),
@@ -378,7 +379,16 @@ const menus = computed<{ label: string; items: MenuItem[] }[]>(() => [
       { label: t('menu.help.arsenal'), tab: { id: 'plugins', title: isZh.value ? '插件中心' : 'Plugins', component: 'plugins' } },
       { label: t('menu.help.community'), action: () => workspace.openDialog('scriptManager') },
       { label: t('menu.help.sleep_manual'), tab: { id: 'script-console', title: isZh.value ? '脚本控制台' : 'Script Console', component: 'script-console' } },
-      { label: t('menu.help.keybindings'), action: () => ElMessage.warning(isZh.value ? '快捷键功能未实现' : 'Keyboard shortcuts not implemented') },
+      {
+        label: t('menu.help.keybindings'),
+        action: () => ElMessageBox.alert(
+          isZh.value
+            ? '【常用交互】\n· 菜单: ↑/↓ 移动选中, Enter 执行, Esc 关闭\n· 会话表: 双击行打开控制台, 右键打开会话操作菜单\n· 对话框: Esc 关闭; 路径/搜索输入框 Enter 提交\n· 终端: 画布点击聚焦后可直接键盘输入'
+            : '【Shortcuts】\n· Menu: Up/Down to navigate, Enter to select, Esc to close\n· Sessions: Double-click a row to open console, right-click for actions\n· Dialogs: Esc closes; Enter submits in path/search inputs\n· Terminal: Click canvas to focus, then type directly',
+          isZh.value ? '快捷键与交互说明' : 'Keyboard & Interaction Guide',
+          { confirmButtonText: isZh.value ? '确定' : 'OK' },
+        ),
+      },
       { divider: true },
       { label: t('menu.help.sysinfo'), action: () => workspace.openDialog('about') },
       { label: t('menu.help.about'), action: () => workspace.openDialog('about') },

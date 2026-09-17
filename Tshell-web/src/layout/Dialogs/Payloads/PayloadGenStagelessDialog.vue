@@ -129,6 +129,7 @@ import { useI18nStore } from '@/stores/i18n'
 import { useWorkspaceStore } from '@/stores/workspace'
 import ChoosePayloadDialog, { type ListenerOption } from '../ChoosePayloadDialog.vue'
 import { generateClientBinary, extractBlobError } from './payloadUtil'
+import c2profileApi from '@/api/c2profile'
 
 const i18nStore = useI18nStore()
 const isZh = computed(() => i18nStore.isZh)

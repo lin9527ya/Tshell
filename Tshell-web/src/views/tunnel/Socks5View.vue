@@ -279,6 +279,7 @@ interface Socks5Item {
   agentPort: number
   note: string
   username: string
+  password?: string // 代理认证密码(copyCurlCmd 拼接认证串用;后端返回可缺省)
   status: 'active' | 'inactive'
   createTime: string
   isEditingNote?: boolean

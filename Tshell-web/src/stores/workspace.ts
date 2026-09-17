@@ -32,10 +32,7 @@ export interface DialogState {
   windowsExeStageless: boolean
   windowsStagelessAll: boolean
   // 1:1 CS Attack Dialogs (Screenshots 11-15)
-  appletAttack: boolean
   forwardConnect: boolean
-  smartApplet: boolean
-  systemProfiler: boolean
   spearPhish: boolean
   c2Profile: boolean
   // 1:1 CS Site Management Dialogs (Pictures 5-7)
@@ -83,10 +80,7 @@ export const useWorkspaceStore = defineStore('cs-workspace', {
       windowsExe: false,
       windowsExeStageless: false,
       windowsStagelessAll: false,
-      appletAttack: false,
       forwardConnect: false,
-      smartApplet: false,
-      systemProfiler: false,
       spearPhish: false,
       c2Profile: false,
       cloneSite: false,

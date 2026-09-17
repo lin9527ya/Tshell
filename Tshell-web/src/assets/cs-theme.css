@@ -9,7 +9,13 @@
   --cs-console: #ffffff;
   --cs-border: #c8c8c8;
   --cs-hover: #e4e4e4;
-  --cs-active: #007acc;
+  /* 【修复】主色桥接: 由 theme store 写入的 --theme-primary 驱动,
+     改主色全站强调色(按钮/hover/焦点/选中)随之变化; fallback 为 CS 经典蓝 */
+  --cs-active: var(--theme-primary, #007acc);
+  /* 选中行底色: 主色加深(保持白字高对比,同 CS 视觉) */
+  --cs-selected: color-mix(in srgb, var(--cs-active) 78%, #04121f);
+  /* 主色悬停(略亮) */
+  --cs-active-hover: color-mix(in srgb, var(--cs-active) 88%, #ffffff);
 
   /* 标题栏/菜单栏/工具栏 */
   --cs-titlebar-bg: #e6e6e6;
@@ -47,7 +53,6 @@
   --cs-console: #141414;
   --cs-border: #3c3f41;
   --cs-hover: #35383c;
-  --cs-active: #007acc;
 
   --cs-titlebar-bg: #2b2d30;
   --cs-menubar-bg: #2b2d30;
@@ -107,6 +112,12 @@
   background: var(--cs-titlebar-bg);
 }
 
+/* 【精修】键盘可达性: 焦点可见环(与主色联动) */
+.cs-btn:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--cs-active) 60%, transparent);
+  outline-offset: 1px;
+}
+
 .cs-btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
@@ -119,8 +130,8 @@
 }
 
 .cs-btn-primary:hover:not(:disabled) {
-  background: #1a8cd8;
-  border-color: #1a8cd8;
+  background: var(--cs-active-hover);
+  border-color: var(--cs-active-hover);
   color: #ffffff;
 }
 
@@ -144,9 +155,9 @@
 /* CS 对话框样式 */
 .cs-dialog {
   border: 1px solid var(--cs-border) !important;
-  border-radius: 2px !important;
+  border-radius: 3px !important;
   background: var(--cs-panel) !important;
-  box-shadow: 2px 4px 16px rgba(0, 0, 0, 0.6) !important;
+  box-shadow: 0 10px 38px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3) !important;
 }
 
 .cs-dialog .el-dialog__header {
@@ -280,7 +291,10 @@
   background: var(--cs-active);
 }
 
-/* 覆盖既有业务组件在 CS 壳中的样式 */
+/* 【修复】Element Plus 令牌映射提升到不分主题的 .cs-shell 层级:
+   原仅在 [data-theme="dark"] 下生效,浅色模式 el-table/el-dialog/el-input
+   是原生白底("浅色壳套白底表格"穿帮的根因)。值全部引用 --cs-* 令牌,
+   令牌本身已按主题切换,故一层映射同时服务明暗双主题。 */
 .cs-shell {
   --theme-bg-primary: var(--cs-bg);
   --theme-bg-secondary: var(--cs-panel);
@@ -295,17 +309,20 @@
   --border-color: var(--cs-border);
   --text-primary: var(--cs-text-bright);
   --text-secondary: var(--cs-text);
-}
 
-:root[data-theme="dark"] .cs-shell {
   --el-bg-color: var(--cs-panel);
   --el-bg-color-page: var(--cs-bg);
+  --el-bg-color-overlay: var(--cs-panel);
   --el-fill-color-blank: var(--cs-panel);
   --el-fill-color-light: var(--cs-hover);
+  --el-fill-color: var(--cs-hover);
   --el-text-color-primary: var(--cs-text-bright);
   --el-text-color-regular: var(--cs-text);
   --el-text-color-secondary: var(--cs-text-dim);
+  --el-text-color-placeholder: var(--cs-text-dim);
   --el-border-color: var(--cs-border);
+  --el-border-color-light: var(--cs-border);
+  --el-border-color-lighter: var(--cs-border);
   --el-color-primary: var(--cs-active);
 }
 
@@ -350,6 +367,14 @@
   background: var(--cs-bg);
   box-shadow: 0 0 0 1px var(--cs-border) inset;
   border-radius: 2px;
+  transition: box-shadow 120ms ease;
+}
+
+/* 【精修】输入控件聚焦态: 主色焦点环(EP 默认主色为静态 #409eff,与主题脱节) */
+.cs-shell .el-input__wrapper.is-focus,
+.cs-shell .el-select__wrapper.is-focused,
+.cs-shell .el-textarea__inner:focus {
+  box-shadow: 0 0 0 1px var(--cs-active) inset;
 }
 
 /* =========================================================================
@@ -410,10 +435,10 @@
   background-color: var(--cs-hover) !important;
 }
 
-/* 选中行：CS 经典深蓝底纯白字，保持绝对高对比度 */
+/* 选中行：主色加深底 + 纯白字,高对比(随 --theme-primary 联动) */
 .cs-session-table .el-table__row.current-row > td.el-table__cell,
 .cs-session-table .el-table__row.is-selected > td.el-table__cell {
-  background-color: #1a5c9a !important;
+  background-color: var(--cs-selected) !important;
   color: #ffffff !important;
 }
 

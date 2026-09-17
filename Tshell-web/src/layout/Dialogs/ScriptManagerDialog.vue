@@ -46,11 +46,11 @@
       </div>
 
       <!-- 目录中可用脚本（未加载） -->
-      <div v-if="availableFiles.length > 0" class="sm-avail">
+      <div v-if="fileList.length > 0" class="sm-avail">
         <span class="sm-avail-title">{{ isZh ? '脚本目录' : 'Scripts Folder' }}</span>
         <div class="sm-avail-list">
           <span
-            v-for="f in availableFiles"
+            v-for="f in fileList"
             :key="f.name"
             class="sm-avail-item cs-font-mono"
             :title="f.path"

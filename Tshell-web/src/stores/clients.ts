@@ -23,6 +23,11 @@ export interface ClientData {
   Group?: string
   HeartbeatTimeout?: string // 心跳超时次数，默认30次
   HeartbeatInterval?: string // 心跳检测间隔（秒），默认10秒
+  // 【类型补全】以下字段由后端 returns/事件 payload 携带,此前类型缺失导致多处 TS 报错
+  Os?: string // 操作系统(后端 clients.Os)
+  ProcessName?: string // 进程名(事件 payload)
+  Session?: string // 会话号(Session 0/1/2,默认 "1")
+  LastActive?: string // 最后活跃时间(列表接口附加)
 }
 
 export const useClientsStore = defineStore('clients', () => {

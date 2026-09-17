@@ -632,10 +632,9 @@ function execMimikatz() {
 }
 
 function openElevate() {
-  close()
-  const c = getPrimaryClient()
-  if (!c) return
-  workspace.openDialog('elevate', { uid: c.Uid, uids: getTargetClients().map((t) => t.Uid) })
+  // 【修复】原调用 workspace.openDialog('elevate') 但 DialogState 无此键、
+  // 也无 Elevate 对话框组件,属复制 CS 菜单时的悬空引用;按同文件惯例如实提示
+  notImplemented()
 }
 
 function openGoldenTicket() {

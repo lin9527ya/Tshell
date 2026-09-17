@@ -3,6 +3,7 @@
 import {defineStore} from 'pinia'
 import router from '@/router/index'
 import { ElMessage } from 'element-plus'
+import { useCredentialsStore } from '@/stores/credentials'
 
 // 【single-flight】模块级共享刷新 Promise：并发 401 只触发一次刷新请求，
 // 其余请求复用同一结果，避免 N 个并发 401 打 N 次 /users/refresh

@@ -44,6 +44,7 @@ import { computed, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { useI18nStore } from '@/stores/i18n'
+import c2profileApi from '@/api/c2profile'
 
 const workspace = useWorkspaceStore()
 const i18nStore = useI18nStore()

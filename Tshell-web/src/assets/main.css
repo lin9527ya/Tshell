@@ -137,19 +137,6 @@ a {
     }
 }
 
-/* 海洋主题特定样式 */
-[data-theme="ocean"] {
-    .container {
-        background: linear-gradient(135deg, var(--theme-bg-primary) 0%, var(--theme-bg-secondary) 100%);
-        border: 1px solid var(--theme-primary);
-    }
-    
-    .el-button--primary {
-        background: linear-gradient(135deg, var(--theme-primary) 0%, var(--theme-primary-dark) 100%);
-        border: none;
-    }
-}
-
 /* UnoCSS兼容性样式 */
 /* 确保UnoCSS生成的类与现有样式兼容 */
 .flex-center { display: flex; align-items: center; justify-content: center; }
@@ -233,69 +220,6 @@ a {
     color: #ffffff !important;
 }
 
-/* 现代化全局布局样式 */
-.modern-layout {
-    display: flex;
-    min-height: 100vh;
-    background: var(--theme-bg-primary);
-}
-
-/* 侧边栏折叠状态的全局样式调整 */
-body.sidebar-collapsed .modern-header {
-    left: var(--sidebar-collapsed-width, 64px);
-}
-
-body.sidebar-collapsed .main-content {
-    margin-left: var(--sidebar-collapsed-width, 64px);
-    width: calc(100% - var(--sidebar-collapsed-width, 64px));
-}
-
-/* 页面过渡动画优化 */
-.page-transition-enter-active,
-.page-transition-leave-active {
-    transition: all var(--transition-duration-normal) ease;
-}
-
-.page-transition-enter-from {
-    opacity: 0;
-    transform: translateY(20px);
-}
-
-.page-transition-leave-to {
-    opacity: 0;
-    transform: translateY(-20px);
-}
-
-/* 卡片统一样式 */
-.modern-card {
-    background: var(--card-bg);
-    border-radius: var(--card-radius);
-    box-shadow: var(--card-shadow);
-    border: 1px solid var(--theme-border-primary);
-    transition: all var(--transition-duration-normal);
-}
-
-.modern-card:hover {
-    box-shadow: var(--theme-shadow-medium);
-    transform: translateY(-2px);
-}
-
-/* 统一的输入框样式 */
-.modern-input .el-input__wrapper {
-    border-radius: var(--border-radius-medium);
-    border: 1px solid var(--theme-border-primary);
-    transition: all var(--transition-duration-normal);
-}
-
-.modern-input .el-input__wrapper:hover {
-    border-color: var(--theme-primary);
-}
-
-.modern-input .el-input__wrapper.is-focus {
-    border-color: var(--theme-primary);
-    box-shadow: 0 0 0 2px var(--theme-primary-alpha);
-}
-
 /* 统一的按钮组样式 */
 .button-group {
     display: flex;
@@ -305,29 +229,6 @@ body.sidebar-collapsed .main-content {
 
 .button-group .el-button {
     margin: 0;
-}
-
-/* 状态指示器样式 */
-.status-indicator {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    padding: 4px 8px;
-    border-radius: var(--border-radius-small);
-    font-size: var(--font-size-xs);
-    font-weight: var(--font-weight-medium);
-}
-
-.status-indicator.online {
-    background: rgba(76, 175, 80, 0.1);
-    color: #4caf50;
-    border: 1px solid rgba(76, 175, 80, 0.3);
-}
-
-.status-indicator.offline {
-    background: rgba(244, 67, 54, 0.1);
-    color: #f44336;
-    border: 1px solid rgba(244, 67, 54, 0.3);
 }
 
 /* 响应式表格样式 */

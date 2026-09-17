@@ -62,11 +62,24 @@
             <div class="form-row">
               <label class="row-label">{{ isZh ? '界面主题:' : 'GUI Theme:' }}</label>
               <el-select v-model="pref.guiTheme" size="small" style="width: 240px" @change="onThemeChange">
-                <el-option :label="isZh ? '默认主题' : 'Default'" value="default" />
                 <el-option :label="isZh ? '暗色 (Darcula)' : 'Dark (Darcula)'" value="dark" />
                 <el-option :label="isZh ? '明亮模式' : 'Light'" value="light" />
-                <el-option :label="isZh ? '经典复古' : 'Windows Classic'" value="classic" />
               </el-select>
+            </div>
+
+            <div class="form-row">
+              <label class="row-label">{{ isZh ? '主题强调色:' : 'Accent Color:' }}</label>
+              <div class="color-presets">
+                <button
+                  v-for="c in themeStore.presetColors"
+                  :key="c"
+                  class="color-swatch"
+                  :class="{ active: themeStore.config.primaryColor === c }"
+                  :style="{ background: c }"
+                  :title="c"
+                  @click="themeStore.setPrimaryColor(c)"
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -229,7 +242,7 @@ const pref = reactive({
   showToolbar: true,
   vncPorts: '5000-9999',
   guiFont: 'Dialog-PLAIN-12',
-  guiTheme: 'default',
+  guiTheme: (themeStore.isDark ? 'dark' : 'light'),
   consoleFont: "'JetBrains Mono', Consolas, Menlo, monospace",
   consoleFontSize: 13,
   scrollback: 10000,
@@ -268,7 +281,7 @@ function pickFont() {
 }
 
 function onThemeChange(val: string) {
-  if (val === 'dark' || val === 'default') {
+  if (val === 'dark') {
     themeStore.setTheme('dark')
   } else {
     themeStore.setTheme('light')
@@ -408,5 +421,31 @@ function savePreferences() {
   display: flex;
   justify-content: center;
   padding: 8px 0;
+}
+
+/* 主题强调色预设 */
+.color-presets {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.color-swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 3px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+  transition: transform 100ms ease, border-color 100ms ease;
+}
+
+.color-swatch:hover {
+  transform: scale(1.12);
+}
+
+.color-swatch.active {
+  border-color: var(--cs-text-bright);
+  box-shadow: 0 0 0 1px var(--cs-border);
 }
 </style>
