@@ -1103,19 +1103,20 @@ _, _ = Engine.Exec("PRAGMA mmap_size=268435456")
 	// 原实现用第二个连接池操作同一 SQLite 文件（双池竞争）、可能开启 ShowSQL 刷屏，
 	// 且夜间 VACUUM 会锁库阻塞；API 层统一使用全局 Engine。
 
+	// 【关键修复】原手写复合索引 idx_clients_online_listener 引发启动死循环:
+	// 某次启动创建该索引 → 下次启动 xorm Sync2 无法将其匹配到结构体声明的索引,
+	// 生成删除目标 IDX_clients_idx_clients_online_listener(不存在)→
+	// "no such index" → log.Fatalf 启动失败,即"第二次重启必炸"。
+	// 修复: 在 Sync2 之前自愈清理该索引(必须早于 Sync2——它是崩溃点),
+	// 新库不再创建; 复合索引价值有限(online/listener 各有单列索引)。
+	_, _ = Engine.Exec("DROP INDEX IF EXISTS idx_clients_online_listener")
+
 	err = Engine.Sync2(new(Users), new(Clients), new(Notes), new(Shell), new(Downloads), new(Listener), new(WebDelivery), new(DeliveryAccessLog), new(Socks5), new(TunnelProxy), new(AuditLogDB), new(Plugin), new(StagerToken), new(Loot))
 _, _ = Engine.Exec("CREATE INDEX IF NOT EXISTS idx_clients_uid ON clients(uid)")  
 _, _ = Engine.Exec("CREATE INDEX IF NOT EXISTS idx_clients_online ON clients(online)")  
 _, _ = Engine.Exec("CREATE INDEX IF NOT EXISTS idx_clients_listener ON clients(listener)")  
 _, _ = Engine.Exec("CREATE INDEX IF NOT EXISTS idx_shell_uid ON shell(uid)")  
 _, _ = Engine.Exec("CREATE INDEX IF NOT EXISTS idx_downloads_uid ON downloads(uid)")  
-	// 【关键修复】原手写复合索引 idx_clients_online_listener 会引发启动死循环:
-	// 本次启动创建该索引 → 下次启动 xorm Sync2 因无法将其匹配到结构体声明的索引,
-	// 生成删除目标 IDX_clients_idx_clients_online_listener(不存在)→ 报
-	// "no such index" → log.Fatalf 启动失败,即"第二次重启必炸"。
-	// 复合索引价值有限(online/listener 各有单列索引,COUNT 聚合走 online 索引即可),
-	// 改为自愈清理:已落库的旧索引在下次启动时被删除,新库不再创建。
-	_, _ = Engine.Exec("DROP INDEX IF EXISTS idx_clients_online_listener")
 	if err != nil {
 		log.Fatalf("初始化数据库失败: %v", err)
 	}
