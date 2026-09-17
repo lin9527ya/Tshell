@@ -1,0 +1,446 @@
+/**
+ * VShell 风格外壳令牌与基础件(vshell-ui 分支专用)
+ * 视觉基准: Vben Admin / VShell —— 深色侧边栏(#001529) + 浅色内容区 + 蓝色主色
+ * 内容区的 el-* / 面板样式仍由 cs-theme.css 的 --cs-* 令牌体系承担(浅色模式下
+ * 已在 main 分支修复过浅色穿帮),本文件只管「壳」的视觉。
+ */
+
+.vs-shell {
+  --vs-sidebar-bg: #001529;
+  --vs-sidebar-sub-bg: #000c17;
+  --vs-sidebar-text: rgba(255, 255, 255, 0.65);
+  --vs-sidebar-text-active: #ffffff;
+  --vs-sidebar-hover: rgba(255, 255, 255, 0.08);
+  --vs-sidebar-active: var(--theme-primary, #0960bd);
+  --vs-sidebar-w: 208px;
+  --vs-sidebar-w-collapsed: 48px;
+  --vs-header-h: 48px;
+  --vs-tags-h: 34px;
+  --vs-content-bg: #f0f2f5;
+  --vs-card-bg: #ffffff;
+  --vs-card-border: #e8e8e8;
+  --vs-card-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --vs-text-strong: #1f2329;
+  --vs-text-normal: #4e5969;
+  --vs-text-dim: #86909c;
+
+  display: flex;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+  background: var(--vs-content-bg);
+}
+
+/* 暗色模式下内容区随 cs 令牌下沉,壳底色跟随 */
+:root[data-theme="dark"] .vs-shell {
+  --vs-content-bg: var(--cs-bg);
+  --vs-card-bg: var(--cs-panel);
+  --vs-card-border: var(--cs-border);
+  --vs-card-shadow: none;
+  --vs-text-strong: var(--cs-text-bright);
+  --vs-text-normal: var(--cs-text);
+  --vs-text-dim: var(--cs-text-dim);
+}
+
+/* ================= 侧边栏 ================= */
+.vs-sidebar {
+  width: var(--vs-sidebar-w);
+  flex-shrink: 0;
+  background: var(--vs-sidebar-bg);
+  display: flex;
+  flex-direction: column;
+  transition: width 160ms ease;
+  overflow: hidden;
+}
+
+.vs-sidebar.collapsed {
+  width: var(--vs-sidebar-w-collapsed);
+}
+
+.vs-logo {
+  height: var(--vs-header-h);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+  color: #fff;
+  font-weight: 600;
+  font-size: 15px;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  background: var(--vs-sidebar-sub-bg);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.vs-logo .vs-logo-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--vs-sidebar-active);
+  flex-shrink: 0;
+  box-shadow: 0 0 8px var(--vs-sidebar-active);
+}
+
+.vs-nav {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 6px 0;
+}
+
+.vs-nav::-webkit-scrollbar {
+  width: 4px;
+}
+.vs-nav::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.vs-nav-group-label {
+  padding: 12px 16px 4px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.35);
+  letter-spacing: 1px;
+  white-space: nowrap;
+}
+
+.vs-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 38px;
+  padding: 0 16px;
+  color: var(--vs-sidebar-text);
+  font-size: 13.5px;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  border: none;
+  background: transparent;
+  width: 100%;
+  text-align: left;
+  transition: background 120ms ease, color 120ms ease;
+  position: relative;
+}
+
+.vs-nav-item:hover {
+  background: var(--vs-sidebar-hover);
+  color: var(--vs-sidebar-text-active);
+}
+
+.vs-nav-item.active {
+  background: var(--vs-sidebar-active);
+  color: var(--vs-sidebar-text-active);
+  font-weight: 500;
+}
+
+.vs-nav-item .vs-nav-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+}
+
+.vs-sidebar.collapsed .vs-nav-group-label,
+.vs-sidebar.collapsed .vs-nav-label {
+  display: none;
+}
+
+.vs-sidebar.collapsed .vs-nav-item {
+  justify-content: center;
+  padding: 0;
+}
+
+/* ================= 主区 ================= */
+.vs-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ================= 顶栏 ================= */
+.vs-header {
+  height: var(--vs-header-h);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px;
+  background: var(--vs-card-bg);
+  border-bottom: 1px solid var(--vs-card-border);
+  color: var(--vs-text-normal);
+}
+
+.vs-header .vs-hamburger {
+  width: 30px;
+  height: 30px;
+  border: none;
+  background: transparent;
+  color: var(--vs-text-normal);
+  cursor: pointer;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+}
+.vs-header .vs-hamburger:hover {
+  background: color-mix(in srgb, var(--vs-text-dim) 15%, transparent);
+}
+
+.vs-header .vs-crumb {
+  font-size: 13.5px;
+  color: var(--vs-text-dim);
+}
+.vs-header .vs-crumb b {
+  color: var(--vs-text-strong);
+  font-weight: 600;
+}
+
+.vs-header-spacer { flex: 1; }
+
+.vs-header-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--vs-text-normal);
+  padding: 3px 10px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--vs-text-dim) 10%, transparent);
+}
+.vs-header-stat .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--cs-online);
+}
+
+.vs-header-btn {
+  width: 30px;
+  height: 30px;
+  border: none;
+  background: transparent;
+  color: var(--vs-text-normal);
+  cursor: pointer;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+}
+.vs-header-btn:hover {
+  background: color-mix(in srgb, var(--vs-text-dim) 15%, transparent);
+}
+
+.vs-user {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--vs-text-strong);
+  padding: 0 8px;
+  cursor: pointer;
+}
+.vs-user .avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--vs-sidebar-active);
+  color: #fff;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ================= 标签条 ================= */
+.vs-tags {
+  height: var(--vs-tags-h);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 10px;
+  background: var(--vs-card-bg);
+  border-bottom: 1px solid var(--vs-card-border);
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.vs-tags::-webkit-scrollbar { height: 3px; }
+.vs-tags::-webkit-scrollbar-thumb { background: var(--vs-card-border); }
+
+.vs-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 10px;
+  font-size: 12.5px;
+  color: var(--vs-text-normal);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.vs-tag:hover {
+  color: var(--vs-sidebar-active);
+  background: color-mix(in srgb, var(--vs-sidebar-active) 8%, transparent);
+}
+
+.vs-tag.active {
+  color: #fff;
+  background: var(--vs-sidebar-active);
+  border-color: var(--vs-sidebar-active);
+}
+
+.vs-tag .vs-tag-close {
+  font-size: 11px;
+  width: 14px;
+  height: 14px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  opacity: 0.7;
+}
+.vs-tag .vs-tag-close:hover {
+  background: rgba(0, 0, 0, 0.2);
+  opacity: 1;
+}
+
+/* ================= 内容区 ================= */
+.vs-content {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: var(--vs-content-bg);
+}
+
+.vs-panel-host {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.panel-not-found {
+  padding: 24px;
+  color: var(--vs-text-dim);
+}
+
+/* ================= 仪表盘 ================= */
+.vs-dashboard {
+  padding: 16px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.vs-dash-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.vs-card {
+  background: var(--vs-card-bg);
+  border: 1px solid var(--vs-card-border);
+  border-radius: 6px;
+  box-shadow: var(--vs-card-shadow);
+  padding: 16px;
+}
+
+.vs-stat-label {
+  font-size: 13px;
+  color: var(--vs-text-dim);
+  margin-bottom: 8px;
+}
+
+.vs-stat-value {
+  font-size: 26px;
+  font-weight: 600;
+  color: var(--vs-text-strong);
+  line-height: 1.1;
+}
+
+.vs-stat-value .unit {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--vs-text-dim);
+  margin-left: 4px;
+}
+
+.vs-dash-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+.vs-gauge-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  gap: 8px;
+  padding-top: 6px;
+}
+
+.vs-gauge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.vs-gauge-ring {
+  --pct: 0;
+  --ring-color: var(--vs-sidebar-active);
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  background: conic-gradient(var(--ring-color) calc(var(--pct) * 1%), color-mix(in srgb, var(--vs-text-dim) 18%, transparent) 0);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.vs-gauge-ring::after {
+  content: '';
+  position: absolute;
+  inset: 8px;
+  border-radius: 50%;
+  background: var(--vs-card-bg);
+}
+
+.vs-gauge-ring .val {
+  position: relative;
+  z-index: 1;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--vs-text-strong);
+}
+
+.vs-gauge-name {
+  font-size: 12.5px;
+  color: var(--vs-text-dim);
+}
+
+.vs-dash-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--vs-text-strong);
+  margin-bottom: 12px;
+}

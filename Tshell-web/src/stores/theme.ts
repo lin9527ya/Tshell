@@ -14,21 +14,22 @@ export interface ThemeConfig {
 
 export const useThemeStore = defineStore('theme', () => {
   const config = ref<ThemeConfig>({
-    mode: 'dark',
-    // 默认 CS 蓝(与 cs-theme 令牌 fallback 一致;改此值全站强调色随之变化)
-    primaryColor: '#007acc',
+    // 【vshell-ui 分支】默认浅色(VShell 观感: 深色侧栏 + 浅色内容区);暗色仍可切换
+    mode: 'light',
+    // 默认 Vben 蓝(#0960bd);改此值全站强调色随之变化
+    primaryColor: '#0960bd',
   })
 
   // 预设主题色(PreferencesDialog 主色选择器使用)
   const presetColors = [
-    '#007acc', // CS 经典蓝(默认)
+    '#0960bd', // Vben 蓝(vshell 分支默认)
+    '#007acc', // CS 经典蓝
     '#1a5c9a', // CS 深蓝
     '#2196f3', // 亮蓝
     '#4caf50', // 绿
     '#ff9800', // 橙
     '#f44336', // 红
     '#9c27b0', // 紫
-    '#607d8b', // 蓝灰
   ]
 
   // 从 localStorage 加载配置
@@ -81,7 +82,7 @@ export const useThemeStore = defineStore('theme', () => {
   const isDark = computed(() => config.value.mode === 'dark')
 
   const resetConfig = () => {
-    config.value = { mode: 'dark', primaryColor: '#007acc' }
+    config.value = { mode: 'light', primaryColor: '#0960bd' }
   }
 
   // 配置变化自动应用 + 持久化
