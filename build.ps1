@@ -46,19 +46,25 @@ function Build-Frontend {
 function Build-Server {
     Write-Step "2/3" "服务端 CGO 构建(go-sqlite3 需要 CGO)"
     # C 编译器探测: PATH 优先,回退 TDM-GCC 默认安装路径
+    # (回退时把目录前置到 PATH——cgo 经 PATH 查找 gcc,不依赖 CC 显式路径)
     $gcc = Get-Command gcc -ErrorAction SilentlyContinue
     if ($gcc) { $gccPath = $gcc.Source }
-    elseif (Test-Path "C:\TDM-GCC-64\bin\gcc.exe") { $gccPath = "C:\TDM-GCC-64\bin\gcc.exe" }
+    elseif (Test-Path "C:\TDM-GCC-64\bin\gcc.exe") {
+        $gccPath = "C:\TDM-GCC-64\bin\gcc.exe"
+        $env:PATH = "C:\TDM-GCC-64\bin;" + $env:PATH
+    }
     else { throw "未找到 gcc(go-sqlite3 需要 CGO);请安装 TDM-GCC 或 mingw-w64 后重试" }
     Write-Host "C 编译器: $gccPath"
 
     Set-Location (Join-Path $Root "Tshell-server")
     # GOMEMLIMIT: 服务端嵌入模板+前端后约 1.4GB,低内存机器不限流会构建卡死(见 DEPLOYMENT.md)
-    $env:CGO_ENABLED = "1"; $env:CC = $gccPath
+    # 【构建配方】必须用文件模式 .\main.go(实证: Windows+TDM-GCC 下包模式 `.` 产出的
+    # cgo exe 无法执行——"not a valid Win32 application";文件模式已验证可用)
+    $env:CGO_ENABLED = "1"
     $env:GOPROXY = "https://goproxy.cn,direct"; $env:GOMEMLIMIT = "3GiB"
-    go build -ldflags "-s -w" -trimpath -o tshell-server.exe .
+    go build -ldflags "-s -w" -trimpath -o tshell-server.exe .\main.go
     if ($LASTEXITCODE -ne 0) { throw "服务端构建失败" }
-    Remove-Item Env:CGO_ENABLED, Env:CC, Env:GOPROXY, Env:GOMEMLIMIT -ErrorAction SilentlyContinue
+    Remove-Item Env:CGO_ENABLED, Env:GOPROXY, Env:GOMEMLIMIT -ErrorAction SilentlyContinue
     Write-Ok "服务端构建完成: Tshell-server\tshell-server.exe(重启生效)"
 }
 

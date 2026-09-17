@@ -49,9 +49,11 @@ build_server() {
   cd "$SCRIPT_DIR/Tshell-server"
 
   # C 编译器探测: PATH 优先;Windows Git Bash 下回退 TDM-GCC 默认安装路径
+  # (回退时将该目录前置到 PATH——cgo 通过 PATH 查找 gcc,不依赖 CC 显式路径)
   CC_BIN="$(command -v gcc || command -v clang || true)"
   if [ -z "$CC_BIN" ] && [ "$IS_WIN_BASH" = 1 ] && [ -x "/c/TDM-GCC-64/bin/gcc.exe" ]; then
     CC_BIN="/c/TDM-GCC-64/bin/gcc.exe"
+    export PATH="/c/TDM-GCC-64/bin:$PATH"
   fi
   [ -n "$CC_BIN" ] || fail "未找到 gcc/clang(go-sqlite3 需要 CGO)。Windows 安装 TDM-GCC/mingw-w64,Linux 安装 build-essential 后重试"
 
@@ -60,8 +62,11 @@ build_server() {
 
   # GOMEMLIMIT: 服务端嵌入模板+前端后约 1.4GB,低内存机器不限流会构建卡死(见 DEPLOYMENT.md)
   log "C 编译器: $CC_BIN"
-  CGO_ENABLED=1 CC="$CC_BIN" GOPROXY=https://goproxy.cn,direct GOMEMLIMIT=3GiB \
-    go build -ldflags "-s -w" -trimpath -o "$out" .
+  # 【构建配方】必须用文件模式 ./main.go(本机实证: Windows+TDM-GCC 下包模式 `.`
+  # 产出的 cgo exe 无法执行——"not a valid Win32 application";文件模式已验证可用)。
+  # CC 传 PATH 中的编译器名而非显式路径,与环境变量解析保持一致。
+  CGO_ENABLED=1 GOPROXY=https://goproxy.cn,direct GOMEMLIMIT=3GiB \
+    go build -ldflags "-s -w" -trimpath -o "$out" ./main.go
   ok "服务端构建完成: Tshell-server/$out(重启生效)"
 }
 
