@@ -21,7 +21,8 @@ npm run build:embed        # 产物写入 Tshell-server/dist 并生成 build-rep
 
 # 3. 服务端(嵌入前端 + 模板;大二进制建议限制编译内存)
 cd Tshell-server
-GOMEMLIMIT=3GiB go build -gcflags="all=-l" -o tshell-server .
+# 文件模式构建(已验证配方;包模式 `.` 在 Windows+TDM-GCC 下可能产出无法执行的 cgo exe)
+GOMEMLIMIT=3GiB go build -ldflags "-s -w" -trimpath -o tshell-server.exe .\main.go
 ```
 
 > 大二进制说明:服务端约 1.3~1.4GB(含全部平台模板 + 前端 embed)。内存不足时用 `GOMEMLIMIT=2-3GiB` 构建,或临时精简 `pkg/api/server/{proto}` 目录(仅保留常用协议模板)。

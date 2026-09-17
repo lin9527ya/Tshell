@@ -51,7 +51,9 @@ npm run build:embed              # 写入 Tshell-server/dist
 # 3. 服务端(CGO 必需,go-sqlite3 依赖)
 cd ../Tshell-server
 cp config.example.yaml config.yaml   # 按需修改(密钥/通知凭证等)
-CGO_ENABLED=1 CC=<gcc路径> GOPROXY=https://goproxy.cn,direct go build -o tshell-server .
+# 注意: 必须文件模式 .\main.go(包模式 `.` 在 Windows+TDM-GCC 下产出的
+# cgo exe 可能无法执行);gcc 需在 PATH(如 C:/TDM-GCC-64/bin)
+CGO_ENABLED=1 GOPROXY=https://goproxy.cn,direct go build -ldflags "-s -w" -trimpath -o tshell-server.exe .\main.go
 ```
 
 前置要求:Go ≥ 1.24、Node ≥ 18、GCC(仅 DLL 模板需要,如 mingw-w64/TDM-GCC)。
