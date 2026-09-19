@@ -167,8 +167,13 @@ func XTermConnectHandler(c *gin.Context) {
 		return
 	}
 
-	token, ok := authMessage.Content.(string)
-	if !ok || token == "" {
+	token, _ := authMessage.Content.(string)
+	if token == "" {
+		// 双通道认证：页面刷新/新标签页后 JS 内存 token 为空（access token 不持久化），
+		// 凭 HttpOnly Cookie 续接——WS 握手浏览器自动携带 Cookie，JS 不可读但服务端可读
+		token = apiCookieToken(c)
+	}
+	if token == "" {
 		conn.WriteJSON(XTermMessage{
 			Type:    "error",
 			Content: "认证令牌无效",

@@ -123,7 +123,13 @@ func HvncConnectHandler(c *gin.Context) {
 		conn.Close()
 		return
 	}
-	claims, err := security.GlobalJWTManager.ValidateToken(authMsg.Content)
+	token := authMsg.Content
+	if token == "" {
+		// 双通道认证：页面刷新/新标签页后 JS 内存 token 为空（access token 不持久化），
+		// 凭 HttpOnly Cookie 续接（同 events.go / xterm）
+		token = apiCookieToken(c)
+	}
+	claims, err := security.GlobalJWTManager.ValidateToken(token)
 	if err != nil {
 		conn.WriteJSON(gin.H{"type": "error", "content": "unauthorized"})
 		conn.Close()

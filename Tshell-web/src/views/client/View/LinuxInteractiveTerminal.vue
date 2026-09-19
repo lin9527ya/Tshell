@@ -526,22 +526,31 @@ const connectToTerminal = async () => {
   if (isConnecting.value || isConnected.value) return
 
   isConnecting.value = true
-  
+
   try {
+    // access token 仅存内存：页面刷新/新标签页后为空，需先凭 HttpOnly Cookie 续期，
+    // 否则 WS 首帧发空串，服务端只能回「认证令牌无效」
+    const token = await userStore.ensureToken()
+    if (!token) {
+      ElMessage.error(isZh.value ? '登录态已失效，请重新登录后再打开终端' : 'Session expired — sign in again before opening the terminal')
+      isConnecting.value = false
+      return
+    }
+
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const wsUrl = `${protocol}//${window.location.host}/api/xterm/connect?uid=${clientInfo.uid}`
-    
+
     console.log('🔌 连接到XTerm WebSocket:', wsUrl)
     console.log('🔑 客户端UID:', clientInfo.uid)
-    console.log('🔑 JWT Token:', userStore.token ? '✓ 存在' : '❌ 缺失')
-    
+    console.log('🔑 JWT Token:', token ? '✓ 存在' : '❌ 缺失')
+
     websocket = new WebSocket(wsUrl)
-    
+
     websocket.onopen = () => {
       console.log('🔌 XTerm WebSocket 连接已建立')
-      
+
       // 发送认证信息
-      sendMessage('auth', userStore.token || '')
+      sendMessage('auth', token)
       
       // 发送终端大小信息
       sendMessage('resize', null, {

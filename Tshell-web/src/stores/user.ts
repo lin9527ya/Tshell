@@ -84,10 +84,8 @@ export const useUserStore = defineStore('user', {
         },
         // 刷新token（single-flight：并发调用共享同一刷新请求）
         async refreshToken() {
-            if (!this.refresh) {
-                console.log('没有refresh token，无法刷新')
-                return false
-            }
+            // 不再要求内存里有 refresh token：续期凭 HttpOnly Cookie（credentials: include），
+            // 页面刷新后内存 refresh 为空也应能续期——原 guard 会让刷新后的会话直接判定过期
             if (refreshPromise) {
                 return refreshPromise
             }
@@ -95,6 +93,14 @@ export const useUserStore = defineStore('user', {
                 refreshPromise = null
             })
             return refreshPromise
+        },
+        // 取一个可用的 access token：内存无有效 token（页面刷新/新标签页/已过期）时
+        // 先凭 Cookie 续期一次。WS 类端点（终端/HVNC）需要显式 token，靠它避免空串鉴权失败。
+        async ensureToken() {
+            const token = this.getToken()
+            if (token) return token
+            await this.refreshToken()
+            return this.getToken()
         },
         // 实际刷新逻辑（由 refreshToken 的 single-flight 包装调用）
         async doRefresh() {
