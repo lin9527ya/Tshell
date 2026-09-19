@@ -56,8 +56,8 @@
     <!-- Events Body -->
     <div ref="logEl" class="el-body">
       <div
-        v-for="(e, i) in filteredLines"
-        :key="i"
+        v-for="e in filteredLines"
+        :key="lineKey(e)"
         :class="['el-line', `el-type-${e.type}`]"
       >
         <span class="el-time">[{{ fmtTime(e.time) }}]</span>
@@ -124,22 +124,39 @@ const lines = ref<Line[]>([])
 const seenIds = new Set<string>()
 const clientStates = new Map<string, string>()
 
+// 行去重键(与渲染 key 共用,保证淘汰时能精确回收 seenIds 条目)
+function lineKey(line: Line): string {
+  return line.id ? String(line.id) : `${line.time}-${line.type}-${line.text.slice(0, 32)}`
+}
+
 const filteredLines = computed(() => {
   if (currentFilter.value === 'all') return lines.value
   return lines.value.filter((l) => l.category === currentFilter.value)
 })
 
 function addLogLine(line: Line) {
-  const dedupeKey = line.id ? String(line.id) : `${line.time}-${line.type}-${line.text}`
+  const dedupeKey = lineKey(line)
   if (seenIds.has(dedupeKey)) return
   seenIds.add(dedupeKey)
 
-  lines.value.push(line)
-  // 保持按时间升序
-  lines.value.sort((a, b) => a.time - b.time)
+  // 【性能】仅在乱序到达时才排序(事件通常近似有序,原实现每条都 O(n log n))
+  const last = lines.value[lines.value.length - 1]
+  if (last && line.time < last.time) {
+    lines.value.push(line)
+    lines.value.sort((a, b) => a.time - b.time)
+  } else {
+    lines.value.push(line)
+  }
 
   if (lines.value.length > 2000) {
-    lines.value.splice(0, lines.value.length - 2000)
+    // 【修复】裁剪时同步回收去重集合条目(原 seenIds 只增不减,长时间挂台内存无界)
+    const removed = lines.value.splice(0, lines.value.length - 2000)
+    for (const r of removed) seenIds.delete(lineKey(r))
+  }
+  // 双保险:集合规模异常时按现存行重建
+  if (seenIds.size > 4000) {
+    seenIds.clear()
+    for (const l of lines.value) seenIds.add(lineKey(l))
   }
   if (follow.value) scroll()
 }
@@ -298,10 +315,16 @@ async function loadAuditAndClientLogs() {
 }
 
 // 2. 监听 WebSocket 实时推送事件
+// 【性能】增量处理:events 数组为新事件前插(unshift)+ 尾部裁剪,已处理事件用
+// WeakSet 标记;从头部遍历,遇到已处理的即 break(其后必然全部已处理)。
+// 原实现每次 watch 都遍历全部 100 条并重复做客户端查找与行构造。
+const processedEvents = new WeakSet<object>()
 watch(
   () => eventsStore.events,
   () => {
     for (const e of eventsStore.events) {
+      if (processedEvents.has(e)) break // 旧事件都在后面,已处理过
+      processedEvents.add(e)
       const raw = e as any
       const time = e.timestamp ? e.timestamp * 1000 : Date.now()
       const t = String(e.type || '').toLowerCase()

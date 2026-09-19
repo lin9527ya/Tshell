@@ -111,8 +111,9 @@
 
     <!-- Body Surface (Split / Table / Grid View) -->
     <div class="gs-body" :class="`mode-${viewMode}`">
-      <!-- Table Pane (Split / Table Mode) -->
-      <div v-show="viewMode === 'split' || viewMode === 'table'" class="gs-table-pane">
+      <!-- Table Pane (Split / Table Mode) : v-if 而非 v-show——网格模式下整表卸载,
+           避免 100 行 base64 图片行的 DOM 常驻(el-table v-show 仍全量渲染) -->
+      <div v-if="viewMode === 'split' || viewMode === 'table'" class="gs-table-pane">
         <el-table
           :data="filteredScreenshots"
           size="small"

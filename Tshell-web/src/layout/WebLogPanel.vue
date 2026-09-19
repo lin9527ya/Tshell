@@ -182,6 +182,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useI18nStore } from '@/stores/i18n'
+import { useTabActive, useVisibilityInterval } from '@/utils/useVisibilityInterval'
 import ClientAPI from '@/api/clients'
 
 interface WebLogEntry {
@@ -353,19 +354,18 @@ function handleHelp() {
   )
 }
 
-let timer: number | undefined
+// 【性能】自动刷新接入可见性治理(非活动标签/页面隐藏时暂停)
+const tabActive = useTabActive()
+useVisibilityInterval(
+  () => {
+    if (autoRefresh.value) refreshLogs()
+  },
+  5000,
+  { isActive: () => tabActive.value },
+)
 
 onMounted(() => {
   refreshLogs()
-  timer = window.setInterval(() => {
-    if (autoRefresh.value) {
-      refreshLogs()
-    }
-  }, 5000)
-})
-
-onBeforeUnmount(() => {
-  if (timer) window.clearInterval(timer)
 })
 </script>
 

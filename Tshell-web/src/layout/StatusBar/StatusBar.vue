@@ -7,10 +7,20 @@
       </span>
     </div>
 
-    <!-- Right: [Web: 172.17.46.75 | Beacons: 109 | lag: --] (1:1 CS format) -->
+    <!-- Right: [Web: host | Beacons: online/total | lag: --] (1:1 CS format) -->
     <div class="sb-right">
       <span class="sb-cs-status">
-        [{{ isZh ? 'Web 地址' : 'Web' }}: <span class="sb-val-ip">{{ hostInfo }}</span> | {{ isZh ? '会话数' : 'Beacons' }}: <span class="sb-val-beacons">{{ totalCount }}</span> | {{ isZh ? '延迟' : 'lag' }}: <span class="sb-val-lag">{{ lag }}</span>]
+        [{{ isZh ? 'Web 地址' : 'Web' }}: <span class="sb-val-ip">{{ hostInfo }}</span> |
+        <span
+          class="sb-val-beacons sb-clickable"
+          :title="isZh ? '点击聚焦会话列表' : 'Click to focus the session list'"
+          @click="focusSessionTable"
+        >{{ onlineCount }}/{{ totalCount }}</span> |
+        <span class="sb-lag-label">{{ isZh ? '延迟' : 'lag' }}:</span>
+        <span
+          class="sb-val-lag"
+          :title="isZh ? '后端未提供延迟数据源' : 'No latency data source on backend'"
+        >{{ lag }}</span>]
       </span>
     </div>
   </div>
@@ -18,15 +28,15 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { useEventsStore } from '@/stores/events'
 import { useClientsStore } from '@/stores/clients'
 import { useUserStore } from '@/stores/user'
 import { useI18nStore } from '@/stores/i18n'
+import { useWorkspaceStore } from '@/stores/workspace'
 
-const eventsStore = useEventsStore()
 const clientsStore = useClientsStore()
 const userStore = useUserStore()
 const i18nStore = useI18nStore()
+const workspace = useWorkspaceStore()
 const isZh = computed(() => i18nStore.isZh)
 
 const onlineCount = computed(() => clientsStore.onlineCount ?? 0)
@@ -41,6 +51,17 @@ const lag = ref('--') // 后端无延迟数据源，不伪造数值
 const now = ref('')
 const dateStr = ref('')
 let timer: ReturnType<typeof setInterval> | null = null
+
+// 点击会话数 → 聚焦会话列表(与 MenuBar「会话列表」同款编排)
+function focusSessionTable() {
+  workspace.setTopViewMode('table')
+  workspace.isTopCollapsed = false
+  workspace.openTab({
+    id: 'sessions',
+    title: isZh.value ? '会话列表' : 'Beacons',
+    component: 'session-table',
+  })
+}
 
 onMounted(() => {
   const tick = () => {
@@ -61,15 +82,15 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .cs-statusbar {
-  height: 30px;
-  background: #000000;
-  color: #c0c0c0;
+  height: var(--cs-statusbar-h);
+  background: var(--cs-menubar-bg);
+  color: var(--cs-text-dim);
   font-size: 16.5px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0 12px;
-  border-top: 1px solid #222222;
+  border-top: 1px solid var(--cs-border);
   user-select: none;
   flex-shrink: 0;
 }
@@ -80,11 +101,11 @@ onBeforeUnmount(() => {
 }
 
 .sb-time-user {
-  color: #cccccc;
+  color: var(--cs-text-dim);
 }
 
 .sb-op-name {
-  color: #ffffff;
+  color: var(--cs-text-bright);
   font-weight: bold;
 }
 
@@ -94,20 +115,32 @@ onBeforeUnmount(() => {
 }
 
 .sb-cs-status {
-  color: #aaaaaa;
+  color: var(--cs-text-dim);
 }
 
 .sb-val-ip {
-  color: #d1a8e6;
+  color: var(--cs-text);
   font-weight: 500;
 }
 
 .sb-val-beacons {
-  color: #ff5252;
+  color: var(--cs-online);
   font-weight: bold;
 }
 
+.sb-clickable {
+  cursor: pointer;
+}
+
+.sb-clickable:hover {
+  text-decoration: underline;
+}
+
+.sb-lag-label {
+  color: var(--cs-text-dim);
+}
+
 .sb-val-lag {
-  color: #ffffff;
+  color: var(--cs-text-dim);
 }
 </style>

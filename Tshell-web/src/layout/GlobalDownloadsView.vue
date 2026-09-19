@@ -164,6 +164,7 @@ import { FolderOpened, Refresh, Document } from '@element-plus/icons-vue'
 import { useClientsStore } from '@/stores/clients'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { useI18nStore } from '@/stores/i18n'
+import { useTabActive, useVisibilityInterval } from '@/utils/useVisibilityInterval'
 import ClientAPI from '@/api/clients'
 
 const props = withDefaults(
@@ -359,20 +360,20 @@ function showHelp() {
   )
 }
 
-let pollTimer: any = null
+// 【性能】仅当存在未完成下载时轮询(原有条件保留),且本标签非活动/页面隐藏时暂停
+const tabActive = useTabActive()
+useVisibilityInterval(
+  () => {
+    if (downloadItems.value.some((d) => parseInt(d.downloadPart) < 100)) {
+      refreshAll()
+    }
+  },
+  3000,
+  { isActive: () => tabActive.value },
+)
 
 onMounted(() => {
   refreshAll()
-  pollTimer = setInterval(() => {
-    // 只有存在未完成下载任务时自动轮询
-    if (downloadItems.value.some(d => parseInt(d.downloadPart) < 100)) {
-      refreshAll()
-    }
-  }, 3000)
-})
-
-onUnmounted(() => {
-  if (pollTimer) clearInterval(pollTimer)
 })
 </script>
 

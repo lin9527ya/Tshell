@@ -23,6 +23,11 @@ export const useScreenshotsStore = defineStore('screenshots', () => {
   const isCapturing = ref(false)
   const capturingUid = ref('')
 
+  // 【修复】截图持有完整 base64 图片,无上限会导致内存持续增长(渲染侧
+  // GlobalScreenshotsView 还会全量解码);FIFO 截断到 100 张。
+  // 需要长期留存的截图应下载/导出,而非依赖内存列表。
+  const MAX_SCREENSHOTS = 100
+
   const formatTime = () => {
     const d = new Date()
     const yy = d.getFullYear()
@@ -39,6 +44,9 @@ export const useScreenshotsStore = defineStore('screenshots', () => {
 
   const addScreenshot = (item: ScreenshotItem) => {
     screenshots.value.unshift(item)
+    if (screenshots.value.length > MAX_SCREENSHOTS) {
+      screenshots.value.length = MAX_SCREENSHOTS // FIFO 截断,防止 base64 累积撑爆内存
+    }
   }
 
   const removeScreenshot = (id: string) => {

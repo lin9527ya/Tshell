@@ -108,6 +108,7 @@ import { useClientsStore } from '@/stores/clients'
 import { useI18nStore } from '@/stores/i18n'
 import { useCommandHistoryStore } from '@/stores/shellcommand'
 import { useWorkspaceStore } from '@/stores/workspace'
+import { useTabActive, useVisibilityInterval } from '@/utils/useVisibilityInterval'
 import ClientAPI from '@/api/clients'
 import { ElMessage } from 'element-plus'
 
@@ -160,7 +161,9 @@ const input = ref('')
 let terminal: Terminal | null = null
 let fitAddon: FitAddon | null = null
 let lastLen = 0
-let pollTimer: ReturnType<typeof setInterval> | null = null
+// 3s 轮询接入可见性治理: 页面隐藏或本标签非活动时暂停(fetchContent 为函数声明,已提升)
+const tabActive = useTabActive()
+useVisibilityInterval(fetchContent, 3000, { isActive: () => tabActive.value })
 
 const client = computed(() => clientsStore.getClientByUid(props.uid))
 const online = computed(() => client.value?.Online === '1')
@@ -427,14 +430,12 @@ onMounted(() => {
     clientsStore.refreshClients().catch(() => {})
   }
   fetchContent()
-  pollTimer = setInterval(fetchContent, 3000)
   inputEl.value?.focus()
 
   window.addEventListener('resize', fit)
 })
 
 onBeforeUnmount(() => {
-  if (pollTimer) clearInterval(pollTimer)
   window.removeEventListener('resize', fit)
   terminal?.dispose()
   terminal = null

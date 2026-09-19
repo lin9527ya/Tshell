@@ -468,6 +468,7 @@
     <el-dialog
       v-model="downloadDialogVisible"
       :title="isZh ? '文件下载进度' : 'Download Progress'"
+      @close="stopDownloadPoll"
       width="480px"
       :close-on-click-modal="false"
       class="cs-dialog"
@@ -645,6 +646,8 @@ const wgetForm = reactive({
 
 const downloadDialogVisible = ref(false)
 const downloadProgress = ref(0)
+// 下载进度轮询句柄(组件作用域,便于关闭/卸载时清理,见 stopDownloadPoll)
+let downloadPollTimer: number | null = null
 const downloadStatus = ref('')
 const currentDownloadFile = ref<any>(null)
 const downloadSpeed = ref('')
@@ -1123,6 +1126,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  stopDownloadPoll()
   window.removeEventListener('click', closeContextMenu)
   window.removeEventListener('blur', closeContextMenu)
   fileTree.value = []
@@ -1286,9 +1290,20 @@ async function downloadFile(file: any) {
   downloadSpeed.value = ''
   downloadDialogVisible.value = true
 
+  // 【修复】轮询句柄提升到组件作用域:原实现仅 pct>=100 才 clearInterval,
+  // 关掉对话框/卸载组件后 1.5s 轮询仍永久运行(目标文件若被清理则永远到不了 100)。
+  stopDownloadPoll()
   try {
     await ClientAPI.download_file({ uid: uid.value, filePath: file.path })
-    const interval = setInterval(async () => {
+    let attempts = 0
+    const maxAttempts = 240 // 上限 6 分钟,兜底防永久轮询
+    downloadPollTimer = window.setInterval(async () => {
+      if (++attempts > maxAttempts) {
+        stopDownloadPoll()
+        downloadStatus.value = 'error'
+        ElMessage.warning(isZh.value ? '下载进度轮询超时,请到下载列表查看结果' : 'Progress polling timed out; check the downloads list')
+        return
+      }
       try {
         const infoRes = await ClientAPI.get_downloads_info({ uid: uid.value })
         const downloads = infoRes.data?.data || []
@@ -1297,7 +1312,7 @@ async function downloadFile(file: any) {
           const pct = parseInt(target.downloadPart, 10) || 0
           downloadProgress.value = Math.min(pct, 100)
           if (pct >= 100) {
-            clearInterval(interval)
+            stopDownloadPoll()
             downloadStatus.value = 'success'
             ElMessage.success(isZh.value ? `文件 ${file.name} 已下载至团队服务器` : `Downloaded ${file.name}`)
           }
@@ -1307,6 +1322,14 @@ async function downloadFile(file: any) {
   } catch (e: any) {
     downloadStatus.value = 'error'
     ElMessage.error(isZh.value ? '下发下载任务失败' : 'Download failed')
+  }
+}
+
+// 停止下载进度轮询(关闭对话框/组件卸载/重新下载时调用)
+function stopDownloadPoll() {
+  if (downloadPollTimer !== null) {
+    clearInterval(downloadPollTimer)
+    downloadPollTimer = null
   }
 }
 

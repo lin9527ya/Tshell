@@ -115,6 +115,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18nStore } from '@/stores/i18n'
+import { useTabActive, useVisibilityInterval } from '@/utils/useVisibilityInterval'
 import ClientAPI from '@/api/clients'
 
 interface SiteItem {
@@ -282,17 +283,17 @@ defineExpose({
   refreshSites,
 })
 
-let autoTimer: number | undefined
+// 【性能】8s 自动刷新接入可见性治理(非活动标签/页面隐藏时暂停)
+const tabActive = useTabActive()
+useVisibilityInterval(refreshSites, 8000, { isActive: () => tabActive.value })
 
 onMounted(() => {
   window.addEventListener('mousedown', closeContextMenu)
   refreshSites()
-  autoTimer = window.setInterval(refreshSites, 8000)
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('mousedown', closeContextMenu)
-  if (autoTimer) window.clearInterval(autoTimer)
 })
 </script>
 

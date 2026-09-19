@@ -91,6 +91,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18nStore } from '@/stores/i18n'
+import { useTabActive, useVisibilityInterval } from '@/utils/useVisibilityInterval'
 import ClientAPI from '@/api/clients'
 
 interface TaskRow {
@@ -132,15 +133,12 @@ async function fetchTasks() {
   }
 }
 
-let timer: number | undefined
+// 【性能】5s 轮询接入可见性治理(非活动标签/页面隐藏时暂停)
+const tabActive = useTabActive()
+useVisibilityInterval(fetchTasks, 5000, { isActive: () => tabActive.value })
 
 onMounted(() => {
   fetchTasks()
-  timer = window.setInterval(fetchTasks, 5000)
-})
-
-onBeforeUnmount(() => {
-  if (timer) window.clearInterval(timer)
 })
 </script>
 

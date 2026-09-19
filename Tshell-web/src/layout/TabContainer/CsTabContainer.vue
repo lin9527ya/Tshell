@@ -255,7 +255,9 @@
           v-show="tab.id === activeTabId"
           class="tab-pane-wrapper"
         >
-          <TabContentHost :tab="tab" />
+          <!-- 【性能】惰性挂载: 首次激活才 mount(此前 v-show 全挂载,开 N 个标签
+               即有 N 个 xterm/轮询实例);卸载型关闭由 closeTab 移除列表驱动 -->
+          <TabContentHost v-if="activatedTabIds.has(tab.id)" :tab="tab" />
         </div>
       </template>
 
@@ -289,7 +291,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineComponent, h, onBeforeUnmount, onMounted, provide, ref, watch, nextTick } from 'vue'
+import { computed, defineComponent, h, onBeforeUnmount, onMounted, provide, reactive, ref, watch, nextTick } from 'vue'
 import { useWorkspaceStore, type CsTab } from '@/stores/workspace'
 import { useI18nStore } from '@/stores/i18n'
 import { getPanelComponent } from '../Workspace/panelRegistry'
@@ -301,6 +303,16 @@ const t = (k: string, d?: string) => i18nStore.t(k, d)
 
 const tabs = computed(() => workspace.tabs)
 const activeTabId = computed(() => workspace.activeTabId)
+
+// 惰性挂载: 只有被激活过的标签才渲染内容(见模板 TabContentHost v-if)
+const activatedTabIds = reactive(new Set<string>())
+watch(
+  activeTabId,
+  (id) => {
+    if (id) activatedTabIds.add(id)
+  },
+  { immediate: true },
+)
 
 const scrollAreaRef = ref<HTMLElement | null>(null)
 const canScrollLeft = ref(false)
@@ -353,6 +365,9 @@ const TabContentHost = defineComponent({
   setup(props) {
     const uidRef = computed(() => props.tab.params?.uid || '')
     provide('realUid', uidRef)
+    // 【性能】向面板提供"是否为活动标签"——非活动时 useVisibilityInterval
+    // 暂停轮询(两个壳都常驻挂载面板,切走的标签此前仍在后台轮询)
+    provide('tabActive', computed(() => props.tab.id === workspace.activeTabId))
     return () => {
       const comp = getPanelComponent(props.tab.component)
       if (!comp) {
