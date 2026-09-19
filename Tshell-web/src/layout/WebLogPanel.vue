@@ -73,9 +73,11 @@
           <span class="wl-status-code" :class="`status-${log.status}`">{{ log.status }}</span>
           <span class="wl-ua">({{ log.ua }})</span>
         </div>
-        <div v-if="!filteredLogs.length" class="wl-empty">
-          {{ isZh ? 'Web 服务器正常监听中，暂无外部访问记录。' : 'Web server is active. Awaiting incoming HTTP requests...' }}
-        </div>
+        <EmptyState
+          v-if="!filteredLogs.length"
+          variant="inline"
+          :title="isZh ? 'Web 服务器正常监听中，暂无外部访问记录。' : 'Web server is active. Awaiting incoming HTTP requests...'"
+        />
       </div>
 
       <!-- 2. Table View -->
@@ -121,9 +123,10 @@
           </el-table-column>
 
           <template #empty>
-            <div class="wl-empty-table">
-              <div class="empty-title">{{ isZh ? '暂无 Web 访问记录' : 'No Web Hits Logged' }}</div>
-            </div>
+            <EmptyState
+              variant="inline"
+              :title="isZh ? '暂无 Web 访问记录' : 'No Web Hits Logged'"
+            />
           </template>
         </el-table>
       </div>
@@ -183,6 +186,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useI18nStore } from '@/stores/i18n'
 import { useTabActive, useVisibilityInterval } from '@/utils/useVisibilityInterval'
+import EmptyState from '@/components/Common/EmptyState.vue'
 import ClientAPI from '@/api/clients'
 
 interface WebLogEntry {
@@ -427,7 +431,7 @@ onMounted(() => {
 }
 
 .wl-mode-btn.active {
-  background: #1a5c9a;
+  background: var(--cs-active);
   color: #ffffff;
   font-weight: bold;
 }
@@ -457,8 +461,8 @@ onMounted(() => {
   overflow-y: auto;
   font-size: 12px;
   line-height: 1.7;
-  background: #111111;
-  color: #c8c8c8;
+  background: var(--cs-console);
+  color: var(--cs-text);
 }
 
 .wl-line {
@@ -473,16 +477,16 @@ onMounted(() => {
 }
 
 .wl-line:hover {
-  background: #1e1e1e;
+  background: var(--cs-hover);
 }
 
 .wl-time {
-  color: #777777;
+  color: var(--cs-text-dim);
   flex-shrink: 0;
 }
 
 .wl-ip {
-  color: #8be9fd;
+  color: var(--cs-log-system);
   flex-shrink: 0;
   font-weight: bold;
 }
@@ -495,11 +499,11 @@ onMounted(() => {
   flex-shrink: 0;
 }
 
-.wl-method.GET { color: #50fa7b; }
-.wl-method.POST { color: #ffb86c; }
+.wl-method.GET { color: var(--cs-online); }
+.wl-method.POST { color: var(--cs-warning); }
 
 .wl-uri {
-  color: #ffffff;
+  color: var(--cs-text-bright);
   font-weight: 500;
 }
 
@@ -508,20 +512,13 @@ onMounted(() => {
   flex-shrink: 0;
 }
 
-.status-200 { color: #50fa7b; }
-.status-302, .status-301 { color: #ffb86c; }
-.status-404, .status-500 { color: #ff5555; }
+.status-200 { color: var(--cs-online); }
+.status-302, .status-301 { color: var(--cs-warning); }
+.status-404, .status-500 { color: var(--cs-error); }
 
 .wl-ua {
-  color: #999999;
+  color: var(--cs-text-dim);
   font-size: 11px;
-}
-
-.wl-empty {
-  color: #555555;
-  text-align: center;
-  margin-top: 40px;
-  font-size: 12px;
 }
 
 /* 2. Table View Style */
@@ -536,25 +533,19 @@ onMounted(() => {
   font-weight: bold;
   padding: 1px 4px;
 }
-.method-tag.GET { color: #50fa7b; }
-.method-tag.POST { color: #ffb86c; }
+.method-tag.GET { color: var(--cs-online); }
+.method-tag.POST { color: var(--cs-warning); }
 
 .status-tag {
   font-size: 11px;
   font-weight: bold;
 }
-.status-tag.st-2xx { color: #50fa7b; }
-.status-tag.st-3xx { color: #ffb86c; }
-.status-tag.st-4xx, .status-tag.st-5xx { color: #ff5555; }
+.status-tag.st-2xx { color: var(--cs-online); }
+.status-tag.st-3xx { color: var(--cs-warning); }
+.status-tag.st-4xx, .status-tag.st-5xx { color: var(--cs-error); }
 
 .ua-text {
   font-size: 11px;
-  color: var(--cs-text-dim);
-}
-
-.wl-empty-table {
-  text-align: center;
-  padding: 40px 0;
   color: var(--cs-text-dim);
 }
 

@@ -4,6 +4,7 @@
     <div class="gk-toolbar">
       <div class="gk-title-group">
         <span class="gk-title">{{ isZh ? '键盘记录与系统活动' : 'Keystrokes & System Activity' }}</span>
+        <span class="gk-count">{{ isZh ? `共 ${logBlocks.length} 条记录` : `${logBlocks.length} records` }}</span>
       </div>
       <div class="gk-spacer" />
       <span class="gk-beacon-label">{{ isZh ? '活动会话' : 'Active Session' }}: <b>{{ selectedClient?.Computer || selectedClient?.Uid?.slice(0, 8) || (isZh ? '无' : 'None') }}</b></span>
@@ -67,11 +68,14 @@
               <div class="block-text" v-html="formatKeystrokesHtml(block.keystrokes)" />
             </div>
           </template>
-          <div v-else class="log-empty">
-            <div class="empty-icon">⌨️</div>
-            <div class="empty-title">{{ isZh ? '暂无键盘记录' : 'No Keystrokes Recorded' }}</div>
-            <div class="empty-desc">{{ isZh ? '键盘记录或监控模块捕获的击键将显示在此处。' : 'Keystrokes captured by keylogger or monitor module will appear here.' }}</div>
-          </div>
+          <EmptyState
+            v-else
+            class="log-empty"
+            icon="⌨️"
+            variant="inline"
+            :title="isZh ? '暂无键盘记录' : 'No Keystrokes Recorded'"
+            :desc="isZh ? '键盘记录或监控模块捕获的击键将显示在此处。' : 'Keystrokes captured by keylogger or monitor module will appear here.'"
+          />
         </div>
       </div>
     </div>
@@ -105,10 +109,12 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useClientsStore } from '@/stores/clients'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { useI18nStore } from '@/stores/i18n'
+import { useTabActive, useVisibilityInterval } from '@/utils/useVisibilityInterval'
+import EmptyState from '@/components/Common/EmptyState.vue'
 import ClientAPI from '@/api/clients'
 
 interface KeyBlock {
@@ -187,7 +193,7 @@ function parseKeystrokes(raw: string) {
   if (curText) {
     blocks.push({ time: new Date().toLocaleTimeString(), windowTitle: curWindow, keystrokes: curText })
   }
-  if (blocks.length) logBlocks.value = blocks
+  logBlocks.value = blocks
 }
 
 async function startKeylogger() {
@@ -223,8 +229,22 @@ function copyAll() {
 }
 
 function clearLog() {
-  logBlocks.value = []
-  ElMessage.success('Keystrokes log cleared')
+  ElMessageBox.confirm(
+    isZh.value
+      ? '确定清空当前键盘记录吗？键盘记录是取证数据，清空后不可恢复。'
+      : 'Clear all captured keystrokes? This forensic data cannot be recovered.',
+    isZh.value ? '清空确认' : 'Confirm Clear',
+    {
+      confirmButtonText: isZh.value ? '清空' : 'Clear',
+      cancelButtonText: isZh.value ? '取消' : 'Cancel',
+      type: 'warning',
+    },
+  )
+    .then(() => {
+      logBlocks.value = []
+      ElMessage.success(isZh.value ? '键盘记录已清空' : 'Keystrokes log cleared')
+    })
+    .catch(() => {})
 }
 
 function exportLog() {
@@ -242,6 +262,10 @@ function exportLog() {
 function showHelp() {
   workspace.openDialog('about')
 }
+
+// 【性能】8s 轮询键盘记录，接入可见性治理(非活动标签/页面隐藏时暂停)
+const tabActive = useTabActive()
+useVisibilityInterval(fetchLogs, 8000, { isActive: () => tabActive.value })
 
 onMounted(() => {
   if (workspace.primarySelectedUid) {
@@ -280,11 +304,15 @@ onMounted(() => {
   gap: 6px;
 }
 .gk-title {
-  font-size: 11px;
+  font-size: 16px;
   font-weight: 600;
   color: var(--cs-text-dim);
   text-transform: uppercase;
   letter-spacing: .04em;
+}
+.gk-count {
+  font-size: 11px;
+  color: var(--cs-text-dim);
 }
 .gk-beacon-label {
   font-size: 11px;
@@ -398,7 +426,7 @@ onMounted(() => {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  background: #0e0e0e;
+  background: var(--cs-panel);
 }
 .content-toolbar {
   height: 28px;
@@ -418,30 +446,30 @@ onMounted(() => {
   flex: 1;
   overflow-y: auto;
   padding: 8px 12px;
-  background: #0c0c0c;
+  background: var(--cs-console);
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
 .log-block {
-  background: #141414;
+  background: var(--cs-panel);
   border: 1px solid var(--cs-border);
   border-radius: 2px;
   overflow: hidden;
 }
 .block-header {
   padding: 4px 8px;
-  background: #1e1e1e;
+  background: var(--cs-titlebar-bg);
   border-bottom: 1px solid var(--cs-border);
   display: flex;
   gap: 8px;
   font-size: 11px;
 }
 .block-time {
-  color: #777;
+  color: var(--cs-text-dim);
 }
 .block-window {
-  color: #00adef;
+  color: var(--cs-active);
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -450,7 +478,7 @@ onMounted(() => {
 .block-text {
   padding: 8px;
   font-size: 12px;
-  color: #e0e0e0;
+  color: var(--cs-text);
   white-space: pre-wrap;
   word-break: break-all;
   line-height: 1.6;
@@ -463,26 +491,17 @@ onMounted(() => {
   font-size: 11px;
   font-family: var(--cs-font-mono);
   font-weight: 600;
-  background: #1e1e1e;
-  border: 1px solid #444;
-  border-bottom: 2px solid #555;
+  background: var(--cs-hover);
+  border: 1px solid var(--cs-border);
+  border-bottom: 2px solid var(--cs-border);
   border-radius: 3px;
-  color: #00adef;
+  color: var(--cs-active);
   line-height: 1.2;
 }
 
 .log-empty {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  color: var(--cs-text-dim);
+  margin: auto;
 }
-.empty-icon { font-size: 28px; opacity: 0.4; }
-.empty-title { font-size: 13px; font-weight: 600; color: var(--cs-text); }
-.empty-desc { font-size: 11px; }
 
 /* Bottom Action Bar */
 .gk-bottom-bar {

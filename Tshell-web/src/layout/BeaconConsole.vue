@@ -113,6 +113,7 @@ import ClientAPI from '@/api/clients'
 import { ElMessage } from 'element-plus'
 
 import { useCredentialsStore } from '@/stores/credentials'
+import { usePreferencesStore } from '@/stores/preferences'
 
 const props = defineProps<{ uid: string }>()
 
@@ -123,6 +124,7 @@ const clientsStore = useClientsStore()
 const historyStore = useCommandHistoryStore()
 const workspace = useWorkspaceStore()
 const credsStore = useCredentialsStore()
+const prefStore = usePreferencesStore()
 
 const termEl = ref<HTMLElement | null>(null)
 const taskDialogVisible = ref(false)
@@ -394,7 +396,7 @@ onMounted(() => {
     // 后端 shell 历史为 Unix 风格裸 \n（LF）；convertEol 让 LF 自动转 CRLF，
     // 否则光标停留在上一行结束的列，多行输出逐行右移成"阶梯状"残影（与交互终端保持一致）
     convertEol: true,
-    scrollback: 10000,
+    scrollback: prefStore.scrollback || 5000,
     theme: {
       background: '#0a0a0a',
       foreground: '#d4d4d4',

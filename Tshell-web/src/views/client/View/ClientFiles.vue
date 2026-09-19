@@ -204,10 +204,11 @@
             </el-table-column>
 
             <template #empty>
-              <div class="fm-empty-state">
-                <div class="empty-title">{{ isZh ? '当前目录无文件或尚未加载' : 'Directory Empty or Not Loaded' }}</div>
-                <div class="empty-desc">{{ isZh ? '点击【刷新列表】或输入路径加载文件系统。' : 'Click List or enter path to browse files.' }}</div>
-              </div>
+              <EmptyState
+                variant="inline"
+                :title="isZh ? '当前目录无文件或尚未加载' : 'Directory Empty or Not Loaded'"
+                :desc="isZh ? '点击【刷新列表】或输入路径加载文件系统。' : 'Click List or enter path to browse files.'"
+              />
             </template>
           </el-table>
         </div>
@@ -534,6 +535,7 @@ import { useGlobalFileTreeStore } from '@/stores/fileTree'
 import { useCurrentFileNode } from '@/stores/currentFileNode'
 import { useClientsStore } from '@/stores/clients'
 import { useI18nStore } from '@/stores/i18n'
+import EmptyState from '@/components/Common/EmptyState.vue'
 import { detectClientOs } from '@/utils/clientUtils'
 
 const i18nStore = useI18nStore()
@@ -1514,6 +1516,15 @@ async function modifyTime(item: any) {
 async function hideItem(item: any) {
   closeContextMenu()
   if (!item) return
+  try {
+    await ElMessageBox.confirm(
+      isZh.value ? `确定隐藏 "${item.name}" 吗？将修改目标机上该文件的可见属性。` : `Hide "${item.name}"? This changes the file visibility attribute on the target host.`,
+      isZh.value ? '隐藏确认' : 'Hide Confirm',
+      { confirmButtonText: isZh.value ? '隐藏' : 'Hide', cancelButtonText: isZh.value ? '取消' : 'Cancel', type: 'warning' }
+    )
+  } catch {
+    return
+  }
   await ClientAPI.hide_file({ uid: uid.value, filePath: item.path })
   ElMessage.success(isZh.value ? '已发送隐藏指令' : 'Hidden')
   refreshCurrentFolder()
@@ -1522,6 +1533,15 @@ async function hideItem(item: any) {
 async function unhideItem(item: any) {
   closeContextMenu()
   if (!item) return
+  try {
+    await ElMessageBox.confirm(
+      isZh.value ? `确定取消隐藏 "${item.name}" 吗？将恢复目标机上该文件的可见属性。` : `Unhide "${item.name}"? This restores the file visibility attribute on the target host.`,
+      isZh.value ? '取消隐藏确认' : 'Unhide Confirm',
+      { confirmButtonText: isZh.value ? '取消隐藏' : 'Unhide', cancelButtonText: isZh.value ? '取消' : 'Cancel', type: 'warning' }
+    )
+  } catch {
+    return
+  }
   await ClientAPI.unhide_file({ uid: uid.value, filePath: item.path })
   ElMessage.success(isZh.value ? '已发送取消隐藏指令' : 'Unhidden')
   refreshCurrentFolder()
@@ -1902,23 +1922,6 @@ function handleHelp() {
 .fm-size-text.is-dir {
   color: var(--cs-text-dim, #777777);
   font-weight: bold;
-}
-
-.fm-empty-state {
-  padding: 30px;
-  text-align: center;
-}
-
-.fm-empty-state .empty-title {
-  font-size: 13px;
-  color: var(--cs-text-bright, #111111);
-  font-weight: 600;
-  margin-bottom: 4px;
-}
-
-.fm-empty-state .empty-desc {
-  font-size: 11px;
-  color: var(--cs-text-dim, #777777);
 }
 
 /* 底部操作栏 */

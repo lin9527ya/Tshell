@@ -328,6 +328,7 @@ import { useClientsStore, type ClientData } from '@/stores/clients'
 import { useI18nStore } from '@/stores/i18n'
 import ClientAPI from '@/api/clients'
 import cnaApi from '@/api/cna'
+import { CS_MARKER_COLORS } from '@/utils/sessionColors'
 
 const props = defineProps<{
   visible: boolean
@@ -371,15 +372,8 @@ const nestedSubStyle = computed(() => ({
   top: '-20px',
 }))
 
-// 6 Colors from Screenshot 6: White, Light Green, Light Pink, Light Yellow, Grey, Dark Blue
-const colorPalette = [
-  { value: '#ffffff', label: 'White' },
-  { value: '#c8e6c9', label: 'Light Green' },
-  { value: '#ffcdd2', label: 'Light Pink' },
-  { value: '#fff59d', label: 'Light Yellow' },
-  { value: '#9e9e9e', label: 'Grey' },
-  { value: '#3f51b5', label: 'Dark Blue' },
-]
+// CS 原生右键 6 色(共享单一来源)
+const colorPalette = CS_MARKER_COLORS
 
 function getTargetClients(): ClientData[] {
   const selectedUids = workspace.selectedUids

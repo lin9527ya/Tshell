@@ -5,6 +5,8 @@
       <div class="av-title-group">
         <span class="av-title">{{ isZh ? '应用程序' : 'Applications' }}</span>
         <span class="av-count">({{ filteredList.length }} {{ isZh ? '个应用' : 'applications' }})</span>
+        <span class="av-demo-badge">{{ isZh ? '演示' : 'Demo' }}</span>
+        <span class="av-demo-note">{{ isZh ? '数据为本地演示，后端无 applications 接口' : 'Local demo data — no backend applications API' }}</span>
       </div>
       <div class="av-spacer" />
       <el-input
@@ -67,11 +69,12 @@
         </el-table-column>
 
         <template #empty>
-          <div class="av-empty-state">
-            <div class="empty-icon">🖥️</div>
-            <div class="empty-title">{{ isZh ? '暂无探测到的应用程序' : 'No Discovered Applications' }}</div>
-            <div class="empty-desc">{{ isZh ? '通过 System Profiler、浏览器探针或资产发现获取的应用与插件将汇总展示在此。' : 'Applications detected via System Profiler or browser probes will appear here.' }}</div>
-          </div>
+          <EmptyState
+            variant="inline"
+            icon="🖥️"
+            :title="isZh ? '暂无探测到的应用程序' : 'No Discovered Applications'"
+            :desc="isZh ? '通过 System Profiler、浏览器探针或资产发现获取的应用与插件将汇总展示在此。' : 'Applications detected via System Profiler or browser probes will appear here.'"
+          />
         </template>
       </el-table>
     </div>
@@ -100,6 +103,7 @@ import { computed, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18nStore } from '@/stores/i18n'
 import { useClientsStore } from '@/stores/clients'
+import EmptyState from '@/components/Common/EmptyState.vue'
 
 interface AppItem {
   id: string
@@ -240,6 +244,23 @@ function showHelp() {
   color: var(--cs-text-dim);
 }
 
+.av-demo-badge {
+  align-self: center;
+  padding: 1px 6px;
+  border-radius: 2px;
+  font-size: 10px;
+  font-weight: 600;
+  background: color-mix(in srgb, var(--cs-warning) 18%, transparent);
+  border: 1px solid color-mix(in srgb, var(--cs-warning) 45%, transparent);
+  color: var(--cs-warning);
+}
+
+.av-demo-note {
+  align-self: center;
+  font-size: 11px;
+  color: var(--cs-text-dim);
+}
+
 .av-spacer {
   flex: 1;
 }
@@ -282,25 +303,6 @@ function showHelp() {
 }
 
 .desc-cell {
-  font-size: 12px;
-  color: var(--cs-text-dim);
-}
-
-.av-empty-state {
-  padding: 40px 20px;
-  text-align: center;
-}
-.empty-icon {
-  font-size: 32px;
-  margin-bottom: 8px;
-}
-.empty-title {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--cs-text-bright);
-  margin-bottom: 4px;
-}
-.empty-desc {
   font-size: 12px;
   color: var(--cs-text-dim);
 }

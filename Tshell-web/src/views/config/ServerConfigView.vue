@@ -39,7 +39,7 @@
       </div>
 
       <!-- Right Content Panel -->
-      <div class="cfg-content">
+      <div class="cfg-content" v-loading="loading">
         <div class="cfg-panel-header">
           <span class="panel-title">{{ selectedSection === 'all' ? (isZh ? '完整 JSON 配置' : 'Full JSON Configuration') : (isZh ? `配置段：${sectionLabel(selectedSection)}` : `Section: ${selectedSection}`) }}</span>
           <span class="panel-hint">

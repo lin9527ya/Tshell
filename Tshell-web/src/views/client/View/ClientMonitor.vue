@@ -81,9 +81,12 @@
         </div>
 
         <div v-else class="mv-empty-screen">
-          <div class="empty-icon">🖥</div>
-          <div class="empty-title">{{ isZh ? '桌面监控推流未启动' : 'Desktop Stream Inactive' }}</div>
-          <div class="empty-desc">{{ isZh ? '点击【开始推流】启动被控端桌面实时推流画面。' : 'Click [ Start Stream ] to begin live desktop monitoring.' }}</div>
+          <EmptyState
+            icon="🖥"
+            variant="inline"
+            :title="isZh ? '桌面监控推流未启动' : 'Desktop Stream Inactive'"
+            :desc="isZh ? '点击【开始推流】启动被控端桌面实时推流画面。' : 'Click [ Start Stream ] to begin live desktop monitoring.'"
+          />
         </div>
       </template>
 
@@ -108,10 +111,14 @@
         </div>
 
         <div v-else class="mv-empty-screen">
-          <div class="empty-icon">🪟</div>
-          <div class="empty-title">{{ isZh ? '隐蔽桌面 (HVNC)' : 'Hidden VNC (HVNC) Desktop' }}</div>
-          <div class="empty-desc" v-if="isLinuxClient">{{ isZh ? 'HVNC 仅支持 Windows 目标会话。' : 'HVNC is only supported on Windows Beacon sessions.' }}</div>
-          <div class="empty-desc" v-else>{{ isZh ? '点击【启动 HVNC】创建隐蔽交互式 Windows 桌面会话。' : 'Click [ Start HVNC ] to spawn a hidden interactive Windows desktop session.' }}</div>
+          <EmptyState
+            icon="🪟"
+            variant="inline"
+            :title="isZh ? '隐蔽桌面 (HVNC)' : 'Hidden VNC (HVNC) Desktop'"
+            :desc="isLinuxClient
+              ? (isZh ? 'HVNC 仅支持 Windows 目标会话。' : 'HVNC is only supported on Windows Beacon sessions.')
+              : (isZh ? '点击【启动 HVNC】创建隐蔽交互式 Windows 桌面会话。' : 'Click [ Start HVNC ] to spawn a hidden interactive Windows desktop session.')"
+          />
         </div>
       </template>
     </div>
@@ -173,6 +180,7 @@ import { useI18nStore } from '@/stores/i18n'
 import { useScreenshotsStore } from '@/stores/screenshots'
 import { useTabActive } from '@/utils/useVisibilityInterval'
 import ClientAPI from '@/api/clients'
+import EmptyState from '@/components/Common/EmptyState.vue'
 
 const i18nStore = useI18nStore()
 const isZh = computed(() => i18nStore.isZh)
@@ -750,23 +758,6 @@ onUnmounted(() => {
 .mv-empty-screen {
   color: #666;
   text-align: center;
-}
-
-.empty-icon {
-  font-size: 42px;
-  margin-bottom: 10px;
-}
-
-.empty-title {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--cs-text-bright);
-}
-
-.empty-desc {
-  font-size: 15px;
-  color: var(--cs-text-dim);
-  margin-top: 6px;
 }
 
 .mv-bottom-bar {

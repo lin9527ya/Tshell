@@ -159,11 +159,12 @@
         </el-table-column>
 
         <template #empty>
-          <div class="pv-empty-state">
-            <div class="empty-icon">⚙️</div>
-            <div class="empty-title">{{ isZh ? '暂无进程数据' : 'No Process Data' }}</div>
-            <div class="empty-desc">{{ isZh ? '点击右上角「刷新」向当前 Beacon 下发进程列表查询任务。' : 'Click [ Refresh ] to query processes.' }}</div>
-          </div>
+          <EmptyState
+            icon="⚙️"
+            variant="inline"
+            :title="isZh ? '暂无进程数据' : 'No Process Data'"
+            :desc="isZh ? '点击右上角「刷新」向当前 Beacon 下发进程列表查询任务。' : 'Click [ Refresh ] to query processes.'"
+          />
         </template>
       </el-table>
     </div>
@@ -353,6 +354,7 @@ import { useClientUid } from '@/utils/clientUtils'
 import { useClientsStore } from '@/stores/clients'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { useI18nStore } from '@/stores/i18n'
+import EmptyState from '@/components/Common/EmptyState.vue'
 import { fetchListenerOptions, generateClientBinaryBlob, type ListenerOption } from '@/layout/Dialogs/Payloads/payloadUtil'
 
 const i18nStore = useI18nStore()
@@ -420,6 +422,8 @@ const customFileInput = ref<HTMLInputElement | null>(null)
 const customFile = ref<File | null>(null)
 const customFileName = ref('')
 const helpDialogVisible = ref(false)
+
+let refreshTimer: ReturnType<typeof setTimeout> | null = null
 
 const injectForm = reactive({
   type: 'listener' as 'listener' | 'custom',
@@ -623,7 +627,8 @@ function handleKill() {
     try {
       await ClientAPI.kill_pid({ uid: getUid(), pid })
       ElMessage.success(isZh.value ? `已下发结束进程指令 (PID: ${pid})` : `Tasked beacon to kill ${pid}`)
-      setTimeout(fetchProcessList, 1000)
+      if (refreshTimer) clearTimeout(refreshTimer)
+      refreshTimer = setTimeout(fetchProcessList, 1000)
     } catch {
       ElMessage.error(isZh.value ? '结束进程失败' : 'Failed to issue kill task')
     }
@@ -775,6 +780,13 @@ function handleHelp() {
 
 onMounted(() => {
   fetchProcessList()
+})
+
+onBeforeUnmount(() => {
+  if (refreshTimer) {
+    clearTimeout(refreshTimer)
+    refreshTimer = null
+  }
 })
 </script>
 
@@ -1047,28 +1059,6 @@ onMounted(() => {
   font-size: 15px;
   color: var(--cs-text-dim);
   font-family: var(--cs-font-mono);
-}
-
-.pv-empty-state {
-  padding: 40px 20px;
-  text-align: center;
-}
-
-.empty-icon {
-  font-size: 36px;
-  margin-bottom: 8px;
-}
-
-.empty-title {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--cs-text-bright);
-  margin-bottom: 6px;
-}
-
-.empty-desc {
-  font-size: 16px;
-  color: var(--cs-text-dim);
 }
 
 /* Context Menu */

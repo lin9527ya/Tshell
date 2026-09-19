@@ -81,9 +81,11 @@
         </el-table-column>
       </el-table>
 
-      <div v-if="!tasks.length && !loading" class="cs-empty-watermark">
-        <div class="empty-title">{{ isZh ? '暂无批量任务' : 'No batch tasks' }}</div>
-      </div>
+      <EmptyState
+        v-if="!tasks.length && !loading"
+        variant="overlay"
+        :title="isZh ? '暂无批量任务' : 'No batch tasks'"
+      />
     </div>
   </div>
 </template>
@@ -92,6 +94,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18nStore } from '@/stores/i18n'
 import { useTabActive, useVisibilityInterval } from '@/utils/useVisibilityInterval'
+import EmptyState from '@/components/Common/EmptyState.vue'
 import ClientAPI from '@/api/clients'
 
 interface TaskRow {
@@ -180,6 +183,7 @@ onMounted(() => {
 .bt-table-wrap {
   flex: 1;
   overflow: hidden;
+  position: relative;
 }
 
 .bt-expand-box {

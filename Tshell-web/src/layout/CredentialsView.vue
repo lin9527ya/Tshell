@@ -129,13 +129,12 @@
         </el-table-column>
 
         <template #empty>
-          <div class="cv-empty-state">
-            <div class="empty-icon">🔑</div>
-            <div class="empty-title">{{ isZh ? '暂无密码凭据' : 'No Harvested Credentials' }}</div>
-            <div class="empty-desc">
-              {{ isZh ? '在 Beacon 会话中执行 logonpasswords / hashdump，或点击下方「添加」手动录入凭据。' : 'Credentials from logonpasswords or hashdump will appear here.' }}
-            </div>
-          </div>
+          <EmptyState
+            variant="inline"
+            icon="🔑"
+            :title="isZh ? '暂无密码凭据' : 'No Harvested Credentials'"
+            :desc="isZh ? '在 Beacon 会话中执行 logonpasswords / hashdump，或点击下方「添加」手动录入凭据。' : 'Credentials from logonpasswords or hashdump will appear here.'"
+          />
         </template>
       </el-table>
     </div>
@@ -245,6 +244,7 @@ import { Key, Refresh, CopyDocument } from '@element-plus/icons-vue'
 import { useCredentialsStore, type CredentialItem } from '@/stores/credentials'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { useI18nStore } from '@/stores/i18n'
+import EmptyState from '@/components/Common/EmptyState.vue'
 
 const credsStore = useCredentialsStore()
 const workspace = useWorkspaceStore()
@@ -637,28 +637,6 @@ onBeforeUnmount(() => {
 }
 
 .cv-bottom-spacer { flex: 1; }
-
-.cv-empty-state {
-  padding: 40px 20px;
-  text-align: center;
-}
-
-.empty-icon {
-  font-size: 36px;
-  margin-bottom: 8px;
-}
-
-.empty-title {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--cs-text-bright);
-  margin-bottom: 6px;
-}
-
-.empty-desc {
-  font-size: 16px;
-  color: var(--cs-text-dim);
-}
 
 .cs-dialog-form {
   display: flex;

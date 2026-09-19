@@ -158,13 +158,12 @@
           </el-table-column>
 
           <template #empty>
-            <div class="gs-empty-state">
-              <div class="empty-icon">📷</div>
-              <div class="empty-title">{{ isZh ? '暂无屏幕截图' : 'No Screenshots' }}</div>
-              <div class="empty-desc">
-                {{ isZh ? (effectiveTargetUid ? '点击右上角【屏幕抓取】即可捕获当前被控端画面。' : '请先选择在线客户端，然后点击【屏幕抓取】捕获远程画面。') : 'Click [ Capture ] to capture the screen.' }}
-              </div>
-            </div>
+            <EmptyState
+              icon="📷"
+              variant="inline"
+              :title="isZh ? '暂无屏幕截图' : 'No Screenshots'"
+              :desc="isZh ? (effectiveTargetUid ? '点击右上角【屏幕抓取】即可捕获当前被控端画面。' : '请先选择在线客户端，然后点击【屏幕抓取】捕获远程画面。') : 'Click [ Capture ] to capture the screen.'"
+            />
           </template>
         </el-table>
       </div>
@@ -222,10 +221,12 @@
           </div>
         </div>
 
-        <div v-if="!filteredScreenshots.length" class="gs-empty-state" style="grid-column: 1 / -1">
-          <div class="empty-icon">📷</div>
-          <div class="empty-title">{{ isZh ? '暂无屏幕截图' : 'No Screenshots' }}</div>
-        </div>
+        <EmptyState
+          v-if="!filteredScreenshots.length"
+          icon="📷"
+          variant="overlay"
+          :title="isZh ? '暂无屏幕截图' : 'No Screenshots'"
+        />
       </div>
     </div>
 
@@ -348,6 +349,8 @@ import { useWorkspaceStore } from '@/stores/workspace'
 import { useI18nStore } from '@/stores/i18n'
 import { useScreenshotsStore } from '@/stores/screenshots'
 import type { ScreenshotItem } from '@/stores/screenshots'
+import EmptyState from '@/components/Common/EmptyState.vue'
+import { SESSION_MARKER_COLORS, rowTintStyle } from '@/utils/sessionColors'
 
 const props = withDefaults(
   defineProps<{
@@ -438,16 +441,7 @@ const ctxMenu = ref({
   showColor: false,
 })
 
-const colorPalette = [
-  { value: '#ffffff', zh: '默认白色', en: 'White' },
-  { value: '#ef5350', zh: '红色', en: 'Red' },
-  { value: '#ff9800', zh: '橙色', en: 'Orange' },
-  { value: '#ffee58', zh: '黄色', en: 'Yellow' },
-  { value: '#66bb6a', zh: '绿色', en: 'Green' },
-  { value: '#26c6da', zh: '青色', en: 'Cyan' },
-  { value: '#42a5f5', zh: '蓝色', en: 'Blue' },
-  { value: '#ab47bc', zh: '紫色', en: 'Purple' },
-]
+const colorPalette = SESSION_MARKER_COLORS
 
 const filteredScreenshots = computed(() => {
   let list = screenshotsStore.screenshots
@@ -484,14 +478,7 @@ const fullscreenTitle = computed(() => {
 })
 
 function getRowStyle({ row }: { row: ScreenshotItem }) {
-  if (row.color && row.color !== '#ffffff') {
-    return {
-      '--el-table-tr-bg-color': `${row.color}30`,
-      backgroundColor: `${row.color}30`,
-      borderLeft: `3px solid ${row.color}`,
-    }
-  }
-  return {}
+  return rowTintStyle(row.color, { alpha: '30', borderWidth: 3 })
 }
 
 function selectItem(item: ScreenshotItem | null) {
@@ -662,7 +649,15 @@ function recaptureTarget(item?: ScreenshotItem | null) {
 }
 
 function refreshAll() {
-  ElMessage.success(isZh.value ? '截图列表已刷新' : 'Screenshot list refreshed')
+  if (selectedTargetUid.value) {
+    handleCapture()
+  } else {
+    ElMessage.info(
+      isZh.value
+        ? '截图列表随抓取实时更新，请先选择目标会话'
+        : 'Screenshot list updates with each capture. Select a target session first.',
+    )
+  }
 }
 
 function showHelp() {
@@ -712,11 +707,11 @@ onMounted(() => {
 
 .gs-title-icon {
   font-size: 18px;
-  color: #3884ff;
+  color: var(--cs-active);
 }
 
 .gs-title {
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 600;
   color: var(--cs-text-bright);
 }
@@ -756,7 +751,7 @@ onMounted(() => {
 
 .gs-scope-btn.active {
   color: #ffffff;
-  background: #1a5c9a;
+  background: var(--cs-active);
   font-weight: 600;
 }
 
@@ -883,7 +878,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #111111;
+  background: var(--cs-console);
   overflow: hidden;
   padding: 8px;
   position: relative;
@@ -939,6 +934,7 @@ onMounted(() => {
 
 /* Grid Mode */
 .gs-grid-wrap {
+  position: relative;
   height: 100%;
   overflow-y: auto;
   padding: 14px;
@@ -971,7 +967,7 @@ onMounted(() => {
 
 .gs-card-img-wrap {
   height: 170px;
-  background: #000;
+  background: var(--cs-console);
   position: relative;
   overflow: hidden;
   display: flex;
@@ -1026,28 +1022,6 @@ onMounted(() => {
   font-family: var(--cs-font-mono);
 }
 
-.gs-empty-state {
-  padding: 40px 20px;
-  text-align: center;
-}
-
-.empty-icon {
-  font-size: 36px;
-  margin-bottom: 8px;
-}
-
-.empty-title {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--cs-text-bright);
-  margin-bottom: 6px;
-}
-
-.empty-desc {
-  font-size: 16px;
-  color: var(--cs-text-dim);
-}
-
 /* Bottom Bar */
 .gs-bottom-bar {
   height: 38px;
@@ -1096,18 +1070,18 @@ onMounted(() => {
 }
 
 .quality-badge.q-0 {
-  background: rgba(140, 140, 140, 0.2);
-  color: #8c8c8c;
+  background: color-mix(in srgb, var(--cs-text-dim) 20%, transparent);
+  color: var(--cs-text-dim);
 }
 
 .quality-badge.q-1 {
-  background: rgba(24, 144, 255, 0.15);
-  color: #40a9ff;
+  background: color-mix(in srgb, var(--cs-active) 15%, transparent);
+  color: var(--cs-active);
 }
 
 .quality-badge.q-2 {
-  background: rgba(82, 196, 26, 0.15);
-  color: #52c41a;
+  background: color-mix(in srgb, var(--cs-online) 15%, transparent);
+  color: var(--cs-online);
   font-weight: 600;
 }
 
@@ -1162,13 +1136,13 @@ onMounted(() => {
 .color-box {
   width: 24px;
   height: 24px;
-  border: 1px solid #444;
+  border: 1px solid var(--cs-border);
   border-radius: 2px;
   cursor: pointer;
 }
 
 .color-box:hover {
-  border-color: #ffffff;
+  border-color: var(--cs-text-bright);
 }
 
 /* Fullscreen Dialog */
@@ -1182,7 +1156,7 @@ onMounted(() => {
 .gs-fs-img-wrap {
   width: 100%;
   height: 72vh;
-  background: #000;
+  background: var(--cs-console);
   overflow: hidden;
   display: flex;
   align-items: center;

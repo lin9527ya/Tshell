@@ -93,7 +93,7 @@
           <span>{{ isZh ? '执行控制台日志' : 'Execution Console Log' }}</span>
           <button class="cs-btn cs-btn-xs" @click="consoleLogs = []">{{ isZh ? '清空' : 'Clear' }}</button>
         </div>
-        <div class="ct-output-console cs-font-mono">
+        <div class="ct-output-console cs-font-mono" v-loading="!!loading">
           <div v-for="(log, i) in consoleLogs" :key="i" class="log-line">
             <span class="log-time">[{{ log.time }}]</span>
             <span class="log-tag" :class="log.type">[{{ log.type.toUpperCase() }}]</span>

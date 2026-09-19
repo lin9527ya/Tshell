@@ -58,6 +58,7 @@
         v-loading="loading"
         class="cs-session-table"
         @current-change="onCurrentChange"
+        @selection-change="onSelectionChange"
         @row-dblclick="handleDownload"
       >
         <el-table-column type="selection" width="38" align="center" :reserve-selection="true" />
@@ -121,23 +122,22 @@
         </el-table-column>
 
         <template #empty>
-          <div class="gd-empty-state">
-            <div class="empty-icon">📁</div>
-            <div class="empty-title">{{ isZh ? '暂无下载的文件' : 'No Downloaded Files' }}</div>
-            <div class="empty-desc">
-              {{ isZh ? '在文件管理器中右键选择「下载文件」后，下载记录将在此聚合展示。' : 'Files downloaded via File Browser will appear here.' }}
-            </div>
-          </div>
+          <EmptyState
+            icon="📁"
+            variant="inline"
+            :title="isZh ? '暂无下载的文件' : 'No Downloaded Files'"
+            :desc="isZh ? '在文件管理器中右键选择「下载文件」后，下载记录将在此聚合展示。' : 'Files downloaded via File Browser will appear here.'"
+          />
         </template>
       </el-table>
     </div>
 
     <!-- Bottom Action Bar (CS Native Button Row) -->
     <div class="gd-bottom-bar">
-      <button class="cs-btn cs-btn-primary" :disabled="!selectedRow" @click="handleDownloadSelected">
+      <button class="cs-btn cs-btn-primary" :disabled="!selectedRow && !selectedRows.length" @click="handleDownloadSelected">
         {{ isZh ? '下载到本地 (Sync)' : 'Download' }}
       </button>
-      <button class="cs-btn cs-btn-danger" :disabled="!selectedRow" @click="handleDeleteSelected">
+      <button class="cs-btn cs-btn-danger" :disabled="!selectedRow && !selectedRows.length" @click="handleDeleteSelected">
         {{ isZh ? '删除记录 (Delete)' : 'Delete' }}
       </button>
       <button class="cs-btn" @click="refreshAll">
@@ -165,6 +165,7 @@ import { useClientsStore } from '@/stores/clients'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { useI18nStore } from '@/stores/i18n'
 import { useTabActive, useVisibilityInterval } from '@/utils/useVisibilityInterval'
+import EmptyState from '@/components/Common/EmptyState.vue'
 import ClientAPI from '@/api/clients'
 
 const props = withDefaults(
@@ -220,6 +221,7 @@ const targetClientTitle = computed(() => {
 const loading = ref(false)
 const searchKey = ref('')
 const selectedRow = ref<DownloadRow | null>(null)
+const selectedRows = ref<DownloadRow[]>([])
 const downloadItems = ref<DownloadRow[]>([])
 
 const filteredList = computed(() => {
@@ -259,6 +261,10 @@ function formatTime(timestamp: any) {
 
 function onCurrentChange(row: DownloadRow | null) {
   selectedRow.value = row
+}
+
+function onSelectionChange(rows: DownloadRow[]) {
+  selectedRows.value = rows
 }
 
 async function refreshAll() {
@@ -322,8 +328,11 @@ async function handleDownload(row: DownloadRow) {
   }
 }
 
-function handleDownloadSelected() {
-  if (selectedRow.value) handleDownload(selectedRow.value)
+async function handleDownloadSelected() {
+  const rows = selectedRows.value.length ? selectedRows.value : selectedRow.value ? [selectedRow.value] : []
+  for (const row of rows) {
+    await handleDownload(row)
+  }
 }
 
 function handleDelete(row: DownloadRow) {
@@ -346,8 +355,11 @@ function handleDelete(row: DownloadRow) {
   }).catch(() => {})
 }
 
-function handleDeleteSelected() {
-  if (selectedRow.value) handleDelete(selectedRow.value)
+async function handleDeleteSelected() {
+  const rows = selectedRows.value.length ? selectedRows.value : selectedRow.value ? [selectedRow.value] : []
+  for (const row of rows) {
+    await handleDelete(row)
+  }
 }
 
 function showHelp() {
@@ -512,27 +524,5 @@ onMounted(() => {
   font-size: 15px;
   color: var(--cs-text-dim);
   font-family: var(--cs-font-mono);
-}
-
-.gd-empty-state {
-  padding: 40px 20px;
-  text-align: center;
-}
-
-.empty-icon {
-  font-size: 36px;
-  margin-bottom: 8px;
-}
-
-.empty-title {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--cs-text-bright);
-  margin-bottom: 6px;
-}
-
-.empty-desc {
-  font-size: 16px;
-  color: var(--cs-text-dim);
 }
 </style>

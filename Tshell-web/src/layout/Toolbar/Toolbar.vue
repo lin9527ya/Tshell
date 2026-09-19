@@ -3,7 +3,7 @@
     <!-- Group 1: Connection (Connect / Disconnect) -->
     <div class="tb-group">
       <button class="tb-btn" :title="t('tb.connect')" @click="openConnect">
-        <svg class="tb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <svg class="tb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="9" />
           <line x1="12" y1="8" x2="12" y2="16" />
           <line x1="8" y1="12" x2="16" y2="12" />
@@ -16,7 +16,7 @@
         :disabled="!userStore.token"
         @click="handleDisconnect"
       >
-        <svg class="tb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <svg class="tb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="9" />
           <line x1="8" y1="12" x2="16" y2="12" />
         </svg>
@@ -33,7 +33,7 @@
         :title="t('tb.session_table')"
         @click="setViewMode('table')"
       >
-        <svg class="tb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <svg class="tb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <line x1="3" y1="6" x2="21" y2="6" />
           <line x1="3" y1="12" x2="21" y2="12" />
           <line x1="3" y1="18" x2="21" y2="18" />
@@ -46,7 +46,7 @@
         :title="t('tb.pivot_graph')"
         @click="setViewMode('graph')"
       >
-        <svg class="tb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <svg class="tb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="6" cy="6" r="3" />
           <circle cx="18" cy="6" r="3" />
           <circle cx="12" cy="18" r="3" />
@@ -60,7 +60,7 @@
         :title="t('tb.targets')"
         @click="setViewMode('targets')"
       >
-        <svg class="tb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <svg class="tb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <rect x="2" y="3" width="20" height="14" rx="2" />
           <line x1="8" y1="21" x2="16" y2="21" />
           <line x1="12" y1="17" x2="12" y2="21" />
@@ -73,14 +73,14 @@
     <!-- Group 3: Listeners & Attacks (Listeners / Web Delivery / Payload Gen) -->
     <div class="tb-group">
       <button class="tb-btn" :title="t('tb.listeners')" @click="openListeners">
-        <svg class="tb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <svg class="tb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M3 18v-6a9 9 0 0 1 18 0v6" />
           <path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z" />
         </svg>
       </button>
 
       <button class="tb-btn" :title="t('tb.web_delivery')" @click="openWebDelivery">
-        <svg class="tb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <svg class="tb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="10" />
           <line x1="2" y1="12" x2="22" y2="12" />
           <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
@@ -88,7 +88,7 @@
       </button>
 
       <button class="tb-btn" :title="t('tb.payload_gen')" @click="openServerGen">
-        <svg class="tb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <svg class="tb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="6" cy="12" r="1.5" fill="currentColor" />
           <circle cx="12" cy="12" r="1.5" fill="currentColor" />
           <circle cx="18" cy="12" r="1.5" fill="currentColor" />
@@ -102,13 +102,13 @@
     <!-- Group 4: Tactical Pivoting & Data Collection (Tunnel / Keystrokes / Screenshots) -->
     <div class="tb-group">
       <button class="tb-btn" :title="t('tb.tunnel')" @click="openTunnel">
-        <svg class="tb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <svg class="tb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" />
         </svg>
       </button>
 
       <button class="tb-btn" :title="t('tb.keystrokes')" @click="openKeystrokes">
-        <svg class="tb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <svg class="tb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <rect x="2" y="4" width="20" height="16" rx="2" />
           <line x1="6" y1="8" x2="6" y2="8" />
           <line x1="10" y1="8" x2="10" y2="8" />
@@ -121,7 +121,7 @@
       </button>
 
       <button class="tb-btn" :title="t('tb.screenshots')" @click="openScreenshots">
-        <svg class="tb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <svg class="tb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
           <circle cx="12" cy="13" r="4" />
         </svg>
@@ -133,20 +133,20 @@
     <!-- Group 5: 与 MenuBar 对齐的高频入口(事件日志/凭证/脚本控制台) -->
     <div class="tb-group">
       <button class="tb-btn" :title="isZh ? '事件日志' : 'Event Log'" @click="openEventLog">
-        <svg class="tb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <svg class="tb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
         </svg>
       </button>
 
       <button class="tb-btn" :title="isZh ? '密码凭证' : 'Credentials'" @click="openCredentials">
-        <svg class="tb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <svg class="tb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M21 2l-2 2m-1.5 1.5L14 9a5 5 0 1 0 4.5 4.5l3.5-3.5V6l-4-4z" />
           <circle cx="7.5" cy="16.5" r="1.5" />
         </svg>
       </button>
 
       <button class="tb-btn" :title="isZh ? '脚本控制台' : 'Script Console'" @click="openScriptConsole">
-        <svg class="tb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <svg class="tb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="4 17 10 11 4 5" />
           <line x1="12" y1="19" x2="20" y2="19" />
         </svg>

@@ -58,9 +58,7 @@
         </el-table-column>
       </el-table>
 
-      <div v-if="!users.length && !loading" class="cs-empty-watermark">
-        <div class="empty-title">{{ isZh ? '暂无用户' : 'No users found' }}</div>
-      </div>
+      <EmptyState v-if="!users.length && !loading" :title="isZh ? '暂无用户' : 'No users found'" />
     </div>
 
     <!-- Bottom Action Bar -->
@@ -151,6 +149,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import UserApi from '@/api/user'
 import { useI18nStore } from '@/stores/i18n'
+import EmptyState from '@/components/Common/EmptyState.vue'
 
 interface UserRow {
   username: string
@@ -440,20 +439,6 @@ onMounted(() => {
   display: flex;
   justify-content: center;
   gap: 8px;
-}
-
-.cs-empty-watermark {
-  position: absolute;
-  top: 45%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  text-align: center;
-  pointer-events: none;
-}
-
-.empty-title {
-  font-size: 13px;
-  color: var(--cs-text-dim);
 }
 
 .text-danger {

@@ -91,6 +91,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { ElMessageBox } from 'element-plus'
 import { useEventsStore } from '@/stores/events'
 import { useUserStore } from '@/stores/user'
 import { useClientsStore, type ClientData } from '@/stores/clients'
@@ -171,7 +172,20 @@ function fmtTime(t: number) {
   return `${hh}:${mm}:${ss}`
 }
 
-function clearLog() {
+async function clearLog() {
+  try {
+    await ElMessageBox.confirm(
+      isZh.value ? '确定清空事件日志吗？清空后不可恢复。' : 'Clear the event log? This cannot be undone.',
+      isZh.value ? '清空事件日志' : 'Clear Event Log',
+      {
+        confirmButtonText: isZh.value ? '清空' : 'Clear',
+        cancelButtonText: isZh.value ? '取消' : 'Cancel',
+        type: 'warning',
+      },
+    )
+  } catch {
+    return
+  }
   lines.value = []
   seenIds.clear()
 }
@@ -557,8 +571,8 @@ onMounted(async () => {
 }
 
 .el-filter-btn.active {
-  background: #1a5c9a;
-  border-color: #1a5c9a;
+  background: var(--cs-active);
+  border-color: var(--cs-active);
   color: #ffffff;
   font-weight: bold;
 }
@@ -593,8 +607,8 @@ onMounted(async () => {
   padding: 8px 12px;
   font-size: 18px;
   line-height: 1.6;
-  background: #111111;
-  color: #c8c8c8;
+  background: var(--cs-console);
+  color: var(--cs-text);
 }
 
 .el-line {
@@ -603,29 +617,29 @@ onMounted(async () => {
   margin-bottom: 2px;
 }
 
-.el-time { color: #777777; margin-right: 6px; }
+.el-time { color: var(--cs-text-dim); margin-right: 6px; }
 
-.el-prefix { color: #3884ff; margin-right: 6px; font-weight: bold; }
-.el-prefix-online { color: #50fa7b; margin-right: 6px; font-weight: bold; }
-.el-prefix-offline { color: #ff5555; margin-right: 6px; font-weight: bold; }
-.el-prefix-user { color: #ffb86c; margin-right: 6px; font-weight: bold; }
-.el-prefix-cred { color: #f1fa8c; margin-right: 6px; font-weight: bold; }
-.el-prefix-error { color: #ff5555; margin-right: 6px; font-weight: bold; }
+.el-prefix { color: var(--cs-active); margin-right: 6px; font-weight: bold; }
+.el-prefix-online { color: var(--cs-online); margin-right: 6px; font-weight: bold; }
+.el-prefix-offline { color: var(--cs-error); margin-right: 6px; font-weight: bold; }
+.el-prefix-user { color: var(--cs-warning); margin-right: 6px; font-weight: bold; }
+.el-prefix-cred { color: var(--cs-log-cred); margin-right: 6px; font-weight: bold; }
+.el-prefix-error { color: var(--cs-error); margin-right: 6px; font-weight: bold; }
 
-.el-user { color: #50fa7b; margin-right: 6px; font-weight: bold; }
-.el-text { color: #e0e0e0; }
+.el-user { color: var(--cs-online); margin-right: 6px; font-weight: bold; }
+.el-text { color: var(--cs-text); }
 
-.el-type-beacon_online .el-text { color: #50fa7b; }
-.el-type-beacon_offline .el-text { color: #ff5555; }
-.el-type-user_login .el-text { color: #ffb86c; }
-.el-type-user_logout .el-text { color: #e5c07b; }
-.el-type-cred .el-text { color: #f1fa8c; }
-.el-type-system .el-text { color: #8be9fd; }
-.el-type-chat .el-text { color: #ffffff; }
-.el-type-error .el-text { color: #ff5555; }
+.el-type-beacon_online .el-text { color: var(--cs-online); }
+.el-type-beacon_offline .el-text { color: var(--cs-error); }
+.el-type-user_login .el-text { color: var(--cs-warning); }
+.el-type-user_logout .el-text { color: var(--cs-log-cred); }
+.el-type-cred .el-text { color: var(--cs-log-cred); }
+.el-type-system .el-text { color: var(--cs-log-system); }
+.el-type-chat .el-text { color: var(--cs-text-bright); }
+.el-type-error .el-text { color: var(--cs-error); }
 
 .el-empty {
-  color: #555;
+  color: var(--cs-text-dim);
   text-align: center;
   margin-top: 40px;
   font-size: 18px;
@@ -637,13 +651,13 @@ onMounted(async () => {
   gap: 10px;
   height: 40px;
   padding: 0 12px;
-  background: #181818;
+  background: var(--cs-panel);
   border-top: 1px solid var(--cs-border);
   flex-shrink: 0;
 }
 
 .chat-prompt {
-  color: #50fa7b;
+  color: var(--cs-online);
   font-size: 18px;
   font-weight: 600;
 }
@@ -653,13 +667,13 @@ onMounted(async () => {
   background: transparent;
   border: 0;
   outline: 0;
-  color: #f0f0f0;
+  color: var(--cs-text-bright);
   font-family: var(--cs-font-mono);
   font-size: 18px;
 }
 
 .chat-input::placeholder {
-  color: #555;
+  color: var(--cs-text-dim);
   font-family: var(--cs-font-ui);
 }
 

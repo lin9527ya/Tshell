@@ -173,6 +173,7 @@ import { useClientUid } from '@/utils/clientUtils'
 import { useClientsStore } from '@/stores/clients'
 import { useUserStore } from '@/stores/user'
 import { useI18nStore } from '@/stores/i18n'
+import { usePreferencesStore } from '@/stores/preferences'
 
 const i18nStore = useI18nStore()
 const isZh = computed(() => i18nStore.isZh)
@@ -182,6 +183,7 @@ const route = useRoute()
 const router = useRouter()
 const clientsStore = useClientsStore()
 const userStore = useUserStore()
+const prefStore = usePreferencesStore()
 
 // 获取UID
 const injectedUid = inject<Ref<string> | ComputedRef<string> | null>('realUid', null)
@@ -412,7 +414,7 @@ const initializeTerminal = () => {
     rightClickSelectsWord: terminalConfig.rightClickSelectsWord,
     allowTransparency: true,
     convertEol: true,
-    scrollback: 10000,
+    scrollback: prefStore.scrollback || 5000,
     tabStopWidth: 4,
     allowProposedApi: true
   })

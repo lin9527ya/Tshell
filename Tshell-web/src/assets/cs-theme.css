@@ -27,6 +27,9 @@
 
   /* 状态色 */
   --cs-online: #2e7d32;
+  /* 日志/控制台强调色（凭据/系统 前缀,浅色下需保证对比度） */
+  --cs-log-cred: #9a7b00;
+  --cs-log-system: #00696b;
   --cs-offline: #888888;
   --cs-warning: #f9a825;
   --cs-error: #d32f2f;
@@ -63,6 +66,8 @@
 
   --cs-online: #4caf50;
   --cs-offline: #757575;
+  --cs-log-cred: #f1fa8c;
+  --cs-log-system: #8be9fd;
   --cs-warning: #ffc107;
   --cs-error: #f44336;
 
