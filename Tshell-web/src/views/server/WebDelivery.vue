@@ -18,7 +18,10 @@
     </div>
 
     <div class="wd-table-wrap">
-    <el-table :data="tableData" row-key="id" stripe style="width: 100%; margin-top: 12px" @selection-change="handleSelectionChange">
+    <el-table :data="tableData" row-key="id" stripe height="calc(100% - 12px)" style="width: 100%; margin-top: 12px" @selection-change="handleSelectionChange">
+      <template #empty>
+        <EmptyState variant="inline" :title="isZh ? '暂无 Web 投递记录' : 'No Web Deliveries'" />
+      </template>
       <el-table-column type="selection" width="40" :reserve-selection="true" />
       <el-table-column type="expand" width="34">
         <template #default="{ row }">
@@ -483,6 +486,7 @@ import { useI18nStore } from '@/stores/i18n'
 import { Plus, Refresh } from '@element-plus/icons-vue'
 import ClientAPI from '@/api/clients'
 import PageHeader from '@/components/Common/PageHeader.vue'
+import EmptyState from '@/components/Common/EmptyState.vue'
 
 const i18nStore = useI18nStore()
 const isZh = computed(() => i18nStore.isZh)
