@@ -438,8 +438,9 @@ function stopHvncPolling() {
   if (hvncPollTimer) { clearInterval(hvncPollTimer); hvncPollTimer = null }
 }
 
-function connectHvncWs() {
-  const token = userStore.getToken()
+async function connectHvncWs() {
+  // access token 仅存内存：刷新页面后为空，先凭 Cookie 续期再连（服务端另有 Cookie 回退兜底）
+  const token = await userStore.ensureToken()
   if (!token) { startHvncPolling(); return }
   const proto = location.protocol === 'https:' ? 'wss' : 'ws'
   const ws = new WebSocket(`${proto}://${location.host}/api/hvnc/connect?uid=${encodeURIComponent(getUid())}&sid=${encodeURIComponent(hvncSid.value)}`)
