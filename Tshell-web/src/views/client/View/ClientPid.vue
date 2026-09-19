@@ -229,7 +229,7 @@
               :key="c.value"
               class="color-box"
               :style="{ backgroundColor: c.value }"
-              :title="c.label"
+              :title="isZh ? c.zh : c.en"
               @click.stop="setColor(c.value)"
             />
           </div>
@@ -355,6 +355,7 @@ import { useClientsStore } from '@/stores/clients'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { useI18nStore } from '@/stores/i18n'
 import EmptyState from '@/components/Common/EmptyState.vue'
+import { SESSION_MARKER_COLORS } from '@/utils/sessionColors'
 import { fetchListenerOptions, generateClientBinaryBlob, type ListenerOption } from '@/layout/Dialogs/Payloads/payloadUtil'
 
 const i18nStore = useI18nStore()
@@ -522,16 +523,7 @@ const ctxMenu = ref({
   showColor: false,
 })
 
-const colorPalette = [
-  { value: '#ffffff', label: 'White' },
-  { value: '#ef5350', label: 'Red' },
-  { value: '#ff9800', label: 'Orange' },
-  { value: '#ffee58', label: 'Yellow' },
-  { value: '#66bb6a', label: 'Green' },
-  { value: '#26c6da', label: 'Cyan' },
-  { value: '#42a5f5', label: 'Blue' },
-  { value: '#ab47bc', label: 'Purple' },
-]
+const colorPalette = SESSION_MARKER_COLORS
 
 function isCurrentBeaconPid(pid: string) {
   return currentClient.value && String(currentClient.value.Pid) === String(pid)
@@ -554,10 +546,10 @@ function getRowStyle({ row }: { row: ProcessItem }) {
     return { backgroundColor: `${row.color}33` }
   }
   if (isCurrentBeaconPid(row.PID)) {
-    return { backgroundColor: 'rgba(255, 193, 7, 0.12)' }
+    return { backgroundColor: 'color-mix(in srgb, var(--cs-warning) 12%, transparent)' }
   }
   if (getAvInfo(row.Name)) {
-    return { backgroundColor: 'rgba(239, 83, 80, 0.08)' }
+    return { backgroundColor: 'color-mix(in srgb, var(--cs-error) 8%, transparent)' }
   }
   return {}
 }
@@ -818,7 +810,7 @@ onBeforeUnmount(() => {
 
 .pv-title-icon {
   font-size: 18px;
-  color: #52c41a;
+  color: var(--cs-online);
 }
 
 .pv-title {
@@ -865,7 +857,7 @@ onBeforeUnmount(() => {
 
 .pv-mode-btn.active {
   color: #ffffff;
-  background: #1a5c9a;
+  background: var(--cs-active);
   font-weight: 600;
 }
 
@@ -904,21 +896,21 @@ onBeforeUnmount(() => {
 }
 
 .pv-pill-av.active {
-  background: rgba(239, 83, 80, 0.2);
-  border-color: #ef5350;
-  color: #ff7875;
+  background: color-mix(in srgb, var(--cs-error) 20%, transparent);
+  border-color: var(--cs-error);
+  color: var(--cs-error);
 }
 
 .pv-pill-beacon.active {
-  background: rgba(255, 193, 7, 0.2);
-  border-color: #ffc107;
-  color: #ffca28;
+  background: color-mix(in srgb, var(--cs-warning) 20%, transparent);
+  border-color: var(--cs-warning);
+  color: var(--cs-warning);
 }
 
 .pv-pill-admin.active {
-  background: rgba(250, 140, 22, 0.2);
-  border-color: #fa8c16;
-  color: #ffa940;
+  background: color-mix(in srgb, var(--cs-elevated) 20%, transparent);
+  border-color: var(--cs-elevated);
+  color: var(--cs-elevated);
 }
 
 .pv-spacer { flex: 1; }
@@ -946,19 +938,19 @@ onBeforeUnmount(() => {
 }
 
 .proc-name.is-current {
-  color: #ffca28;
+  color: var(--cs-warning);
   font-weight: bold;
 }
 
 .proc-name.is-av {
-  color: #ff7875;
+  color: var(--cs-error);
   font-weight: bold;
 }
 
 .beacon-self-tag {
-  background: rgba(255, 193, 7, 0.2);
-  border: 1px solid #ffc107;
-  color: #ffca28;
+  background: color-mix(in srgb, var(--cs-warning) 20%, transparent);
+  border: 1px solid var(--cs-warning);
+  color: var(--cs-warning);
   font-size: 12px;
   padding: 1px 6px;
   border-radius: 3px;
@@ -966,9 +958,9 @@ onBeforeUnmount(() => {
 }
 
 .av-detected-tag {
-  background: rgba(239, 83, 80, 0.2);
-  border: 1px solid #ef5350;
-  color: #ff7875;
+  background: color-mix(in srgb, var(--cs-error) 20%, transparent);
+  border: 1px solid var(--cs-error);
+  color: var(--cs-error);
   font-size: 12px;
   padding: 1px 6px;
   border-radius: 3px;
@@ -984,13 +976,13 @@ onBeforeUnmount(() => {
 }
 
 .arch-64 {
-  background: rgba(24, 144, 255, 0.2);
-  color: #40a9ff;
+  background: color-mix(in srgb, var(--cs-active) 20%, transparent);
+  color: var(--cs-active);
 }
 
 .arch-86 {
-  background: rgba(140, 140, 140, 0.2);
-  color: #bfbfbf;
+  background: color-mix(in srgb, var(--cs-text-dim) 20%, transparent);
+  color: var(--cs-text-dim);
 }
 
 .user-info-cell {
@@ -1008,19 +1000,19 @@ onBeforeUnmount(() => {
 }
 
 .priv-system {
-  background: rgba(245, 34, 45, 0.2);
-  color: #ff7875;
-  border: 1px solid #ff4d4f;
+  background: color-mix(in srgb, var(--cs-error) 20%, transparent);
+  color: var(--cs-error);
+  border: 1px solid var(--cs-error);
 }
 
 .priv-admin {
-  background: rgba(250, 140, 22, 0.2);
-  color: #ffa940;
-  border: 1px solid #fa8c16;
+  background: color-mix(in srgb, var(--cs-elevated) 20%, transparent);
+  color: var(--cs-elevated);
+  border: 1px solid var(--cs-elevated);
 }
 
 .priv-user {
-  background: rgba(140, 140, 140, 0.15);
+  background: color-mix(in srgb, var(--cs-text-dim) 15%, transparent);
   color: var(--cs-text-dim);
 }
 

@@ -657,7 +657,7 @@ onUnmounted(() => {
 
 .mv-title-icon {
   font-size: 18px;
-  color: #13c2c2;
+  color: var(--cs-log-system);
 }
 
 .mv-title {
@@ -685,7 +685,7 @@ onUnmounted(() => {
 
 .mv-body {
   flex: 1;
-  background: #000000;
+  background: var(--cs-console);
   position: relative;
   overflow: hidden;
   display: flex;
@@ -756,7 +756,7 @@ onUnmounted(() => {
 }
 
 .mv-empty-screen {
-  color: #666;
+  color: var(--cs-text-dim);
   text-align: center;
 }
 

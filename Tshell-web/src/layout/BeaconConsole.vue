@@ -566,7 +566,7 @@ onBeforeUnmount(() => {
   gap: 10px;
   height: 40px;
   padding: 0 12px;
-  background: #141414;
+  background: var(--cs-panel);
   border-top: 1px solid var(--cs-border);
   flex-shrink: 0;
 }

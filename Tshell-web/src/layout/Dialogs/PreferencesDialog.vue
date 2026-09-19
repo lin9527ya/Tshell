@@ -343,7 +343,7 @@ function savePreferences() {
 }
 
 .pref-nav-item.active {
-  background: #185abc;
+  background: var(--cs-active);
   color: #ffffff;
   font-weight: 500;
 }

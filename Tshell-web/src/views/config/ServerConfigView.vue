@@ -452,7 +452,7 @@ onMounted(() => {
 }
 
 .cfg-nav-item.active {
-  background: #185abc;
+  background: var(--cs-active);
   color: #ffffff;
   font-weight: 500;
 }
@@ -472,8 +472,8 @@ onMounted(() => {
   font-size: 9px;
   padding: 1px 4px;
   border-radius: 2px;
-  background: rgba(76, 175, 80, 0.25);
-  color: #81c784;
+  background: color-mix(in srgb, var(--cs-online) 25%, transparent);
+  color: var(--cs-online);
 }
 
 .cfg-content {
@@ -509,8 +509,8 @@ onMounted(() => {
   flex: 1;
   width: 100%;
   resize: none;
-  background: #111111;
-  color: #c8c8c8;
+  background: var(--cs-console);
+  color: var(--cs-text);
   border: 1px solid var(--cs-border);
   border-radius: 2px;
   padding: 8px;

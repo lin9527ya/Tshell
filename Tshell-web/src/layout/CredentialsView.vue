@@ -547,7 +547,7 @@ onBeforeUnmount(() => {
 
 .cv-pill.active {
   color: #ffffff;
-  background: #1a5c9a;
+  background: var(--cs-active);
   font-weight: 600;
 }
 

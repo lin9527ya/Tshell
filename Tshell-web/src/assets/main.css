@@ -157,14 +157,14 @@ a {
 
 /* 主要按钮样式 */
 .el-button--primary {
-    background-color: #409eff !important;
-    border-color: #409eff !important;
+    background-color: var(--theme-primary, #409eff) !important;
+    border-color: var(--theme-primary, #409eff) !important;
     color: #ffffff !important;
 }
 
 .el-button--primary:hover {
-    background-color: #66b1ff !important;
-    border-color: #66b1ff !important;
+    background-color: color-mix(in srgb, var(--theme-primary, #409eff) 80%, #ffffff) !important;
+    border-color: color-mix(in srgb, var(--theme-primary, #409eff) 80%, #ffffff) !important;
     color: #ffffff !important;
 }
 
@@ -275,22 +275,22 @@ a {
 }
 
 .el-button:not([class*="--"]):hover {
-    background-color: #ecf5ff !important;
-    border-color: #c6e2ff !important;
-    color: #409eff !important;
+    background-color: color-mix(in srgb, var(--theme-primary, #409eff) 12%, transparent) !important;
+    border-color: color-mix(in srgb, var(--theme-primary, #409eff) 30%, transparent) !important;
+    color: var(--theme-primary, #409eff) !important;
 }
 
 /* text类型按钮 */
 .el-button.is-text {
     background-color: transparent !important;
     border-color: transparent !important;
-    color: #409eff !important;
+    color: var(--theme-primary, #409eff) !important;
 }
 
 .el-button.is-text:hover {
-    background-color: #ecf5ff !important;
+    background-color: color-mix(in srgb, var(--theme-primary, #409eff) 12%, transparent) !important;
     border-color: transparent !important;
-    color: #409eff !important;
+    color: var(--theme-primary, #409eff) !important;
 }
 
 /* 深色模式下的全局基础与全部视图超级适配 */

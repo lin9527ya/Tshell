@@ -247,10 +247,10 @@ function close() {
   overflow-y: auto;
   font-size: 12px;
   line-height: 1.5;
-  color: #e0e0e0;
+  color: var(--cs-text);
   white-space: pre-wrap;
   word-break: break-all;
-  background: #141414;
+  background: var(--cs-console);
 }
 .report-empty {
   padding: 12px;

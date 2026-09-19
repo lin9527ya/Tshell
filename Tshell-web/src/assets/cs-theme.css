@@ -30,6 +30,8 @@
   /* 日志/控制台强调色（凭据/系统 前缀,浅色下需保证对比度） */
   --cs-log-cred: #9a7b00;
   --cs-log-system: #00696b;
+  /* 提权/管理员标记（橙） */
+  --cs-elevated: #b25e00;
   --cs-offline: #888888;
   --cs-warning: #f9a825;
   --cs-error: #d32f2f;
@@ -68,6 +70,7 @@
   --cs-offline: #757575;
   --cs-log-cred: #f1fa8c;
   --cs-log-system: #8be9fd;
+  --cs-elevated: #ffa940;
   --cs-warning: #ffc107;
   --cs-error: #f44336;
 
@@ -247,13 +250,13 @@
 /* Standardized Code Highlighting / Command Output Block */
 .cs-cmd-box,
 .cs-code-block {
-  background: #0d1117 !important;
+  background: var(--cs-console) !important;
   border: 1px solid var(--cs-border) !important;
   border-radius: 4px !important;
   padding: 10px 14px !important;
   font-family: var(--cs-font-mono) !important;
   font-size: 15px !important;
-  color: #58a6ff !important;
+  color: var(--cs-active) !important;
   word-break: break-all !important;
   white-space: pre-wrap !important;
   position: relative !important;

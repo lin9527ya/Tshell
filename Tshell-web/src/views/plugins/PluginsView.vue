@@ -1684,11 +1684,11 @@ const closeUploadDialog = () => {
 }
 
 .output-textarea {
-  background: #0d1117;  /* 类似Shell的黑色背景 */
-  color: #c9d1d9;       /* 类似Shell的白色文字 */
+  background: var(--cs-console);  /* 类似Shell的黑色背景 */
+  color: var(--cs-text);       /* 类似Shell的白色文字 */
   font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
   font-size: 13px;
-  border: 1px solid #30363d;
+  border: 1px solid var(--cs-border);
   border-top: none;
   border-radius: 0 0 8px 8px;
   padding: 16px;
@@ -1710,7 +1710,7 @@ const closeUploadDialog = () => {
 }
 
 .output-textarea:focus {
-  border-color: #58a6ff;
+  border-color: var(--cs-active);
   box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.2);
 }
 
@@ -1720,27 +1720,27 @@ const closeUploadDialog = () => {
 }
 
 .output-textarea::-webkit-scrollbar-track {
-  background: #161b22;
+  background: var(--cs-panel);
   border-radius: 4px;
 }
 
 .output-textarea::-webkit-scrollbar-thumb {
-  background: #30363d;
+  background: var(--cs-hover);
   border-radius: 4px;
 }
 
 .output-textarea::-webkit-scrollbar-thumb:hover {
-  background: #484f58;
+  background: var(--cs-border);
 }
 
 /* 文本选择效果 */
 .output-textarea::selection {
-  background-color: #58a6ff;
+  background-color: var(--cs-active);
   color: #ffffff;
 }
 
 .output-textarea::-moz-selection {
-  background-color: #58a6ff;
+  background-color: var(--cs-active);
   color: #ffffff;
 }
 
@@ -1751,7 +1751,7 @@ const closeUploadDialog = () => {
   right: 0;
   width: 20px;
   height: 20px;
-  background: linear-gradient(-45deg, transparent 0%, transparent 40%, #409eff 40%, #409eff 60%, transparent 60%);
+  background: linear-gradient(-45deg, transparent 0%, transparent 40%, var(--cs-active) 40%, var(--cs-active) 60%, transparent 60%);
   cursor: nw-resize;
   z-index: 10;
   border-bottom-right-radius: 6px;
@@ -1763,7 +1763,7 @@ const closeUploadDialog = () => {
   right: 0;
   width: 4px;
   height: 40px;
-  background: #409eff;
+  background: var(--cs-active);
   cursor: ew-resize;
   z-index: 9;
   transform: translateY(-50%);
@@ -1778,7 +1778,7 @@ const closeUploadDialog = () => {
   left: 50%;
   width: 40px;
   height: 4px;
-  background: #409eff;
+  background: var(--cs-active);
   cursor: ns-resize;
   z-index: 9;
   transform: translateX(-50%);
@@ -1841,23 +1841,23 @@ const closeUploadDialog = () => {
 }
 
 .mode-button:hover {
-  border-color: #409eff;
-  color: #409eff;
+  border-color: var(--cs-active);
+  color: var(--cs-active);
   background: rgba(64, 158, 255, 0.15);
   transform: translateY(-1px);
   box-shadow: 0 2px 8px rgba(64, 158, 255, 0.2);
 }
 
 .mode-button.el-button--primary {
-  background: #409eff;
-  border-color: #409eff;
+  background: var(--cs-active);
+  border-color: var(--cs-active);
   color: #ffffff;
   box-shadow: 0 2px 8px rgba(64, 158, 255, 0.3);
 }
 
 .mode-button.el-button--primary:hover {
-  background: #337ecc;
-  border-color: #337ecc;
+  background: var(--cs-active-hover);
+  border-color: var(--cs-active-hover);
   color: #ffffff;
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(64, 158, 255, 0.4);
@@ -2001,7 +2001,7 @@ const closeUploadDialog = () => {
 }
 
 .file-item:hover {
-  background-color: #f9f9f9;
+  background-color: var(--cs-hover);
 }
 
 .file-item:last-child {
@@ -2010,7 +2010,7 @@ const closeUploadDialog = () => {
 
 .file-icon {
   font-size: 20px;
-  color: #409eff;
+  color: var(--cs-active);
 }
 
 .empty-file-list {
@@ -2018,14 +2018,14 @@ const closeUploadDialog = () => {
   align-items: center;
   justify-content: center;
   height: 200px;
-  color: #909399;
+  color: var(--cs-text-dim);
   font-size: 14px;
 }
 
 .upload-dialog-footer {
   text-align: right;
   padding-top: 16px;
-  border-top: 1px solid #e4e7ed;
+  border-top: 1px solid var(--cs-border);
   margin-top: 20px;
 }
 
