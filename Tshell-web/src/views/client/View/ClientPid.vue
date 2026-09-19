@@ -721,6 +721,18 @@ async function handleStealToken() {
   closeContextMenu()
   const pid = String(selectedRow.value.PID)
   const procUser = selectedRow.value.User || '-'
+  // 副作用型操作: 会替换当前 beacon 的令牌上下文,后续命令以该令牌身份执行
+  try {
+    await ElMessageBox.confirm(
+      isZh.value
+        ? `窃取 PID ${pid} (用户: ${procUser}) 的进程令牌?\n这将替换当前会话的令牌上下文,后续命令将以该令牌身份执行,可用 rev2self 恢复。`
+        : `Steal the token of PID ${pid} (user: ${procUser})?\nThis replaces the current token context; subsequent commands run as that token. Use rev2self to revert.`,
+      isZh.value ? '确认窃取令牌' : 'Confirm Steal Token',
+      { confirmButtonText: isZh.value ? '窃取' : 'Steal', cancelButtonText: isZh.value ? '取消' : 'Cancel', type: 'warning' },
+    )
+  } catch {
+    return
+  }
   try {
     const res = await ClientAPI.steal_token({ uid: getUid(), pid })
     if (res.data?.status === 200) {

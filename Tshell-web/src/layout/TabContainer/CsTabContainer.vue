@@ -19,6 +19,7 @@
           class="cs-tab"
           :class="{ active: tab.id === activeTabId }"
           @click="selectTab(tab.id)"
+          @auxclick="onTabAuxClick($event, tab.id)"
           @contextmenu.prevent.stop="onTabContextMenu($event, tab.id)"
         >
           <!-- Tab Icon -->
@@ -278,12 +279,14 @@
     <!-- Tab Context Menu -->
     <div
       v-if="ctxMenu.visible"
+      ref="ctxMenuEl"
       class="cs-ctx-menu"
       :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }"
       @mousedown.stop
     >
       <div class="ctx-item" @click="closeTab(ctxMenu.tabId)">{{ isZh ? '关闭标签页' : 'Close Tab' }}</div>
       <div class="ctx-item" @click="closeOtherTabs(ctxMenu.tabId)">{{ isZh ? '关闭其他标签页' : 'Close Other Tabs' }}</div>
+      <div class="ctx-item" @click="closeRightTabs(ctxMenu.tabId)">{{ isZh ? '关闭右侧标签页' : 'Close Tabs to the Right' }}</div>
       <div class="ctx-divider" />
       <div class="ctx-item ctx-danger" @click="closeAllTabs">{{ isZh ? '关闭所有标签页' : 'Close All Tabs' }}</div>
     </div>
@@ -527,34 +530,63 @@ function openDefaultScriptConsole() {
 }
 
 function onTabContextMenu(e: MouseEvent, tabId: string) {
-  ctxMenu.value = {
-    visible: true,
-    x: e.clientX,
-    y: e.clientY,
-    tabId,
-  }
+  showCtx(e.clientX, e.clientY, tabId)
 }
 
 function onStripContextMenu(e: MouseEvent) {
   if (tabs.value.length === 0) return
-  ctxMenu.value = {
-    visible: true,
-    x: e.clientX,
-    y: e.clientY,
-    tabId: activeTabId.value,
-  }
+  showCtx(e.clientX, e.clientY, activeTabId.value)
+}
+
+const ctxMenuEl = ref<HTMLElement | null>(null)
+
+// 统一的菜单浮层定位(渲染后按实测尺寸收敛到视口内,防右下角飞出屏幕)
+function showCtx(x: number, y: number, tabId: string) {
+  ctxMenu.value = { visible: true, x, y, tabId }
+  nextTick(() => {
+    const el = ctxMenuEl.value
+    if (!el) return
+    const r = el.getBoundingClientRect()
+    ctxMenu.value.x = Math.max(4, Math.min(x, window.innerWidth - r.width - 4))
+    ctxMenu.value.y = Math.max(4, Math.min(y, window.innerHeight - r.height - 4))
+  })
+}
+
+// 中键关闭标签
+function onTabAuxClick(e: MouseEvent, tabId: string) {
+  if (e.button !== 1) return
+  e.preventDefault()
+  closeTab(tabId)
+}
+
+function closeRightTabs(tabId: string) {
+  workspace.closeRightTabs(tabId)
+  closeCtx()
 }
 
 function closeCtx() {
   ctxMenu.value.visible = false
 }
 
+// Esc 关闭标签右键菜单
+function onWindowKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape' && ctxMenu.value.visible) {
+    closeCtx()
+  }
+}
+
 onMounted(() => {
   window.addEventListener('click', closeCtx)
+  window.addEventListener('keydown', onWindowKeydown)
+  // 窗口尺寸变化时重算标签条溢出(原仅在 scroll/标签变化时计算,缩窗后
+  // 右侧滚动按钮不出现,边缘标签够不到)
+  window.addEventListener('resize', checkScrollOverflow)
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('click', closeCtx)
+  window.removeEventListener('keydown', onWindowKeydown)
+  window.removeEventListener('resize', checkScrollOverflow)
 })
 </script>
 

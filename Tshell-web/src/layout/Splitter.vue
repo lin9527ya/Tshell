@@ -4,6 +4,7 @@
     class="cs-splitter"
     :class="{ dragging: isDragging }"
     @mousedown="startDrag"
+    @dblclick="onDoubleClick"
   >
     <div class="splitter-line" />
     <div class="splitter-controls" @mousedown.stop>
@@ -36,7 +37,10 @@
         class="cs-split-drag-overlay"
         @mousemove="onMouseMove"
         @mouseup="onMouseUp"
-      />
+      >
+        <!-- 拖拽时百分比实时提示 -->
+        <div class="split-ratio-bubble cs-font-mono">{{ Math.round(liveRatio) }}%</div>
+      </div>
     </teleport>
   </div>
 </template>
@@ -56,6 +60,7 @@ const isZh = computed(() => i18nStore.isZh)
 
 const splitterEl = ref<HTMLElement | null>(null)
 const isDragging = ref(false)
+const liveRatio = ref(46) // 拖拽期间的实时百分比(浮标显示)
 let startY = 0
 let startRatio = 0
 
@@ -98,8 +103,17 @@ function onMouseMove(e: MouseEvent) {
 
   const dy = e.clientY - startY
   const dRatio = (dy / totalH) * 100
-  const nextRatio = Math.max(10, Math.min(90, startRatio + dRatio))
+  // 夹取范围与 workspace.setSplitRatio(15-85)保持一致——原 10-90 会先进入
+  // store 的钳制死区(10-14/86-90 拖到也不生效)
+  const nextRatio = Math.max(15, Math.min(85, startRatio + dRatio))
+  liveRatio.value = nextRatio
   workspace.setSplitRatio(nextRatio)
+}
+
+// 双击分屏线复位到 46%(store 的 resetSplit 早已实现但一直无调用点)
+function onDoubleClick() {
+  workspace.resetSplit()
+  liveRatio.value = workspace.splitRatio
 }
 
 function onMouseUp() {
@@ -212,5 +226,20 @@ onBeforeUnmount(() => {
   cursor: row-resize !important;
   background: transparent;
   user-select: none;
+}
+
+.split-ratio-bubble {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--cs-panel);
+  color: var(--cs-text-bright);
+  border: 1px solid var(--cs-active);
+  border-radius: 3px;
+  padding: 2px 10px;
+  font-size: 14px;
+  pointer-events: none;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
 }
 </style>

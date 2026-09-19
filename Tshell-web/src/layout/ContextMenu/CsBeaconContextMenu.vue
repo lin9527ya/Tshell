@@ -42,14 +42,14 @@
           @mouseleave="onMouseLeaveSub('access')"
         >
           <div class="ctx-item" @click="execHashdump">{{ t('ctx.access.hashdump') }}</div>
-          <div class="ctx-item" @click="openElevate">{{ t('ctx.access.elevate') }}</div>
+          <div class="ctx-item is-unimplemented" :title="isZh ? '该功能未实现(后端/客户端无此命令)' : 'Not implemented'" @click="openElevate">{{ t('ctx.access.elevate') }}</div>
           <div class="ctx-item" @click="openMakeToken">{{ t('ctx.access.make_token') }}</div>
           <div class="ctx-item" @click="openStealToken">{{ t('ctx.access.steal_token') }}</div>
           <div class="ctx-item" @click="execRev2Self">{{ t('ctx.access.rev2self') }}</div>
           <div class="ctx-item" @click="execOneliner">{{ t('ctx.access.oneliner') }}</div>
-          <div class="ctx-item" @click="execMimikatz">{{ t('ctx.access.mimikatz') }}</div>
-          <div class="ctx-item" @click="openSpawn">{{ t('ctx.access.spawn') }}</div>
-          <div class="ctx-item" @click="openSpawnAs">{{ t('ctx.access.spawnas') }}</div>
+          <div class="ctx-item is-unimplemented" :title="isZh ? '该功能未实现(后端/客户端无此命令)' : 'Not implemented'" @click="execMimikatz">{{ t('ctx.access.mimikatz') }}</div>
+          <div class="ctx-item is-unimplemented" :title="isZh ? '该功能未实现(后端/客户端无此命令)' : 'Not implemented'" @click="openSpawn">{{ t('ctx.access.spawn') }}</div>
+          <div class="ctx-item is-unimplemented" :title="isZh ? '该功能未实现(后端/客户端无此命令)' : 'Not implemented'" @click="openSpawnAs">{{ t('ctx.access.spawnas') }}</div>
         </div>
       </div>
 
@@ -100,11 +100,11 @@
           @mouseenter="onMouseEnterSub('explore')"
           @mouseleave="onMouseLeaveSub('explore')"
         >
-          <div class="ctx-item" @click="openBrowserPivot">{{ t('ctx.explore.browser_pivot') }}</div>
+          <div class="ctx-item is-unimplemented" :title="isZh ? '该功能未实现(后端/客户端无此命令)' : 'Not implemented'" @click="openBrowserPivot">{{ t('ctx.explore.browser_pivot') }}</div>
           <div class="ctx-item" @click="openDesktopVnc">{{ isZh ? '远程桌面(D)' : 'Remote Desktop(D)' }}</div>
           <div class="ctx-item" @click="openFiles">{{ t('ctx.explore.files') }}</div>
           <div class="ctx-item" @click="execNetView">{{ t('ctx.explore.netview') }}</div>
-          <div class="ctx-item" @click="openPortScan">{{ t('ctx.explore.portscan') }}</div>
+          <div class="ctx-item is-unimplemented" :title="isZh ? '该功能未实现(后端/客户端无此命令)' : 'Not implemented'" @click="openPortScan">{{ t('ctx.explore.portscan') }}</div>
           <div class="ctx-item" @click="openPids">{{ t('ctx.explore.pids') }}</div>
           <div class="ctx-item" @click="openScreenshots">{{ t('ctx.explore.screenshots') }}</div>
         </div>
@@ -149,13 +149,13 @@
         >
           <div class="ctx-item" @click="openWindowsTerminal">
             <span>{{ isZh ? 'Windows 终端交互' : 'Windows Terminal' }}</span>
-            <span v-if="!isLinuxTarget" style="font-size: 10px; color: #52c41a; margin-left: 6px;">[Win]</span>
-            <span v-else style="font-size: 10px; color: var(--cs-text-dim); margin-left: 6px;">[需Win]</span>
+            <span v-if="!isLinuxTarget" class="ctx-tag ctx-tag-ok">[Win]</span>
+            <span v-else class="ctx-tag ctx-tag-dim">[需Win]</span>
           </div>
           <div class="ctx-item" @click="openLinuxTerminal">
             <span>{{ isZh ? 'Linux 终端交互' : 'Linux Terminal' }}</span>
-            <span v-if="isLinuxTarget" style="font-size: 10px; color: #52c41a; margin-left: 6px;">[Linux]</span>
-            <span v-else style="font-size: 10px; color: var(--cs-text-dim); margin-left: 6px;">[需Linux]</span>
+            <span v-if="isLinuxTarget" class="ctx-tag ctx-tag-ok">[Linux]</span>
+            <span v-else class="ctx-tag ctx-tag-dim">[需Linux]</span>
           </div>
           <div class="ctx-item" @click="openTools">{{ t('ctx.explore.tools') }}</div>
           <div class="ctx-item" @click="openDownloads">{{ t('ctx.explore.downloads') }}</div>
@@ -287,7 +287,7 @@
                     <span class="ctx-arrow">▶</span>
                     <div
                       v-show="activePluginSub === menu.script + '|' + menu.kind + '|' + item.label"
-                      class="ctx-sub-menu"
+                      class="ctx-sub-menu ctx-sub-scrollable"
                       :style="nestedSubStyle"
                       @mouseenter="setActivePluginSub(menu.script + '|' + menu.kind + '|' + item.label)"
                     >
@@ -634,10 +634,6 @@ function execMimikatz() {
 function openElevate() {
   // 【修复】原调用 workspace.openDialog('elevate') 但 DialogState 无此键、
   // 也无 Elevate 对话框组件,属复制 CS 菜单时的悬空引用;按同文件惯例如实提示
-  notImplemented()
-}
-
-function openGoldenTicket() {
   notImplemented()
 }
 
@@ -1193,12 +1189,21 @@ function onGlobalClick(e: MouseEvent) {
   }
 }
 
+// Esc 关闭右键菜单(原仅 mousedown 外部关闭)
+function onEscKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape' && props.visible) {
+    close()
+  }
+}
+
 onMounted(() => {
   window.addEventListener('mousedown', onGlobalClick)
+  window.addEventListener('keydown', onEscKeydown)
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('mousedown', onGlobalClick)
+  window.removeEventListener('keydown', onEscKeydown)
 })
 </script>
 
@@ -1213,6 +1218,32 @@ onBeforeUnmount(() => {
   padding: 4px 0;
   user-select: none;
   font-size: 16.5px;
+}
+
+/* 最深叶子层子菜单限高滚动(此处无下级菜单,不会被 overflow 裁剪);
+   顶层/中间层保持 overflow:visible,否则绝对定位的子菜单会被裁掉 */
+.ctx-sub-menu.ctx-sub-scrollable {
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+}
+
+/* 未实现项: 置灰 + 悬停说明(原与可用项视觉一致,点击才知未实现) */
+.ctx-item.is-unimplemented {
+  opacity: 0.5;
+}
+
+/* 平台标记([Win]/[Linux]) */
+.ctx-tag {
+  font-size: 10px;
+  margin-left: 6px;
+}
+
+.ctx-tag-ok {
+  color: var(--cs-online);
+}
+
+.ctx-tag-dim {
+  color: var(--cs-text-dim);
 }
 
 .ctx-item {

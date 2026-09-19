@@ -185,6 +185,16 @@ export const useWorkspaceStore = defineStore('cs-workspace', {
       this.activeTabId = currentId
     },
 
+    // 关闭右侧全部标签(保留 currentId 及其左侧)
+    closeRightTabs(currentId: string) {
+      const idx = this.tabs.findIndex((t) => t.id === currentId)
+      if (idx < 0) return
+      this.tabs = this.tabs.slice(0, idx + 1)
+      if (!this.tabs.some((t) => t.id === this.activeTabId)) {
+        this.activeTabId = currentId
+      }
+    },
+
     closeAllTabs() {
       this.tabs = []
       this.activeTabId = ''

@@ -1,32 +1,49 @@
 <template>
   <div class="session-table-container cs-font-ui">
-    <!-- Batch Action Bar (C14: 批量命令 / 分组 / 任务进度) -->
-    <div v-if="batchUids.length" class="cs-batch-bar">
-      <span class="batch-count">{{ isZh ? `已选 ${batchUids.length} 个会话` : `${batchUids.length} selected` }}</span>
-      <div class="batch-input-wrap">
-        <input
-          v-model="batchCommandInput"
-          class="batch-cmd-input cs-font-mono"
-          :placeholder="isZh ? '批量下发命令 (回车发送)...' : 'Batch command (Enter to send)...'"
-          spellcheck="false"
-          @keydown.enter="sendBatchCommand"
-        />
-        <button class="cs-btn cs-btn-xs cs-btn-primary" :disabled="!batchCommandInput.trim() || batchSending" @click="sendBatchCommand">
-          {{ batchSending ? (isZh ? '下发中...' : 'Sending...') : (isZh ? '下发' : 'Send') }}
-        </button>
-      </div>
-      <div class="batch-actions-group">
-        <button class="cs-btn cs-btn-xs" @click="batchSetGroup">{{ isZh ? '批量分组' : 'Set Group' }}</button>
-        <button class="cs-btn cs-btn-xs" @click="openBatchTasks">{{ isZh ? '任务进度' : 'Tasks' }}</button>
-        <button class="cs-btn cs-btn-xs" :disabled="!hasOfflineSelected" @click="cleanupOfflineBatch">{{ isZh ? '清理离线' : 'Clean Offline' }}</button>
-        <button class="cs-btn cs-btn-xs" @click="clearTableSelection">{{ isZh ? '取消选择' : 'Clear' }}</button>
-      </div>
+    <!-- Search / Count Toolbar(常驻;接原 searchKey 死代码,Ctrl+F 聚焦) -->
+    <div class="cs-session-toolbar">
+      <input
+        ref="searchInputRef"
+        v-model="searchKey"
+        class="cs-session-search cs-font-mono"
+        :placeholder="isZh ? '过滤会话(IP/主机/用户/备注...)' : 'Filter sessions (IP/host/user/note...)'"
+        spellcheck="false"
+      />
+      <span v-if="searchKey" class="cs-session-search-clear" :title="isZh ? '清空过滤' : 'Clear'" @click="searchKey = ''">✕</span>
+      <span class="cs-session-count" :title="isZh ? '匹配/总数' : 'matched / total'">
+        {{ filteredClients.length }}/{{ clientsStore.clientsList.length }}
+      </span>
     </div>
 
     <!-- Session Table (1:1 CS Column Layout) -->
     <div class="cs-table-wrap">
+      <!-- Batch Action Bar (C14: 批量命令 / 分组 / 任务进度) — 绝对定位浮层:
+           原 v-if 插在表格上方,勾选首行时整表下移 38px(表头跳变) -->
+      <div v-if="batchUids.length" class="cs-batch-bar">
+        <span class="batch-count">{{ isZh ? `已选 ${batchUids.length} 个会话` : `${batchUids.length} selected` }}</span>
+        <div class="batch-input-wrap">
+          <input
+            v-model="batchCommandInput"
+            class="batch-cmd-input cs-font-mono"
+            :placeholder="isZh ? '批量下发命令 (回车发送)...' : 'Batch command (Enter to send)...'"
+            spellcheck="false"
+            @keydown.enter="sendBatchCommand"
+          />
+          <button class="cs-btn cs-btn-xs cs-btn-primary" :disabled="!batchCommandInput.trim() || batchSending" @click="sendBatchCommand">
+            {{ batchSending ? (isZh ? '下发中...' : 'Sending...') : (isZh ? '下发' : 'Send') }}
+          </button>
+        </div>
+        <div class="batch-actions-group">
+          <button class="cs-btn cs-btn-xs" @click="batchSetGroup">{{ isZh ? '批量分组' : 'Set Group' }}</button>
+          <button class="cs-btn cs-btn-xs" @click="openBatchTasks">{{ isZh ? '任务进度' : 'Tasks' }}</button>
+          <button class="cs-btn cs-btn-xs" :disabled="!hasOfflineSelected" @click="cleanupOfflineBatch">{{ isZh ? '清理离线' : 'Clean Offline' }}</button>
+          <button class="cs-btn cs-btn-xs" @click="clearTableSelection">{{ isZh ? '取消选择' : 'Clear' }}</button>
+        </div>
+      </div>
+
       <el-table
         ref="tableRef"
+        v-loading="loading"
         :data="filteredClients"
         row-key="Uid"
         size="small"
@@ -297,6 +314,13 @@ const t = (key: string, def?: string) => i18nStore.t(key, def)
 
 const loading = computed(() => clientsStore.loading)
 const searchKey = ref('')
+const searchInputRef = ref<HTMLInputElement | null>(null)
+
+// 全局快捷键(CsShell Ctrl+F)通过 window 事件聚焦搜索框
+function onFocusSearchEvent() {
+  searchInputRef.value?.focus()
+  searchInputRef.value?.select()
+}
 const selectedRow = ref<RowData | null>(null)
 const ctxClient = ref<RowData | null>(null)
 const ctxMenu = ref({ visible: false, x: 0, y: 0 })
@@ -584,11 +608,13 @@ onMounted(() => {
   clientsStore.fetchClients()
   start()
   tickTimer = window.setInterval(() => { nowTick.value = Date.now() }, 1000)
+  window.addEventListener('cs-focus-session-search', onFocusSearchEvent)
 })
 
 onBeforeUnmount(() => {
   stop()
   if (tickTimer) window.clearInterval(tickTimer)
+  window.removeEventListener('cs-focus-session-search', onFocusSearchEvent)
 })
 </script>
 
@@ -605,6 +631,51 @@ onBeforeUnmount(() => {
   flex: 1;
   overflow: hidden;
   position: relative;
+}
+
+/* 常驻搜索工具栏(接原 searchKey 死代码) */
+.cs-session-toolbar {
+  height: 32px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  background: var(--cs-titlebar-bg);
+  border-bottom: 1px solid var(--cs-border);
+}
+
+.cs-session-search {
+  flex: 1;
+  max-width: 340px;
+  height: 24px;
+  background: var(--cs-bg);
+  border: 1px solid var(--cs-border);
+  border-radius: 2px;
+  color: var(--cs-text);
+  padding: 0 8px;
+  font-size: 15px;
+  outline: none;
+}
+
+.cs-session-search:focus {
+  border-color: var(--cs-active);
+}
+
+.cs-session-search-clear {
+  cursor: pointer;
+  color: var(--cs-text-dim);
+  font-size: 14px;
+}
+
+.cs-session-search-clear:hover {
+  color: var(--cs-text-bright);
+}
+
+.cs-session-count {
+  margin-left: auto;
+  color: var(--cs-text-dim);
+  font-size: 14.5px;
 }
 
 .beacon-os-icon-wrap {
@@ -680,6 +751,13 @@ onBeforeUnmount(() => {
   padding: 4px 12px;
   flex-shrink: 0;
   flex-wrap: wrap;
+  /* 浮层化: 勾选时覆盖在表格上方,不再把整表下推 38px(表头跳变) */
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 6;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
 }
 .batch-count {
   font-size: 15px;

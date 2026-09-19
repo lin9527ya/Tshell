@@ -10,7 +10,12 @@
         </svg>
       </button>
 
-      <button class="tb-btn tb-danger" :title="t('tb.disconnect')" @click="handleDisconnect">
+      <button
+        class="tb-btn tb-danger"
+        :title="t('tb.disconnect')"
+        :disabled="!userStore.token"
+        @click="handleDisconnect"
+      >
         <svg class="tb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="12" cy="12" r="9" />
           <line x1="8" y1="12" x2="16" y2="12" />
@@ -123,12 +128,38 @@
       </button>
     </div>
 
+    <div class="tb-divider" />
+
+    <!-- Group 5: 与 MenuBar 对齐的高频入口(事件日志/凭证/脚本控制台) -->
+    <div class="tb-group">
+      <button class="tb-btn" :title="isZh ? '事件日志' : 'Event Log'" @click="openEventLog">
+        <svg class="tb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+        </svg>
+      </button>
+
+      <button class="tb-btn" :title="isZh ? '密码凭证' : 'Credentials'" @click="openCredentials">
+        <svg class="tb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 2l-2 2m-1.5 1.5L14 9a5 5 0 1 0 4.5 4.5l3.5-3.5V6l-4-4z" />
+          <circle cx="7.5" cy="16.5" r="1.5" />
+        </svg>
+      </button>
+
+      <button class="tb-btn" :title="isZh ? '脚本控制台' : 'Script Console'" @click="openScriptConsole">
+        <svg class="tb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="4 17 10 11 4 5" />
+          <line x1="12" y1="19" x2="20" y2="19" />
+        </svg>
+      </button>
+    </div>
+
     <div class="tb-spacer" />
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { ElMessageBox } from 'element-plus'
 import { useWorkspaceStore, type TopViewMode } from '@/stores/workspace'
 import { useUserStore } from '@/stores/user'
 import { useI18nStore } from '@/stores/i18n'
@@ -151,6 +182,16 @@ function openConnect() {
 }
 
 async function handleDisconnect() {
+  // 断连加二次确认(会话中误点一次即掉线)
+  try {
+    await ElMessageBox.confirm(
+      isZh.value ? '确定断开与 Team Server 的连接?未完成的操作会中断。' : 'Disconnect from the Team Server? In-flight operations will be interrupted.',
+      isZh.value ? '确认断开连接' : 'Confirm Disconnect',
+      { confirmButtonText: isZh.value ? '断开' : 'Disconnect', cancelButtonText: isZh.value ? '取消' : 'Cancel', type: 'warning' },
+    )
+  } catch {
+    return // 用户取消
+  }
   try {
     await UserAPI.logout({ refresh: userStore.refresh || '' })
   } catch {
@@ -181,6 +222,18 @@ function openKeystrokes() {
 
 function openScreenshots() {
   workspace.openTab({ id: 'global-screenshots', title: isZh.value ? '屏幕截图' : 'Screenshots', component: 'global-screenshots' })
+}
+
+function openEventLog() {
+  workspace.openTab({ id: 'event-log', title: isZh.value ? '事件日志' : 'Event Log', component: 'event-log' })
+}
+
+function openCredentials() {
+  workspace.openTab({ id: 'credentials', title: isZh.value ? '密码凭证' : 'Credentials', component: 'credentials' })
+}
+
+function openScriptConsole() {
+  workspace.openTab({ id: 'script-console', title: isZh.value ? '脚本控制台' : 'Script Console', component: 'script-console' })
 }
 </script>
 
@@ -230,6 +283,17 @@ function openScreenshots() {
   background: var(--cs-hover);
   border-color: color-mix(in srgb, var(--cs-border) 80%, transparent);
   color: var(--cs-text-bright);
+}
+
+.tb-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.tb-btn:disabled:hover {
+  background: transparent;
+  border-color: transparent;
+  color: var(--cs-text);
 }
 
 .tb-btn.active {

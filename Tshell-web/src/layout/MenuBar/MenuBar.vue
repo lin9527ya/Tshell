@@ -1,5 +1,5 @@
 <template>
-  <div ref="menuBarRef" class="cs-menubar cs-font-ui">
+  <div ref="menuBarRef" class="cs-menubar cs-font-ui" role="menubar">
     <!-- Top Level Menus (Click to Toggle / Click to Hide) -->
     <div
       v-for="(menu, mIdx) in menus"
@@ -10,6 +10,9 @@
       <button
         class="cs-menu-top-btn"
         :class="{ active: activeMenuIndex === mIdx }"
+        role="menuitem"
+        aria-haspopup="true"
+        :aria-expanded="activeMenuIndex === mIdx"
         @click.stop="onTopMenuClick(mIdx)"
         @mouseenter="onTopMenuHover(mIdx)"
       >
@@ -20,18 +23,22 @@
       <div
         v-if="activeMenuIndex === mIdx"
         class="cs-dropdown-menu"
+        role="menu"
         @mousedown.stop
       >
         <template v-for="(item, idx) in menu.items" :key="idx">
           <!-- Divider -->
           <div v-if="item.divider" class="cs-dropdown-divider" />
 
-          <!-- Submenu Item (Hover to show sub) -->
+          <!-- Submenu Item (Hover or → key to show sub) -->
           <div
             v-else-if="item.children && item.children.length"
             class="cs-dropdown-item has-sub"
-            :class="{ 'sub-active': activeSubIndex === idx, disabled: item.disabled }"
-            @mouseenter="activeSubIndex = idx"
+            :class="{ 'sub-active': activeSubIndex === idx, disabled: item.disabled, 'kbd-focus': activeItemIndex === idx }"
+            role="menuitem"
+            aria-haspopup="true"
+            :aria-disabled="item.disabled || undefined"
+            @mouseenter="onItemEnter(idx)"
             @mouseleave="onSubItemLeave(idx)"
           >
             <span class="mi-label">{{ item.label }}</span>
@@ -41,12 +48,15 @@
             <div
               v-show="activeSubIndex === idx"
               class="cs-sub-dropdown-menu"
+              role="menu"
             >
               <div
                 v-for="(sub, subIdx) in item.children"
                 :key="subIdx"
                 class="cs-dropdown-item"
-                :class="{ disabled: sub.disabled }"
+                :class="{ disabled: sub.disabled, 'kbd-focus': activeSubIndex === idx && subFocusIndex === subIdx }"
+                role="menuitem"
+                :aria-disabled="sub.disabled || undefined"
                 @click.stop="handleItemClick(sub)"
               >
                 <span class="mi-label">{{ sub.label }}</span>
@@ -59,8 +69,10 @@
           <div
             v-else
             class="cs-dropdown-item"
-            :class="{ disabled: item.disabled }"
-            @mouseenter="activeSubIndex = null"
+            :class="{ disabled: item.disabled, 'kbd-focus': activeItemIndex === idx }"
+            role="menuitem"
+            :aria-disabled="item.disabled || undefined"
+            @mouseenter="onItemEnter(idx)"
             @click.stop="handleItemClick(item)"
           >
             <span class="mi-label">{{ item.label }}</span>
@@ -124,6 +136,7 @@ import { useUserStore } from '@/stores/user'
 import { useThemeStore } from '@/stores/theme'
 import { useClientsStore } from '@/stores/clients'
 import { useI18nStore } from '@/stores/i18n'
+import { presetReportsTab } from '@/layout/Dialogs/ReportsDialog.vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
 const workspace = useWorkspaceStore()
@@ -139,6 +152,9 @@ const t = (key: string, def?: string) => i18nStore.t(key, def)
 const menuBarRef = ref<HTMLElement | null>(null)
 const activeMenuIndex = ref<number | null>(null)
 const activeSubIndex = ref<number | null>(null)
+// 键盘漫游焦点(与鼠标 hover 共存: 鼠标不设置,键盘↑↓后接管;见 onKeyDown)
+const activeItemIndex = ref(-1) // 主菜单内当前键盘选中项
+const subFocusIndex = ref(-1) // 子菜单内当前键盘选中项
 
 const isFullscreen = ref(false)
 
@@ -178,18 +194,46 @@ function onTopMenuHover(index: number) {
   if (activeMenuIndex.value !== null && activeMenuIndex.value !== index) {
     activeMenuIndex.value = index
     activeSubIndex.value = null
+    activeItemIndex.value = -1
+    subFocusIndex.value = -1
   }
 }
 
-function onSubItemLeave(idx: number) {
-  if (activeSubIndex.value === idx) {
+// 子菜单离场 280ms 宽限(防鼠标斜向移动经间隙时子菜单闪断)
+let subLeaveTimer: ReturnType<typeof setTimeout> | null = null
+function cancelSubLeave() {
+  if (subLeaveTimer) {
+    clearTimeout(subLeaveTimer)
+    subLeaveTimer = null
+  }
+}
+
+// 鼠标进入菜单项: 有子级则展开,否则收合子菜单;并取消离场定时器
+function onItemEnter(idx: number) {
+  cancelSubLeave()
+  const menu = activeMenuIndex.value !== null ? menus.value[activeMenuIndex.value] : null
+  const item = menu?.items?.[idx]
+  if (item?.children && item.children.length) {
+    activeSubIndex.value = idx
+  } else {
     activeSubIndex.value = null
   }
+  subFocusIndex.value = -1
+}
+
+function onSubItemLeave(idx: number) {
+  cancelSubLeave()
+  subLeaveTimer = setTimeout(() => {
+    if (activeSubIndex.value === idx) activeSubIndex.value = null
+  }, 280)
 }
 
 function closeMenu() {
   activeMenuIndex.value = null
   activeSubIndex.value = null
+  activeItemIndex.value = -1
+  subFocusIndex.value = -1
+  cancelSubLeave()
 }
 
 function toggleLang() {
@@ -333,7 +377,7 @@ const menus = computed<{ label: string; items: MenuItem[] }[]>(() => [
     items: [
       { label: t('menu.reporting.activity'), tab: { id: 'audit', title: isZh.value ? '审计日志' : 'Audit Logs', component: 'audit' } },
       { label: t('menu.reporting.hosts'), action: () => workspace.setTopViewMode('targets') },
-      { label: t('menu.reporting.ioc'), action: () => (workspace.dialogs.reports = true) },
+      { label: t('menu.reporting.ioc'), action: () => { presetReportsTab('ioc'); workspace.dialogs.reports = true } },
       {
         label: t('menu.reporting.sessions'),
         action: () => {
@@ -346,8 +390,8 @@ const menus = computed<{ label: string; items: MenuItem[] }[]>(() => [
           workspace.openDialog('clientReport', { uid })
         },
       },
-      { label: t('menu.reporting.social_eng'), action: () => (workspace.dialogs.reports = true) },
-      { label: t('menu.reporting.tactics'), action: () => (workspace.dialogs.reports = true) },
+      { label: t('menu.reporting.social_eng'), action: () => { presetReportsTab('social'); workspace.dialogs.reports = true } },
+      { label: t('menu.reporting.tactics'), action: () => { presetReportsTab('ttp'); workspace.dialogs.reports = true } },
       { divider: true },
       { label: t('menu.reporting.clear_data'), action: () => ElMessage.warning(isZh.value ? '清空数据功能在当前环境已禁用' : 'Reset data disabled') },
       {
@@ -383,8 +427,8 @@ const menus = computed<{ label: string; items: MenuItem[] }[]>(() => [
         label: t('menu.help.keybindings'),
         action: () => ElMessageBox.alert(
           isZh.value
-            ? '【常用交互】\n· 菜单: ↑/↓ 移动选中, Enter 执行, Esc 关闭\n· 会话表: 双击行打开控制台, 右键打开会话操作菜单\n· 对话框: Esc 关闭; 路径/搜索输入框 Enter 提交\n· 终端: 画布点击聚焦后可直接键盘输入'
-            : '【Shortcuts】\n· Menu: Up/Down to navigate, Enter to select, Esc to close\n· Sessions: Double-click a row to open console, right-click for actions\n· Dialogs: Esc closes; Enter submits in path/search inputs\n· Terminal: Click canvas to focus, then type directly',
+            ? '【全局快捷键】\n· Ctrl+F 聚焦会话搜索; Esc 关闭最上层对话框\n· Alt+W 关闭当前标签(Ctrl+W 在部分浏览器被占用)\n· Ctrl+Alt+←/→ 或 Ctrl+Tab 切换标签; Alt+1~9 跳转第 N 个标签\n· Alt+N 新建连接\n\n【常用交互】\n· 菜单: ↑/↓ 移动选中, → 展开子菜单, ← 返回, Enter 执行, Esc 关闭\n· 会话表: 双击行打开控制台, 右键打开会话操作菜单, 中键点击标签页关闭\n· 标签: 右键含 关闭其他/关闭右侧/关闭全部\n· 终端: 画布点击聚焦后可直接键盘输入(输入区内快捷键自动让位)'
+            : '【Global Shortcuts】\n· Ctrl+F focus session search; Esc closes the top-most dialog\n· Alt+W close current tab (Ctrl+W may be reserved by browsers)\n· Ctrl+Alt+←/→ or Ctrl+Tab switch tabs; Alt+1~9 jump to tab N\n· Alt+N new connection\n\n【Interactions】\n· Menu: Up/Down navigate, → open submenu, ← back, Enter select, Esc close\n· Sessions: double-click a row for console, right-click for actions, middle-click closes a tab\n· Tabs: right-click offers Close Others / Close to the Right / Close All\n· Terminal: click to focus, then type directly (shortcuts yield inside inputs)',
           isZh.value ? '快捷键与交互说明' : 'Keyboard & Interaction Guide',
           { confirmButtonText: isZh.value ? '确定' : 'OK' },
         ),
@@ -414,9 +458,88 @@ function onGlobalClick(e: MouseEvent) {
   }
 }
 
+// 菜单键盘漫游(桌面惯例): 菜单打开后 ↑/↓ 移动、→ 展开子菜单、← 返回/切菜单、
+// Enter 执行、Esc 关闭。(此前仅有 Esc,帮助文案里承诺的导航现已真实实现)
 function onKeyDown(e: KeyboardEvent) {
   if (e.key === 'Escape') {
-    closeMenu()
+    if (activeMenuIndex.value !== null) closeMenu()
+    return
+  }
+  if (activeMenuIndex.value === null) return
+  const menu = menus.value[activeMenuIndex.value]
+  if (!menu) return
+  const items = menu.items
+  const subIdx = activeSubIndex.value
+  const subItems = subIdx !== null ? items[subIdx]?.children : undefined
+  const subOpen = !!(subItems && subItems.length)
+
+  const stepTop = (delta: number) => {
+    let i = activeItemIndex.value
+    for (let s = 0; s < items.length; s++) {
+      i = (i + delta + items.length) % items.length
+      if (!items[i].divider) break
+    }
+    activeItemIndex.value = i
+    subFocusIndex.value = -1
+    // 桌面惯例: 键盘在主菜单上下移动时同步展开/收合子菜单
+    activeSubIndex.value = items[i]?.children?.length ? i : null
+  }
+
+  switch (e.key) {
+    case 'ArrowDown':
+      e.preventDefault()
+      if (subOpen) {
+        subFocusIndex.value = (subFocusIndex.value + 1 + subItems!.length) % subItems!.length
+      } else {
+        stepTop(1)
+      }
+      break
+    case 'ArrowUp':
+      e.preventDefault()
+      if (subOpen) {
+        subFocusIndex.value = (subFocusIndex.value - 1 + subItems!.length) % subItems!.length
+      } else {
+        stepTop(-1)
+      }
+      break
+    case 'ArrowRight':
+      e.preventDefault()
+      if (subOpen) return // 已是最深层(二级)
+      if (activeItemIndex.value >= 0 && items[activeItemIndex.value]?.children?.length) {
+        activeSubIndex.value = activeItemIndex.value
+        subFocusIndex.value = 0
+      } else {
+        activeMenuIndex.value = (activeMenuIndex.value + 1) % menus.value.length
+        activeItemIndex.value = -1
+        activeSubIndex.value = null
+      }
+      break
+    case 'ArrowLeft':
+      e.preventDefault()
+      if (subOpen) {
+        activeSubIndex.value = null
+        subFocusIndex.value = -1
+      } else {
+        activeMenuIndex.value = (activeMenuIndex.value - 1 + menus.value.length) % menus.value.length
+        activeItemIndex.value = -1
+      }
+      break
+    case 'Enter': {
+      e.preventDefault()
+      if (subOpen && subFocusIndex.value >= 0) {
+        const sub = subItems![subFocusIndex.value]
+        if (sub && !sub.disabled) handleItemClick(sub)
+      } else if (activeItemIndex.value >= 0) {
+        const item = items[activeItemIndex.value]
+        if (item?.children?.length) {
+          activeSubIndex.value = activeItemIndex.value
+          subFocusIndex.value = 0
+        } else if (item && !item.disabled) {
+          handleItemClick(item)
+        }
+      }
+      break
+    }
   }
 }
 
@@ -485,6 +608,7 @@ onBeforeUnmount(() => {
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
   padding: 4px 0;
   z-index: 2000;
+  /* 不可加 overflow——绝对定位的二级子菜单会被裁剪 */
 }
 
 /* Level 2 Submenu */
@@ -499,6 +623,15 @@ onBeforeUnmount(() => {
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
   padding: 4px 0;
   z-index: 2001;
+  /* 二级是最深层(无下级),可安全限高滚动 */
+  max-height: calc(100vh - 70px);
+  overflow-y: auto;
+}
+
+/* 键盘漫游焦点样式(与 hover 视觉一致) */
+.cs-dropdown-item.kbd-focus {
+  background: var(--cs-active);
+  color: #ffffff;
 }
 
 .cs-dropdown-item {
