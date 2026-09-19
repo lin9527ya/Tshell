@@ -62,9 +62,7 @@
         </el-table-column>
 
         <template #empty>
-          <div class="cs-empty-watermark">
-            <div class="empty-title">{{ isZh ? '暂无正向监听器' : 'No Forward Listeners Configured' }}</div>
-          </div>
+          <EmptyState variant="inline" :title="isZh ? '暂无正向监听器' : 'No Forward Listeners Configured'" />
         </template>
       </el-table>
     </div>
@@ -152,6 +150,7 @@ import EditListenerDialog from '@/layout/Dialogs/EditListenerDialog.vue'
 import ListenerAPI from '@/api/listener'
 import ClientAPI from '@/api/clients'
 import { useI18nStore } from '@/stores/i18n'
+import EmptyState from '@/components/Common/EmptyState.vue'
 
 const props = withDefaults(
   defineProps<{
@@ -689,19 +688,5 @@ onBeforeUnmount(() => {
 
 .color-box:hover {
   border-color: #ffffff;
-}
-
-.cs-empty-watermark {
-  position: absolute;
-  top: 45%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  text-align: center;
-  pointer-events: none;
-}
-
-.empty-title {
-  font-size: 13px;
-  color: var(--cs-text-dim);
 }
 </style>

@@ -81,9 +81,12 @@
         </div>
 
         <div v-else class="mv-empty-screen">
-          <div class="empty-icon">🖥</div>
-          <div class="empty-title">{{ isZh ? '桌面监控推流未启动' : 'Desktop Stream Inactive' }}</div>
-          <div class="empty-desc">{{ isZh ? '点击【开始推流】启动被控端桌面实时推流画面。' : 'Click [ Start Stream ] to begin live desktop monitoring.' }}</div>
+          <EmptyState
+            icon="🖥"
+            variant="inline"
+            :title="isZh ? '桌面监控推流未启动' : 'Desktop Stream Inactive'"
+            :desc="isZh ? '点击【开始推流】启动被控端桌面实时推流画面。' : 'Click [ Start Stream ] to begin live desktop monitoring.'"
+          />
         </div>
       </template>
 
@@ -108,10 +111,14 @@
         </div>
 
         <div v-else class="mv-empty-screen">
-          <div class="empty-icon">🪟</div>
-          <div class="empty-title">{{ isZh ? '隐蔽桌面 (HVNC)' : 'Hidden VNC (HVNC) Desktop' }}</div>
-          <div class="empty-desc" v-if="isLinuxClient">{{ isZh ? 'HVNC 仅支持 Windows 目标会话。' : 'HVNC is only supported on Windows Beacon sessions.' }}</div>
-          <div class="empty-desc" v-else>{{ isZh ? '点击【启动 HVNC】创建隐蔽交互式 Windows 桌面会话。' : 'Click [ Start HVNC ] to spawn a hidden interactive Windows desktop session.' }}</div>
+          <EmptyState
+            icon="🪟"
+            variant="inline"
+            :title="isZh ? '隐蔽桌面 (HVNC)' : 'Hidden VNC (HVNC) Desktop'"
+            :desc="isLinuxClient
+              ? (isZh ? 'HVNC 仅支持 Windows 目标会话。' : 'HVNC is only supported on Windows Beacon sessions.')
+              : (isZh ? '点击【启动 HVNC】创建隐蔽交互式 Windows 桌面会话。' : 'Click [ Start HVNC ] to spawn a hidden interactive Windows desktop session.')"
+          />
         </div>
       </template>
     </div>
@@ -171,7 +178,9 @@ import { useClientsStore } from '@/stores/clients'
 import { useUserStore } from '@/stores/user'
 import { useI18nStore } from '@/stores/i18n'
 import { useScreenshotsStore } from '@/stores/screenshots'
+import { useTabActive } from '@/utils/useVisibilityInterval'
 import ClientAPI from '@/api/clients'
+import EmptyState from '@/components/Common/EmptyState.vue'
 
 const i18nStore = useI18nStore()
 const isZh = computed(() => i18nStore.isZh)
@@ -198,6 +207,8 @@ const currentClientTitle = computed(() => {
 })
 
 const isMonitoring = ref(false)
+// 本标签是否为活动标签页(推流/HVNC 轮询在非活动时降速/暂停)
+const tabActive = useTabActive()
 const isConnecting = ref(false)
 const streamUrl = ref('')
 const zoomLevel = ref(1)
@@ -251,6 +262,12 @@ function onWheelZoom(e: WheelEvent) {
 
 async function fetchStreamFrame() {
   if (!isMonitoring.value) return
+  // 【性能】桌面推流是最重的轮询(400ms/帧)。页面隐藏或本标签非活动时跳过请求,
+  // 仅以 1s 慢速续排——切回标签立即恢复推流(此前切走的标签仍 2.5 req/s 全速拉流)
+  if (!tabActive.value || document.visibilityState === 'hidden') {
+    streamTimer = window.setTimeout(fetchStreamFrame, 1000)
+    return
+  }
   const uid = getUid()
   if (!uid) return
 
@@ -397,6 +414,8 @@ async function renderHvncFrame(bytes: Uint8Array) {
 // REST 轮询兜底(WS 不可用时;返回 data URI 文本)
 async function pollHvncFrame() {
   if (!hvncActive.value || hvncWs) return
+  // 【性能】非活动标签/页面隐藏时跳过轮询(interval 仍空转检查,恢复立即可用)
+  if (!tabActive.value || document.visibilityState === 'hidden') return
   try {
     const res = await ClientAPI.get_hvnc_frame({ uid: getUid(), sid: hvncSid.value })
     const d = res.data?.data
@@ -598,8 +617,15 @@ onMounted(() => {
 onUnmounted(() => {
   if (timeInterval) clearInterval(timeInterval)
   if (streamTimer) clearTimeout(streamTimer)
-  if (hvncPollTimer) clearInterval(hvncPollTimer)
-  if (hvncWs) hvncWs.close()
+  stopHvncPolling()
+  if (hvncWs) {
+    // 【修复】先摘掉 onclose 再关闭:原顺序下 close 触发 onclose → 在已卸载的
+    // 组件里 startHvncPolling() 新建 1s 轮询且再无人清理(永久泄漏)
+    hvncWs.onclose = null
+    hvncWs.onerror = null
+    hvncWs.close()
+    hvncWs = null
+  }
 })
 </script>
 
@@ -631,7 +657,7 @@ onUnmounted(() => {
 
 .mv-title-icon {
   font-size: 18px;
-  color: #13c2c2;
+  color: var(--cs-log-system);
 }
 
 .mv-title {
@@ -659,7 +685,7 @@ onUnmounted(() => {
 
 .mv-body {
   flex: 1;
-  background: #000000;
+  background: var(--cs-console);
   position: relative;
   overflow: hidden;
   display: flex;
@@ -730,25 +756,8 @@ onUnmounted(() => {
 }
 
 .mv-empty-screen {
-  color: #666;
-  text-align: center;
-}
-
-.empty-icon {
-  font-size: 42px;
-  margin-bottom: 10px;
-}
-
-.empty-title {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--cs-text-bright);
-}
-
-.empty-desc {
-  font-size: 15px;
   color: var(--cs-text-dim);
-  margin-top: 6px;
+  text-align: center;
 }
 
 .mv-bottom-bar {

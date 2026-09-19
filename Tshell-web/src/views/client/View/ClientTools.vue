@@ -93,7 +93,7 @@
           <span>{{ isZh ? '执行控制台日志' : 'Execution Console Log' }}</span>
           <button class="cs-btn cs-btn-xs" @click="consoleLogs = []">{{ isZh ? '清空' : 'Clear' }}</button>
         </div>
-        <div class="ct-output-console cs-font-mono">
+        <div class="ct-output-console cs-font-mono" v-loading="!!loading">
           <div v-for="(log, i) in consoleLogs" :key="i" class="log-line">
             <span class="log-time">[{{ log.time }}]</span>
             <span class="log-tag" :class="log.type">[{{ log.type.toUpperCase() }}]</span>
@@ -477,8 +477,8 @@ function handleHelp() {
 
 .ct-output-console {
   flex: 1;
-  background: #000000;
-  color: #c5c5c5;
+  background: var(--cs-console);
+  color: var(--cs-text);
   padding: 8px 10px;
   overflow-y: auto;
   font-size: 11px;
@@ -491,15 +491,15 @@ function handleHelp() {
   margin-bottom: 2px;
 }
 
-.log-time { color: #888888; }
-.log-tag.info { color: #69b1ff; }
-.log-tag.succ { color: #52c41a; }
-.log-tag.warn { color: #faad14; }
-.log-tag.err { color: #ff4d4f; }
-.log-msg { color: #e0e0e0; }
+.log-time { color: var(--cs-text-dim); }
+.log-tag.info { color: var(--cs-active); }
+.log-tag.succ { color: var(--cs-online); }
+.log-tag.warn { color: var(--cs-warning); }
+.log-tag.err { color: var(--cs-error); }
+.log-msg { color: var(--cs-text-bright); }
 
 .empty-log {
-  color: #555555;
+  color: var(--cs-text-dim);
   font-style: italic;
   padding: 10px;
 }

@@ -56,8 +56,8 @@
     <!-- Events Body -->
     <div ref="logEl" class="el-body">
       <div
-        v-for="(e, i) in filteredLines"
-        :key="i"
+        v-for="e in filteredLines"
+        :key="lineKey(e)"
         :class="['el-line', `el-type-${e.type}`]"
       >
         <span class="el-time">[{{ fmtTime(e.time) }}]</span>
@@ -91,6 +91,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { ElMessageBox } from 'element-plus'
 import { useEventsStore } from '@/stores/events'
 import { useUserStore } from '@/stores/user'
 import { useClientsStore, type ClientData } from '@/stores/clients'
@@ -124,22 +125,39 @@ const lines = ref<Line[]>([])
 const seenIds = new Set<string>()
 const clientStates = new Map<string, string>()
 
+// 行去重键(与渲染 key 共用,保证淘汰时能精确回收 seenIds 条目)
+function lineKey(line: Line): string {
+  return line.id ? String(line.id) : `${line.time}-${line.type}-${line.text.slice(0, 32)}`
+}
+
 const filteredLines = computed(() => {
   if (currentFilter.value === 'all') return lines.value
   return lines.value.filter((l) => l.category === currentFilter.value)
 })
 
 function addLogLine(line: Line) {
-  const dedupeKey = line.id ? String(line.id) : `${line.time}-${line.type}-${line.text}`
+  const dedupeKey = lineKey(line)
   if (seenIds.has(dedupeKey)) return
   seenIds.add(dedupeKey)
 
-  lines.value.push(line)
-  // 保持按时间升序
-  lines.value.sort((a, b) => a.time - b.time)
+  // 【性能】仅在乱序到达时才排序(事件通常近似有序,原实现每条都 O(n log n))
+  const last = lines.value[lines.value.length - 1]
+  if (last && line.time < last.time) {
+    lines.value.push(line)
+    lines.value.sort((a, b) => a.time - b.time)
+  } else {
+    lines.value.push(line)
+  }
 
   if (lines.value.length > 2000) {
-    lines.value.splice(0, lines.value.length - 2000)
+    // 【修复】裁剪时同步回收去重集合条目(原 seenIds 只增不减,长时间挂台内存无界)
+    const removed = lines.value.splice(0, lines.value.length - 2000)
+    for (const r of removed) seenIds.delete(lineKey(r))
+  }
+  // 双保险:集合规模异常时按现存行重建
+  if (seenIds.size > 4000) {
+    seenIds.clear()
+    for (const l of lines.value) seenIds.add(lineKey(l))
   }
   if (follow.value) scroll()
 }
@@ -154,7 +172,20 @@ function fmtTime(t: number) {
   return `${hh}:${mm}:${ss}`
 }
 
-function clearLog() {
+async function clearLog() {
+  try {
+    await ElMessageBox.confirm(
+      isZh.value ? '确定清空事件日志吗？清空后不可恢复。' : 'Clear the event log? This cannot be undone.',
+      isZh.value ? '清空事件日志' : 'Clear Event Log',
+      {
+        confirmButtonText: isZh.value ? '清空' : 'Clear',
+        cancelButtonText: isZh.value ? '取消' : 'Cancel',
+        type: 'warning',
+      },
+    )
+  } catch {
+    return
+  }
   lines.value = []
   seenIds.clear()
 }
@@ -298,10 +329,16 @@ async function loadAuditAndClientLogs() {
 }
 
 // 2. 监听 WebSocket 实时推送事件
+// 【性能】增量处理:events 数组为新事件前插(unshift)+ 尾部裁剪,已处理事件用
+// WeakSet 标记;从头部遍历,遇到已处理的即 break(其后必然全部已处理)。
+// 原实现每次 watch 都遍历全部 100 条并重复做客户端查找与行构造。
+const processedEvents = new WeakSet<object>()
 watch(
   () => eventsStore.events,
   () => {
     for (const e of eventsStore.events) {
+      if (processedEvents.has(e)) break // 旧事件都在后面,已处理过
+      processedEvents.add(e)
       const raw = e as any
       const time = e.timestamp ? e.timestamp * 1000 : Date.now()
       const t = String(e.type || '').toLowerCase()
@@ -534,8 +571,8 @@ onMounted(async () => {
 }
 
 .el-filter-btn.active {
-  background: #1a5c9a;
-  border-color: #1a5c9a;
+  background: var(--cs-active);
+  border-color: var(--cs-active);
   color: #ffffff;
   font-weight: bold;
 }
@@ -570,8 +607,8 @@ onMounted(async () => {
   padding: 8px 12px;
   font-size: 18px;
   line-height: 1.6;
-  background: #111111;
-  color: #c8c8c8;
+  background: var(--cs-console);
+  color: var(--cs-text);
 }
 
 .el-line {
@@ -580,29 +617,29 @@ onMounted(async () => {
   margin-bottom: 2px;
 }
 
-.el-time { color: #777777; margin-right: 6px; }
+.el-time { color: var(--cs-text-dim); margin-right: 6px; }
 
-.el-prefix { color: #3884ff; margin-right: 6px; font-weight: bold; }
-.el-prefix-online { color: #50fa7b; margin-right: 6px; font-weight: bold; }
-.el-prefix-offline { color: #ff5555; margin-right: 6px; font-weight: bold; }
-.el-prefix-user { color: #ffb86c; margin-right: 6px; font-weight: bold; }
-.el-prefix-cred { color: #f1fa8c; margin-right: 6px; font-weight: bold; }
-.el-prefix-error { color: #ff5555; margin-right: 6px; font-weight: bold; }
+.el-prefix { color: var(--cs-active); margin-right: 6px; font-weight: bold; }
+.el-prefix-online { color: var(--cs-online); margin-right: 6px; font-weight: bold; }
+.el-prefix-offline { color: var(--cs-error); margin-right: 6px; font-weight: bold; }
+.el-prefix-user { color: var(--cs-warning); margin-right: 6px; font-weight: bold; }
+.el-prefix-cred { color: var(--cs-log-cred); margin-right: 6px; font-weight: bold; }
+.el-prefix-error { color: var(--cs-error); margin-right: 6px; font-weight: bold; }
 
-.el-user { color: #50fa7b; margin-right: 6px; font-weight: bold; }
-.el-text { color: #e0e0e0; }
+.el-user { color: var(--cs-online); margin-right: 6px; font-weight: bold; }
+.el-text { color: var(--cs-text); }
 
-.el-type-beacon_online .el-text { color: #50fa7b; }
-.el-type-beacon_offline .el-text { color: #ff5555; }
-.el-type-user_login .el-text { color: #ffb86c; }
-.el-type-user_logout .el-text { color: #e5c07b; }
-.el-type-cred .el-text { color: #f1fa8c; }
-.el-type-system .el-text { color: #8be9fd; }
-.el-type-chat .el-text { color: #ffffff; }
-.el-type-error .el-text { color: #ff5555; }
+.el-type-beacon_online .el-text { color: var(--cs-online); }
+.el-type-beacon_offline .el-text { color: var(--cs-error); }
+.el-type-user_login .el-text { color: var(--cs-warning); }
+.el-type-user_logout .el-text { color: var(--cs-log-cred); }
+.el-type-cred .el-text { color: var(--cs-log-cred); }
+.el-type-system .el-text { color: var(--cs-log-system); }
+.el-type-chat .el-text { color: var(--cs-text-bright); }
+.el-type-error .el-text { color: var(--cs-error); }
 
 .el-empty {
-  color: #555;
+  color: var(--cs-text-dim);
   text-align: center;
   margin-top: 40px;
   font-size: 18px;
@@ -614,13 +651,13 @@ onMounted(async () => {
   gap: 10px;
   height: 40px;
   padding: 0 12px;
-  background: #181818;
+  background: var(--cs-panel);
   border-top: 1px solid var(--cs-border);
   flex-shrink: 0;
 }
 
 .chat-prompt {
-  color: #50fa7b;
+  color: var(--cs-online);
   font-size: 18px;
   font-weight: 600;
 }
@@ -630,13 +667,13 @@ onMounted(async () => {
   background: transparent;
   border: 0;
   outline: 0;
-  color: #f0f0f0;
+  color: var(--cs-text-bright);
   font-family: var(--cs-font-mono);
   font-size: 18px;
 }
 
 .chat-input::placeholder {
-  color: #555;
+  color: var(--cs-text-dim);
   font-family: var(--cs-font-ui);
 }
 

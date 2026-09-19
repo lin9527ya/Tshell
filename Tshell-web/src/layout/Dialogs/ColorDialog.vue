@@ -38,6 +38,7 @@ import { ElMessage } from 'element-plus'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { useI18nStore } from '@/stores/i18n'
 import ClientAPI from '@/api/clients'
+import { SESSION_COLOR_PALETTE } from '@/utils/sessionColors'
 
 const workspace = useWorkspaceStore()
 const i18nStore = useI18nStore()
@@ -53,16 +54,7 @@ const visible = computed({
 const uid = computed(() => workspace.dialogs.color.uid)
 const currentColor = computed(() => workspace.sessionColors[uid.value] || '')
 
-const colors = [
-  { name: 'Red', zhName: '红色', value: '#d32f2f', bg: '#d32f2f22', border: '#d32f2f', text: '#ef5350' },
-  { name: 'Orange', zhName: '橙色', value: '#e65100', bg: '#e6510022', border: '#e65100', text: '#ff9800' },
-  { name: 'Yellow', zhName: '黄色', value: '#f57f17', bg: '#f57f1722', border: '#f57f17', text: '#ffee58' },
-  { name: 'Green', zhName: '绿色', value: '#2e7d32', bg: '#2e7d3222', border: '#2e7d32', text: '#66bb6a' },
-  { name: 'Cyan', zhName: '青色', value: '#00838f', bg: '#00838f22', border: '#00838f', text: '#26c6da' },
-  { name: 'Blue', zhName: '蓝色', value: '#1565c0', bg: '#1565c022', border: '#1565c0', text: '#42a5f5' },
-  { name: 'Purple', zhName: '紫色', value: '#6a1b9a', bg: '#6a1b9a22', border: '#6a1b9a', text: '#ab47bc' },
-  { name: 'Default', zhName: '默认', value: '', bg: 'transparent', border: 'var(--cs-border)', text: 'var(--cs-text)' },
-]
+const colors = SESSION_COLOR_PALETTE
 
 const computedColors = computed(() =>
   colors.map((c) => ({

@@ -9,7 +9,7 @@
     </div>
 
     <!-- Main Body -->
-    <div class="cs-startup-body">
+    <div class="cs-startup-body" v-loading="!!loading">
       <div class="cs-startup-section">
         <div class="cs-form-row">
           <label class="cs-form-label">{{ isZh ? '服务 / 任务名称:' : 'Service / Task Name:' }}</label>
@@ -160,6 +160,7 @@ const persist = async (method: string) => {
   flex-direction: column;
   gap: 14px;
   max-width: 680px;
+  min-height: 320px;
 }
 
 .cs-form-row {

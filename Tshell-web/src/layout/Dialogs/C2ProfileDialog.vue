@@ -202,8 +202,8 @@ function close() {
 .cs-profile-textarea {
   width: 100%;
   height: 100%;
-  background: #141414;
-  color: #e0e0e0;
+  background: var(--cs-console);
+  color: var(--cs-text);
   border: 1px solid var(--cs-border);
   padding: 10px;
   font-size: 12px;

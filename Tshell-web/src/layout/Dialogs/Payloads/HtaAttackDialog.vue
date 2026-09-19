@@ -121,9 +121,9 @@ async function handleGenerate() {
   try {
     await ElMessageBox.alert(
       `<div style="font-size:12px;margin-bottom:8px;">${isZh.value ? 'HTA 托管地址:' : 'Hosted HTA URL:'}</div>
-       <div style="font-family:monospace;font-size:11px;color:#69b1ff;word-break:break-all;margin-bottom:12px;">${htaUrl}</div>
+       <div style="font-family:monospace;font-size:11px;color:var(--cs-active);word-break:break-all;margin-bottom:12px;">${htaUrl}</div>
        <div style="font-size:12px;margin-bottom:8px;">${isZh.value ? '目标机执行命令:' : 'Target one-liner:'}</div>
-       <textarea readonly style="width:100%;height:56px;background:#181818;color:#00e676;border:1px solid #444;padding:6px;font-family:monospace;font-size:11px;">${oneliner}</textarea>`,
+       <textarea readonly style="width:100%;height:56px;background:var(--cs-console);color:var(--cs-online);border:1px solid var(--cs-border);padding:6px;font-family:monospace;font-size:11px;">${oneliner}</textarea>`,
       isZh.value ? 'HTA 投递命令' : 'HTA Delivery One-Liner',
       {
         dangerouslyUseHTMLString: true,

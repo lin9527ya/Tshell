@@ -44,7 +44,7 @@
           </div>
         </template>
       </el-table-column>
-      <el-table-column label="模式" width="100">
+      <el-table-column :label="isZh ? '模式' : 'Mode'" width="100">
         <template #default="{ row }">
           <el-tag :type="modeOf(row) === 'dedicated' ? 'warning' : 'success'" size="small">
             {{ modeOf(row) }}
@@ -57,15 +57,15 @@
           <div class="sub" v-if="rowPort(row)">{{ isZh ? '端口' : 'port' }}: {{ rowPort(row) }}</div>
         </template>
       </el-table-column>
-      <el-table-column label="监听器" min-width="160" show-overflow-tooltip>
+      <el-table-column :label="isZh ? '监听器' : 'Listener'" min-width="160" show-overflow-tooltip>
         <template #default="{ row }">{{ field(row, 'ListenerConfig', 'listener_config') }}</template>
       </el-table-column>
-      <el-table-column label="目标" width="130">
+      <el-table-column :label="isZh ? '目标' : 'Target'" width="130">
         <template #default="{ row }">
           {{ field(row, 'OS', 'os') }}_{{ field(row, 'Arch', 'arch') }}
         </template>
       </el-table-column>
-      <el-table-column label="命中" width="90">
+      <el-table-column :label="isZh ? '命中' : 'Hits'" width="90">
         <template #default="{ row }">
           {{ field(row, 'HitCount', 'hit_count') || 0 }}
           <div class="sub" v-if="field(row, 'LastHitIP', 'last_hit_ip')">
@@ -73,14 +73,14 @@
           </div>
         </template>
       </el-table-column>
-      <el-table-column label="状态" width="90">
+      <el-table-column :label="isZh ? '状态' : 'Status'" width="90">
         <template #default="{ row }">
           <el-tag :type="statusOf(row) === 1 ? 'success' : 'danger'" size="small">
-            {{ statusOf(row) === 1 ? '开启' : '关闭' }}
+            {{ statusOf(row) === 1 ? (isZh ? '开启' : 'On') : (isZh ? '关闭' : 'Off') }}
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="220" fixed="right" align="center">
+      <el-table-column :label="isZh ? '操作' : 'Actions'" width="220" fixed="right" align="center">
         <template #default="{ row }">
           <div class="wd-action-row">
             <button
@@ -144,32 +144,32 @@
     </div>
 
     <!-- 创建 Delivery Hub -->
-    <el-dialog v-model="dialogVisible" title="配置 Delivery Hub" width="720px" destroy-on-close>
+    <el-dialog v-model="dialogVisible" :title="isZh ? '配置 Delivery Hub' : 'Configure Delivery Hub'" width="720px" destroy-on-close>
       <el-form :model="formData" label-width="130px">
-        <el-form-item label="绑定模式">
+        <el-form-item :label="isZh ? '绑定模式' : 'Bind Mode'">
           <el-radio-group v-model="formData.bindMode">
-            <el-radio label="shared">shared（主端口 /d/key，推荐）</el-radio>
-            <el-radio label="dedicated">dedicated（独立端口）</el-radio>
+            <el-radio label="shared">{{ isZh ? 'shared（主端口 /d/key，推荐）' : 'shared (main port /d/key, recommended)' }}</el-radio>
+            <el-radio label="dedicated">{{ isZh ? 'dedicated（独立端口）' : 'dedicated (separate port)' }}</el-radio>
           </el-radio-group>
         </el-form-item>
-        <el-form-item label="监听器" required>
+        <el-form-item :label="isZh ? '监听器' : 'Listener'" required>
           <el-select
             v-model="formData.listener"
-            placeholder="选择监听器"
+            :placeholder="isZh ? '选择监听器' : 'Select a listener'"
             style="width:100%"
             @visible-change="handleDropdown"
           >
             <el-option v-for="item in options" :key="item" :label="item" :value="item" />
           </el-select>
         </el-form-item>
-        <el-form-item label="操作系统" required>
+        <el-form-item :label="isZh ? '操作系统' : 'OS'" required>
           <el-radio-group v-model="formData.os" @change="onOSChange">
             <el-radio label="windows">windows</el-radio>
             <el-radio label="linux">linux</el-radio>
             <el-radio label="darwin">darwin</el-radio>
           </el-radio-group>
         </el-form-item>
-        <el-form-item label="架构" required>
+        <el-form-item :label="isZh ? '架构' : 'Arch'" required>
           <el-radio-group v-model="formData.arch">
             <el-radio label="amd64">amd64</el-radio>
             <el-radio label="386">386</el-radio>
@@ -177,56 +177,56 @@
             <el-radio label="arm">arm</el-radio>
           </el-radio-group>
         </el-form-item>
-        <el-form-item label="上线口令">
-          <el-input v-model="formData.pass" show-password placeholder="反沙箱启动口令 / Exec Key" />
+        <el-form-item :label="isZh ? '上线口令' : 'Exec Key'">
+          <el-input v-model="formData.pass" show-password :placeholder="isZh ? '反沙箱启动口令 / Exec Key' : 'Anti-sandbox exec key'" />
         </el-form-item>
-        <el-form-item label="文件名">
-          <el-input v-model="formData.filename" placeholder="托管文件名，如 svchost.exe" />
+        <el-form-item :label="isZh ? '文件名' : 'File Name'">
+          <el-input v-model="formData.filename" :placeholder="isZh ? '托管文件名，如 svchost.exe' : 'Hosted file name, e.g. svchost.exe'" />
         </el-form-item>
-        <el-form-item v-if="formData.os === 'windows'" label="载荷格式">
+        <el-form-item v-if="formData.os === 'windows'" :label="isZh ? '载荷格式' : 'Payload Format'">
           <el-radio-group v-model="formData.payloadFormat" @change="onFormatChange">
-            <el-radio label="exe">exe（可执行文件）</el-radio>
-            <el-radio label="dll">dll（rundll32 / regsvr32 加载）</el-radio>
+            <el-radio label="exe">{{ isZh ? 'exe（可执行文件）' : 'exe (executable)' }}</el-radio>
+            <el-radio label="dll">{{ isZh ? 'dll（rundll32 / regsvr32 加载）' : 'dll (loaded via rundll32 / regsvr32)' }}</el-radio>
           </el-radio-group>
           <span class="hint" v-if="formData.payloadFormat === 'dll'">
-            rundll32.exe client.dll,Run 或 regsvr32.exe client.dll 加载
+            {{ isZh ? 'rundll32.exe client.dll,Run 或 regsvr32.exe client.dll 加载' : 'Load with rundll32.exe client.dll,Run or regsvr32.exe client.dll' }}
           </span>
         </el-form-item>
-        <el-form-item label="保存文件名">
-          <el-input v-model="formData.saveFilename" placeholder="目标机落地文件名" />
+        <el-form-item :label="isZh ? '保存文件名' : 'Save As'">
+          <el-input v-model="formData.saveFilename" :placeholder="isZh ? '目标机落地文件名' : 'File name written on target'" />
         </el-form-item>
-        <el-form-item label="下载路径">
+        <el-form-item :label="isZh ? '下载路径' : 'Download Path'">
           <el-input v-model="formData.downloadPath" />
         </el-form-item>
-        <el-form-item v-if="formData.bindMode === 'dedicated'" label="独立端口" required>
-          <el-input v-model="formData.port" placeholder="如 8000" />
+        <el-form-item v-if="formData.bindMode === 'dedicated'" :label="isZh ? '独立端口' : 'Dedicated Port'" required>
+          <el-input v-model="formData.port" :placeholder="isZh ? '如 8000' : 'e.g. 8000'" />
         </el-form-item>
 
-        <el-divider content-position="left">伪装与公开地址</el-divider>
+        <el-divider content-position="left">{{ isZh ? '伪装与公开地址' : 'Masquerade & Public Address' }}</el-divider>
         <el-form-item :label="isZh ? '公网主机' : 'Public Host'">
-          <el-input v-model="formData.publicHost" placeholder="留空自动推断，如 1.2.3.4:8089" />
+          <el-input v-model="formData.publicHost" :placeholder="isZh ? '留空自动推断，如 1.2.3.4:8089' : 'Leave empty to auto-detect, e.g. 1.2.3.4:8089'" />
         </el-form-item>
         <el-form-item :label="isZh ? '协议' : 'Scheme'">
           <el-radio-group v-model="formData.publicScheme">
-            <el-radio label="">默认</el-radio>
+            <el-radio label="">{{ isZh ? '默认' : 'Default' }}</el-radio>
             <el-radio label="http">http</el-radio>
             <el-radio label="https">https</el-radio>
           </el-radio-group>
-          <span class="hint">接 CDN 时选 https；空则用 config delivery.default_scheme</span>
+          <span class="hint">{{ isZh ? '接 CDN 时选 https；空则用 config delivery.default_scheme' : 'Use https behind a CDN; empty falls back to config delivery.default_scheme' }}</span>
         </el-form-item>
         <el-form-item :label="isZh ? '路径前缀' : 'Base Path'">
-          <el-input v-model="formData.basePath" placeholder="CDN 路径前缀，如 /static 或留空" />
+          <el-input v-model="formData.basePath" :placeholder="isZh ? 'CDN 路径前缀，如 /static 或留空' : 'CDN path prefix, e.g. /static, or leave empty'" />
         </el-form-item>
-        <el-form-item label="URL 预览">
+        <el-form-item :label="isZh ? 'URL 预览' : 'URL Preview'">
           <div class="url-box" v-if="previewUrls">
             <div><b>{{ isZh ? '完整' : 'Full' }}:</b> <code>{{ previewUrls.full }}</code></div>
             <div v-if="previewUrls.stager"><b>{{ isZh ? '分阶段' : 'Stager' }}:</b> <code>{{ previewUrls.stager }}</code></div>
             <div v-if="previewUrls.shellcode"><b>{{ isZh ? 'Shellcode' : 'SC' }}:</b> <code>{{ previewUrls.shellcode }}</code></div>
           </div>
-          <el-button size="small" @click="doPreviewUrls" style="margin-top:6px">刷新预览</el-button>
+          <el-button size="small" @click="doPreviewUrls" style="margin-top:6px">{{ isZh ? '刷新预览' : 'Refresh Preview' }}</el-button>
         </el-form-item>
-        <el-form-item label="URI 路径">
-          <el-input v-model="formData.uriPath" placeholder="可选伪装路径；空则用随机 key" />
+        <el-form-item :label="isZh ? 'URI 路径' : 'URI Path'">
+          <el-input v-model="formData.uriPath" :placeholder="isZh ? '可选伪装路径；空则用随机 key' : 'Optional decoy path; random key if empty'" />
         </el-form-item>
         <el-form-item :label="isZh ? '内容类型' : 'Content-Type'">
           <el-select v-model="formData.contentType" filterable allow-create style="width:100%">
@@ -245,78 +245,78 @@
           </el-select>
         </el-form-item>
 
-        <el-divider content-position="left">防护</el-divider>
+        <el-divider content-position="left">{{ isZh ? '防护' : 'Protection' }}</el-divider>
         <el-form-item :label="isZh ? '访问令牌' : 'Access Token'">
           <el-input
             v-model="formData.accessToken"
-            placeholder="可选；请求需 ?t=token 或 Header X-Delivery-Token"
+            :placeholder="isZh ? '可选；请求需 ?t=token 或 Header X-Delivery-Token' : 'Optional; request needs ?t=token or X-Delivery-Token header'"
           />
         </el-form-item>
-        <el-form-item label="UA 白名单">
-          <el-input v-model="formData.uaAllow" placeholder="逗号分隔子串，如 curl,Wget,PowerShell" />
+        <el-form-item :label="isZh ? 'UA 白名单' : 'UA Allowlist'">
+          <el-input v-model="formData.uaAllow" :placeholder="isZh ? '逗号分隔子串，如 curl,Wget,PowerShell' : 'Comma-separated substrings, e.g. curl,Wget,PowerShell'" />
         </el-form-item>
-        <el-form-item label="最大下载次数">
+        <el-form-item :label="isZh ? '最大下载次数' : 'Max Downloads'">
           <el-input-number v-model="formData.maxDownloads" :min="0" />
-          <span class="hint">0 = 不限制</span>
+          <span class="hint">{{ isZh ? '0 = 不限制' : '0 = unlimited' }}</span>
         </el-form-item>
-        <el-form-item label="一次性链接">
+        <el-form-item :label="isZh ? '一次性链接' : 'One-Time Link'">
           <el-switch v-model="formData.oneTime" />
         </el-form-item>
-        <el-form-item label="构建 Stager">
+        <el-form-item :label="isZh ? '构建 Stager' : 'Build Stager'">
           <el-switch v-model="formData.buildStager" />
-          <span class="hint">需要服务端 Go 工具链</span>
+          <span class="hint">{{ isZh ? '需要服务端 Go 工具链' : 'Requires Go toolchain on server' }}</span>
         </el-form-item>
-        <el-form-item label="备注">
+        <el-form-item :label="isZh ? '备注' : 'Note'">
           <el-input v-model="formData.note" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="creating" @click="handleCreate">创建并启动</el-button>
+        <el-button @click="dialogVisible = false">{{ isZh ? '取消' : 'Cancel' }}</el-button>
+        <el-button type="primary" :loading="creating" @click="handleCreate">{{ isZh ? '创建并启动' : 'Create & Start' }}</el-button>
       </template>
     </el-dialog>
 
     <!-- 上线命令矩阵 -->
-    <el-dialog v-model="commandDialogVisible" title="上线命令矩阵" width="860px">
+    <el-dialog v-model="commandDialogVisible" :title="isZh ? '上线命令矩阵' : 'Payload Command Matrix'" width="860px">
       <div v-if="commandUrls" class="url-box mb-12">
         <div>
           <b>{{ isZh ? '完整' : 'Full' }}:</b> <code>{{ commandUrls.full }}</code>
-          <el-button link type="primary" @click="copyText(commandUrls.full)">复制</el-button>
+          <el-button link type="primary" @click="copyText(commandUrls.full)">{{ isZh ? '复制' : 'Copy' }}</el-button>
         </div>
         <div v-if="commandUrls.stager">
           <b>{{ isZh ? '分阶段' : 'Stager' }}:</b> <code>{{ commandUrls.stager }}</code>
-          <el-button link type="primary" @click="copyText(commandUrls.stager)">复制</el-button>
+          <el-button link type="primary" @click="copyText(commandUrls.stager)">{{ isZh ? '复制' : 'Copy' }}</el-button>
         </div>
         <div v-if="commandUrls.shellcode">
           <b>{{ isZh ? 'Shellcode/WOFF' : 'SC/WOFF' }}:</b> <code>{{ commandUrls.shellcode }}</code>
-          <el-button link type="primary" @click="copyText(commandUrls.shellcode)">复制</el-button>
+          <el-button link type="primary" @click="copyText(commandUrls.shellcode)">{{ isZh ? '复制' : 'Copy' }}</el-button>
         </div>
       </div>
       <el-table :data="commandList" size="small" max-height="480">
-        <el-table-column prop="name" label="名称" width="180" />
+        <el-table-column prop="name" :label="isZh ? '名称' : 'Name'" width="180" />
         <el-table-column prop="os" label="OS" width="90" />
-        <el-table-column prop="description" label="说明" width="180" show-overflow-tooltip />
-        <el-table-column prop="code" label="命令" min-width="320">
+        <el-table-column prop="description" :label="isZh ? '说明' : 'Description'" width="180" show-overflow-tooltip />
+        <el-table-column prop="code" :label="isZh ? '命令' : 'Command'" min-width="320">
           <template #default="{ row }">
             <code class="cmd">{{ row.code }}</code>
           </template>
         </el-table-column>
         <el-table-column label="" width="80">
           <template #default="{ row }">
-            <el-button size="small" type="primary" @click="copyText(row.code)">复制</el-button>
+            <el-button size="small" type="primary" @click="copyText(row.code)">{{ isZh ? '复制' : 'Copy' }}</el-button>
           </template>
         </el-table-column>
       </el-table>
     </el-dialog>
 
     <!-- 访问日志 -->
-    <el-dialog v-model="logsDialogVisible" title="投递访问日志" width="900px">
+    <el-dialog v-model="logsDialogVisible" :title="isZh ? '投递访问日志' : 'Delivery Access Logs'" width="900px">
       <el-table :data="accessLogs" size="small" max-height="500">
-        <el-table-column prop="created_at" label="时间" width="170" />
-        <el-table-column prop="resource" label="资源" width="90" />
+        <el-table-column prop="created_at" :label="isZh ? '时间' : 'Time'" width="170" />
+        <el-table-column prop="resource" :label="isZh ? '资源' : 'Resource'" width="90" />
         <el-table-column prop="client_ip" label="IP" width="130" />
-        <el-table-column prop="status_code" label="状态" width="80" />
-        <el-table-column prop="bytes_sent" label="字节" width="100" />
+        <el-table-column prop="status_code" :label="isZh ? '状态' : 'Status'" width="80" />
+        <el-table-column prop="bytes_sent" :label="isZh ? '字节' : 'Bytes'" width="100" />
         <el-table-column prop="user_agent" label="UA" min-width="240" show-overflow-tooltip />
       </el-table>
     </el-dialog>
@@ -324,25 +324,25 @@
     <!-- StageShellcode（兼容旧接口，port 使用 ListeningPort） -->
     <el-dialog v-model="dialogVisible2" title="StageShellcode">
       <el-form :model="selectedFormat" label-width="120px">
-        <el-form-item label="输出格式">
+        <el-form-item :label="isZh ? '输出格式' : 'Output Format'">
           <el-select v-model="selectedFormat.format">
-            <el-option label="十六进制 (hex)" value="hex" />
-            <el-option label="C 数组 (c)" value="c" />
-            <el-option label="二进制 (bin)" value="bin" />
-            <el-option label="原始二进制 (raw)" value="raw" />
-            <el-option label="可执行 (exe)" value="exe" />
+            <el-option :label="isZh ? '十六进制 (hex)' : 'Hex'" value="hex" />
+            <el-option :label="isZh ? 'C 数组 (c)' : 'C Array'" value="c" />
+            <el-option :label="isZh ? '二进制 (bin)' : 'Binary'" value="bin" />
+            <el-option :label="isZh ? '原始二进制 (raw)' : 'Raw Binary'" value="raw" />
+            <el-option :label="isZh ? '可执行 (exe)' : 'Executable'" value="exe" />
           </el-select>
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" @click="handleStageShellcode">生成</el-button>
+          <el-button type="primary" @click="handleStageShellcode">{{ isZh ? '生成' : 'Generate' }}</el-button>
         </el-form-item>
       </el-form>
     </el-dialog>
 
     <!-- 动态 Stager（兼容旧接口，port 使用 ListeningPort） -->
-    <el-dialog v-model="dialogVisible3" title="动态 Stager 生成" width="640px">
+    <el-dialog v-model="dialogVisible3" :title="isZh ? '动态 Stager 生成' : 'Dynamic Stager Generation'" width="640px">
       <el-form :model="dynamicStagerForm" label-width="120px">
-        <el-form-item label="格式">
+        <el-form-item :label="isZh ? '格式' : 'Format'">
           <el-select v-model="dynamicStagerForm.format">
             <el-option label="exe" value="exe" />
             <el-option label="elf" value="elf" />
@@ -352,20 +352,20 @@
             <el-option label="c" value="c" />
           </el-select>
         </el-form-item>
-        <el-form-item label="反调试">
+        <el-form-item :label="isZh ? '反调试' : 'Anti-Debug'">
           <el-switch v-model="dynamicStagerForm.anti_debug" />
         </el-form-item>
-        <el-form-item label="混淆">
+        <el-form-item :label="isZh ? '混淆' : 'Obfuscation'">
           <el-switch v-model="dynamicStagerForm.obfuscation" />
         </el-form-item>
         <el-form-item label="User-Agent">
-          <el-input v-model="dynamicStagerForm.user_agent" placeholder="留空随机" />
+          <el-input v-model="dynamicStagerForm.user_agent" :placeholder="isZh ? '留空随机' : 'Empty = random'" />
         </el-form-item>
-        <el-form-item label="轻量模式">
+        <el-form-item :label="isZh ? '轻量模式' : 'Lightweight'">
           <el-switch v-model="dynamicStagerForm.lightweight" />
         </el-form-item>
         <!-- Stager 构建信息（后端 /shellcode/stager-info?port=...） -->
-        <el-form-item label="构建信息">
+        <el-form-item :label="isZh ? '构建信息' : 'Build Info'">
           <div class="stager-info-box">
             <div v-if="stagerInfoLoading" class="si-loading">{{ isZh ? '加载中...' : 'Loading...' }}</div>
             <template v-else-if="stagerInfo">
@@ -380,87 +380,87 @@
           <el-button size="small" :loading="stagerInfoLoading" @click="fetchStagerBuildInfo">{{ isZh ? '查询构建信息' : 'Query Build Info' }}</el-button>
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" :loading="dynamicGenerating" @click="handleDynamicStager">生成</el-button>
+          <el-button type="primary" :loading="dynamicGenerating" @click="handleDynamicStager">{{ isZh ? '生成' : 'Generate' }}</el-button>
         </el-form-item>
       </el-form>
     </el-dialog>
 
     <!-- 脚本载荷（按客户端 OS：Windows=ps1/vbs/bat/hta；Linux=sh） -->
-    <el-dialog v-model="scriptDialogVisible" title="脚本载荷" width="720px">
+    <el-dialog v-model="scriptDialogVisible" :title="isZh ? '脚本载荷' : 'Script Payload'" width="720px">
       <el-form label-width="130px">
-        <el-form-item label="形态">
+        <el-form-item :label="isZh ? '形态' : 'Mode'">
           <el-radio-group v-model="scriptMode">
-            <el-radio label="url">引用 URL（下载 /full 后执行）</el-radio>
-            <el-radio label="embed">内嵌 base64（ps1 / bat / sh 支持）</el-radio>
+            <el-radio label="url">{{ isZh ? '引用 URL（下载 /full 后执行）' : 'Reference URL (download /full then run)' }}</el-radio>
+            <el-radio label="embed">{{ isZh ? '内嵌 base64（ps1 / bat / sh 支持）' : 'Embedded base64 (ps1 / bat / sh)' }}</el-radio>
           </el-radio-group>
         </el-form-item>
         <div v-if="scriptRows.length" class="url-box">
           <div v-for="s in scriptRows" :key="s.kind" style="margin-bottom: 8px">
             <b>{{ s.kind.toUpperCase() }}:</b> <code>{{ s.url }}</code>
-            <el-button link type="primary" @click="copyText(s.url)">复制</el-button>
+            <el-button link type="primary" @click="copyText(s.url)">{{ isZh ? '复制' : 'Copy' }}</el-button>
           </div>
         </div>
         <el-alert
           type="info"
           :closable="false"
-          title="脚本运行时自动下载完整载荷并执行；embed 形态内嵌载荷字节，无需外部请求。"
+          :title="isZh ? '脚本运行时自动下载完整载荷并执行；embed 形态内嵌载荷字节，无需外部请求。' : 'The script downloads the full payload at run time; the embed mode inlines the payload bytes with no external request.'"
         />
       </el-form>
     </el-dialog>
 
     <!-- 门禁令牌（防盗门）：StagerToken 配额管理 -->
-    <el-dialog v-model="tokenDialogVisible" title="门禁令牌" width="720px">
+    <el-dialog v-model="tokenDialogVisible" :title="isZh ? '门禁令牌' : 'Access Tokens'" width="720px">
       <div style="margin-bottom: 12px">
         <el-alert
           type="warning"
           :closable="false"
           show-icon
-          title="为每个 Stager 生成独立令牌（带使用配额，一次一密）。Stager 下载时携带 X-Delivery-Token 头，配额用完即返回 404。"
+          :title="isZh ? '为每个 Stager 生成独立令牌（带使用配额，一次一密）。Stager 下载时携带 X-Delivery-Token 头，配额用完即返回 404。' : 'Issues a unique token per Stager with a usage quota. The Stager sends it in the X-Delivery-Token header; once the quota is used up the server returns 404.'"
         />
       </div>
       <el-table :data="tokenRows" size="small" stripe>
-        <el-table-column prop="token" label="令牌" min-width="160">
+        <el-table-column prop="token" :label="isZh ? '令牌' : 'Token'" min-width="160">
           <template #default="{ row }"><code>{{ row.token }}</code></template>
         </el-table-column>
-        <el-table-column label="配额" width="110">
+        <el-table-column :label="isZh ? '配额' : 'Quota'" width="110">
           <template #default="{ row }">{{ row.used }}/{{ row.quota }}</template>
         </el-table-column>
-        <el-table-column prop="note" label="备注" min-width="120">
+        <el-table-column prop="note" :label="isZh ? '备注' : 'Note'" min-width="120">
           <template #default="{ row }">{{ row.note || '-' }}</template>
         </el-table-column>
-        <el-table-column prop="last_used_ip" label="最后使用 IP" min-width="120">
+        <el-table-column prop="last_used_ip" :label="isZh ? '最后使用 IP' : 'Last Used IP'" min-width="120">
           <template #default="{ row }">{{ row.last_used_ip || '-' }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="90">
+        <el-table-column :label="isZh ? '操作' : 'Actions'" width="90">
           <template #default="{ row }">
-            <el-button size="small" type="danger" link @click="deleteToken(row)">删除</el-button>
+            <el-button size="small" type="danger" link @click="deleteToken(row)">{{ isZh ? '删除' : 'Delete' }}</el-button>
           </template>
         </el-table-column>
       </el-table>
       <template #footer>
-        <el-button @click="openTokenCreate">生成新令牌</el-button>
-        <el-button type="primary" @click="tokenDialogVisible = false">关闭</el-button>
+        <el-button @click="openTokenCreate">{{ isZh ? '生成新令牌' : 'New Token' }}</el-button>
+        <el-button type="primary" @click="tokenDialogVisible = false">{{ isZh ? '关闭' : 'Close' }}</el-button>
       </template>
     </el-dialog>
 
     <!-- 生成令牌 -->
-    <el-dialog v-model="tokenCreateVisible" title="生成门禁令牌" width="460px">
+    <el-dialog v-model="tokenCreateVisible" :title="isZh ? '生成门禁令牌' : 'Generate Access Token'" width="460px">
       <el-form label-width="90px">
-        <el-form-item label="配额">
+        <el-form-item :label="isZh ? '配额' : 'Quota'">
           <el-input-number v-model="tokenQuota" :min="1" :max="100" />
-          <span style="margin-left: 8px; font-size: 12px; color: #909399">允许下载次数（默认 3）</span>
+          <span style="margin-left: 8px; font-size: 12px; color: #909399">{{ isZh ? '允许下载次数（默认 3）' : 'Allowed downloads (default 3)' }}</span>
         </el-form-item>
-        <el-form-item label="备注">
-          <el-input v-model="tokenNote" placeholder="如：Stager-Win-x64-钓鱼" />
+        <el-form-item :label="isZh ? '备注' : 'Note'">
+          <el-input v-model="tokenNote" :placeholder="isZh ? '如：Stager-Win-x64-钓鱼' : 'e.g. Stager-Win-x64-phish'" />
         </el-form-item>
-        <el-form-item v-if="tokenCreated" label="生成结果">
+        <el-form-item v-if="tokenCreated" :label="isZh ? '生成结果' : 'Result'">
           <div style="width: 100%">
             <div class="url-box" style="word-break: break-all">
               <code>{{ tokenCreated.token }}</code>
             </div>
             <div class="url-box" style="margin-top: 6px; word-break: break-all">
               <code>X-Delivery-Token: {{ tokenCreated.token }}</code>
-              <el-button link type="primary" @click="copyText('X-Delivery-Token: ' + tokenCreated.token)">复制</el-button>
+              <el-button link type="primary" @click="copyText('X-Delivery-Token: ' + tokenCreated.token)">{{ isZh ? '复制' : 'Copy' }}</el-button>
             </div>
             <div class="url-box" style="margin-top: 6px; word-break: break-all">
               <code>{{ tokenCreated.curl }}</code>
@@ -469,8 +469,8 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="tokenCreateVisible = false">关闭</el-button>
-        <el-button type="primary" :loading="tokenCreating" @click="createToken">生成</el-button>
+        <el-button @click="tokenCreateVisible = false">{{ isZh ? '关闭' : 'Close' }}</el-button>
+        <el-button type="primary" :loading="tokenCreating" @click="createToken">{{ isZh ? '生成' : 'Generate' }}</el-button>
       </template>
     </el-dialog>
   </div>
@@ -584,10 +584,10 @@ const getWebDeliveryList = async () => {
     if (res.status === 200 && res.data.status === 200) {
       tableData.value = res.data.data || []
     } else {
-      ElMessage.error(res.data?.data || '获取列表失败')
+      ElMessage.error(res.data?.data || (isZh.value ? '获取列表失败' : 'Failed to load list'))
     }
   } catch (e: any) {
-    ElMessage.error(e?.message || '获取列表失败')
+    ElMessage.error(e?.message || (isZh.value ? '获取列表失败' : 'Failed to load list'))
   }
 }
 
@@ -603,7 +603,7 @@ const handleDropdown = async (visible?: boolean) => {
         (item: any) => `${item.Type}://${item.ConnectAddress}`
       )
       if (!options.value.length) {
-        ElMessage.warning('暂无运行中的监听器，请先启动监听器')
+        ElMessage.warning(isZh.value ? '暂无运行中的监听器，请先启动监听器' : 'No running listener, start one first')
       }
       return
     }
@@ -620,7 +620,7 @@ const handleDropdown = async (visible?: boolean) => {
         (item: any) => item.url || `${item.protocol}://${item.connectAddress}`
       )
       if (!options.value.length) {
-        ElMessage.warning('暂无运行中的监听器，请先启动监听器')
+        ElMessage.warning(isZh.value ? '暂无运行中的监听器，请先启动监听器' : 'No running listener, start one first')
       }
       return
     }
@@ -692,7 +692,7 @@ const doPreviewUrls = async () => {
       previewUrls.value = res.data.data
     }
   } catch (e: any) {
-    ElMessage.error(e?.message || 'URL 预览失败')
+    ElMessage.error(e?.message || (isZh.value ? 'URL 预览失败' : 'URL preview failed'))
   }
 }
 
@@ -705,11 +705,11 @@ const openCreate = () => {
 
 const handleCreate = async () => {
   if (!formData.listener || !formData.os || !formData.arch) {
-    ElMessage.warning('请填写监听器 / OS / Arch')
+    ElMessage.warning(isZh.value ? '请填写监听器 / OS / Arch' : 'Fill in listener / OS / Arch')
     return
   }
   if (formData.bindMode === 'dedicated' && !formData.port) {
-    ElMessage.warning('dedicated 模式必须填写端口')
+    ElMessage.warning(isZh.value ? 'dedicated 模式必须填写端口' : 'Port is required in dedicated mode')
     return
   }
   creating.value = true
@@ -739,7 +739,7 @@ const handleCreate = async () => {
       note: formData.note,
     })
     if (res.status === 200 && res.data.status === 200) {
-      ElMessage.success('投递已创建')
+      ElMessage.success(isZh.value ? '投递已创建' : 'Delivery created')
       dialogVisible.value = false
       await getWebDeliveryList()
       const data = res.data.data
@@ -749,7 +749,7 @@ const handleCreate = async () => {
         commandDialogVisible.value = true
       }
     } else {
-      ElMessage.error(res.data?.data || res.data?.error || '创建失败')
+      ElMessage.error(res.data?.data || res.data?.error || (isZh.value ? '创建失败' : 'Create failed'))
     }
   } catch (e: any) {
     ElMessage.error(e?.message || String(e))
@@ -765,10 +765,10 @@ const handleOpen = async (row: any) => {
     port: rowPort(row) || undefined,
   })
   if (res.status === 200 && res.data.status === 200) {
-    ElMessage.success('已开启')
+    ElMessage.success(isZh.value ? '已开启' : 'Started')
     await getWebDeliveryList()
   } else {
-    ElMessage.error(res.data?.data || '开启失败')
+    ElMessage.error(res.data?.data || (isZh.value ? '开启失败' : 'Failed to start'))
   }
 }
 
@@ -779,16 +779,16 @@ const handleClose = async (row: any) => {
     port: rowPort(row) || undefined,
   })
   if (res.status === 200 && res.data.status === 200) {
-    ElMessage.success('已关闭')
+    ElMessage.success(isZh.value ? '已关闭' : 'Stopped')
     await getWebDeliveryList()
   } else {
-    ElMessage.error(res.data?.data || '关闭失败')
+    ElMessage.error(res.data?.data || (isZh.value ? '关闭失败' : 'Failed to stop'))
   }
 }
 
 const handleDelete = async (row: any) => {
   try {
-    await ElMessageBox.confirm('确认删除该投递？', '提示', { type: 'warning' })
+    await ElMessageBox.confirm(isZh.value ? '确认删除该投递？' : 'Delete this delivery?', isZh.value ? '提示' : 'Confirm', { type: 'warning' })
   } catch {
     return
   }
@@ -798,10 +798,10 @@ const handleDelete = async (row: any) => {
     port: rowPort(row) || undefined,
   })
   if (res.status === 200 && res.data.status === 200) {
-    ElMessage.success('已删除')
+    ElMessage.success(isZh.value ? '已删除' : 'Deleted')
     await getWebDeliveryList()
   } else {
-    ElMessage.error(res.data?.data || '删除失败')
+    ElMessage.error(res.data?.data || (isZh.value ? '删除失败' : 'Delete failed'))
   }
 }
 
@@ -812,7 +812,7 @@ const clearSelection = () => { selectedRows.value = [] }
 
 const handleBatchDelete = async () => {
   try {
-    await ElMessageBox.confirm(`确认删除选中的 ${selectedRows.value.length} 个投递？`, '批量删除', { type: 'warning' })
+    await ElMessageBox.confirm(isZh.value ? `确认删除选中的 ${selectedRows.value.length} 个投递？` : `Delete ${selectedRows.value.length} selected deliveries?`, isZh.value ? '批量删除' : 'Bulk Delete', { type: 'warning' })
   } catch {
     return
   }
@@ -826,9 +826,9 @@ const handleBatchDelete = async () => {
     if (!(res.status === 200 && res.data.status === 200)) failed++
   }
   if (failed === 0) {
-    ElMessage.success('批量删除成功')
+    ElMessage.success(isZh.value ? '批量删除成功' : 'Bulk delete succeeded')
   } else {
-    ElMessage.error(`${failed} 个投递删除失败`)
+    ElMessage.error(isZh.value ? `${failed} 个投递删除失败` : `${failed} deliveries failed to delete`)
   }
   clearSelection()
   await getWebDeliveryList()
@@ -851,14 +851,14 @@ const showCommands = async (row: any) => {
     }
     commandDialogVisible.value = true
   } else {
-    ElMessage.error(res.data?.data || '获取命令失败')
+    ElMessage.error(res.data?.data || (isZh.value ? '获取命令失败' : 'Failed to load commands'))
   }
 }
 
 const openScriptDialog = (row: any) => {
   const base = field(row, 'ServerAddress', 'server_address')
   if (!base) {
-    ElMessage.warning('该投递没有公开 URL，无法生成脚本（shared 模式才有）')
+    ElMessage.warning(isZh.value ? '该投递没有公开 URL，无法生成脚本（shared 模式才有）' : 'This delivery has no public URL; scripts need shared mode')
     return
   }
   // 按客户端 OS 展示对应脚本类型：Windows=ps1/vbs/bat/hta；Linux=sh
@@ -911,7 +911,7 @@ const tokenCreating = ref(false)
 const showTokens = async (row: any) => {
   const key = rowKey(row)
   if (!key) {
-    ElMessage.warning('该投递没有 public_key')
+    ElMessage.warning(isZh.value ? '该投递没有 public_key' : 'This delivery has no public_key')
     return
   }
   tokenCurrentKey.value = key
@@ -945,31 +945,31 @@ const createToken = async () => {
     })
     if (res.data?.status === 200) {
       tokenCreated.value = res.data.data
-      ElMessage.success('门禁令牌已生成')
+      ElMessage.success(isZh.value ? '门禁令牌已生成' : 'Access token generated')
       await loadTokens()
     } else {
-      ElMessage.error(res.data?.message || '生成令牌失败')
+      ElMessage.error(res.data?.message || (isZh.value ? '生成令牌失败' : 'Failed to generate token'))
     }
   } catch {
-    ElMessage.error('生成令牌失败')
+    ElMessage.error(isZh.value ? '生成令牌失败' : 'Failed to generate token')
   } finally {
     tokenCreating.value = false
   }
 }
 
 const deleteToken = (row: any) => {
-  ElMessageBox.confirm('确认删除该门禁令牌？删除后此令牌立即作废。', '删除令牌', { type: 'warning' })
+  ElMessageBox.confirm(isZh.value ? '确认删除该门禁令牌？删除后此令牌立即作废。' : 'Delete this access token? It becomes invalid immediately.', isZh.value ? '删除令牌' : 'Delete Token', { type: 'warning' })
     .then(async () => {
       try {
         const res = await ClientAPI.DeleteStagerToken({ id: row.id })
         if (res.data?.status === 200) {
-          ElMessage.success('令牌已删除')
+          ElMessage.success(isZh.value ? '令牌已删除' : 'Token deleted')
           await loadTokens()
         } else {
-          ElMessage.error(res.data?.message || '删除失败')
+          ElMessage.error(res.data?.message || (isZh.value ? '删除失败' : 'Delete failed'))
         }
       } catch {
-        ElMessage.error('删除失败')
+        ElMessage.error(isZh.value ? '删除失败' : 'Delete failed')
       }
     })
     .catch(() => {})
@@ -985,27 +985,27 @@ const showLogs = async (row: any) => {
     accessLogs.value = res.data.data || []
     logsDialogVisible.value = true
   } else {
-    ElMessage.error('获取日志失败')
+    ElMessage.error(isZh.value ? '获取日志失败' : 'Failed to load logs')
   }
 }
 
 const copyText = async (text: string) => {
   if (!text) {
-    ElMessage.warning('内容为空')
+    ElMessage.warning(isZh.value ? '内容为空' : 'Nothing to copy')
     return
   }
   try {
     await navigator.clipboard.writeText(text)
-    ElMessage.success('已复制')
+    ElMessage.success(isZh.value ? '已复制' : 'Copied')
   } catch {
-    ElMessage.error('复制失败')
+    ElMessage.error(isZh.value ? '复制失败' : 'Copy failed')
   }
 }
 
 const copyUrl = (row: any) => {
   const url = field(row, 'ServerAddress', 'server_address')
   if (!url) {
-    ElMessage.warning('无 URL')
+    ElMessage.warning(isZh.value ? '无 URL' : 'No URL')
     return
   }
   copyText(url)
@@ -1076,11 +1076,11 @@ const handleStageShellcode = async () => {
     })
     if (res.status === 200) {
       downloadBlobRes(res, `stage.${selectedFormat.format}`)
-      ElMessage.success('生成成功')
+      ElMessage.success(isZh.value ? '生成成功' : 'Generated')
       dialogVisible2.value = false
     }
   } catch (e: any) {
-    ElMessage.error(e?.message || '生成失败')
+    ElMessage.error(e?.message || (isZh.value ? '生成失败' : 'Generation failed'))
   }
 }
 
@@ -1098,11 +1098,11 @@ const handleDynamicStager = async () => {
     })
     if (res.status === 200) {
       downloadBlobRes(res, `dynamic_stager.${dynamicStagerForm.format}`)
-      ElMessage.success('生成成功')
+      ElMessage.success(isZh.value ? '生成成功' : 'Generated')
       dialogVisible3.value = false
     }
   } catch (e: any) {
-    ElMessage.error(e?.message || '生成失败（动态 Stager 需要服务端 Go 环境）')
+    ElMessage.error(e?.message || (isZh.value ? '生成失败（动态 Stager 需要服务端 Go 环境）' : 'Generation failed (dynamic Stager needs Go on the server)'))
   } finally {
     dynamicGenerating.value = false
   }

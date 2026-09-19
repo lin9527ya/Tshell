@@ -108,10 +108,12 @@ import { useClientsStore } from '@/stores/clients'
 import { useI18nStore } from '@/stores/i18n'
 import { useCommandHistoryStore } from '@/stores/shellcommand'
 import { useWorkspaceStore } from '@/stores/workspace'
+import { useTabActive, useVisibilityInterval } from '@/utils/useVisibilityInterval'
 import ClientAPI from '@/api/clients'
 import { ElMessage } from 'element-plus'
 
 import { useCredentialsStore } from '@/stores/credentials'
+import { usePreferencesStore } from '@/stores/preferences'
 
 const props = defineProps<{ uid: string }>()
 
@@ -122,6 +124,7 @@ const clientsStore = useClientsStore()
 const historyStore = useCommandHistoryStore()
 const workspace = useWorkspaceStore()
 const credsStore = useCredentialsStore()
+const prefStore = usePreferencesStore()
 
 const termEl = ref<HTMLElement | null>(null)
 const taskDialogVisible = ref(false)
@@ -160,7 +163,9 @@ const input = ref('')
 let terminal: Terminal | null = null
 let fitAddon: FitAddon | null = null
 let lastLen = 0
-let pollTimer: ReturnType<typeof setInterval> | null = null
+// 3s 轮询接入可见性治理: 页面隐藏或本标签非活动时暂停(fetchContent 为函数声明,已提升)
+const tabActive = useTabActive()
+useVisibilityInterval(fetchContent, 3000, { isActive: () => tabActive.value })
 
 const client = computed(() => clientsStore.getClientByUid(props.uid))
 const online = computed(() => client.value?.Online === '1')
@@ -391,7 +396,7 @@ onMounted(() => {
     // 后端 shell 历史为 Unix 风格裸 \n（LF）；convertEol 让 LF 自动转 CRLF，
     // 否则光标停留在上一行结束的列，多行输出逐行右移成"阶梯状"残影（与交互终端保持一致）
     convertEol: true,
-    scrollback: 10000,
+    scrollback: prefStore.scrollback || 5000,
     theme: {
       background: '#0a0a0a',
       foreground: '#d4d4d4',
@@ -427,14 +432,12 @@ onMounted(() => {
     clientsStore.refreshClients().catch(() => {})
   }
   fetchContent()
-  pollTimer = setInterval(fetchContent, 3000)
   inputEl.value?.focus()
 
   window.addEventListener('resize', fit)
 })
 
 onBeforeUnmount(() => {
-  if (pollTimer) clearInterval(pollTimer)
   window.removeEventListener('resize', fit)
   terminal?.dispose()
   terminal = null
@@ -563,7 +566,7 @@ onBeforeUnmount(() => {
   gap: 10px;
   height: 40px;
   padding: 0 12px;
-  background: #141414;
+  background: var(--cs-panel);
   border-top: 1px solid var(--cs-border);
   flex-shrink: 0;
 }

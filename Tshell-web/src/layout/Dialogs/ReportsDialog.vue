@@ -95,8 +95,24 @@
   </el-dialog>
 </template>
 
+<script lang="ts">
+// 【修复】报告菜单三个入口(威胁指标/社会工程/战术TTP)此前都只打开同一个
+// 默认 ioc tab,点了不同项看到同一窗口。模块级预设: 菜单在打开前调用
+// presetReportsTab('social') 等,对话框打开时消费一次。
+// (模块级状态与 export 必须放普通 <script> 块——script setup 内不允许 export)
+let pendingReportsTab: string | null = null
+export function presetReportsTab(tab: 'ioc' | 'social' | 'ttp') {
+  pendingReportsTab = tab
+}
+function consumeReportsTab(): string | null {
+  const t = pendingReportsTab
+  pendingReportsTab = null
+  return t
+}
+</script>
+
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { useI18nStore } from '@/stores/i18n'
@@ -117,6 +133,14 @@ const activeTab = ref('ioc')
 const ioc = ref<any>(null)
 const social = ref<any>(null)
 const ttp = ref<any>(null)
+
+// 打开时消费菜单预设的 tab(见上方普通 script 块)
+watch(visible, (v) => {
+  if (v) {
+    const t = consumeReportsTab()
+    if (t) activeTab.value = t
+  }
+})
 
 async function loadIOC() {
   try {

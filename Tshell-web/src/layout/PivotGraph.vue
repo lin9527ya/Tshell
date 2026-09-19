@@ -200,6 +200,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useClientsStore, type ClientData } from '@/stores/clients'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { useEventsStore } from '@/stores/events'
+import { useTabActive, useVisibilityInterval } from '@/utils/useVisibilityInterval'
 import { useI18nStore } from '@/stores/i18n'
 import { detectClientOs } from '@/utils/clientUtils'
 import ClientAPI from '@/api/clients'
@@ -827,7 +828,7 @@ async function fetchGraphData() {
   }
 }
 
-let graphTimer: number | undefined
+
 
 // 客户端状态事件到达时联动刷新（节流 5s）
 let lastGraphRefresh = 0
@@ -845,17 +846,19 @@ watch(
   },
 )
 
+// 【性能】30s 兜底轮询接入可见性治理(非活动标签/页面隐藏时暂停)
+const tabActive = useTabActive()
+useVisibilityInterval(fetchGraphData, 30000, { isActive: () => tabActive.value })
+
 onMounted(() => {
   window.addEventListener('mousemove', onMouseMove)
   window.addEventListener('mouseup', onMouseUp)
   fetchGraphData()
-  graphTimer = window.setInterval(fetchGraphData, 30000)
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('mousemove', onMouseMove)
   window.removeEventListener('mouseup', onMouseUp)
-  if (graphTimer) window.clearInterval(graphTimer)
 })
 </script>
 

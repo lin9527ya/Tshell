@@ -78,29 +78,8 @@
         <el-table-column prop="os" :label="isZh ? '操作系统' : 'OS'" width="140" sortable show-overflow-tooltip>
           <template #default="{ row }">
             <span class="target-os-cell">
-              <!-- Windows Icon -->
-              <svg v-if="getOsType(row) === 'windows'" viewBox="0 0 18 18" width="14" height="14" class="target-os-svg">
-                <path d="M1 3.2 L7.8 2.2 L7.8 8.8 L1 8.8 Z" fill="#00adef" />
-                <path d="M8.8 2.1 L17 0.9 L17 8.8 L8.8 8.8 Z" fill="#00adef" />
-                <path d="M1 9.8 L7.8 9.8 L7.8 16.4 L1 15.4 Z" fill="#00adef" />
-                <path d="M8.8 9.8 L17 9.8 L17 17.7 L8.8 16.5 Z" fill="#00adef" />
-              </svg>
-              <!-- Linux Tux Penguin Icon -->
-              <svg v-else-if="getOsType(row) === 'linux'" viewBox="0 0 18 18" width="14" height="14" class="target-os-svg">
-                <path d="M9 1.5 C6.5 1.5, 5 3.5, 5 6.5 C5 8, 4.5 9.5, 3.5 11 C2.8 12.2, 2.8 13.8, 3.8 14.8 C4.8 15.8, 6.5 16.2, 9 16.2 C11.5 16.2, 13.2 15.8, 14.2 14.8 C15.2 13.8, 15.2 12.2, 14.5 11 C13.5 9.5, 13 8, 13 6.5 C13 3.5, 11.5 1.5, 9 1.5 Z" fill="#222" stroke="#111" stroke-width="0.5" />
-                <ellipse cx="9" cy="11.2" rx="3.3" ry="3.8" fill="#ffffff" />
-                <ellipse cx="7.3" cy="5" rx="1" ry="1.4" fill="#ffffff" />
-                <ellipse cx="10.7" cy="5" rx="1" ry="1.4" fill="#ffffff" />
-                <circle cx="7.4" cy="5.2" r="0.5" fill="#000000" />
-                <circle cx="10.6" cy="5.2" r="0.5" fill="#000000" />
-                <polygon points="7.2,6.5 10.8,6.5 9,8.2" fill="#ffb300" stroke="#f57c00" stroke-width="0.3" />
-                <ellipse cx="6.2" cy="16.2" rx="2" ry="0.9" fill="#ffb300" />
-                <ellipse cx="11.8" cy="16.2" rx="2" ry="0.9" fill="#ffb300" />
-              </svg>
-              <!-- macOS Apple Icon -->
-              <svg v-else-if="getOsType(row) === 'darwin'" viewBox="0 0 18 18" width="14" height="14" class="target-os-svg">
-                <path d="M11.5 2 C12 1.2 12.5 0.5 12.2 0 C11.6 0.1 10.8 0.6 10.3 1.3 C9.8 1.8 9.4 2.6 9.6 3 C10.4 3 11 2.5 11.5 2 Z M13.8 9 C13.8 7.2 15.2 6.3 15.3 6.2 C14.4 5 13.1 4.8 12.6 4.8 C11.4 4.7 10.3 5.5 9.7 5.5 C9.1 5.5 8.2 4.8 7.3 4.8 C6.1 4.8 5 5.5 4.3 6.6 C3 8.8 4 12.1 5.3 14 C5.9 14.8 6.6 15.8 7.7 15.8 C8.7 15.8 9 15.2 10.2 15.2 C11.3 15.2 11.7 15.8 12.7 15.8 C13.8 15.8 14.4 14.9 15.1 14 C15.9 12.9 16.2 11.8 16.2 11.7 C16.1 11.7 13.8 10.8 13.8 9 Z" fill="var(--cs-text-bright)" />
-              </svg>
+              <!-- OS 图标单一来源组件 -->
+              <OsIcon :os="getOsType(row)" :size="14" class="target-os-svg" />
               <span class="os-text">{{ row.os }}</span>
             </span>
           </template>
@@ -109,10 +88,11 @@
         <el-table-column prop="note" :label="isZh ? '备注' : 'Comment'" min-width="180" sortable show-overflow-tooltip />
 
         <template #empty>
-          <div class="tv-empty-watermark">
-            <div class="empty-title">{{ isZh ? '暂无目标主机' : 'No Targets Discovered' }}</div>
-            <div class="empty-desc">{{ isZh ? '通过【扫描】发现内网资产，或点击【添加】手动录入目标主机。' : 'Scan targets or add hosts manually.' }}</div>
-          </div>
+          <EmptyState
+            variant="inline"
+            :title="isZh ? '暂无目标主机' : 'No Targets Discovered'"
+            :desc="isZh ? '通过【扫描】发现内网资产，或点击【添加】手动录入目标主机。' : 'Scan targets or add hosts manually.'"
+          />
         </template>
       </el-table>
 
@@ -130,20 +110,7 @@
         >
           <div class="tv-card-header">
             <div class="tv-card-os">
-              <svg v-if="getOsType(target) === 'windows'" viewBox="0 0 18 18" width="18" height="18">
-                <path d="M1 3.2 L7.8 2.2 L7.8 8.8 L1 8.8 Z" fill="#00adef" />
-                <path d="M8.8 2.1 L17 0.9 L17 8.8 L8.8 8.8 Z" fill="#00adef" />
-                <path d="M1 9.8 L7.8 9.8 L7.8 16.4 L1 15.4 Z" fill="#00adef" />
-                <path d="M8.8 9.8 L17 9.8 L17 17.7 L8.8 16.5 Z" fill="#00adef" />
-              </svg>
-              <svg v-else-if="getOsType(target) === 'linux'" viewBox="0 0 18 18" width="18" height="18">
-                <path d="M9 1.5 C6.5 1.5, 5 3.5, 5 6.5 C5 8, 4.5 9.5, 3.5 11 C2.8 12.2, 2.8 13.8, 3.8 14.8 C4.8 15.8, 6.5 16.2, 9 16.2 C11.5 16.2, 13.2 15.8, 14.2 14.8 C15.2 13.8, 15.2 12.2, 14.5 11 C13.5 9.5, 13 8, 13 6.5 C13 3.5, 11.5 1.5, 9 1.5 Z" fill="#222" />
-                <ellipse cx="9" cy="11.2" rx="3.3" ry="3.8" fill="#ffffff" />
-                <polygon points="7.2,6.5 10.8,6.5 9,8.2" fill="#ffb300" />
-              </svg>
-              <svg v-else viewBox="0 0 18 18" width="18" height="18">
-                <circle cx="9" cy="9" r="8" fill="none" stroke="currentColor" stroke-width="1.5" />
-              </svg>
+              <OsIcon :os="getOsType(target)" :size="18" variant="simple" fallback="circle" />
             </div>
             <div class="tv-card-title-wrap">
               <span class="tv-card-ip cs-font-mono">{{ target.ip }}</span>
@@ -164,10 +131,11 @@
           </div>
         </div>
 
-        <div v-if="filteredTargets.length === 0" class="tv-empty-watermark">
-          <div class="empty-title">{{ isZh ? '暂无目标主机' : 'No Targets Discovered' }}</div>
-          <div class="empty-desc">{{ isZh ? '通过【扫描】发现内网资产，或点击【添加】手动录入目标主机。' : 'Scan targets or add hosts manually.' }}</div>
-        </div>
+        <EmptyState
+          v-if="filteredTargets.length === 0"
+          :title="isZh ? '暂无目标主机' : 'No Targets Discovered'"
+          :desc="isZh ? '通过【扫描】发现内网资产，或点击【添加】手动录入目标主机。' : 'Scan targets or add hosts manually.'"
+        />
       </div>
     </div>
 
@@ -270,11 +238,14 @@
     <!-- Scan Dialog (CS Style) -->
     <el-dialog
       v-model="scanDialogVisible"
-      :title="isZh ? `端口扫描: ${selectedRow?.ip || '目标'}` : `Port Scan: ${selectedRow?.ip || 'Target'}`"
       width="460px"
       class="cs-dialog"
       :close-on-click-modal="false"
     >
+      <template #header>
+        <span class="el-dialog__title">{{ isZh ? `端口扫描: ${selectedRow?.ip || '目标'}` : `Port Scan: ${selectedRow?.ip || 'Target'}` }}</span>
+        <span class="tv-demo-badge">{{ isZh ? '演示' : 'Demo' }}</span>
+      </template>
       <div class="cs-dialog-body cs-font-ui">
         <div class="cs-form-row">
           <label class="cs-form-label">{{ isZh ? '目标 IP / 网段' : 'Targets' }}</label>
@@ -365,12 +336,16 @@
 
     <el-dialog
       v-model="servicesDialogVisible"
-      :title="isZh ? `已开放服务列表 - ${selectedRow?.ip || ''}` : `Discovered Services - ${selectedRow?.ip || ''}`"
       width="580px"
       class="cs-dialog"
       :close-on-click-modal="false"
     >
+      <template #header>
+        <span class="el-dialog__title">{{ isZh ? `已开放服务列表 - ${selectedRow?.ip || ''}` : `Discovered Services - ${selectedRow?.ip || ''}` }}</span>
+        <span class="tv-demo-badge">{{ isZh ? '演示' : 'Demo' }}</span>
+      </template>
       <div class="cs-dialog-body cs-font-ui" style="max-height: 360px; overflow-y: auto">
+        <div class="cs-form-hint">{{ isZh ? '演示数据，后端无服务探测接口' : 'Demo data — no backend service discovery API' }}</div>
         <el-table :data="discoveredServices" size="small" class="cs-session-table">
           <el-table-column prop="port" :label="isZh ? '端口' : 'Port'" width="80" align="right" />
           <el-table-column prop="proto" :label="isZh ? '协议' : 'Proto'" width="80" align="center" />
@@ -393,8 +368,12 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useClientsStore } from '@/stores/clients'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { useI18nStore } from '@/stores/i18n'
+import { useTabActive, useVisibilityInterval } from '@/utils/useVisibilityInterval'
 import { detectClientOs } from '@/utils/clientUtils'
 import ClientAPI from '@/api/clients'
+import EmptyState from '@/components/Common/EmptyState.vue'
+import { CS_MARKER_COLORS, rowTintStyle } from '@/utils/sessionColors'
+import OsIcon from '@/components/Common/OsIcon.vue'
 
 export interface TargetRow {
   uid?: string
@@ -540,25 +519,11 @@ const ctxMenu = ref({
   showColor: false,
 })
 
-const colorPalette = [
-  { value: '#ffffff', label: 'White' },
-  { value: '#c8e6c9', label: 'Light Green' },
-  { value: '#ffcdd2', label: 'Light Pink' },
-  { value: '#fff59d', label: 'Light Yellow' },
-  { value: '#9e9e9e', label: 'Grey' },
-  { value: '#3f51b5', label: 'Dark Blue' },
-]
+const colorPalette = CS_MARKER_COLORS
 
 function getRowStyle({ row }: { row: TargetRow }) {
   const color = row.color || (row.uid ? workspace.sessionColors[row.uid] : '')
-  if (color && color !== '#ffffff') {
-    return {
-      '--el-table-tr-bg-color': `${color}2c`,
-      backgroundColor: `${color}2c`,
-      borderLeft: `4px solid ${color}`,
-    }
-  }
-  return {}
+  return rowTintStyle(color, { alpha: '2c', borderWidth: 4 })
 }
 
 function onCurrentChange(row: TargetRow | null) {
@@ -799,11 +764,22 @@ function handleHelp() {
   ElMessage.info(isZh.value ? '目标列表汇集网络资产探测与横向移动渗透目标。' : 'Targets Table Help')
 }
 
-function refresh() {
-  clientsStore.refreshClients().catch(() => {})
-  syncGraphTargets(true).catch(() => {})
+// 静默刷新(不带提示),供定时轮询复用
+async function refreshSilent() {
+  await Promise.all([
+    clientsStore.refreshClients().catch(() => {}),
+    syncGraphTargets(true).catch(() => {}),
+  ])
+}
+
+async function refresh() {
+  await refreshSilent()
   ElMessage.success(isZh.value ? '目标列表已刷新' : 'Targets refreshed')
 }
+
+// 【性能】15s 自动刷新接入可见性治理(非活动标签/页面隐藏时暂停)
+const tabActive = useTabActive()
+useVisibilityInterval(refreshSilent, 15000, { isActive: () => tabActive.value })
 
 onMounted(() => {
   window.addEventListener('mousedown', closeContextMenu)
@@ -991,6 +967,20 @@ onBeforeUnmount(() => {
   border-radius: 2px;
 }
 
+/* 演示徽标 */
+.tv-demo-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 6px;
+  border-radius: 2px;
+  font-size: 11px;
+  font-weight: 600;
+  vertical-align: middle;
+  background: color-mix(in srgb, var(--cs-warning) 18%, transparent);
+  border: 1px solid color-mix(in srgb, var(--cs-warning) 45%, transparent);
+  color: var(--cs-warning);
+}
+
 .tv-card-body {
   font-size: 13px;
   color: var(--cs-text);
@@ -1035,21 +1025,6 @@ onBeforeUnmount(() => {
 .os-text {
   color: var(--cs-text);
   font-size: 16.5px;
-}
-
-.tv-empty-watermark {
-  padding: 40px 20px;
-  text-align: center;
-}
-.empty-title {
-  font-size: 18px;
-  font-weight: 500;
-  color: var(--cs-text-bright);
-  margin-bottom: 6px;
-}
-.empty-desc {
-  font-size: 16px;
-  color: var(--cs-text-dim);
 }
 
 .tv-bottom-bar {

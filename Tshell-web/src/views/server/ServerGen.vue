@@ -17,37 +17,37 @@
           <el-tab-pane :label="isZh ? '分阶段(stage)' : 'stage'" name="stage">
             <div class="tab-content">
               <el-icon class="tab-icon"><Document /></el-icon>
-              <span class="tab-description-large">分阶段载荷：依赖已配置的 WebDelivery，体积小，运行时二次拉取完整客户端</span>
+              <span class="tab-description-large">{{ isZh ? '分阶段载荷：依赖已配置的 WebDelivery，体积小，运行时二次拉取完整客户端' : 'Staged payload: needs a configured WebDelivery, small size, fetches the full client at run time' }}</span>
             </div>
           </el-tab-pane>
           <el-tab-pane :label="isZh ? 'Shellcode' : 'shellcode'" name="shellcode">
             <div class="tab-content">
               <el-icon class="tab-icon"><DocumentAdd /></el-icon>
-              <span class="tab-description-large">Stage Shellcode：基于 WebDelivery 生成可注入 shellcode（Windows）</span>
+              <span class="tab-description-large">{{ isZh ? 'Stage Shellcode：基于 WebDelivery 生成可注入 shellcode（Windows）' : 'Stage Shellcode: injectable shellcode built from a WebDelivery (Windows)' }}</span>
             </div>
           </el-tab-pane>
           <el-tab-pane :label="isZh ? '无阶段(stageless)' : 'stageless'" name="stageless">
             <div class="tab-content">
               <el-icon class="tab-icon"><Files /></el-icon>
-              <span class="tab-description-large">无阶段载荷：完整功能客户端，直接上线</span>
+              <span class="tab-description-large">{{ isZh ? '无阶段载荷：完整功能客户端，直接上线' : 'Stageless payload: full-featured client, connects directly' }}</span>
             </div>
           </el-tab-pane>
           <el-tab-pane :label="isZh ? 'DLL 无阶段' : 'dll stageless'" name="dll">
             <div class="tab-content">
               <el-icon class="tab-icon"><Files /></el-icon>
-              <span class="tab-description-large">DLL 无阶段载荷：rundll32 / regsvr32 加载（仅 Windows）</span>
+              <span class="tab-description-large">{{ isZh ? 'DLL 无阶段载荷：rundll32 / regsvr32 加载（仅 Windows）' : 'DLL stageless payload: loaded via rundll32 / regsvr32 (Windows only)' }}</span>
             </div>
           </el-tab-pane>
           <el-tab-pane :label="isZh ? '正向监听(listen)' : 'listen'" name="listen">
             <div class="tab-content">
               <el-icon class="tab-icon"><Connection /></el-icon>
-              <span class="tab-description-large">正向客户端：监听模式，由服务端主动连出上线</span>
+              <span class="tab-description-large">{{ isZh ? '正向客户端：监听模式，由服务端主动连出上线' : 'Forward client: listen mode, the server dials out to it' }}</span>
             </div>
           </el-tab-pane>
           <el-tab-pane :label="isZh ? 'DLL 正向监听' : 'dll listen'" name="dlllisten">
             <div class="tab-content">
               <el-icon class="tab-icon"><Connection /></el-icon>
-              <span class="tab-description-large">DLL 正向客户端：rundll32 / regsvr32 加载（仅 Windows）</span>
+              <span class="tab-description-large">{{ isZh ? 'DLL 正向客户端：rundll32 / regsvr32 加载（仅 Windows）' : 'DLL forward client: loaded via rundll32 / regsvr32 (Windows only)' }}</span>
             </div>
           </el-tab-pane>
         </el-tabs>
@@ -57,10 +57,10 @@
 
           <!-- stageless -->
           <div v-if="activeTab === 'stageless'">
-            <el-form-item label="监听器">
+            <el-form-item :label="isZh ? '监听器' : 'Listener'">
               <el-select
                 v-model="formData.listener"
-                placeholder="选择监听器"
+                :placeholder="isZh ? '选择监听器' : 'Select a listener'"
                 @visible-change="handleDropdown"
                 class="listener-select"
               >
@@ -77,16 +77,16 @@
               </el-select>
             </el-form-item>
 
-            <el-form-item label="上线密码">
+            <el-form-item :label="isZh ? '上线密码' : 'Password'">
               <el-input
                 v-model="formData.pass"
-                placeholder="输入上线密码"
+                :placeholder="isZh ? '输入上线密码' : 'Enter password'"
                 class="password-input"
                 show-password
               />
             </el-form-item>
 
-            <el-form-item label="客户端类型">
+            <el-form-item :label="isZh ? '客户端类型' : 'Client Type'">
               <div class="client-types-compact">
                 <el-tag
                   v-for="client in clientTypes"
@@ -110,13 +110,13 @@
               :closable="false"
               show-icon
               style="margin-bottom: 16px"
-              title="DLL 无阶段载荷（仅 Windows）：rundll32.exe client.dll,Run 或 regsvr32.exe client.dll 加载，导出 Run / DllRegisterServer / DllInstall 三个入口"
+              :title="isZh ? 'DLL 无阶段载荷（仅 Windows）：rundll32.exe client.dll,Run 或 regsvr32.exe client.dll 加载，导出 Run / DllRegisterServer / DllInstall 三个入口' : 'DLL stageless payload (Windows only): load with rundll32.exe client.dll,Run or regsvr32.exe client.dll; exports Run / DllRegisterServer / DllInstall'"
             />
 
-            <el-form-item label="监听器">
+            <el-form-item :label="isZh ? '监听器' : 'Listener'">
               <el-select
                 v-model="formData.listener"
-                placeholder="选择监听器"
+                :placeholder="isZh ? '选择监听器' : 'Select a listener'"
                 @visible-change="handleDropdown"
                 class="listener-select"
               >
@@ -133,16 +133,16 @@
               </el-select>
             </el-form-item>
 
-            <el-form-item label="上线密码">
+            <el-form-item :label="isZh ? '上线密码' : 'Password'">
               <el-input
                 v-model="formData.pass"
-                placeholder="输入上线密码"
+                :placeholder="isZh ? '输入上线密码' : 'Enter password'"
                 class="password-input"
                 show-password
               />
             </el-form-item>
 
-            <el-form-item label="客户端类型">
+            <el-form-item :label="isZh ? '客户端类型' : 'Client Type'">
               <div class="client-types-compact">
                 <el-tag
                   v-for="client in dllClientTypes"
@@ -158,7 +158,7 @@
               </div>
             </el-form-item>
 
-            <el-form-item label="加载方式">
+            <el-form-item :label="isZh ? '加载方式' : 'Load Method'">
               <div class="hint-text">
                 <div>rundll32: <code>rundll32.exe client.dll,Run</code></div>
                 <div>regsvr32: <code>regsvr32.exe client.dll</code></div>
@@ -174,13 +174,13 @@
               :closable="false"
               show-icon
               style="margin-bottom: 16px"
-              title="请先在「WebDelivery」页面创建并开启托管，再选择对应 WebDelivery 生成 shellcode"
+              :title="isZh ? '请先在「WebDelivery」页面创建并开启托管，再选择对应 WebDelivery 生成 shellcode' : 'Create and start a host on the WebDelivery page first, then pick it here to build shellcode'"
             />
 
             <el-form-item label="WebDelivery">
               <el-select
                 v-model="formData.webDeliveryPort"
-                placeholder="选择 WebDelivery（按端口）"
+                :placeholder="isZh ? '选择 WebDelivery（按端口）' : 'Select a WebDelivery (by port)'"
                 @visible-change="handleWebDeliveryDropdown"
                 class="listener-select"
               >
@@ -193,12 +193,12 @@
               </el-select>
             </el-form-item>
 
-            <el-form-item label="目标信息" v-if="selectedWebDelivery">
+            <el-form-item :label="isZh ? '目标信息' : 'Target Info'" v-if="selectedWebDelivery">
               <el-tag type="success">{{ selectedWebDelivery.OS }}_{{ selectedWebDelivery.Arch }}</el-tag>
               <el-tag style="margin-left: 8px">{{ selectedWebDelivery.ListenerConfig }}</el-tag>
             </el-form-item>
 
-            <el-form-item label="格式">
+            <el-form-item :label="isZh ? '格式' : 'Format'">
               <div class="format-options">
                 <el-tag
                   v-for="format in shellcodeFormats"
@@ -222,13 +222,13 @@
               :closable="false"
               show-icon
               style="margin-bottom: 16px"
-              title="请先在「WebDelivery」页面创建并开启托管。动态 Stager 需要服务端安装 Go 工具链"
+              :title="isZh ? '请先在「WebDelivery」页面创建并开启托管。动态 Stager 需要服务端安装 Go 工具链' : 'Create and start a host on the WebDelivery page first. Dynamic Stager needs Go installed on the server'"
             />
 
             <el-form-item label="WebDelivery">
               <el-select
                 v-model="formData.webDeliveryPort"
-                placeholder="选择 WebDelivery（按端口）"
+                :placeholder="isZh ? '选择 WebDelivery（按端口）' : 'Select a WebDelivery (by port)'"
                 @visible-change="handleWebDeliveryDropdown"
                 class="listener-select"
               >
@@ -241,12 +241,12 @@
               </el-select>
             </el-form-item>
 
-            <el-form-item label="目标信息" v-if="selectedWebDelivery">
+            <el-form-item :label="isZh ? '目标信息' : 'Target Info'" v-if="selectedWebDelivery">
               <el-tag type="success">{{ selectedWebDelivery.OS }}_{{ selectedWebDelivery.Arch }}</el-tag>
               <el-tag style="margin-left: 8px">{{ selectedWebDelivery.ListenerConfig }}</el-tag>
             </el-form-item>
 
-            <el-form-item label="构建信息" v-if="selectedWebDelivery">
+            <el-form-item :label="isZh ? '构建信息' : 'Build Info'" v-if="selectedWebDelivery">
               <div class="stager-info-box">
                 <div v-if="stagerInfoLoading" class="si-loading">{{ isZh ? '加载中...' : 'Loading...' }}</div>
                 <template v-else-if="stagerInfo">
@@ -261,7 +261,7 @@
               </el-button>
             </el-form-item>
 
-            <el-form-item label="输出格式">
+            <el-form-item :label="isZh ? '输出格式' : 'Output Format'">
               <div class="format-options">
                 <el-tag
                   v-for="format in stageFormats"
@@ -277,20 +277,20 @@
                 </el-tag>
               </div>
               <div class="hint-text" v-if="selectedWebDelivery">
-                {{ selectedWebDelivery.OS === 'linux' ? 'Linux 推荐 elf / exe（可执行文件）' : 'Windows 支持 exe / bin / hex / c' }}
+                {{ selectedWebDelivery.OS === 'linux' ? (isZh ? 'Linux 推荐 elf / exe（可执行文件）' : 'Linux recommends elf / exe') : (isZh ? 'Windows 支持 exe / bin / hex / c' : 'Windows supports exe / bin / hex / c') }}
               </div>
             </el-form-item>
 
-            <el-form-item label="反调试">
+            <el-form-item :label="isZh ? '反调试' : 'Anti-Debug'">
               <el-switch v-model="formData.antiDebug" />
             </el-form-item>
-            <el-form-item label="代码混淆">
+            <el-form-item :label="isZh ? '代码混淆' : 'Obfuscation'">
               <el-switch v-model="formData.obfuscation" />
             </el-form-item>
             <el-form-item label="User-Agent">
               <el-input
                 v-model="formData.userAgent"
-                placeholder="留空使用随机 UA"
+                :placeholder="isZh ? '留空使用随机 UA' : 'Empty = random UA'"
                 class="password-input"
               />
             </el-form-item>
@@ -298,7 +298,7 @@
 
           <!-- listen 正向客户端 -->
           <div v-else-if="activeTab === 'listen'">
-            <el-form-item label="协议">
+            <el-form-item :label="isZh ? '协议' : 'Protocol'">
               <el-radio-group v-model="formData.listenProtocol">
                 <el-radio label="tcp_forward">TCP</el-radio>
                 <el-radio label="kcp_forward">KCP</el-radio>
@@ -308,7 +308,7 @@
               </el-radio-group>
             </el-form-item>
 
-            <el-form-item label="客户端类型">
+            <el-form-item :label="isZh ? '客户端类型' : 'Client Type'">
               <div class="client-types-compact">
                 <el-tag
                   v-for="client in listenClientTypes"
@@ -324,7 +324,7 @@
               </div>
             </el-form-item>
 
-            <el-form-item label="监听地址">
+            <el-form-item :label="isZh ? '监听地址' : 'Listen Address'">
               <el-input v-model="formData.listenAddress" placeholder="0.0.0.0" class="address-input">
                 <template #append>
                   <el-button :icon="Refresh" @click="refreshAddress" />
@@ -332,24 +332,24 @@
               </el-input>
             </el-form-item>
 
-            <el-form-item label="监听端口">
+            <el-form-item :label="isZh ? '监听端口' : 'Listen Port'">
               <el-input v-model="formData.listenPort" placeholder="80" class="port-input" type="number" />
             </el-form-item>
 
-            <el-form-item label="上线密码">
-              <el-input v-model="formData.pass" placeholder="输入上线密码" class="password-input" show-password />
+            <el-form-item :label="isZh ? '上线密码' : 'Password'">
+              <el-input v-model="formData.pass" :placeholder="isZh ? '输入上线密码' : 'Enter password'" class="password-input" show-password />
             </el-form-item>
 
             <el-form-item label="Vkey">
-              <el-input v-model="formData.vkey" placeholder="留空使用默认值" class="vkey-input">
+              <el-input v-model="formData.vkey" :placeholder="isZh ? '留空使用默认值' : 'Empty = default'" class="vkey-input">
                 <template #append>
                   <el-button :icon="RefreshRight" @click="generateVkey" />
                 </template>
               </el-input>
             </el-form-item>
 
-            <el-form-item label="流量加密盐">
-              <el-input v-model="formData.encryptSalt" placeholder="留空使用默认值" class="salt-input">
+            <el-form-item :label="isZh ? '流量加密盐' : 'Traffic Salt'">
+              <el-input v-model="formData.encryptSalt" :placeholder="isZh ? '留空使用默认值' : 'Empty = default'" class="salt-input">
                 <template #append>
                   <el-button :icon="RefreshRight" @click="generateSalt" />
                 </template>
@@ -364,10 +364,10 @@
               :closable="false"
               show-icon
               style="margin-bottom: 16px"
-              title="DLL 正向客户端（仅 Windows）：rundll32.exe client.dll,Run 或 regsvr32.exe client.dll 加载，导出 Run / DllRegisterServer / DllInstall 三个入口"
+              :title="isZh ? 'DLL 正向客户端（仅 Windows）：rundll32.exe client.dll,Run 或 regsvr32.exe client.dll 加载，导出 Run / DllRegisterServer / DllInstall 三个入口' : 'DLL forward client (Windows only): load with rundll32.exe client.dll,Run or regsvr32.exe client.dll; exports Run / DllRegisterServer / DllInstall'"
             />
 
-            <el-form-item label="协议">
+            <el-form-item :label="isZh ? '协议' : 'Protocol'">
               <el-radio-group v-model="formData.listenProtocol">
                 <el-radio label="tcp_forward">TCP</el-radio>
                 <el-radio label="kcp_forward">KCP</el-radio>
@@ -377,7 +377,7 @@
               </el-radio-group>
             </el-form-item>
 
-            <el-form-item label="客户端类型">
+            <el-form-item :label="isZh ? '客户端类型' : 'Client Type'">
               <div class="client-types-compact">
                 <el-tag
                   v-for="client in dllClientTypes"
@@ -393,7 +393,7 @@
               </div>
             </el-form-item>
 
-            <el-form-item label="监听地址">
+            <el-form-item :label="isZh ? '监听地址' : 'Listen Address'">
               <el-input v-model="formData.listenAddress" placeholder="0.0.0.0" class="address-input">
                 <template #append>
                   <el-button :icon="Refresh" @click="refreshAddress" />
@@ -401,31 +401,31 @@
               </el-input>
             </el-form-item>
 
-            <el-form-item label="监听端口">
+            <el-form-item :label="isZh ? '监听端口' : 'Listen Port'">
               <el-input v-model="formData.listenPort" placeholder="80" class="port-input" type="number" />
             </el-form-item>
 
-            <el-form-item label="上线密码">
-              <el-input v-model="formData.pass" placeholder="输入上线密码" class="password-input" show-password />
+            <el-form-item :label="isZh ? '上线密码' : 'Password'">
+              <el-input v-model="formData.pass" :placeholder="isZh ? '输入上线密码' : 'Enter password'" class="password-input" show-password />
             </el-form-item>
 
             <el-form-item label="Vkey">
-              <el-input v-model="formData.vkey" placeholder="留空使用默认值" class="vkey-input">
+              <el-input v-model="formData.vkey" :placeholder="isZh ? '留空使用默认值' : 'Empty = default'" class="vkey-input">
                 <template #append>
                   <el-button :icon="RefreshRight" @click="generateVkey" />
                 </template>
               </el-input>
             </el-form-item>
 
-            <el-form-item label="流量加密盐">
-              <el-input v-model="formData.encryptSalt" placeholder="留空使用默认值" class="salt-input">
+            <el-form-item :label="isZh ? '流量加密盐' : 'Traffic Salt'">
+              <el-input v-model="formData.encryptSalt" :placeholder="isZh ? '留空使用默认值' : 'Empty = default'" class="salt-input">
                 <template #append>
                   <el-button :icon="RefreshRight" @click="generateSalt" />
                 </template>
               </el-input>
             </el-form-item>
 
-            <el-form-item label="加载方式">
+            <el-form-item :label="isZh ? '加载方式' : 'Load Method'">
               <div class="hint-text">
                 <div>rundll32: <code>rundll32.exe client.dll,Run</code></div>
                 <div>regsvr32: <code>regsvr32.exe client.dll</code></div>
@@ -597,8 +597,10 @@ const selectClientType = (clientType: string) => {
 };
 
 const formatWebDeliveryLabel = (item: any) => {
-  const status = item.Status === 1 ? '运行中' : '已关闭';
-  return `端口 ${item.ListeningPort} | ${item.OS}_${item.Arch} | ${item.ListenerConfig || '-'} | ${status}`;
+  const status = item.Status === 1 ? (isZh.value ? '运行中' : 'running') : (isZh.value ? '已关闭' : 'stopped');
+  return isZh.value
+    ? `端口 ${item.ListeningPort} | ${item.OS}_${item.Arch} | ${item.ListenerConfig || '-'} | ${status}`
+    : `Port ${item.ListeningPort} | ${item.OS}_${item.Arch} | ${item.ListenerConfig || '-'} | ${status}`;
 };
 
 const isStageFormatAllowed = (fmt: string) => {
@@ -631,7 +633,7 @@ const handleDropdown = async (visible?: boolean) => {
       }));
       options.value = listenerDetails.value.map((item: any) => item.url);
       if (!options.value.length) {
-        ElMessage.warning('暂无运行中的监听器，请先启动监听器');
+        ElMessage.warning(isZh.value ? '暂无运行中的监听器，请先启动监听器' : 'No running listener, start one first');
       }
       return;
     }
@@ -648,7 +650,7 @@ const handleDropdown = async (visible?: boolean) => {
         return item.url || `${item.protocol}://${item.connectAddress}`;
       });
       if (!options.value.length) {
-        ElMessage.warning('暂无运行中的监听器，请先启动监听器');
+        ElMessage.warning(isZh.value ? '暂无运行中的监听器，请先启动监听器' : 'No running listener, start one first');
       }
       return;
     }
@@ -667,7 +669,7 @@ const handleDropdown = async (visible?: boolean) => {
       ElMessage.error(res.data.data);
     }
   } else {
-    ElMessage.error('获取监听器列表失败');
+    ElMessage.error(isZh.value ? '获取监听器列表失败' : 'Failed to load listener list');
   }
 };
 
@@ -678,13 +680,13 @@ const handleWebDeliveryDropdown = async (visible?: boolean) => {
     if (res.status === 200 && res.data.status === 200) {
       webDeliveryOptions.value = res.data.data || [];
       if (!webDeliveryOptions.value.length) {
-        ElMessage.warning('暂无 WebDelivery，请先到 WebDelivery 页面创建');
+        ElMessage.warning(isZh.value ? '暂无 WebDelivery，请先到 WebDelivery 页面创建' : 'No WebDelivery yet, create one on the WebDelivery page first');
       }
     } else {
-      ElMessage.error(res.data?.data || '获取 WebDelivery 列表失败');
+      ElMessage.error(res.data?.data || (isZh.value ? '获取 WebDelivery 列表失败' : 'Failed to load WebDelivery list'));
     }
   } catch (e: any) {
-    ElMessage.error(`获取 WebDelivery 失败: ${e?.message || e}`);
+    ElMessage.error(isZh.value ? `获取 WebDelivery 失败: ${e?.message || e}` : `Failed to load WebDelivery: ${e?.message || e}`);
   }
 };
 
@@ -718,7 +720,9 @@ const getListenerDetails = (listener: string) => {
           protocol,
           listenAddress,
           connectAddress,
-          fullText: `ID：${actualId} ${protocol} 监听地址: ${listenAddress} 连接地址: ${connectAddress}`,
+          fullText: isZh.value
+            ? `ID：${actualId} ${protocol} 监听地址: ${listenAddress} 连接地址: ${connectAddress}`
+            : `ID: ${actualId} ${protocol} listen ${listenAddress} connect ${connectAddress}`,
         };
       }
     }
@@ -733,7 +737,7 @@ const getListenerDetails = (listener: string) => {
       protocol,
       listenAddress: address,
       connectAddress: address,
-      fullText: `${protocol} 连接地址: ${address}`,
+      fullText: isZh.value ? `${protocol} 连接地址: ${address}` : `${protocol} connect ${address}`,
     };
   }
   return {
@@ -795,7 +799,7 @@ const downloadBlob = (res: any, fallbackName: string) => {
 
 const handleGenerate = async () => {
   if (!isFormValid.value) {
-    ElMessage.warning('请完整填写必填项');
+    ElMessage.warning(isZh.value ? '请完整填写必填项' : 'Fill in all required fields');
     return;
   }
 
@@ -809,7 +813,7 @@ const handleGenerate = async () => {
       let currentClientTypes = activeTab.value === 'dlllisten' ? dllClientTypes : isListen ? listenClientTypes : clientTypes;
       const selectedClient = currentClientTypes.find((c) => c.value === formData.clientType);
       if (!selectedClient) {
-        ElMessage.error('请选择客户端类型');
+        ElMessage.error(isZh.value ? '请选择客户端类型' : 'Select a client type');
         return;
       }
 
@@ -866,7 +870,7 @@ const handleGenerate = async () => {
     } else if (activeTab.value === 'dll') {
       const selectedClient = dllClientTypes.find((c) => c.value === formData.clientType);
       if (!selectedClient) {
-        ElMessage.error('请选择客户端类型');
+        ElMessage.error(isZh.value ? '请选择客户端类型' : 'Select a client type');
         return;
       }
       res = await ClientAPI.GenServer({
@@ -880,11 +884,11 @@ const handleGenerate = async () => {
     } else if (activeTab.value === 'stage') {
       const wd = selectedWebDelivery.value;
       if (!wd) {
-        ElMessage.error('请选择 WebDelivery');
+        ElMessage.error(isZh.value ? '请选择 WebDelivery' : 'Select a WebDelivery');
         return;
       }
       if (!isStageFormatAllowed(formData.stageFormat)) {
-        ElMessage.error(`当前 WebDelivery 系统(${wd.OS})不支持格式 ${formData.stageFormat}`);
+        ElMessage.error(isZh.value ? `当前 WebDelivery 系统(${wd.OS})不支持格式 ${formData.stageFormat}` : `WebDelivery OS (${wd.OS}) does not support format ${formData.stageFormat}`);
         return;
       }
 
@@ -915,12 +919,12 @@ const handleGenerate = async () => {
     } else if (activeTab.value === 'shellcode') {
       const wd = selectedWebDelivery.value;
       if (!wd) {
-        ElMessage.error('请选择 WebDelivery');
+        ElMessage.error(isZh.value ? '请选择 WebDelivery' : 'Select a WebDelivery');
         return;
       }
       if (wd.OS !== 'windows' && formData.shellcodeFormat !== 'exe') {
         // 传统 StageShellCodeGen 主要面向 Windows stager + donut
-        ElMessage.warning('传统 Stage Shellcode 主要为 Windows 设计；非 Windows 建议使用 stage 动态 stager');
+        ElMessage.warning(isZh.value ? '传统 Stage Shellcode 主要为 Windows 设计；非 Windows 建议使用 stage 动态 stager' : 'Legacy Stage Shellcode targets Windows; use the stage dynamic stager for other systems');
       }
 
       res = await ClientAPI.StageShellCodeGen({
@@ -941,24 +945,24 @@ const handleGenerate = async () => {
         try {
           const text = await (res.data as Blob).text();
           const json = JSON.parse(text);
-          ElMessage.error(json.data || json.error || '生成失败');
+          ElMessage.error(json.data || json.error || (isZh.value ? '生成失败' : 'Generation failed'));
           return;
         } catch {
-          ElMessage.error('生成失败：后端返回了无法解析的错误');
+          ElMessage.error(isZh.value ? '生成失败：后端返回了无法解析的错误' : 'Generation failed: unparsable error from server');
           return;
         }
       }
       if (downloadBlob(res, fileName)) {
-        ElMessage.success('生成成功');
+        ElMessage.success(isZh.value ? '生成成功' : 'Generated');
       } else {
-        ElMessage.error('生成失败：响应不是可下载文件');
+        ElMessage.error(isZh.value ? '生成失败：响应不是可下载文件' : 'Generation failed: response is not a downloadable file');
       }
     } else {
-      ElMessage.error('生成失败，请检查后端日志');
+      ElMessage.error(isZh.value ? '生成失败，请检查后端日志' : 'Generation failed, check server logs');
     }
   } catch (error: any) {
     const msg = await extractBlobError(error);
-    ElMessage.error(`生成失败: ${msg}`);
+    ElMessage.error(isZh.value ? `生成失败: ${msg}` : `Generation failed: ${msg}`);
   } finally {
     generating.value = false;
   }

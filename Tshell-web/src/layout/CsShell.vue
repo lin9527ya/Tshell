@@ -75,7 +75,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import MenuBar from './MenuBar/MenuBar.vue'
 import Toolbar from './Toolbar/Toolbar.vue'
 import Splitter from './Splitter.vue'
@@ -150,8 +150,11 @@ const bottomPaneStyle = computed(() => {
   }
 })
 
+watchDialogOrder() // 同步注册(watch 需在 setup 同步上下文)
+
 onMounted(() => {
   eventsStore.connect()
+  window.addEventListener('keydown', onGlobalKeydown)
 
   // 默认打开 Event Log 标签页
   if (!workspace.tabs.length) {
@@ -166,7 +169,118 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   eventsStore.disconnect()
+  window.removeEventListener('keydown', onGlobalKeydown)
 })
+
+// ================= 全局快捷键 =================
+// 说明: Chrome 会保留 Ctrl+W/Ctrl+T/Ctrl+Tab/Ctrl+1-9/Ctrl+N(不可拦截),
+// 因此同时绑定可拦截的 Alt 变体;两者都注册,浏览器允许哪个就哪个生效。
+// 输入区(含 xterm 终端)内除 Esc 外一律不抢占按键。
+
+// 对话框可见性读取(bool 型或 {visible} 对象型两种)
+function dialogVisible(v: unknown): boolean {
+  if (v === true) return true
+  if (v && typeof v === 'object' && 'visible' in (v as Record<string, unknown>)) {
+    return !!(v as Record<string, unknown>).visible
+  }
+  return false
+}
+
+// 打开顺序栈(用于 Esc 关"最上层"对话框)
+const dialogOrder: string[] = []
+function watchDialogOrder() {
+  watch(
+    () => workspace.dialogs,
+    (d) => {
+      const openKeys = Object.keys(d).filter((k) => dialogVisible((d as Record<string, unknown>)[k]))
+      // 移除已关闭的,保持原有相对顺序
+      for (let i = dialogOrder.length - 1; i >= 0; i--) {
+        if (!openKeys.includes(dialogOrder[i])) dialogOrder.splice(i, 1)
+      }
+      // 追加新打开的
+      for (const k of openKeys) {
+        if (!dialogOrder.includes(k)) dialogOrder.push(k)
+      }
+    },
+    { deep: true },
+  )
+}
+
+function closeTopDialog(): boolean {
+  const top = dialogOrder[dialogOrder.length - 1]
+  if (!top) return false
+  workspace.closeDialog(top as never)
+  return true
+}
+
+function cycleTab(delta: number) {
+  const tabs = workspace.tabs
+  if (tabs.length < 2) return
+  const idx = tabs.findIndex((t) => t.id === workspace.activeTabId)
+  const next = (idx + delta + tabs.length) % tabs.length
+  workspace.setActiveTab(tabs[next].id)
+}
+
+function isEditableTarget(t: EventTarget | null): boolean {
+  const el = t as HTMLElement | null
+  if (!el || typeof el.tagName !== 'string') return false
+  const tag = el.tagName.toLowerCase()
+  if (tag === 'input' || tag === 'textarea' || tag === 'select') return true
+  if (el.isContentEditable) return true
+  return typeof el.closest === 'function' && !!el.closest('.xterm')
+}
+
+function onGlobalKeydown(e: KeyboardEvent) {
+  // Esc: 关闭最上层对话框(输入区中也生效);菜单类 Esc 由各自组件处理
+  if (e.key === 'Escape') {
+    if (closeTopDialog()) e.preventDefault()
+    return
+  }
+  if (isEditableTarget(e.target)) return // 输入区(含终端)不抢键
+
+  const ctrl = e.ctrlKey || e.metaKey
+  const alt = e.altKey
+
+  // 关闭当前标签: Alt+W(可靠) / Ctrl+W(浏览器允许时)
+  if ((alt && !ctrl && e.key.toLowerCase() === 'w') || (ctrl && !alt && e.key.toLowerCase() === 'w')) {
+    const tab = workspace.activeTab
+    if (tab && tab.closable !== false) {
+      e.preventDefault()
+      workspace.closeTab(tab.id)
+    }
+    return
+  }
+  // 标签循环: Ctrl+Alt+←/→(可靠) / Ctrl+Tab(浏览器允许时)
+  if ((ctrl && alt && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) || (ctrl && e.key === 'Tab')) {
+    e.preventDefault()
+    cycleTab(e.key === 'ArrowLeft' || e.shiftKey ? -1 : 1)
+    return
+  }
+  // 跳转第 N 个标签: Alt+1..9(Chrome 保留 Ctrl+1..9)
+  if (alt && !ctrl && /^[1-9]$/.test(e.key)) {
+    const idx = parseInt(e.key, 10) - 1
+    const tabs = workspace.tabs
+    if (idx < tabs.length) {
+      e.preventDefault()
+      workspace.setActiveTab(tabs[idx].id)
+    }
+    return
+  }
+  // 会话搜索: Ctrl+F
+  if (ctrl && !alt && e.key.toLowerCase() === 'f') {
+    e.preventDefault()
+    workspace.setTopViewMode('table')
+    workspace.isTopCollapsed = false
+    window.dispatchEvent(new CustomEvent('cs-focus-session-search'))
+    return
+  }
+  // 新建连接: Alt+N(Chrome 保留 Ctrl+N)
+  if (alt && !ctrl && e.key.toLowerCase() === 'n') {
+    e.preventDefault()
+    workspace.openDialog('connect')
+    return
+  }
+}
 </script>
 
 <style scoped>

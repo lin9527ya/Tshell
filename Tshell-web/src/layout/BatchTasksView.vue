@@ -81,9 +81,11 @@
         </el-table-column>
       </el-table>
 
-      <div v-if="!tasks.length && !loading" class="cs-empty-watermark">
-        <div class="empty-title">{{ isZh ? '暂无批量任务' : 'No batch tasks' }}</div>
-      </div>
+      <EmptyState
+        v-if="!tasks.length && !loading"
+        variant="overlay"
+        :title="isZh ? '暂无批量任务' : 'No batch tasks'"
+      />
     </div>
   </div>
 </template>
@@ -91,6 +93,8 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18nStore } from '@/stores/i18n'
+import { useTabActive, useVisibilityInterval } from '@/utils/useVisibilityInterval'
+import EmptyState from '@/components/Common/EmptyState.vue'
 import ClientAPI from '@/api/clients'
 
 interface TaskRow {
@@ -132,15 +136,12 @@ async function fetchTasks() {
   }
 }
 
-let timer: number | undefined
+// 【性能】5s 轮询接入可见性治理(非活动标签/页面隐藏时暂停)
+const tabActive = useTabActive()
+useVisibilityInterval(fetchTasks, 5000, { isActive: () => tabActive.value })
 
 onMounted(() => {
   fetchTasks()
-  timer = window.setInterval(fetchTasks, 5000)
-})
-
-onBeforeUnmount(() => {
-  if (timer) window.clearInterval(timer)
 })
 </script>
 
@@ -182,6 +183,7 @@ onBeforeUnmount(() => {
 .bt-table-wrap {
   flex: 1;
   overflow: hidden;
+  position: relative;
 }
 
 .bt-expand-box {

@@ -62,10 +62,11 @@
         </el-table-column>
 
         <template #empty>
-          <div class="sites-empty-watermark">
-            <div class="empty-title">{{ isZh ? '暂无托管的站点与服务' : 'No Hosted Web Sites' }}</div>
-            <div class="empty-desc">{{ isZh ? '通过顶栏【站点管理 -> 网站克隆】或【文件托管】创建托管服务。' : 'Create hosted sites via Site Management menu.' }}</div>
-          </div>
+          <EmptyState
+            variant="inline"
+            :title="isZh ? '暂无托管的站点与服务' : 'No Hosted Web Sites'"
+            :desc="isZh ? '通过顶栏【站点管理 -> 网站克隆】或【文件托管】创建托管服务。' : 'Create hosted sites via Site Management menu.'"
+          />
         </template>
       </el-table>
     </div>
@@ -115,7 +116,9 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18nStore } from '@/stores/i18n'
+import { useTabActive, useVisibilityInterval } from '@/utils/useVisibilityInterval'
 import ClientAPI from '@/api/clients'
+import EmptyState from '@/components/Common/EmptyState.vue'
 
 interface SiteItem {
   id: string | number
@@ -282,17 +285,17 @@ defineExpose({
   refreshSites,
 })
 
-let autoTimer: number | undefined
+// 【性能】8s 自动刷新接入可见性治理(非活动标签/页面隐藏时暂停)
+const tabActive = useTabActive()
+useVisibilityInterval(refreshSites, 8000, { isActive: () => tabActive.value })
 
 onMounted(() => {
   window.addEventListener('mousedown', closeContextMenu)
   refreshSites()
-  autoTimer = window.setInterval(refreshSites, 8000)
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('mousedown', closeContextMenu)
-  if (autoTimer) window.clearInterval(autoTimer)
 })
 </script>
 
@@ -373,21 +376,6 @@ onBeforeUnmount(() => {
 .site-badge.site-file {
   background: color-mix(in srgb, #4caf50 20%, transparent);
   color: #4caf50;
-}
-
-.sites-empty-watermark {
-  padding: 40px 20px;
-  text-align: center;
-}
-.empty-title {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--cs-text-bright);
-  margin-bottom: 4px;
-}
-.empty-desc {
-  font-size: 12px;
-  color: var(--cs-text-dim);
 }
 
 /* Bottom Bar - Center aligned as in Screenshot 5 */

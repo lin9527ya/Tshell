@@ -540,18 +540,18 @@ onMounted(() => {
 }
 
 .lvl-info {
-  background: rgba(22, 119, 255, 0.2);
-  color: #69b1ff;
+  background: color-mix(in srgb, var(--cs-active) 20%, transparent);
+  color: var(--cs-active);
 }
 
 .lvl-warn {
-  background: rgba(250, 140, 22, 0.2);
-  color: #ffc069;
+  background: color-mix(in srgb, var(--cs-warning) 20%, transparent);
+  color: var(--cs-warning);
 }
 
 .lvl-error, .lvl-security {
-  background: rgba(255, 77, 79, 0.2);
-  color: #ff7875;
+  background: color-mix(in srgb, var(--cs-error) 20%, transparent);
+  color: var(--cs-error);
 }
 
 .text-online {
@@ -559,6 +559,6 @@ onMounted(() => {
 }
 
 .text-danger {
-  color: #ff4d4f;
+  color: var(--cs-error);
 }
 </style>

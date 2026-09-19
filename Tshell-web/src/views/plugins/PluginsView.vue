@@ -19,10 +19,10 @@
 
   <div class="plugin-card">
     <el-form :model="pluginForm" label-width="120px" class="plugin-form">
-      <el-form-item label="选择客户端" required>
-        <el-select 
-          v-model="pluginForm.clientUid" 
-          placeholder="请选择已上线的客户端" 
+      <el-form-item :label="isZh ? '选择客户端' : 'Select Client'" required>
+        <el-select
+          v-model="pluginForm.clientUid"
+          :placeholder="isZh ? '请选择已上线的客户端' : 'Select an online client'"
           class="full-width"
         >
           <el-option
@@ -35,7 +35,7 @@
       </el-form-item>
 
       <!-- Windows内存执行模式选择 -->
-      <el-form-item label="执行模式">
+      <el-form-item :label="isZh ? '执行模式' : 'Execution Mode'">
         <div class="execution-mode-buttons">
           <el-button
             :type="executionMode === 'execute-assembly' ? 'primary' : 'default'"
@@ -43,7 +43,7 @@
             :disabled="!isWindowsClient"
             class="mode-button"
           >
-            Execute Assembly(.NET程序内存执行)
+            {{ isZh ? 'Execute Assembly(.NET程序内存执行)' : 'Execute Assembly (.NET in-memory)' }}
           </el-button>
           <el-button
             :type="executionMode === 'inline-bin' ? 'primary' : 'default'"
@@ -51,7 +51,7 @@
             :disabled="!isWindowsClient"
             class="mode-button"
           >
-            Inline Bin(其他exe程序内存执行)
+            {{ isZh ? 'Inline Bin(其他exe程序内存执行)' : 'Inline Bin (other exe in-memory)' }}
           </el-button>
           <el-button
             :type="executionMode === 'shellcode-inject' ? 'primary' : 'default'"
@@ -59,7 +59,7 @@
             :disabled="!isWindowsClient"
             class="mode-button"
           >
-            shellcode执行(执行shellcode,上线其他C2等)
+            {{ isZh ? 'shellcode执行(执行shellcode,上线其他C2等)' : 'Shellcode (run shellcode, stage other C2)' }}
           </el-button>
           <el-button
             :type="executionMode === 'script' ? 'primary' : 'default'"
@@ -67,7 +67,7 @@
             :disabled="isWindowsClient"
             class="mode-button"
           >
-            Script(Linux脚本内存执行)
+            {{ isZh ? 'Script(Linux脚本内存执行)' : 'Script (Linux script in-memory)' }}
           </el-button>
           <el-button
             :type="executionMode === 'binary' ? 'primary' : 'default'"
@@ -75,7 +75,7 @@
             :disabled="isWindowsClient"
             class="mode-button"
           >
-            Binary(Linux二进制执行)
+            {{ isZh ? 'Binary(Linux二进制执行)' : 'Binary (Linux binary exec)' }}
           </el-button>
           <el-button
             :type="executionMode === 'bof' ? 'primary' : 'default'"
@@ -83,30 +83,30 @@
             :disabled="!isWindowsClient"
             class="mode-button"
           >
-            BOF(COFF内存执行)
+            {{ isZh ? 'BOF(COFF内存执行)' : 'BOF (COFF in-memory)' }}
           </el-button>
           <el-button
             :type="executionMode === 'exec-file' ? 'primary' : 'default'"
             @click="setExecutionMode('exec-file')"
             class="mode-button"
           >
-            Exec File(临时文件执行,支持Go/Rust PE)
+            {{ isZh ? 'Exec File(临时文件执行,支持Go/Rust PE)' : 'Exec File (temp file exec, Go/Rust PE)' }}
           </el-button>
         </div>
         <el-alert v-if="!isWindowsClient && pluginForm.clientUid" type="info" :closable="false" show-icon style="margin-top: 8px;">
-          Linux 客户端：使用 Script 或 Binary 模式执行插件
+          {{ isZh ? 'Linux 客户端：使用 Script 或 Binary 模式执行插件' : 'Linux client: use Script or Binary mode' }}
         </el-alert>
         <el-alert v-if="isWindowsClient && pluginForm.clientUid" type="warning" :closable="false" show-icon style="margin-top: 8px;">
-          Windows 客户端：使用 Execute Assembly / Inline Bin / Shellcode / BOF 模式
+          {{ isZh ? 'Windows 客户端：使用 Execute Assembly / Inline Bin / Shellcode / BOF 模式' : 'Windows client: use Execute Assembly / Inline Bin / Shellcode / BOF' }}
         </el-alert>
         <el-alert v-if="!pluginForm.clientUid" type="info" :closable="false" show-icon style="margin-top: 8px;">
-          请先选择客户端
+          {{ isZh ? '请先选择客户端' : 'Select a client first' }}
         </el-alert>
       </el-form-item>
 
-      <el-form-item label="选择插件" required>
+      <el-form-item :label="isZh ? '选择插件' : 'Select Plugin'" required>
         <div class="plugin-select-row">
-          <el-select v-model="pluginForm.selectedPlugin" placeholder="请选择插件" class="full-width" @change="handlePluginChange">
+          <el-select v-model="pluginForm.selectedPlugin" :placeholder="isZh ? '请选择插件' : 'Select a plugin'" class="full-width" @change="handlePluginChange">
             <el-option
               v-for="plugin in plugins"
               :key="plugin.name || plugin.Name"
@@ -119,12 +119,12 @@
             type="danger"
             :icon="Delete"
             @click="handleDeletePlugin"
-          >删除插件</el-button>
+          >{{ isZh ? '删除插件' : 'Delete Plugin' }}</el-button>
         </div>
       </el-form-item>
 
       <!-- 插件详情（后端 /plugin/details/:pluginName，1:1 CS 信息条） -->
-      <el-form-item v-if="pluginForm.selectedPlugin" label="插件详情">
+      <el-form-item v-if="pluginForm.selectedPlugin" :label="isZh ? '插件详情' : 'Plugin Details'">
         <div class="plugin-detail-strip cs-font-ui">
           <div v-if="pluginDetailsLoading" class="pd-loading">
             {{ isZh ? '加载详情中...' : 'Loading plugin details...' }}
@@ -158,10 +158,10 @@
         </div>
       </el-form-item>
 
-      <el-form-item label="参数">
+      <el-form-item :label="isZh ? '参数' : 'Arguments'">
         <el-input
           v-model="pluginForm.arguments"
-          placeholder="请输入参数，例如：-h 192.168.0.0"
+          :placeholder="isZh ? '请输入参数，例如：-h 192.168.0.0' : 'Enter arguments, e.g. -h 192.168.0.0'"
           class="full-width"
         />
       </el-form-item>
@@ -169,13 +169,13 @@
       <!-- 插件输出区域重新设计 -->
       <div class="output-section">
         <div class="output-header">
-          <h4 class="output-title">📜 执行输出</h4>
+          <h4 class="output-title">📜 {{ isZh ? '执行输出' : 'Execution Output' }}</h4>
           <div class="output-controls">
             <el-button-group size="small">
-              <el-button @click="clearOutput" icon="Delete" title="清空输出">清空</el-button>
-              <el-button @click="copyOutput" icon="CopyDocument" title="复制全部">复制</el-button>
-              <el-button @click="exportOutput" icon="Download" title="导出日志">导出</el-button>
-              <el-button @click="refreshShellContent" icon="Refresh" title="手动刷新" :disabled="!pluginForm.clientUid">刷新</el-button>
+              <el-button @click="clearOutput" icon="Delete" :title="isZh ? '清空输出' : 'Clear Output'">{{ isZh ? '清空' : 'Clear' }}</el-button>
+              <el-button @click="copyOutput" icon="CopyDocument" :title="isZh ? '复制全部' : 'Copy All'">{{ isZh ? '复制' : 'Copy' }}</el-button>
+              <el-button @click="exportOutput" icon="Download" :title="isZh ? '导出日志' : 'Export Log'">{{ isZh ? '导出' : 'Export' }}</el-button>
+              <el-button @click="refreshShellContent" icon="Refresh" :title="isZh ? '手动刷新' : 'Manual Refresh'" :disabled="!pluginForm.clientUid">{{ isZh ? '刷新' : 'Refresh' }}</el-button>
             </el-button-group>
           </div>
         </div>
@@ -234,27 +234,27 @@
     </div>
     
     <!-- 上传文件模态框 -->
-    <el-dialog v-model="showUploadDialog" title="上传插件" width="700px" :close-on-click-modal="false">
+    <el-dialog v-model="showUploadDialog" :title="isZh ? '上传插件' : 'Upload Plugin'" width="700px" :close-on-click-modal="false">
       <div class="upload-dialog-content">
         <div class="upload-info-banner">
           <el-icon class="info-icon"><InfoFilled /></el-icon>
-          支持exe,net,elf,dll,so,dylib格式，单个文件不超过50MB，最多只能同时上传6个文件
-          <el-button type="primary" class="select-file-btn" @click="selectFiles">选择文件</el-button>
+          {{ isZh ? '支持exe,net,elf,dll,so,dylib格式，单个文件不超过50MB，最多只能同时上传6个文件' : 'Supports exe, net, elf, dll, so, dylib. Max 50MB per file, up to 6 files at once.' }}
+          <el-button type="primary" class="select-file-btn" @click="selectFiles">{{ isZh ? '选择文件' : 'Select Files' }}</el-button>
         </div>
-        
+
         <!-- 文件列表区域 -->
         <div class="file-list-area">
           <div class="file-list-header">
-            <div class="header-col thumbnail">缩略图</div>
-            <div class="header-col filename">文件名</div>
-            <div class="header-col filesize">文件大小</div>
-            <div class="header-col status">状态</div>
-            <div class="header-col operation">操作</div>
+            <div class="header-col thumbnail">{{ isZh ? '缩略图' : 'Preview' }}</div>
+            <div class="header-col filename">{{ isZh ? '文件名' : 'File Name' }}</div>
+            <div class="header-col filesize">{{ isZh ? '文件大小' : 'Size' }}</div>
+            <div class="header-col status">{{ isZh ? '状态' : 'Status' }}</div>
+            <div class="header-col operation">{{ isZh ? '操作' : 'Actions' }}</div>
           </div>
-          
+
           <div class="file-list-body">
             <div v-if="fileList.length === 0" class="empty-file-list">
-              暂无文件
+              {{ isZh ? '暂无文件' : 'No files' }}
             </div>
             <div v-for="(file, index) in fileList" :key="index" class="file-item">
               <div class="file-col thumbnail">
@@ -262,9 +262,9 @@
               </div>
               <div class="file-col filename">{{ file.name }}</div>
               <div class="file-col filesize">{{ formatFileSize(file.size) }}</div>
-              <div class="file-col status">待上传</div>
+              <div class="file-col status">{{ isZh ? '待上传' : 'Pending' }}</div>
               <div class="file-col operation">
-                <el-button type="text" size="small" @click="removeFile(index)">删除</el-button>
+                <el-button type="text" size="small" @click="removeFile(index)">{{ isZh ? '删除' : 'Remove' }}</el-button>
               </div>
             </div>
           </div>
@@ -283,8 +283,8 @@
       
       <template #footer>
         <div class="upload-dialog-footer">
-          <el-button @click="closeUploadDialog">关闭</el-button>
-          <el-button type="primary" @click="submitUpload">开始上传</el-button>
+          <el-button @click="closeUploadDialog">{{ isZh ? '关闭' : 'Close' }}</el-button>
+          <el-button type="primary" @click="submitUpload">{{ isZh ? '开始上传' : 'Start Upload' }}</el-button>
         </div>
       </template>
     </el-dialog>
@@ -446,7 +446,7 @@ const getExecutionModeText = () => {
     case 'inline-bin':
       return 'Inline Bin';
     case 'shellcode-inject':
-      return 'Shellcode注入';
+      return isZh.value ? 'Shellcode注入' : 'Shellcode';
     case 'script':
       return 'Linux Script';
     case 'binary':
@@ -456,7 +456,7 @@ const getExecutionModeText = () => {
     case 'exec-file':
       return 'Exec File';
     default:
-      return '请选择模式';
+      return isZh.value ? '请选择模式' : 'Select Mode';
   }
 };
 
@@ -490,7 +490,9 @@ const getClientDisplayInfo = (client: ClientData) => {
   const osType = getSystemType(client)
   
   // 格式: ID：X | 协议 | 外网IP | 系统类型_架构 | 计算机名
-  return `ID：${clientId} | ${protocol.toUpperCase()} | ${client.ExternalIP} | ${osType} | ${client.Computer}`
+  return isZh.value
+    ? `ID：${clientId} | ${protocol.toUpperCase()} | ${client.ExternalIP} | ${osType} | ${client.Computer}`
+    : `ID: ${clientId} | ${protocol.toUpperCase()} | ${client.ExternalIP} | ${osType} | ${client.Computer}`
 }
 
 // 加载在线客户端：优先走后端专用 /client/online-clients（plugin.go），失败回退会话列表
@@ -524,7 +526,7 @@ const loadOnlineClients = async () => {
     }
   } catch (error) {
     console.error('获取在线客户端失败:', error)
-    ElMessage.error('获取客户端列表失败')
+    ElMessage.error(isZh.value ? '获取客户端列表失败' : 'Failed to load client list')
   }
 };
 
@@ -545,12 +547,12 @@ const refreshPlugins = async () => {
     } else {
       console.error('❌ 插件API返回异常:', response.data);
       plugins.value = [];
-      ElMessage.error('插件列表加载失败');
+      ElMessage.error(isZh.value ? '插件列表加载失败' : 'Failed to load plugin list');
     }
   } catch (error) {
     console.error('❌ 刷新插件列表失败:', error);
     plugins.value = [];
-    ElMessage.error('刷新插件列表失败');
+    ElMessage.error(isZh.value ? '刷新插件列表失败' : 'Failed to refresh plugin list');
   }
 };
 
@@ -600,22 +602,22 @@ const handleDeletePlugin = () => {
   const name = pluginForm.value.selectedPlugin
   if (!name) return
   ElMessageBox.confirm(
-    `确定要删除插件 "${name}" 吗？此操作不可恢复。`,
-    '删除插件确认',
-    { confirmButtonText: '确定', cancelButtonText: '取消', type: 'error' }
+    isZh.value ? `确定要删除插件 "${name}" 吗？此操作不可恢复。` : `Delete plugin "${name}"? This cannot be undone.`,
+    isZh.value ? '删除插件确认' : 'Delete Plugin',
+    { confirmButtonText: isZh.value ? '确定' : 'Confirm', cancelButtonText: isZh.value ? '取消' : 'Cancel', type: 'error' }
   ).then(async () => {
     try {
       const response = await pluginApi.delete_plugin(name)
       if (response.data && response.data.status === 200) {
-        ElMessage.success('插件已删除')
+        ElMessage.success(isZh.value ? '插件已删除' : 'Plugin deleted')
         pluginForm.value.selectedPlugin = ''
         pluginDetails.value = null
         await refreshPlugins()
       } else {
-        ElMessage.error(response.data?.data || response.data?.message || '删除插件失败')
+        ElMessage.error(response.data?.data || response.data?.message || (isZh.value ? '删除插件失败' : 'Failed to delete plugin'))
       }
     } catch (error: any) {
-      ElMessage.error(error.response?.data?.data || '删除插件失败')
+      ElMessage.error(error.response?.data?.data || (isZh.value ? '删除插件失败' : 'Failed to delete plugin'))
     }
   })
 };
@@ -629,28 +631,30 @@ const stopPolling = () => {
     contentStableCount = 0;
     hasSeenCompletionMarker = false;
     
-    pluginOutput.value += '\n\n[⏹️] 用户手动停止轮询\n提示：您可以稍后手动查看Shell历史记录来确认执行结果';
+    pluginOutput.value += isZh.value
+      ? '\n\n[⏹️] 用户手动停止轮询\n提示：您可以稍后手动查看Shell历史记录来确认执行结果'
+      : '\n\n[⏹️] Polling stopped by user\nTip: check the shell history later to confirm the result';
     
-    ElMessage.info('已停止轮询获取执行结果');
+    ElMessage.info(isZh.value ? '已停止轮询获取执行结果' : 'Stopped polling for results');
   }
 };
 
 // 清空输出
 const clearOutput = () => {
   pluginOutput.value = '';
-  ElMessage.success('输出已清空');
+  ElMessage.success(isZh.value ? '输出已清空' : 'Output cleared');
 };
 
 // 复制输出内容
 const copyOutput = async () => {
   if (!pluginOutput.value) {
-    ElMessage.warning('没有内容可复制');
+    ElMessage.warning(isZh.value ? '没有内容可复制' : 'Nothing to copy');
     return;
   }
   
   try {
     await navigator.clipboard.writeText(pluginOutput.value);
-    ElMessage.success('已复制全部输出内容');
+    ElMessage.success(isZh.value ? '已复制全部输出内容' : 'Copied all output');
   } catch (error) {
     // 退回方案：传统复制方法
     const textArea = document.createElement('textarea');
@@ -659,14 +663,14 @@ const copyOutput = async () => {
     textArea.select();
     document.execCommand('copy');
     document.body.removeChild(textArea);
-    ElMessage.success('已复制全部输出内容');
+    ElMessage.success(isZh.value ? '已复制全部输出内容' : 'Copied all output');
   }
 };
 
 // 导出日志
 const exportOutput = () => {
   if (!pluginOutput.value) {
-    ElMessage.warning('没有内容可导出');
+    ElMessage.warning(isZh.value ? '没有内容可导出' : 'Nothing to export');
     return;
   }
   
@@ -684,13 +688,13 @@ const exportOutput = () => {
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
   
-  ElMessage.success('日志已导出');
+  ElMessage.success(isZh.value ? '日志已导出' : 'Log exported');
 };
 
 // 手动刷新Shell内容
 const refreshShellContent = async () => {
   if (!pluginForm.value.clientUid) {
-    ElMessage.warning('请先选择客户端');
+    ElMessage.warning(isZh.value ? '请先选择客户端' : 'Select a client first');
     return;
   }
   
@@ -728,17 +732,27 @@ const refreshShellContent = async () => {
       }
       
       // 显示结果和调试信息
-      pluginOutput.value = `[🔄] 手动刷新Shell历史
+      const yesNo = (b: boolean) => (b ? (isZh.value ? '是' : 'yes') : (isZh.value ? '否' : 'no'));
+      const mimikatzModeText = isMimikatzTool
+        ? (isZh.value ? 'Mimikatz专用模式（宽松过滤）' : 'Mimikatz mode (loose filter)')
+        : (isZh.value ? '标准过滤模式' : 'Standard filter');
+      const displayModeLine = executionMode.value
+        ? (isZh.value ? `显示模式: ${mimikatzModeText}` : `Display mode: ${mimikatzModeText}`)
+        : '';
+      const hasCreds = fullShellContent.includes('Authentication Id');
+      const hasMarkers = fullShellContent.includes('=== CAPTURED OUTPUT ===') || fullShellContent.includes('=== FINAL OUTPUT DUMP ===');
+      pluginOutput.value = isZh.value
+        ? `[🔄] 手动刷新Shell历史
 时间: ${new Date().toLocaleString()}
 客户端: ${pluginForm.value.clientUid}
-${executionMode.value ? `显示模式: ${isMimikatzTool ? 'Mimikatz专用模式（宽松过滤）' : '标准过滤模式'}` : ''}
+${displayModeLine}
 
 === 调试信息 ===
 原始内容长度: ${fullShellContent.length} 字符
 过滤后长度: ${shellContent.length} 字符
-包含 mimikatz 关键字: ${fullShellContent.toLowerCase().includes('mimikatz') ? '是' : '否'}
-包含凭据信息: ${fullShellContent.includes('Authentication Id') ? '是' : '否'}
-包含输出标记: ${fullShellContent.includes('=== CAPTURED OUTPUT ===') || fullShellContent.includes('=== FINAL OUTPUT DUMP ===') ? '是' : '否'}
+包含 mimikatz 关键字: ${yesNo(fullShellContent.toLowerCase().includes('mimikatz'))}
+包含凭据信息: ${yesNo(hasCreds)}
+包含输出标记: ${yesNo(hasMarkers)}
 
 === 最新执行结果 ===
 ${shellContent}
@@ -747,28 +761,48 @@ ${shellContent}
 如果上面的结果不完整，请检查：
 1. 客户端日志是否显示完整输出
 2. 是否选择了正确的执行模式
-3. 插件名称是否匹配`;
-      ElMessage.success('已更新Shell历史内容（包含调试信息）');
+3. 插件名称是否匹配`
+        : `[🔄] Shell History Refreshed
+Time: ${new Date().toLocaleString()}
+Client: ${pluginForm.value.clientUid}
+${displayModeLine}
+
+=== Debug Info ===
+Raw length: ${fullShellContent.length} chars
+Filtered length: ${shellContent.length} chars
+Contains mimikatz keyword: ${yesNo(fullShellContent.toLowerCase().includes('mimikatz'))}
+Contains credential info: ${yesNo(hasCreds)}
+Contains output markers: ${yesNo(hasMarkers)}
+
+=== Latest Execution Result ===
+${shellContent}
+
+=== Debug Tips ===
+If the result above is incomplete, check:
+1. Whether the client log shows the complete output
+2. Whether the correct execution mode is selected
+3. Whether the plugin name matches`;
+      ElMessage.success(isZh.value ? '已更新Shell历史内容（包含调试信息）' : 'Shell history updated (with debug info)');
     } else {
-      ElMessage.error('获取Shell历史失败');
+      ElMessage.error(isZh.value ? '获取Shell历史失败' : 'Failed to load shell history');
     }
   } catch (error) {
     console.error('刷新Shell内容失败:', error);
-    ElMessage.error('刷新失败：' + (error instanceof Error ? error.message : '网络错误'));
+    ElMessage.error(isZh.value ? '刷新失败：' + (error instanceof Error ? error.message : '网络错误') : 'Refresh failed: ' + (error instanceof Error ? error.message : 'network error'));
   }
 };
 
 // 执行插件
 const executePlugin = async () => {
   if (!pluginForm.value.clientUid || !pluginForm.value.selectedPlugin || !executionMode.value) {
-    ElMessage.warning('请选择客户端、插件和执行模式');
+    ElMessage.warning(isZh.value ? '请选择客户端、插件和执行模式' : 'Select a client, plugin and execution mode');
     return;
   }
 
   // 检查客户端是否在线
   const selectedClient = onlineClients.value.find(client => client.Uid === pluginForm.value.clientUid);
   if (!selectedClient || selectedClient.Online !== '1') {
-    ElMessage.error('所选客户端不在线，请选择其他客户端');
+    ElMessage.error(isZh.value ? '所选客户端不在线，请选择其他客户端' : 'Selected client is offline, pick another one');
     return;
   }
 
@@ -779,22 +813,35 @@ const executePlugin = async () => {
     const args = pluginForm.value.arguments || '';
     
     // 清空之前的输出并显示执行信息
-    pluginOutput.value = `[🔄] 开始执行插件
+    const pluginArgs = args || (isZh.value ? '无' : 'none');
+    pluginOutput.value = isZh.value
+      ? `[🔄] 开始执行插件
 ===================
 模式: ${getExecutionModeText()}
 插件: ${pluginName}
-参数: ${args || '无'}
+参数: ${pluginArgs}
 客户端: ${selectedClient.Computer} (${selectedClient.ExternalIP})
 执行时间: ${new Date().toLocaleTimeString()}
 显示模式: 仅显示最新一次 ${executionMode.value} 执行结果
 ===================
 
-正在下载插件文件...`;
+正在下载插件文件...`
+      : `[🔄] Plugin Execution Started
+===================
+Mode: ${getExecutionModeText()}
+Plugin: ${pluginName}
+Arguments: ${pluginArgs}
+Client: ${selectedClient.Computer} (${selectedClient.ExternalIP})
+Started at: ${new Date().toLocaleTimeString()}
+Display mode: latest ${executionMode.value} run only
+===================
+
+Downloading plugin file...`;
 
     // 从服务端下载插件文件
     const downloadUrl = `/api/plugin/download/${pluginName}`;
     
-    pluginOutput.value += '\n正在准备执行文件...';
+    pluginOutput.value += isZh.value ? '\n正在准备执行文件...' : '\nPreparing execution file...';
     
     // 获取插件文件内容
     const pluginFileResponse = await fetch(downloadUrl, {
@@ -804,13 +851,13 @@ const executePlugin = async () => {
     });
     
     if (!pluginFileResponse.ok) {
-      throw new Error(`无法下载插件文件: HTTP ${pluginFileResponse.status}`);
+      throw new Error(isZh.value ? `无法下载插件文件: HTTP ${pluginFileResponse.status}` : `Failed to download plugin file: HTTP ${pluginFileResponse.status}`);
     }
     
     const pluginBlob = await pluginFileResponse.blob();
     const pluginFile = new File([pluginBlob], pluginName);
     
-    pluginOutput.value += '\n正在发送命令到客户端...';
+    pluginOutput.value += isZh.value ? '\n正在发送命令到客户端...' : '\nSending command to client...';
     
     // 使用ExecuteBin API调用Windows内存执行功能
     const formData = new FormData();
@@ -830,8 +877,10 @@ const executePlugin = async () => {
     const result = await response.json();
     
     if (result.status === 200) {
-      pluginOutput.value += '\n命令已成功发送到客户端\n\n正在等待执行结果...';
-      ElMessage.success('插件命令已发送，正在等待执行结果');
+      pluginOutput.value += isZh.value
+        ? '\n命令已成功发送到客户端\n\n正在等待执行结果...'
+        : '\nCommand sent to client\n\nWaiting for results...';
+      ElMessage.success(isZh.value ? '插件命令已发送，正在等待执行结果' : 'Command sent, waiting for results');
       
       // 重置轮询状态
       lastShellContentLength = 0;
@@ -839,18 +888,26 @@ const executePlugin = async () => {
       // 开始轮询获取执行结果
       startPollingForResults(clientUid, pluginName);
     } else {
-      const errorMsg = result.data || result.message || '未知错误';
-      pluginOutput.value = `[✗] 执行失败
+      const errorMsg = result.data || result.message || (isZh.value ? '未知错误' : 'Unknown error');
+      pluginOutput.value = isZh.value
+        ? `[✗] 执行失败
 错误原因: ${errorMsg}
 
 请检查：
 1. 客户端是否正常连接
 2. 插件文件格式是否正确
-3. 执行模式是否与插件类型匹配`;
-      ElMessage.error('插件执行失败: ' + errorMsg);
+3. 执行模式是否与插件类型匹配`
+        : `[✗] Execution Failed
+Reason: ${errorMsg}
+
+Check:
+1. Whether the client is connected
+2. Whether the plugin file format is correct
+3. Whether the execution mode matches the plugin type`;
+      ElMessage.error((isZh.value ? '插件执行失败: ' : 'Plugin execution failed: ') + errorMsg);
     }
   } catch (error: unknown) {
-    let errorMessage = '未知错误';
+    let errorMessage = isZh.value ? '未知错误' : 'Unknown error';
     
     if (error instanceof Error) {
       errorMessage = error.message;
@@ -858,16 +915,25 @@ const executePlugin = async () => {
       errorMessage = error;
     }
     
-    pluginOutput.value = `[✗] 执行失败
+    pluginOutput.value = isZh.value
+      ? `[✗] 执行失败
 错误信息: ${errorMessage}
 
 常见问题解决：
 1. 检查网络连接是否正常
 2. 确认身份验证未过期
 3. 刷新页面后重试
-4. 联系管理员获取帮助`;
+4. 联系管理员获取帮助`
+      : `[✗] Execution Failed
+Error: ${errorMessage}
+
+Common fixes:
+1. Check the network connection
+2. Make sure the session has not expired
+3. Refresh the page and retry
+4. Contact an administrator`;
     
-    ElMessage.error('执行插件时发生错误: ' + errorMessage);
+    ElMessage.error((isZh.value ? '执行插件时发生错误: ' : 'Plugin execution error: ') + errorMessage);
     console.error('执行插件时发生错误:', error);
   }
 };
@@ -894,7 +960,9 @@ const filterShellContentByMode = (fullContent: string, currentMode: string, plug
   
   // 如果没找到当前模式的命令，返回提示信息
   if (lastCommandIndex === -1) {
-    return '暂无当前执行模式的相关输出。\n\n请执行插件后查看结果。';
+    return isZh.value
+      ? '暂无当前执行模式的相关输出。\n\n请执行插件后查看结果。'
+      : 'No output for the current execution mode.\n\nRun a plugin and check the result.';
   }
   
   // 从最后一次命令开始，收集到下一个执行模式命令之前的所有内容
@@ -1000,7 +1068,9 @@ const filterShellContentForMimikatz = (fullContent: string, currentMode: string,
       return recentContent;
     }
     
-    return '暂无执行相关输出，请检查执行是否成功。\n\n如果问题持续，请查看完整Shell历史。';
+    return isZh.value
+      ? '暂无执行相关输出，请检查执行是否成功。\n\n如果问题持续，请查看完整Shell历史。'
+      : 'No execution output found, check whether the run succeeded.\n\nIf the problem persists, review the full shell history.';
   }
   
   // 使用更宽松的结束条件：寻找下一个明确的命令，而不是执行模式命令
@@ -1127,8 +1197,11 @@ const startPollingForResults = (clientUid: string, pluginName: string) => {
           
           // 实时更新显示
           if (shellContent.trim().length > 0) {
-            const statusText = hasSeenCompletionMarker ? '收集输出中' : '正在执行';
-            pluginOutput.value = `[⏳] 插件${statusText}...
+            const statusText = hasSeenCompletionMarker
+              ? (isZh.value ? '收集输出中' : 'collecting output')
+              : (isZh.value ? '正在执行' : 'running');
+            pluginOutput.value = isZh.value
+              ? `[⏳] 插件${statusText}...
 模式: ${getExecutionModeText()}
 插件: ${pluginName}
 参数: ${pluginForm.value.arguments || '无'}
@@ -1138,7 +1211,18 @@ const startPollingForResults = (clientUid: string, pluginName: string) => {
 === 实时执行结果 ===
 ${shellContent}
 
-${statusText}中...`;
+${statusText}中...`
+              : `[⏳] Plugin ${statusText}...
+Mode: ${getExecutionModeText()}
+Plugin: ${pluginName}
+Arguments: ${pluginForm.value.arguments || 'none'}
+Attempt: ${attempts}/${maxAttempts}
+Display mode: ${isMimikatzTool ? 'full output (mimikatz tuned)' : 'filtered output'}
+
+=== Live Execution Result ===
+${shellContent}
+
+${statusText}...`;
           }
         } else {
           // 内容没有更新
@@ -1157,7 +1241,8 @@ ${statusText}中...`;
             const clientId = selectedClient ? (selectedClient.ID || selectedClient.id || 'N/A') : 'N/A';
             
             // 显示最终结果
-            pluginOutput.value = `[✓] 插件执行完成
+            pluginOutput.value = isZh.value
+              ? `[✓] 插件执行完成
 模式: ${getExecutionModeText()}
 插件: ${pluginName}
 参数: ${pluginForm.value.arguments || '无'}
@@ -1166,6 +1251,16 @@ ${statusText}中...`;
 显示模式: ${isMimikatzTool ? '完整输出模式（mimikatz优化）' : '过滤输出模式'}
 
 === 最终执行结果 ===
+${shellContent}`
+              : `[✓] Plugin Execution Finished
+Mode: ${getExecutionModeText()}
+Plugin: ${pluginName}
+Arguments: ${pluginForm.value.arguments || 'none'}
+Client: ${clientId}
+Elapsed: ${executionTime}s
+Display mode: ${isMimikatzTool ? 'full output (mimikatz tuned)' : 'filtered output'}
+
+=== Final Execution Result ===
 ${shellContent}`;
             
             clearInterval(pollingInterval!);
@@ -1173,7 +1268,7 @@ ${shellContent}`;
             lastShellContentLength = 0;
             contentStableCount = 0;
             hasSeenCompletionMarker = false;
-            ElMessage.success('插件执行完成，完整结果已显示');
+            ElMessage.success(isZh.value ? '插件执行完成，完整结果已显示' : 'Plugin finished, full results shown');
             return;
           }
         }
@@ -1188,7 +1283,8 @@ ${shellContent}`;
             const selectedClient = onlineClients.value.find(client => client.Uid === clientUid);
             const clientId = selectedClient ? (selectedClient.ID || selectedClient.id || 'N/A') : 'N/A';
             
-            pluginOutput.value = `[✓] 插件执行完成（超时显示）
+            pluginOutput.value = isZh.value
+              ? `[✓] 插件执行完成（超时显示）
 模式: ${getExecutionModeText()}
 插件: ${pluginName}
 参数: ${pluginForm.value.arguments || '无'}
@@ -1199,12 +1295,25 @@ ${shellContent}`;
 === 最终执行结果 ===
 ${finalShellContent}
 
-提示：由于达到${maxAttempts}秒超时限制，系统强制显示结果。`;
-            ElMessage.success('插件执行结果已显示（超时显示）');
+提示：由于达到${maxAttempts}秒超时限制，系统强制显示结果。`
+              : `[✓] Plugin Execution Finished (shown on timeout)
+Mode: ${getExecutionModeText()}
+Plugin: ${pluginName}
+Arguments: ${pluginForm.value.arguments || 'none'}
+Client: ${clientId}
+Elapsed: ${executionTime}s
+Display mode: ${isMimikatzTool ? 'full output (mimikatz tuned)' : 'filtered output'}
+
+=== Final Execution Result ===
+${finalShellContent}
+
+Note: the ${maxAttempts}s timeout was reached, so the result is shown as-is.`;
+            ElMessage.success(isZh.value ? '插件执行结果已显示（超时显示）' : 'Results shown (timeout)');
           } else {
             // 显示调试信息帮助排查问题
             const recentLines = fullShellContent.split('\n').slice(-30).join('\n');
-            pluginOutput.value += `
+            pluginOutput.value += isZh.value
+              ? `
 
 [⚠️] 轮询超时 (${maxAttempts}秒)
 
@@ -1218,8 +1327,23 @@ ${recentLines}
 2. 输出内容被过度过滤
 3. 客户端网络延迟
 
-建议：请检查客户端Shell历史记录或联系技术支持`;
-            ElMessage.warning('轮询超时，请检查Shell历史记录');
+建议：请检查客户端Shell历史记录或联系技术支持`
+              : `
+
+[⚠️] Polling Timeout (${maxAttempts}s)
+
+Raw shell output (last 30 lines):
+${recentLines}
+
+Filtered content length: ${finalShellContent.length}
+
+Possible causes:
+1. The plugin takes a long time to run
+2. The output was over-filtered
+3. Client network latency
+
+Suggestion: check the client shell history or contact support`;
+            ElMessage.warning(isZh.value ? '轮询超时，请检查Shell历史记录' : 'Polling timed out, check shell history');
           }
           
           clearInterval(pollingInterval!);
@@ -1235,12 +1359,14 @@ ${recentLines}
             
             // 找到最后一行进度信息并更新
             let lastLineIndex = progressLines.length - 1;
-            while (lastLineIndex >= 0 && progressLines[lastLineIndex].includes('正在等待执行结果')) {
+            while (lastLineIndex >= 0 && progressLines[lastLineIndex].includes(isZh.value ? '正在等待执行结果' : 'Waiting for results')) {
               progressLines.splice(lastLineIndex, 1);
               lastLineIndex--;
             }
-            
-            progressLines.push(`正在等待执行结果${dots} (${attempts}/${maxAttempts}) - 已等待${attempts}秒`);
+
+            progressLines.push(isZh.value
+              ? `正在等待执行结果${dots} (${attempts}/${maxAttempts}) - 已等待${attempts}秒`
+              : `Waiting for results${dots} (${attempts}/${maxAttempts}) - ${attempts}s elapsed`);
             pluginOutput.value = progressLines.join('\n');
           }
         }
@@ -1248,15 +1374,21 @@ ${recentLines}
     } catch (error) {
       console.error('获取Shell历史失败:', error);
       if (attempts >= maxAttempts) {
-        pluginOutput.value += `
+        pluginOutput.value += isZh.value
+          ? `
 
 [✗] 获取执行结果失败
 错误信息: ${error instanceof Error ? error.message : String(error)}
-请检查网络连接和客户端状态`;
+请检查网络连接和客户端状态`
+          : `
+
+[✗] Failed to Fetch Execution Result
+Error: ${error instanceof Error ? error.message : String(error)}
+Check the network connection and client state`;
         clearInterval(pollingInterval!);
         pollingInterval = null;
         lastShellContentLength = 0;
-        ElMessage.error('获取执行结果失败');
+        ElMessage.error(isZh.value ? '获取执行结果失败' : 'Failed to get execution results');
       }
     } finally {
       pollingInFlight = false;
@@ -1272,7 +1404,7 @@ const beforeUpload = (file: File) => {
   const hasValidExtension = validExtensions.some(ext => fileName.endsWith(ext));
   
   if (!validTypes.includes(file.type) && !hasValidExtension) {
-    ElMessage.warning('只能上传插件文件(如exe/net/elf/dll/so/dylib)');
+    ElMessage.warning(isZh.value ? '只能上传插件文件(如exe/net/elf/dll/so/dylib)' : 'Only plugin files allowed (exe/net/elf/dll/so/dylib)');
     return false;
   }
   
@@ -1287,7 +1419,7 @@ const beforeUpload = (file: File) => {
 // 提交上传
 const submitUpload = async () => {
   if (fileList.value.length === 0) {
-    ElMessage.warning('请选择要上传的文件');
+    ElMessage.warning(isZh.value ? '请选择要上传的文件' : 'Select files to upload');
     return;
   }
   
@@ -1295,29 +1427,29 @@ const submitUpload = async () => {
     for (const file of fileList.value) {
       const response = await pluginApi.upload_plugin(file)
       if (response.data?.status === 200) {
-        ElMessage.success(`${file.name} 上传成功`);
+        ElMessage.success(isZh.value ? `${file.name} 上传成功` : `${file.name} uploaded`);
       } else {
-        ElMessage.error(response.data?.message || `${file.name} 上传失败`);
+        ElMessage.error(response.data?.message || (isZh.value ? `${file.name} 上传失败` : `${file.name} upload failed`));
       }
     }
     
     refreshPlugins();
     // 移除自动清空文件列表和关闭对话框，由用户手动关闭
   } catch (error) {
-    ElMessage.error('上传过程中发生错误');
+    ElMessage.error(isZh.value ? '上传过程中发生错误' : 'Upload failed');
   }
 };
 
 // 文件上传成功处理
 const handleUploadSuccess = (response: any, file: File) => {
-  ElMessage.success(`${file.name} 上传成功`);
+  ElMessage.success(isZh.value ? `${file.name} 上传成功` : `${file.name} uploaded`);
   refreshPlugins();
   // 移除自动关闭对话框逻辑，由用户手动关闭
 };
 
 // 文件上传失败处理
 const handleUploadError = (error: Error, file: File) => {
-  ElMessage.error(`${file.name} 上传失败: ${error.message}`);
+  ElMessage.error(isZh.value ? `${file.name} 上传失败: ${error.message}` : `${file.name} upload failed: ${error.message}`);
 };
 
 // 处理文件选择——上传到插件目录
@@ -1552,11 +1684,11 @@ const closeUploadDialog = () => {
 }
 
 .output-textarea {
-  background: #0d1117;  /* 类似Shell的黑色背景 */
-  color: #c9d1d9;       /* 类似Shell的白色文字 */
+  background: var(--cs-console);  /* 类似Shell的黑色背景 */
+  color: var(--cs-text);       /* 类似Shell的白色文字 */
   font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
   font-size: 13px;
-  border: 1px solid #30363d;
+  border: 1px solid var(--cs-border);
   border-top: none;
   border-radius: 0 0 8px 8px;
   padding: 16px;
@@ -1578,7 +1710,7 @@ const closeUploadDialog = () => {
 }
 
 .output-textarea:focus {
-  border-color: #58a6ff;
+  border-color: var(--cs-active);
   box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.2);
 }
 
@@ -1588,27 +1720,27 @@ const closeUploadDialog = () => {
 }
 
 .output-textarea::-webkit-scrollbar-track {
-  background: #161b22;
+  background: var(--cs-panel);
   border-radius: 4px;
 }
 
 .output-textarea::-webkit-scrollbar-thumb {
-  background: #30363d;
+  background: var(--cs-hover);
   border-radius: 4px;
 }
 
 .output-textarea::-webkit-scrollbar-thumb:hover {
-  background: #484f58;
+  background: var(--cs-border);
 }
 
 /* 文本选择效果 */
 .output-textarea::selection {
-  background-color: #58a6ff;
+  background-color: var(--cs-active);
   color: #ffffff;
 }
 
 .output-textarea::-moz-selection {
-  background-color: #58a6ff;
+  background-color: var(--cs-active);
   color: #ffffff;
 }
 
@@ -1619,7 +1751,7 @@ const closeUploadDialog = () => {
   right: 0;
   width: 20px;
   height: 20px;
-  background: linear-gradient(-45deg, transparent 0%, transparent 40%, #409eff 40%, #409eff 60%, transparent 60%);
+  background: linear-gradient(-45deg, transparent 0%, transparent 40%, var(--cs-active) 40%, var(--cs-active) 60%, transparent 60%);
   cursor: nw-resize;
   z-index: 10;
   border-bottom-right-radius: 6px;
@@ -1631,7 +1763,7 @@ const closeUploadDialog = () => {
   right: 0;
   width: 4px;
   height: 40px;
-  background: #409eff;
+  background: var(--cs-active);
   cursor: ew-resize;
   z-index: 9;
   transform: translateY(-50%);
@@ -1646,7 +1778,7 @@ const closeUploadDialog = () => {
   left: 50%;
   width: 40px;
   height: 4px;
-  background: #409eff;
+  background: var(--cs-active);
   cursor: ns-resize;
   z-index: 9;
   transform: translateX(-50%);
@@ -1709,23 +1841,23 @@ const closeUploadDialog = () => {
 }
 
 .mode-button:hover {
-  border-color: #409eff;
-  color: #409eff;
+  border-color: var(--cs-active);
+  color: var(--cs-active);
   background: rgba(64, 158, 255, 0.15);
   transform: translateY(-1px);
   box-shadow: 0 2px 8px rgba(64, 158, 255, 0.2);
 }
 
 .mode-button.el-button--primary {
-  background: #409eff;
-  border-color: #409eff;
+  background: var(--cs-active);
+  border-color: var(--cs-active);
   color: #ffffff;
   box-shadow: 0 2px 8px rgba(64, 158, 255, 0.3);
 }
 
 .mode-button.el-button--primary:hover {
-  background: #337ecc;
-  border-color: #337ecc;
+  background: var(--cs-active-hover);
+  border-color: var(--cs-active-hover);
   color: #ffffff;
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(64, 158, 255, 0.4);
@@ -1869,7 +2001,7 @@ const closeUploadDialog = () => {
 }
 
 .file-item:hover {
-  background-color: #f9f9f9;
+  background-color: var(--cs-hover);
 }
 
 .file-item:last-child {
@@ -1878,7 +2010,7 @@ const closeUploadDialog = () => {
 
 .file-icon {
   font-size: 20px;
-  color: #409eff;
+  color: var(--cs-active);
 }
 
 .empty-file-list {
@@ -1886,14 +2018,14 @@ const closeUploadDialog = () => {
   align-items: center;
   justify-content: center;
   height: 200px;
-  color: #909399;
+  color: var(--cs-text-dim);
   font-size: 14px;
 }
 
 .upload-dialog-footer {
   text-align: right;
   padding-top: 16px;
-  border-top: 1px solid #e4e7ed;
+  border-top: 1px solid var(--cs-border);
   margin-top: 20px;
 }
 

@@ -42,7 +42,7 @@
       >
         <el-table-column type="selection" width="45" :reserve-selection="true" />
         <el-table-column prop="id" label="ID" width="70" sortable />
-        <el-table-column prop="note" label="备注" width="200">
+        <el-table-column prop="note" :label="isZh ? '备注' : 'Note'" width="200">
           <template #default="{ row }">
             <div class="note-container">
               <span v-if="!row.isEditingNote" class="note-text">{{ row.note || '-' }}</span>
@@ -52,7 +52,7 @@
                 @blur="saveNote(row)"
                 @keyup.enter="saveNote(row)"
                 size="small"
-                placeholder="请输入备注"
+                :placeholder="isZh ? '请输入备注' : 'Enter note'"
               />
               <el-button v-if="!row.isEditingNote" @click="editNote(row)" type="text" size="small" class="edit-note-btn">
                 <el-icon><Edit /></el-icon>
@@ -60,45 +60,45 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column prop="protocol" label="协议" width="110">
+        <el-table-column prop="protocol" :label="isZh ? '协议' : 'Protocol'" width="110">
           <template #default="{ row }">
             <el-tag size="small">{{ row.protocol.toUpperCase() }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="serverPort" label="服务端端口" width="110">
+        <el-table-column prop="serverPort" :label="isZh ? '服务端端口' : 'Server Port'" width="110">
           <template #default="{ row }">
             <span class="cs-font-mono">{{ row.serverPort }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="agentPort" label="Agent 端口" width="110">
+        <el-table-column prop="agentPort" :label="isZh ? 'Agent 端口' : 'Agent Port'" width="110">
           <template #default="{ row }">
             <span class="cs-font-mono">{{ row.agentPort }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="username" label="用户" width="140" show-overflow-tooltip>
+        <el-table-column prop="username" :label="isZh ? '用户' : 'User'" width="140" show-overflow-tooltip>
           <template #default="{ row }">
             <span v-if="row.username" class="cs-font-mono">{{ row.username }}</span>
             <span v-else style="color: #c0c4cc;">-</span>
           </template>
         </el-table-column>
-        <el-table-column prop="status" label="状态" width="90">
+        <el-table-column prop="status" :label="isZh ? '状态' : 'Status'" width="90">
           <template #default="{ row }">
             <el-tag :type="row.status === 'active' ? 'success' : 'danger'" size="small">
               {{ row.status === 'active' ? (isZh ? '活跃' : 'Active') : (isZh ? '停止' : 'Stopped') }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="clientInfo" label="客户端" width="180" show-overflow-tooltip>
+        <el-table-column prop="clientInfo" :label="isZh ? '客户端' : 'Client'" width="180" show-overflow-tooltip>
           <template #default="{ row }">
             <span class="cs-font-mono">{{ row.clientInfo }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="createTime" label="创建时间" width="170">
+        <el-table-column prop="createTime" :label="isZh ? '创建时间' : 'Created'" width="170">
           <template #default="{ row }">
             <span style="white-space: nowrap">{{ formatTime(row.createTime) }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="290" fixed="right">
+        <el-table-column :label="isZh ? '操作' : 'Actions'" width="290" fixed="right">
           <template #default="{ row }">
             <div class="action-buttons">
               <el-button
@@ -131,9 +131,7 @@
         </el-table-column>
 
         <template #empty>
-          <div class="cs-empty-watermark">
-            <div class="empty-title">{{ isZh ? '暂无 SOCKS5 代理' : 'No SOCKS5 Proxies Configured' }}</div>
-          </div>
+          <EmptyState variant="inline" :title="isZh ? '暂无 SOCKS5 代理' : 'No SOCKS5 Proxies Configured'" />
         </template>
       </el-table>
     </div>
@@ -253,6 +251,7 @@ import { useI18nStore } from '@/stores/i18n'
 import { Edit } from '@element-plus/icons-vue'
 import ClientAPI from '@/api/clients'
 import Socks5API, { type Socks5Response } from '@/api/socks5'
+import EmptyState from '@/components/Common/EmptyState.vue'
 
 interface ClientData {
   ID?: number
@@ -377,7 +376,7 @@ const fetchOnlineClients = async () => {
       onlineClients.value = allClients
     }
   } catch (error) {
-    console.error('获取客户端列表失败:', error)
+    console.error('Failed to load client list:', error)
   }
 }
 

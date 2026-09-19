@@ -136,7 +136,7 @@ async function handleLaunch() {
         .join('\n\n')
       const text = `${isZh.value ? '投递已启动，命令矩阵:' : 'Delivery started, command matrix:'}\n${lines}`
       await ElMessageBox.alert(
-        `<textarea readonly style="width:100%;height:280px;background:#181818;color:#00e676;border:1px solid #444;padding:8px;font-family:monospace;font-size:11px;line-height:1.6;">${text.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</textarea>`,
+        `<textarea readonly style="width:100%;height:280px;background:var(--cs-console);color:var(--cs-online);border:1px solid var(--cs-border);padding:8px;font-family:monospace;font-size:11px;line-height:1.6;">${text.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</textarea>`,
         isZh.value ? 'Web Delivery 命令矩阵' : 'Web Delivery Command Matrix',
         {
           dangerouslyUseHTMLString: true,

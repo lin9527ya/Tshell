@@ -21,7 +21,7 @@
     </div>
 
     <!-- Body -->
-    <div class="ha-body">
+    <div class="ha-body" v-loading="loading">
       <div class="ha-card">
         <div class="ha-card-header">
           <span class="card-title">{{ isZh ? '隐藏访问与蜜罐伪装' : 'Stealth Access & Honey Entry Cloaking' }}</span>

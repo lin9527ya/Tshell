@@ -169,8 +169,8 @@ onMounted(() => {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: #141414;
-  color: #c5c5c5;
+  background: var(--cs-console);
+  color: var(--cs-text);
   overflow: hidden;
 }
 .sc-toolbar {
@@ -216,27 +216,27 @@ onMounted(() => {
   padding: 8px 12px;
   font-size: 12px;
   line-height: 1.5;
-  background: #0d0d0d;
+  background: var(--cs-console);
 }
 .sc-line {
   white-space: pre-wrap;
   word-break: break-all;
 }
 .sc-time {
-  color: #666;
+  color: var(--cs-text-dim);
   margin-right: 6px;
 }
 .sc-prefix {
-  color: #4caf50;
+  color: var(--cs-online);
   font-weight: bold;
 }
-.sc-type-info { color: #569cd6; }
-.sc-type-output { color: #d4d4d4; }
-.sc-type-error { color: #f44336; }
-.sc-type-warn { color: #ffb74d; }
-.sc-type-cmd { color: #4ec9b0; font-weight: 600; }
+.sc-type-info { color: var(--cs-active); }
+.sc-type-output { color: var(--cs-text); }
+.sc-type-error { color: var(--cs-error); }
+.sc-type-warn { color: var(--cs-warning); }
+.sc-type-cmd { color: var(--cs-active); font-weight: 600; }
 .sc-empty {
-  color: #555;
+  color: var(--cs-text-dim);
   text-align: center;
   margin-top: 40px;
   font-size: 12px;
@@ -247,12 +247,12 @@ onMounted(() => {
   gap: 8px;
   height: 32px;
   padding: 0 10px;
-  background: #181818;
+  background: var(--cs-panel);
   border-top: 1px solid var(--cs-border);
   flex-shrink: 0;
 }
 .sc-prompt {
-  color: #3884ff;
+  color: var(--cs-active);
   font-size: 12px;
   font-weight: 600;
 }
@@ -261,15 +261,15 @@ onMounted(() => {
   background: transparent;
   border: 0;
   outline: 0;
-  color: #e0e0e0;
+  color: var(--cs-text-bright);
   font-family: inherit;
   font-size: 12px;
 }
 .sc-input::placeholder {
-  color: #555;
+  color: var(--cs-text-dim);
 }
 .sc-run-btn {
-  background: #007acc;
+  background: var(--cs-active);
   border: 0;
   border-radius: 2px;
   color: #fff;
@@ -278,6 +278,6 @@ onMounted(() => {
   cursor: pointer;
 }
 .sc-run-btn:hover {
-  background: #1a8cd8;
+  background: var(--cs-active-hover);
 }
 </style>

@@ -94,9 +94,7 @@
             </el-table-column>
 
             <template #empty>
-              <div class="cs-empty-watermark">
-                <div class="empty-title">{{ isZh ? '暂无反向监听器' : 'No Listeners Configured' }}</div>
-              </div>
+              <EmptyState variant="inline" :title="isZh ? '暂无反向监听器' : 'No Listeners Configured'" />
             </template>
           </el-table>
         </div>
@@ -196,6 +194,7 @@ import EditListenerDialog from '@/layout/Dialogs/EditListenerDialog.vue'
 import ForwardListeners from './ForwardListeners.vue'
 import ListenerAPI from '@/api/listener'
 import { useI18nStore } from '@/stores/i18n'
+import EmptyState from '@/components/Common/EmptyState.vue'
 
 interface ListenerItem {
   Id?: number
@@ -637,7 +636,7 @@ onBeforeUnmount(() => {
 
 .cs-segment-btn.active {
   color: #ffffff;
-  background: #1a5c9a;
+  background: var(--cs-active);
   font-weight: 600;
 }
 
@@ -795,19 +794,5 @@ onBeforeUnmount(() => {
 
 .color-box:hover {
   border-color: #ffffff;
-}
-
-.cs-empty-watermark {
-  position: absolute;
-  top: 45%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  text-align: center;
-  pointer-events: none;
-}
-
-.empty-title {
-  font-size: 18px;
-  color: var(--cs-text-dim);
 }
 </style>

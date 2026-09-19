@@ -30,12 +30,12 @@ const router = useRouter()
   align-items: center;
   width: 100vw;
   height: 100vh;
-  background: #111111;
+  background: var(--cs-bg);
 }
 
 .cs-error-window {
   width: 460px;
-  background: var(--cs-dialog-bg);
+  background: var(--cs-panel);
   border: 1px solid var(--cs-border);
   box-shadow: 0 12px 36px rgba(0, 0, 0, 0.7);
 }
@@ -63,7 +63,7 @@ const router = useRouter()
 .error-code {
   font-size: 54px;
   font-weight: 700;
-  color: #ff4d4f;
+  color: var(--cs-error);
   line-height: 1;
 }
 
