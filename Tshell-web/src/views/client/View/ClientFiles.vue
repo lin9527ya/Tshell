@@ -211,6 +211,16 @@
               />
             </template>
           </el-table>
+
+          <div v-if="filteredFiles.length > PAGE_SIZE" class="fm-pager">
+            <el-pagination
+              v-model:current-page="currentPage"
+              :page-size="PAGE_SIZE"
+              :total="filteredFiles.length"
+              layout="prev, pager, next"
+              :small="true"
+            />
+          </div>
         </div>
 
         <!-- 底部 Cobalt Strike 4.x 操作按钮栏 -->
@@ -738,7 +748,17 @@ const filteredFiles = computed(() => {
   return files
 })
 
-const paginatedFiles = computed(() => filteredFiles.value)
+const PAGE_SIZE = 200
+const currentPage = ref(1)
+// 大目录(如 System32)全量渲染会卡;前端分页,勾选经 reserve-selection 跨页保留
+const paginatedFiles = computed(() => {
+  const start = (currentPage.value - 1) * PAGE_SIZE
+  return filteredFiles.value.slice(start, start + PAGE_SIZE)
+})
+
+watch(filteredFiles, () => {
+  currentPage.value = 1
+})
 
 function parseRowToTs(row: any): number {
   if (!row) return 0
@@ -1874,6 +1894,13 @@ function handleHelp() {
   display: flex;
   align-items: center;
   gap: 4px;
+}
+
+.fm-pager {
+  display: flex;
+  justify-content: center;
+  padding: 4px 0;
+  border-top: 1px solid var(--cs-border);
 }
 
 .fm-table-wrap {

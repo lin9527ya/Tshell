@@ -93,6 +93,9 @@
     <el-dialog v-model="envDialogVisible" :title="isZh ? '环境变量说明' : 'Environment Variable Reference'" width="640px" append-to-body class="cs-dialog">
       <div class="env-table-wrap">
         <el-table :data="envRows" size="small" height="360px" class="cs-session-table">
+          <template #empty>
+            <EmptyState variant="inline" :title="isZh ? '暂无环境变量' : 'No environment variables'" />
+          </template>
           <el-table-column prop="key" :label="isZh ? '环境变量' : 'Variable'" min-width="220" show-overflow-tooltip>
             <template #default="{ row }">
               <span class="cs-font-mono">{{ row.key }}</span>
@@ -123,6 +126,7 @@ import {
   getConfigEnvVars,
   getConfigSchema,
 } from '@/api/config'
+import EmptyState from '@/components/Common/EmptyState.vue'
 
 const SUPPORTED_SECTIONS: string[] = ['server', 'security', 'logging']
 

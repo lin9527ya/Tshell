@@ -74,6 +74,9 @@
           {{ isZh ? `⚠ 服务端仍有 ${taskQueue.queue_len} 条命令待客户端取走(可能离线或心跳慢)` : `⚠ ${taskQueue.queue_len} command(s) still queued on server (offline or slow heartbeat)` }}
         </div>
         <el-table :data="taskQueue.commands || []" size="small" height="320" class="cs-session-table">
+          <template #empty>
+            <EmptyState variant="inline" :title="isZh ? '暂无任务' : 'No tasks'" />
+          </template>
           <el-table-column prop="sent_at" label="时间" width="150">
             <template #default="{ row }">
               <span class="mono-cell">{{ fmtTime(row.sent_at) }}</span>
@@ -114,6 +117,7 @@ import { ElMessage } from 'element-plus'
 
 import { useCredentialsStore } from '@/stores/credentials'
 import { usePreferencesStore } from '@/stores/preferences'
+import EmptyState from '@/components/Common/EmptyState.vue'
 
 const props = defineProps<{ uid: string }>()
 
