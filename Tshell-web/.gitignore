@@ -3,6 +3,7 @@ dist
 *.local
 auto-imports.d.ts
 components.d.ts
+build-report.json
 npm-debug.log*
 
 # Claude Code 本地工作区
