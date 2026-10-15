@@ -1,1 +1,0 @@
-import{ai as s}from"./vue.CUqvj3p8.js";const i=s("session-selection",{state:()=>({selectedUids:[]}),getters:{primarySelectedUid:e=>e.selectedUids.length?e.selectedUids[0]:""},actions:{setSelectedUids(e){this.selectedUids=e}}});export{i as u};
