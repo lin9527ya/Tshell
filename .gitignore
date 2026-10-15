@@ -9,6 +9,10 @@ logs/
 node_modules/
 *.log
 
+# Python 字节码（scripts/ 下运行脚本会生成）
+__pycache__/
+*.pyc
+
 # 注意: 不要在此用小写 /tshell-server 模式——Windows 大小写不敏感匹配会误伤
 # Tshell-server/ 源码目录。服务端二进制由 Tshell-server/.gitignore 覆盖(build.sh
 # 输出在 Tshell-server/ 内)。
