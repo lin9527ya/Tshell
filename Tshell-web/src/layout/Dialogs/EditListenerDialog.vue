@@ -194,41 +194,9 @@ function handleHelp() {
 </script>
 
 <style scoped>
-.cs-dialog-body {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.cs-dialog-desc {
-  font-size: 15px;
-  color: var(--cs-text-dim);
-  margin-bottom: 6px;
-  line-height: 1.6;
-}
-.cs-form-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.cs-form-label {
-  min-width: 140px;
-  max-width: 165px;
-  font-size: 15.5px;
-  color: var(--cs-text);
-  text-align: right;
-  flex-shrink: 0;
-}
-.cs-form-input {
-  flex: 1;
-}
 .cs-input-with-btn {
   flex: 1;
   display: flex;
-  gap: 6px;
-}
-.cs-dialog-footer-center {
-  display: flex;
-  justify-content: center;
-  gap: 12px;
+  gap: 8px;
 }
 </style>

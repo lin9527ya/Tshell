@@ -1,0 +1,213 @@
+/**
+ * VShell 观感的 Element Plus 细节层（vshell-ui 分支）
+ *
+ * 分工：基础色/圆角/字号已由 cs-theme.css 的 --cs-* 令牌 + .cs-shell 桥接承担；
+ * 本文件补 vshell 特有尺寸与表面：行高、分页、对话框头尾、树、标签、弹层兜底。
+ * 数值来源：vshell 4.9.3 还原树实测（表头 #fafafa / 行高 48px / 弹层 8px 圆角）。
+ */
+
+/* ================= 表格（vxe 观感：48px 行高、无斑马纹噪点） ================= */
+.cs-shell .el-table th.el-table__cell {
+  height: 48px;
+  padding: 0;
+}
+
+.cs-shell .el-table td.el-table__cell {
+  height: 48px;
+  padding: 0;
+}
+
+.cs-shell .el-table .cell {
+  padding: 0 12px;
+  line-height: 1.5;
+}
+
+.cs-shell .el-table__inner-wrapper::before,
+.cs-shell .el-table--border::after,
+.cs-shell .el-table--border::before {
+  background-color: var(--cs-card-border);
+}
+
+.cs-shell .el-table .el-table__empty-text {
+  color: var(--cs-text-dim);
+  font-size: 14px;
+}
+
+/* ================= 分页（vxe 风格：右下、32px 圆角块） ================= */
+.cs-shell .el-pagination {
+  font-size: 14px;
+  color: var(--cs-text);
+  --el-pagination-button-bg-color: var(--cs-panel);
+}
+
+.cs-shell .el-pagination .el-pagination__total,
+.cs-shell .el-pagination .el-pagination__jump {
+  color: var(--cs-text);
+}
+
+.cs-shell .el-pager li,
+.cs-shell .el-pagination button {
+  min-width: 32px;
+  height: 32px;
+  line-height: 32px;
+  border-radius: 6px;
+  background: var(--cs-panel);
+  color: var(--cs-text);
+}
+
+.cs-shell .el-pager li.is-active {
+  background: var(--cs-active);
+  color: #fff;
+}
+
+/* ================= 对话框 / 抽屉细节 ================= */
+.cs-shell .el-dialog__title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--cs-text-bright);
+}
+
+.cs-shell .el-dialog__body {
+  font-size: 14px;
+  color: var(--cs-text);
+}
+
+.cs-shell .el-drawer__header {
+  padding: 16px 20px;
+  margin-bottom: 0;
+  border-bottom: 1px solid var(--cs-card-border);
+  color: var(--cs-text-bright);
+  font-size: 16px;
+}
+
+/* ================= 标签 Tag ================= */
+.cs-shell .el-tag {
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.cs-shell .el-tag--small {
+  height: 20px;
+  padding: 0 7px;
+  font-size: 12px;
+}
+
+/* ================= 表单 ================= */
+.cs-shell .el-form-item__label {
+  color: var(--cs-text);
+  font-size: 14px;
+  padding-right: 12px;
+}
+
+.cs-shell .el-switch {
+  --el-switch-on-color: var(--cs-active);
+}
+
+.cs-shell .el-checkbox,
+.cs-shell .el-radio {
+  --el-checkbox-checked-bg-color: var(--cs-active);
+  --el-checkbox-checked-input-border-color: var(--cs-active);
+  --el-radio-input-border-color-hover: var(--cs-active);
+  --el-checkbox-checked-text-color: var(--cs-text);
+  color: var(--cs-text);
+  font-size: 14px;
+}
+
+/* ================= 树（文件树/目标树） ================= */
+.cs-shell .el-tree {
+  background: var(--cs-panel);
+  color: var(--cs-text);
+  font-size: 14px;
+}
+
+.cs-shell .el-tree-node__content {
+  height: 30px;
+  border-radius: 4px;
+}
+
+.cs-shell .el-tree-node__content:hover {
+  background: var(--cs-hover);
+}
+
+.cs-shell .el-tree-node.is-current > .el-tree-node__content {
+  background: color-mix(in srgb, var(--cs-active) 12%, transparent);
+  color: var(--cs-active);
+}
+
+/* ================= 选择器 / 下拉等小尺寸控件 ================= */
+.cs-shell .el-select__wrapper,
+.cs-shell .el-input--default .el-input__wrapper {
+  min-height: 32px;
+}
+
+.cs-shell .el-button--small {
+  height: 24px;
+  border-radius: 4px;
+}
+
+.cs-shell .el-button--large {
+  height: 40px;
+}
+
+/* ================= CS 布局范式 -> vshell =================
+   底部操作条是 CS 桌面风格的标志（表格下方一排按钮）。vshell 的操作都在
+   表格上方工具条区，故在 flex 列容器内把操作条移到表格之前，并统一外观。 */
+.cs-shell .cs-bottom-bar {
+  order: -1 !important;
+  height: 48px !important;
+  background: var(--cs-panel) !important;
+  border-top: 0 !important;
+  border-bottom: 1px solid var(--cs-card-border) !important;
+  padding: 0 12px !important;
+  gap: 8px !important;
+}
+
+/* CS 填充式标题条 -> vshell 卡片头（白底 + 分隔线；暗色随 panel） */
+.cs-shell .cs-listener-toolbar,
+.cs-shell .cs-fl-toolbar,
+.cs-shell .cs-panel-toolbar {
+  background: var(--cs-panel) !important;
+  border-bottom: 1px solid var(--cs-card-border) !important;
+}
+
+/* ================= 弹层兜底（teleport 到 body，拿不到 .cs-shell 令牌） ================= */
+.el-popper.is-light,
+.el-select__popper,
+.el-dropdown__popper,
+.el-picker__popper {
+  border-radius: 8px !important;
+  box-shadow: 0 3px 6px -4px rgba(0, 0, 0, 0.12), 0 6px 16px 0 rgba(0, 0, 0, 0.08) !important;
+}
+
+.el-select-dropdown__item {
+  height: 32px;
+  line-height: 32px;
+  font-size: 14px;
+  border-radius: 6px;
+  margin: 0 4px;
+  padding: 0 8px;
+}
+
+.el-select-dropdown__item.is-selected {
+  color: var(--el-color-primary, #0960bd);
+  font-weight: 400;
+}
+
+.el-dropdown-menu__item {
+  font-size: 14px;
+  border-radius: 6px;
+  margin: 0 4px;
+}
+
+.el-message,
+.el-notification {
+  border-radius: 8px;
+}
+
+/* 对话框内控件高度统一 32px（vshell 表单基准；项目里 size="small" 是 24px，
+   混用时同一表单内高矮不齐） */
+.cs-shell .el-dialog .el-input__wrapper,
+.cs-shell .el-dialog .el-select__wrapper,
+.cs-shell .el-dialog .el-input-number .el-input__wrapper {
+  min-height: 32px;
+}

@@ -1,5 +1,5 @@
 <template>
-  <div class="cs-process-view cs-font-ui" @click="closeContextMenu">
+  <div class="cs-process-view cs-font-ui">
     <!-- Toolbar -->
     <div class="pv-toolbar">
       <div class="pv-title-group">
@@ -68,7 +68,6 @@
       <el-input
         v-model="searchKeyword"
         :placeholder="isZh ? '过滤进程名、用户、PID、杀软...' : 'Filter name, user, PID, AV...'"
-        size="small"
         clearable
         class="pv-search-input"
       />
@@ -77,6 +76,31 @@
         <el-icon :class="{ 'is-loading': loading }"><Refresh /></el-icon>
         <span>{{ isZh ? '刷新' : 'Refresh' }}</span>
       </button>
+    </div>
+
+    <!-- 操作条（vshell：操作集中在内容上方，取代原底部按钮行） -->
+    <div class="pv-action-bar">
+      <button class="cs-btn cs-btn-primary" :disabled="!selectedRow" @click="handleInject">
+        {{ isZh ? '进程注入 (Inject)' : 'Inject' }}
+      </button>
+      <button class="cs-btn" :disabled="!selectedRow" @click="handleStealToken">
+        {{ isZh ? '窃取令牌 (Token)' : 'Steal Token' }}
+      </button>
+      <button class="cs-btn" :disabled="!selectedRow" @click="handleScreenshot">
+        {{ isZh ? '屏幕截图' : 'Screenshot' }}
+      </button>
+      <button class="cs-btn cs-btn-danger" :disabled="!selectedRow" @click="handleKill">
+        {{ isZh ? '结束进程 (Kill)' : 'Kill' }}
+      </button>
+      <button class="cs-btn" @click="handleHelp">
+        {{ isZh ? '帮助' : 'Help' }}
+      </button>
+
+      <div class="pv-spacer" />
+
+      <span class="pv-status-info">
+        {{ isZh ? `当前选中: ${selectedRow ? `${selectedRow.Name} (PID: ${selectedRow.PID})` : '无'}` : `Selected: ${selectedRow ? `${selectedRow.Name} (${selectedRow.PID})` : 'None'}` }}
+      </span>
     </div>
 
     <!-- Table / Tree -->
@@ -95,7 +119,6 @@
         v-loading="loading"
         @current-change="onCurrentChange"
         @row-dblclick="handleInject"
-        @row-contextmenu="onRowContextMenu"
       >
         <el-table-column prop="Name" :label="isZh ? '进程名' : 'Name'" min-width="260" show-overflow-tooltip>
           <template #default="{ row }">
@@ -169,73 +192,6 @@
       </el-table>
     </div>
 
-    <!-- Bottom Action Bar (CS Native Button Row) -->
-    <div class="pv-bottom-bar">
-      <button class="cs-btn cs-btn-danger" :disabled="!selectedRow" @click="handleKill">
-        {{ isZh ? '结束进程 (Kill)' : 'Kill' }}
-      </button>
-      <button class="cs-btn cs-btn-primary" :disabled="!selectedRow" @click="handleInject">
-        {{ isZh ? '进程注入 (Inject)' : 'Inject' }}
-      </button>
-      <button class="cs-btn" :disabled="!selectedRow" @click="handleStealToken">
-        {{ isZh ? '窃取令牌 (Token)' : 'Steal Token' }}
-      </button>
-      <button class="cs-btn" :disabled="!selectedRow" @click="handleKeylogger">
-        {{ isZh ? '键盘记录' : 'Log Keystrokes' }}
-      </button>
-      <button class="cs-btn" :disabled="!selectedRow" @click="handleScreenshot">
-        {{ isZh ? '屏幕截图' : 'Screenshot' }}
-      </button>
-      <button class="cs-btn" :disabled="loading" @click="fetchProcessList">
-        {{ isZh ? '刷新列表' : 'Refresh' }}
-      </button>
-      <button class="cs-btn" @click="handleHelp">
-        {{ isZh ? '帮助' : 'Help' }}
-      </button>
-
-      <div class="pv-bottom-spacer" />
-
-      <span class="pv-status-info">
-        {{ isZh ? `当前选中: ${selectedRow ? `${selectedRow.Name} (PID: ${selectedRow.PID})` : '无'}` : `Selected: ${selectedRow ? `${selectedRow.Name} (${selectedRow.PID})` : 'None'}` }}
-      </span>
-    </div>
-
-    <!-- Right-Click Context Menu -->
-    <Teleport to="body">
-      <div
-        v-if="ctxMenu.visible"
-        class="cs-listener-ctx-menu cs-font-ui"
-        :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }"
-        @mousedown.stop
-        @contextmenu.prevent
-      >
-        <div class="ctx-item" @click="handleKill">{{ isZh ? '结束进程 (K)' : 'Kill (K)' }}</div>
-        <div class="ctx-item is-highlight" @click="handleInject">{{ isZh ? '进程注入 / 迁移 (I)...' : 'Inject (I)...' }}</div>
-        <div class="ctx-item" @click="handleStealToken">{{ isZh ? '窃取令牌 (T)' : 'Steal Token (T)' }}</div>
-        <div class="ctx-item" @click="handleKeylogger">{{ isZh ? '键盘记录 (L)' : 'Log Keystrokes (L)' }}</div>
-        <div class="ctx-item" @click="handleScreenshot">{{ isZh ? '屏幕截图 (S)' : 'Screenshot (S)' }}</div>
-        <div class="ctx-divider" />
-        <div
-          class="ctx-item has-sub"
-          @mouseenter="ctxMenu.showColor = true"
-          @mouseleave="ctxMenu.showColor = false"
-        >
-          <span class="ctx-text">{{ isZh ? '颜色标记 (C)' : 'Color (C)' }}</span>
-          <span class="ctx-arrow">▶</span>
-
-          <div v-show="ctxMenu.showColor" class="ctx-color-palette">
-            <div
-              v-for="c in colorPalette"
-              :key="c.value"
-              class="color-box"
-              :style="{ backgroundColor: c.value }"
-              :title="isZh ? c.zh : c.en"
-              @click.stop="setColor(c.value)"
-            />
-          </div>
-        </div>
-      </div>
-    </Teleport>
 
     <!-- Process Inject Dialog (Native CS Process Inject Modal) -->
     <el-dialog
@@ -254,14 +210,14 @@
         <div class="cs-form-row">
           <label class="cs-form-label">{{ isZh ? '目标进程:' : 'Target Proc:' }}</label>
           <div class="cs-form-input-wrap">
-            <el-input :model-value="`${selectedRow?.Name || 'Process'} (PID: ${selectedRow?.PID || '?'}, ${selectedRow?.Arch || 'x64'}, ${selectedRow?.User || '-'})`" size="small" readonly />
+            <el-input :model-value="`${selectedRow?.Name || 'Process'} (PID: ${selectedRow?.PID || '?'}, ${selectedRow?.Arch || 'x64'}, ${selectedRow?.User || '-'})`" readonly />
           </div>
         </div>
 
         <div class="cs-form-row">
           <label class="cs-form-label">{{ isZh ? '注入模式:' : 'Inject Mode:' }}</label>
           <div class="cs-form-input-wrap">
-            <el-radio-group v-model="injectForm.type" size="small">
+            <el-radio-group v-model="injectForm.type">
               <el-radio-button label="listener">{{ isZh ? '生成监听器载荷 (上线新会话)' : 'Listener Payload' }}</el-radio-button>
               <el-radio-button label="custom">{{ isZh ? '自定义 Shellcode 文件' : 'Custom Shellcode' }}</el-radio-button>
             </el-radio-group>
@@ -272,7 +228,7 @@
           <div class="cs-form-row">
             <label class="cs-form-label">{{ isZh ? '监听器:' : 'Listener:' }}</label>
             <div class="cs-form-input-wrap">
-              <el-select v-model="injectForm.listener" size="small" style="width: 100%" :placeholder="isZh ? '选择监听器' : 'Select listener'" @visible-change="onListenerDropdown">
+              <el-select v-model="injectForm.listener" style="width: 100%" :placeholder="isZh ? '选择监听器' : 'Select listener'" @visible-change="onListenerDropdown">
                 <el-option v-for="l in listenerOptions" :key="l.name" :label="l.name" :value="l.name" />
               </el-select>
             </div>
@@ -280,7 +236,7 @@
           <div class="cs-form-row">
             <label class="cs-form-label">{{ isZh ? '上线密码:' : 'Pass:' }}</label>
             <div class="cs-form-input-wrap">
-              <el-input v-model="injectForm.pass" size="small" :placeholder="isZh ? '注入载荷不支持口令参数(反射加载无命令行)' : 'Pass is ignored for injected payload (no CLI args)'" />
+              <el-input v-model="injectForm.pass" :placeholder="isZh ? '注入载荷不支持口令参数(反射加载无命令行)' : 'Pass is ignored for injected payload (no CLI args)'" />
             </div>
           </div>
         </template>
@@ -289,7 +245,7 @@
           <div class="cs-form-row">
             <label class="cs-form-label">{{ isZh ? 'Shellcode 文件:' : 'Raw File:' }}</label>
             <div class="cs-form-input-wrap" style="display: flex; gap: 8px;">
-              <el-input :model-value="customFileName || (isZh ? '未选择文件' : 'No file selected')" size="small" readonly />
+              <el-input :model-value="customFileName || (isZh ? '未选择文件' : 'No file selected')" readonly />
               <button class="cs-btn cs-btn-xs" @click="selectCustomFile">{{ isZh ? '选择文件...' : 'Browse...' }}</button>
               <input ref="customFileInput" type="file" style="display: none" accept=".bin,.raw,.dat,*" @change="onCustomFileChange" />
             </div>
@@ -299,7 +255,7 @@
         <div class="cs-form-row">
           <label class="cs-form-label">{{ isZh ? '注入技术:' : 'Technique:' }}</label>
           <div class="cs-form-input-wrap">
-            <el-select v-model="injectForm.tech" size="small" style="width: 100%">
+            <el-select v-model="injectForm.tech" style="width: 100%">
               <el-option :label="isZh ? 'auto（隐蔽注入链，推荐）' : 'auto (stealth chain, recommended)'" value="auto" />
               <el-option label="NtCreateThreadEx (ntc)" value="ntc" />
               <el-option label="QueueUserAPC (apc)" value="apc" />
@@ -328,7 +284,7 @@
       append-to-body
       class="cs-dialog"
     >
-      <div class="cs-dialog-body cs-font-ui" style="line-height: 1.8; font-size: 15px; color: var(--cs-text);">
+      <div class="cs-dialog-body cs-font-ui pv-help-body">
         <p><b>{{ isZh ? '进程树 (Tree View):' : 'Tree View:' }}</b> {{ isZh ? '清晰展示父进程(PPID)与子进程(PID)衍生关系，快速排查异常进程链。' : 'Displays PPID->PID hierarchy to inspect execution chains.' }}</p>
         <p><b>{{ isZh ? '杀软识别 (AV Detection):' : 'AV Detection:' }}</b> {{ isZh ? '自动匹配常见安全防御软件（360、Defender、火绒、CrowdStrike 等）并高亮标记。' : 'Automatically highlights detected AV/EDR security software.' }}</p>
         <p><b>{{ isZh ? '结束进程 (Kill):' : 'Kill:' }}</b> {{ isZh ? '向目标 Beacon 下发任务终止指定 PID 的进程。' : 'Task beacon to kill the specified process by PID.' }}</p>
@@ -346,19 +302,20 @@
 
 <script setup lang="ts">
 import { computed, inject, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute , useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Cpu, Refresh, Operation, Menu, WarningFilled } from '@element-plus/icons-vue'
 import ClientAPI from '@/api/clients'
 import { useClientUid } from '@/utils/clientUtils'
 import { useClientsStore } from '@/stores/clients'
-import { useWorkspaceStore } from '@/stores/workspace'
 import { useI18nStore } from '@/stores/i18n'
+import { useSessionSelectionStore } from '@/stores/sessionSelection'
 import EmptyState from '@/components/Common/EmptyState.vue'
 import { SESSION_MARKER_COLORS } from '@/utils/sessionColors'
 import { fetchListenerOptions, generateClientBinaryBlob, type ListenerOption } from '@/layout/Dialogs/Payloads/payloadUtil'
 
 const i18nStore = useI18nStore()
+const router = useRouter()
 const isZh = computed(() => i18nStore.isZh)
 
 export interface ProcessItem {
@@ -401,7 +358,7 @@ const AV_SIGNATURES: Record<string, { name: string; desc: string }> = {
 
 const route = useRoute()
 const clientsStore = useClientsStore()
-const workspace = useWorkspaceStore()
+const workspace = useSessionSelectionStore()
 
 const injectedUid = inject<any>('realUid', null)
 const getUid = () => {
@@ -515,14 +472,6 @@ const displayTableData = computed(() => {
   return buildProcessTree(filteredList.value)
 })
 
-const ctxMenu = ref({
-  visible: false,
-  x: 0,
-  y: 0,
-  row: null as ProcessItem | null,
-  showColor: false,
-})
-
 const colorPalette = SESSION_MARKER_COLORS
 
 function isCurrentBeaconPid(pid: string) {
@@ -558,30 +507,6 @@ function onCurrentChange(row: ProcessItem) {
   selectedRow.value = row
 }
 
-function onRowContextMenu(row: ProcessItem, col: any, e: MouseEvent) {
-  e.preventDefault()
-  selectedRow.value = row
-  ctxMenu.value = {
-    visible: true,
-    x: e.clientX,
-    y: e.clientY,
-    row,
-    showColor: false,
-  }
-}
-
-function closeContextMenu() {
-  ctxMenu.value.visible = false
-  ctxMenu.value.showColor = false
-}
-
-function setColor(color: string) {
-  if (ctxMenu.value.row) {
-    ctxMenu.value.row.color = color
-  }
-  closeContextMenu()
-}
-
 async function fetchProcessList() {
   const uid = getUid()
   if (!uid) return
@@ -604,7 +529,6 @@ async function fetchProcessList() {
 
 function handleKill() {
   if (!selectedRow.value) return
-  closeContextMenu()
   const pid = String(selectedRow.value.PID || '')
   const name = selectedRow.value.Name || 'Process'
   ElMessageBox.confirm(
@@ -639,7 +563,6 @@ async function onListenerDropdown(visibleState?: boolean) {
 
 function handleInject() {
   if (!selectedRow.value) return
-  closeContextMenu()
   onListenerDropdown(true)
   injectDialogVisible.value = true
 }
@@ -715,7 +638,6 @@ async function submitProcessInject() {
 
 async function handleStealToken() {
   if (!selectedRow.value) return
-  closeContextMenu()
   const pid = String(selectedRow.value.PID)
   const procUser = selectedRow.value.User || '-'
   // 副作用型操作: 会替换当前 beacon 的令牌上下文,后续命令以该令牌身份执行
@@ -742,28 +664,10 @@ async function handleStealToken() {
   }
 }
 
-function handleKeylogger() {
-  closeContextMenu()
-  const uid = getUid()
-  if (!uid) return
-  workspace.openTab({
-    id: `keystrokes:${uid}`,
-    title: isZh.value ? `键盘记录: ${hostDisplay.value}` : `Keystrokes: ${hostDisplay.value}`,
-    component: 'global-keystrokes',
-    params: { uid },
-  })
-}
-
 function handleScreenshot() {
-  closeContextMenu()
   const uid = getUid()
   if (!uid) return
-  workspace.openTab({
-    id: `screenshots:${uid}`,
-    title: isZh.value ? `屏幕截图: ${hostDisplay.value}` : `Screenshots: ${hostDisplay.value}`,
-    component: 'client-screenshots',
-    params: { uid },
-  })
+  router.push(`/client/${uid}/screenshot`)
 }
 
 function handleHelp() {
@@ -787,14 +691,14 @@ onBeforeUnmount(() => {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: var(--cs-panel);
+  background: var(--cs-bg);
   overflow: hidden;
 }
 
 .pv-toolbar {
-  height: 36px;
-  background: var(--cs-titlebar-bg);
-  border-bottom: 1px solid var(--cs-border);
+  height: 48px;
+  background: var(--cs-panel);
+  border-bottom: 1px solid var(--cs-card-border);
   display: flex;
   align-items: center;
   gap: 10px;
@@ -806,30 +710,35 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
 }
 
 .pv-title-icon {
-  font-size: 18px;
+  font-size: 16px;
   color: var(--cs-online);
 }
 
 .pv-title {
-  font-size: 17px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--cs-text-bright);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .pv-count {
-  font-size: 16px;
+  font-size: 13px;
   color: var(--cs-text-dim);
+  white-space: nowrap;
 }
 
 .pv-mode-toggle {
   display: inline-flex;
   align-items: center;
-  background: var(--cs-bg, #181818);
-  border: 1px solid var(--cs-border, #333333);
-  border-radius: 4px;
+  background: var(--cs-bg);
+  border: 1px solid var(--cs-border-strong);
+  border-radius: 6px;
   padding: 2px;
   gap: 2px;
   margin-left: 6px;
@@ -838,11 +747,11 @@ onBeforeUnmount(() => {
 .pv-mode-btn {
   height: 24px;
   padding: 0 10px;
-  font-size: 14px;
+  font-size: 13px;
   color: var(--cs-text-dim);
   background: transparent;
   border: none;
-  border-radius: 3px;
+  border-radius: 4px;
   cursor: pointer;
   white-space: nowrap;
   display: inline-flex;
@@ -858,7 +767,7 @@ onBeforeUnmount(() => {
 .pv-mode-btn.active {
   color: #ffffff;
   background: var(--cs-active);
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .pv-filter-pills {
@@ -869,12 +778,12 @@ onBeforeUnmount(() => {
 
 .pv-pill {
   height: 24px;
-  padding: 0 8px;
-  border-radius: 12px;
-  border: 1px solid var(--cs-border);
-  background: var(--cs-bg);
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid var(--cs-border-strong);
+  background: var(--cs-panel);
   color: var(--cs-text-dim);
-  font-size: 12.5px;
+  font-size: 13px;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -889,26 +798,26 @@ onBeforeUnmount(() => {
 }
 
 .pv-pill.active {
-  background: color-mix(in srgb, var(--cs-active) 25%, transparent);
+  background: color-mix(in srgb, var(--cs-active) 12%, transparent);
   border-color: var(--cs-active);
   color: var(--cs-active);
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .pv-pill-av.active {
-  background: color-mix(in srgb, var(--cs-error) 20%, transparent);
+  background: color-mix(in srgb, var(--cs-error) 12%, transparent);
   border-color: var(--cs-error);
   color: var(--cs-error);
 }
 
 .pv-pill-beacon.active {
-  background: color-mix(in srgb, var(--cs-warning) 20%, transparent);
+  background: color-mix(in srgb, var(--cs-warning) 18%, transparent);
   border-color: var(--cs-warning);
   color: var(--cs-warning);
 }
 
 .pv-pill-admin.active {
-  background: color-mix(in srgb, var(--cs-elevated) 20%, transparent);
+  background: color-mix(in srgb, var(--cs-elevated) 12%, transparent);
   border-color: var(--cs-elevated);
   color: var(--cs-elevated);
 }
@@ -916,13 +825,42 @@ onBeforeUnmount(() => {
 .pv-spacer { flex: 1; }
 
 .pv-search-input {
-  width: 260px;
+  width: 220px;
+}
+
+/* 操作条（vshell：操作集中在内容上方，取代原底部按钮行） */
+.pv-action-bar {
+  height: 48px;
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--cs-panel);
+  border-bottom: 1px solid var(--cs-card-border);
+  flex-shrink: 0;
 }
 
 .pv-table-wrap {
   flex: 1;
+  margin: 12px;
+  background: var(--cs-card-bg);
+  border: 1px solid var(--cs-card-border);
+  border-radius: 8px;
   overflow: hidden;
   position: relative;
+}
+
+.pv-table-wrap :deep(.cs-empty-icon) {
+  font-size: 48px;
+}
+
+.pv-table-wrap :deep(.cs-empty-title) {
+  font-size: 14px;
+  color: var(--cs-text);
+}
+
+.pv-table-wrap :deep(.cs-empty-desc) {
+  font-size: 13px;
 }
 
 .proc-name-cell {
@@ -934,54 +872,63 @@ onBeforeUnmount(() => {
 
 .proc-name {
   color: var(--cs-text-bright);
-  font-size: 16.5px;
 }
 
 .proc-name.is-current {
   color: var(--cs-warning);
-  font-weight: bold;
+  font-weight: 600;
 }
 
 .proc-name.is-av {
   color: var(--cs-error);
-  font-weight: bold;
-}
-
-.beacon-self-tag {
-  background: color-mix(in srgb, var(--cs-warning) 20%, transparent);
-  border: 1px solid var(--cs-warning);
-  color: var(--cs-warning);
-  font-size: 12px;
-  padding: 1px 6px;
-  border-radius: 3px;
-  font-weight: bold;
-}
-
-.av-detected-tag {
-  background: color-mix(in srgb, var(--cs-error) 20%, transparent);
-  border: 1px solid var(--cs-error);
-  color: var(--cs-error);
-  font-size: 12px;
-  padding: 1px 6px;
-  border-radius: 3px;
-  font-weight: bold;
-}
-
-.arch-badge {
-  display: inline-block;
-  padding: 1px 6px;
-  border-radius: 3px;
-  font-size: 13px;
   font-weight: 600;
 }
 
+.beacon-self-tag {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 8px;
+  background: color-mix(in srgb, var(--cs-warning) 18%, transparent);
+  border: 1px solid var(--cs-warning);
+  color: var(--cs-warning);
+  font-size: 12px;
+  border-radius: 4px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.av-detected-tag {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 8px;
+  background: color-mix(in srgb, var(--cs-error) 12%, transparent);
+  border: 1px solid var(--cs-error);
+  color: var(--cs-error);
+  font-size: 12px;
+  border-radius: 4px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.arch-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
 .arch-64 {
-  background: color-mix(in srgb, var(--cs-active) 20%, transparent);
+  background: color-mix(in srgb, var(--cs-active) 12%, transparent);
   color: var(--cs-active);
 }
 
 .arch-86 {
-  background: color-mix(in srgb, var(--cs-text-dim) 20%, transparent);
+  background: color-mix(in srgb, var(--cs-text-dim) 15%, transparent);
   color: var(--cs-text-dim);
 }
 
@@ -992,21 +939,24 @@ onBeforeUnmount(() => {
 }
 
 .priv-badge {
-  font-size: 11.5px;
-  padding: 1px 5px;
-  border-radius: 3px;
-  font-weight: bold;
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
   white-space: nowrap;
 }
 
 .priv-system {
-  background: color-mix(in srgb, var(--cs-error) 20%, transparent);
+  background: color-mix(in srgb, var(--cs-error) 12%, transparent);
   color: var(--cs-error);
   border: 1px solid var(--cs-error);
 }
 
 .priv-admin {
-  background: color-mix(in srgb, var(--cs-elevated) 20%, transparent);
+  background: color-mix(in srgb, var(--cs-elevated) 12%, transparent);
   color: var(--cs-elevated);
   border: 1px solid var(--cs-elevated);
 }
@@ -1017,7 +967,6 @@ onBeforeUnmount(() => {
 }
 
 .user-text {
-  font-size: 16px;
   color: var(--cs-text);
 }
 
@@ -1027,39 +976,29 @@ onBeforeUnmount(() => {
 }
 
 .text-gold {
-  color: #ffca28 !important;
+  color: var(--cs-warning) !important;
 }
 
 .text-av {
-  color: #ff7875 !important;
+  color: var(--cs-error) !important;
 }
-
-.pv-bottom-bar {
-  height: 38px;
-  padding: 0 12px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: var(--cs-panel);
-  border-top: 1px solid var(--cs-border);
-  flex-shrink: 0;
-}
-
-.pv-bottom-spacer { flex: 1; }
 
 .pv-status-info {
-  font-size: 15px;
+  font-size: 13px;
   color: var(--cs-text-dim);
   font-family: var(--cs-font-mono);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Context Menu */
 .cs-listener-ctx-menu {
   position: fixed;
   background: var(--cs-panel);
-  border: 1px solid var(--cs-border);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
-  border-radius: 2px;
+  border: 1px solid var(--cs-card-border);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12), 0 3px 6px -4px rgba(0, 0, 0, 0.12);
+  border-radius: 8px;
   padding: 4px 0;
   z-index: 9999;
   min-width: 180px;
@@ -1070,8 +1009,8 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 14px;
-  font-size: 16.5px;
+  padding: 8px 14px;
+  font-size: 13px;
   color: var(--cs-text);
   cursor: pointer;
 }
@@ -1092,9 +1031,9 @@ onBeforeUnmount(() => {
   top: -2px;
   left: 100%;
   background: var(--cs-panel);
-  border: 1px solid var(--cs-border);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
-  border-radius: 2px;
+  border: 1px solid var(--cs-card-border);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12), 0 3px 6px -4px rgba(0, 0, 0, 0.12);
+  border-radius: 8px;
   padding: 6px;
   display: flex;
   gap: 6px;
@@ -1104,12 +1043,18 @@ onBeforeUnmount(() => {
 .color-box {
   width: 24px;
   height: 24px;
-  border: 1px solid #444;
-  border-radius: 2px;
+  border: 1px solid var(--cs-border-strong);
+  border-radius: 4px;
   cursor: pointer;
 }
 
 .color-box:hover {
-  border-color: #ffffff;
+  border-color: var(--cs-active);
+}
+
+.pv-help-body {
+  line-height: 1.8;
+  font-size: 13px;
+  color: var(--cs-text);
 }
 </style>

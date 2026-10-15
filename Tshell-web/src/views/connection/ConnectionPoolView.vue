@@ -1,6 +1,6 @@
 <template>
   <div class="cs-connection-pool-view cs-font-ui">
-    <!-- CS Toolbar -->
+    <!-- vshell 工具条：内容上方一行（左标题/统计，右操作） -->
     <div class="cp-toolbar">
       <div class="cp-title-group">
         <span class="cp-title">{{ isZh ? '连接池与工作线程管理' : 'Connection Pool & Workers' }}</span>
@@ -11,7 +11,15 @@
 
       <div class="cp-spacer" />
 
-      <button class="cs-btn cs-btn-primary" :disabled="healthChecking" @click="handleHealthCheck">
+      <button class="cs-btn" @click="handleHelp">
+        {{ isZh ? '帮助' : 'Help' }}
+      </button>
+
+      <button class="cs-btn cs-btn-primary" @click="handleSavePoolConfig">
+        {{ isZh ? '保存连接池参数' : 'Save Pool Tuning' }}
+      </button>
+
+      <button class="cs-btn" :disabled="healthChecking" @click="handleHealthCheck">
         {{ healthChecking ? (isZh ? '检查中...' : 'Checking...') : (isZh ? '健康检查' : 'Health Check') }}
       </button>
 
@@ -32,8 +40,7 @@
               v-model="protocolFilter"
               :placeholder="isZh ? '全部协议' : 'All Protocols'"
               clearable
-              size="small"
-              style="width: 110px"
+              class="cp-protocol-select"
               @change="onProtocolFilterChange"
             >
               <el-option label="TCP" value="tcp" />
@@ -47,11 +54,17 @@
             <el-input
               v-model="uidFilter"
               :placeholder="isZh ? '按 Beacon UID 查询' : 'Lookup Beacon UID'"
-              size="small"
               clearable
               class="cp-uid-input"
               @keyup.enter="onUidSearch"
-            />
+            >
+              <template #prefix>
+                <svg class="cp-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                  <circle cx="11" cy="11" r="7" />
+                  <path d="M20 20l-3.6-3.6" />
+                </svg>
+              </template>
+            </el-input>
             <button class="cs-btn cs-btn-xs" @click="onUidSearch">{{ isZh ? '查询' : 'Find' }}</button>
             <button v-if="protocolFilter || uidFilter" class="cs-btn cs-btn-xs" @click="clearFilters">
               {{ isZh ? '清除过滤' : 'Clear' }}
@@ -65,7 +78,6 @@
         <div class="cp-table-wrap">
           <el-table
             :data="connections"
-            size="small"
             height="100%"
             highlight-current-row
             class="cs-session-table"
@@ -74,12 +86,12 @@
           >
             <el-table-column prop="id" :label="isZh ? '套接字 ID' : 'Socket ID'" width="100" sortable>
               <template #default="{ row }">
-                <span class="cs-font-mono font-bold">{{ row.id || row.Id || 'sock-1' }}</span>
+                <span class="cs-font-mono vs-strong">{{ row.id || row.Id || 'sock-1' }}</span>
               </template>
             </el-table-column>
             <el-table-column prop="protocol" :label="isZh ? '协议' : 'Protocol'" width="100" sortable align="center">
               <template #default="{ row }">
-                <span class="arch-badge arch-64">{{ row.protocol || 'TCP' }}</span>
+                <span class="vs-chip">{{ row.protocol || 'TCP' }}</span>
               </template>
             </el-table-column>
             <el-table-column prop="client_ip" :label="isZh ? '远端地址' : 'Remote Address'" min-width="180" sortable show-overflow-tooltip>
@@ -89,7 +101,7 @@
             </el-table-column>
             <el-table-column prop="uid" :label="isZh ? 'Beacon UID' : 'Beacon UID'" min-width="160" show-overflow-tooltip>
               <template #default="{ row }">
-                <span class="cs-font-mono text-dim">{{ row.uid || row.Uid || '-' }}</span>
+                <span class="cs-font-mono vs-dim">{{ row.uid || row.Uid || '-' }}</span>
               </template>
             </el-table-column>
             <el-table-column prop="uptime" :label="isZh ? '运行时长' : 'Uptime'" width="130" align="right">
@@ -99,9 +111,22 @@
             </el-table-column>
             <el-table-column prop="is_active" :label="isZh ? '状态' : 'State'" width="110" align="center">
               <template #default="{ row }">
-                <span class="text-online">● {{ row.is_active ? 'ESTABLISHED' : 'CLOSED' }}</span>
+                <span class="vs-status-tag" :class="row.is_active ? 'is-online' : 'is-offline'">
+                  {{ row.is_active ? 'ESTABLISHED' : 'CLOSED' }}
+                </span>
               </template>
             </el-table-column>
+
+            <template #empty>
+              <div class="vs-empty">
+                <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="3" y="4" width="18" height="6" rx="2" />
+                  <rect x="3" y="14" width="18" height="6" rx="2" />
+                  <path d="M7 7h.01M7 17h.01" />
+                </svg>
+                <span>{{ isZh ? '暂无活动连接' : 'No active connections' }}</span>
+              </div>
+            </template>
           </el-table>
         </div>
       </div>
@@ -117,19 +142,19 @@
             <div class="cs-form-row">
               <label class="cs-form-label">{{ isZh ? '工作线程数' : 'Worker Pool Size' }}:</label>
               <div class="input-with-btn">
-                <el-input-number v-model="workerCount" :min="4" :max="128" size="small" />
+                <el-input-number v-model="workerCount" :min="4" :max="128" />
                 <button class="cs-btn cs-btn-primary" @click="handleResizeWorkers">{{ isZh ? '应用' : 'Apply Size' }}</button>
               </div>
             </div>
 
-            <div class="cs-form-row" style="margin-top: 10px">
+            <div class="cs-form-row">
               <label class="cs-form-label">{{ isZh ? '最大连接数' : 'Max Pool Connections' }}:</label>
-              <el-input-number v-model="poolConfig.max_connections" :min="50" :max="5000" size="small" />
+              <el-input-number v-model="poolConfig.max_connections" :min="50" :max="5000" />
             </div>
 
-            <div class="cs-form-row" style="margin-top: 10px">
+            <div class="cs-form-row">
               <label class="cs-form-label">{{ isZh ? '最大空闲时间' : 'Max Idle Duration' }}:</label>
-              <el-input v-model="poolConfig.max_idle_time" placeholder="300s" size="small" style="width: 140px" />
+              <el-input v-model="poolConfig.max_idle_time" placeholder="300s" class="cp-idle-input" />
             </div>
           </div>
 
@@ -143,28 +168,17 @@
               <div class="stat-lbl">{{ isZh ? '专用工作线程数' : 'Dedicated Worker Threads' }}</div>
             </div>
             <div class="stat-mini-card">
-              <div class="stat-num">{{ poolStats.health_status || 'HEALTHY' }}</div>
               <div class="stat-lbl">{{ isZh ? '连接池健康状态' : 'Pool Health State' }}</div>
+              <span
+                class="vs-status-tag"
+                :class="String(poolStats.health_status || 'HEALTHY').toUpperCase() === 'HEALTHY' ? 'is-online' : 'is-offline'"
+              >
+                {{ poolStats.health_status || 'HEALTHY' }}
+              </span>
             </div>
           </div>
         </div>
       </div>
-    </div>
-
-    <!-- Bottom Action Bar (CS Native Button Row) -->
-    <div class="cp-bottom-bar">
-      <button class="cs-btn cs-btn-primary" @click="handleSavePoolConfig">
-        {{ isZh ? '保存连接池参数' : 'Save Pool Tuning' }}
-      </button>
-      <button class="cs-btn cs-btn-danger" :disabled="!selectedConnection" @click="selectedConnection && handleCloseConn(selectedConnection)">
-        {{ isZh ? '强制断开连接' : 'Terminate Connection' }}
-      </button>
-      <button class="cs-btn" @click="handleHealthCheck">
-        {{ isZh ? '执行健康检查' : 'Perform Health Check' }}
-      </button>
-      <button class="cs-btn" @click="handleHelp">
-        {{ isZh ? '帮助' : 'Help' }}
-      </button>
     </div>
   </div>
 </template>
@@ -397,165 +411,234 @@ onMounted(() => {
   overflow: hidden;
 }
 
+/* ===== 工具条：内容上方一行（左标题/统计，右操作） ===== */
 .cp-toolbar {
-  height: 32px;
-  background: var(--cs-panel);
-  border-bottom: 1px solid var(--cs-border);
+  min-height: 48px;
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
-  padding: 0 10px;
+  padding: 8px 12px;
+  background: var(--cs-panel);
+  border-bottom: 1px solid var(--cs-card-border);
   flex-shrink: 0;
 }
 
 .cp-title-group {
   display: flex;
-  align-items: center;
-  gap: 6px;
+  align-items: baseline;
+  gap: 8px;
 }
 
 .cp-title {
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--cs-text-bright);
+  white-space: nowrap;
 }
 
 .cp-stats {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--cs-text-dim);
+  white-space: nowrap;
 }
 
-.cp-spacer { flex: 1; }
+.cp-spacer {
+  flex: 1;
+}
 
+/* ===== 内容区：12px 留白，两张卡片（会话表 / 池参数） ===== */
 .cp-body {
   flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
+  gap: 12px;
+  padding: 12px;
   overflow: hidden;
-  gap: 1px;
-  background: var(--cs-border);
 }
 
 .cp-table-panel {
   flex: 1;
-  background: var(--cs-bg);
+  min-height: 0;
   display: flex;
   flex-direction: column;
+  background: var(--cs-panel);
+  border: 1px solid var(--cs-card-border);
+  border-radius: 8px;
   overflow: hidden;
 }
 
 .cp-config-panel {
-  height: 170px;
-  background: var(--cs-panel);
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  flex-shrink: 0;
+  background: var(--cs-panel);
+  border: 1px solid var(--cs-card-border);
+  border-radius: 8px;
+  overflow: hidden;
 }
 
+/* 卡片头：会话卡头兼任筛选工具条 */
 .cp-panel-header {
-  height: 26px;
-  background: var(--cs-titlebar-bg);
-  border-bottom: 1px solid var(--cs-border);
+  min-height: 48px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 10px;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--cs-text-dim);
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--cs-card-border);
+  flex-shrink: 0;
+}
+
+.cp-config-panel .cp-panel-header {
+  min-height: 38px;
+  padding: 0 12px;
 }
 
 .panel-title {
+  font-size: 14px;
+  font-weight: 600;
   color: var(--cs-text-bright);
 }
 
 .cp-filter-group {
   display: flex;
   align-items: center;
-  gap: 6px;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.cp-protocol-select {
+  width: 120px;
 }
 
 .cp-uid-input {
-  width: 170px;
+  width: 200px;
+}
+
+.cp-search-icon {
+  color: var(--cs-text-dim);
 }
 
 .cp-table-wrap {
   flex: 1;
+  min-height: 0;
   overflow: hidden;
 }
 
+/* ===== 池参数表单 ===== */
 .cp-config-grid {
-  flex: 1;
   display: flex;
-  padding: 10px 14px;
-  gap: 20px;
-  overflow-y: auto;
+  gap: 24px;
+  padding: 12px 16px;
 }
 
 .cp-form-col {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 6px;
 }
 
 .cp-stats-col {
   width: 260px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-}
-
-.cs-form-row {
-  display: flex;
-  align-items: center;
   gap: 8px;
-}
-
-.cs-form-label {
-  font-size: 11px;
-  color: var(--cs-text);
-  min-width: 180px;
 }
 
 .input-with-btn {
   display: flex;
-  gap: 6px;
+  align-items: center;
+  gap: 8px;
+}
+
+.cp-idle-input {
+  width: 160px;
 }
 
 .stat-mini-card {
-  background: var(--cs-bg);
-  border: 1px solid var(--cs-border);
-  padding: 6px 10px;
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  background: var(--cs-bg);
+  border-radius: 8px;
 }
 
 .stat-num {
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--cs-active);
+  font-size: 16px;
+  font-weight: 600;
   font-family: var(--cs-font-mono);
+  color: var(--cs-text-bright);
 }
 
 .stat-lbl {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--cs-text-dim);
 }
 
-.text-online { color: var(--cs-online); }
-.text-dim { color: var(--cs-text-dim); }
-
-.cp-bottom-bar {
-  height: 38px;
-  background: var(--cs-panel);
-  border-top: 1px solid var(--cs-border);
-  display: flex;
+/* ===== 单元格内容 ===== */
+/* 状态：在线实心绿 tag，离线灰 tag（20px / 4px 圆角 / 12px） */
+.vs-status-tag {
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 0 12px;
-  flex-shrink: 0;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.vs-status-tag.is-online {
+  background: var(--cs-online);
+  color: #fff;
+}
+
+.vs-status-tag.is-offline {
+  background: color-mix(in srgb, var(--cs-offline) 22%, transparent);
+  color: var(--cs-text-dim);
+}
+
+/* 中性 chip（协议等非状态标签） */
+.vs-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1;
+  background: var(--cs-table-head);
+  border: 1px solid var(--cs-card-border);
+  color: var(--cs-text);
+}
+
+.vs-dim {
+  color: var(--cs-text-dim);
+}
+
+.vs-strong {
+  font-weight: 600;
+  color: var(--cs-text-bright);
+}
+
+/* 空状态：图标 + 一行说明（居中） */
+.vs-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 24px 0;
+  font-size: 13px;
+  color: var(--cs-text-dim);
+}
+
+.vs-empty svg {
+  color: var(--cs-text-dim);
+  opacity: 0.5;
 }
 </style>

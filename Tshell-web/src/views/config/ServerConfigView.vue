@@ -1,16 +1,19 @@
 <template>
   <div class="cs-server-config-view cs-font-ui">
-    <!-- CS Toolbar -->
+    <!-- 工具条：页面级操作 -->
     <div class="cfg-toolbar">
       <div class="cfg-title-group">
         <span class="cfg-title">{{ isZh ? '服务配置' : 'Server Configuration' }}</span>
-        <span class="cfg-status" :class="loaded ? 'online' : 'offline'">● {{ loaded ? (isZh ? '已加载' : 'Loaded') : (isZh ? '加载中...' : 'Loading...') }}</span>
+        <span class="cfg-status" :class="loaded ? 'online' : 'offline'">{{ loaded ? (isZh ? '已加载' : 'Loaded') : (isZh ? '加载中...' : 'Loading...') }}</span>
       </div>
 
       <div class="cfg-spacer" />
 
-      <button class="cs-btn" :disabled="loading" @click="fetchConfig">{{ isZh ? '刷新' : 'Refresh' }}</button>
+      <button class="cs-btn" @click="handleEnvVars">{{ isZh ? '环境变量' : 'Env Vars' }}</button>
+      <button class="cs-btn" @click="handleSchema">{{ isZh ? '配置结构' : 'Schema' }}</button>
+      <button class="cs-btn" @click="handleHelp">{{ isZh ? '帮助' : 'Help' }}</button>
       <button class="cs-btn" @click="handleExport">{{ isZh ? '导出' : 'Export' }}</button>
+      <button class="cs-btn" :disabled="loading" @click="fetchConfig">{{ isZh ? '刷新' : 'Refresh' }}</button>
     </div>
 
     <!-- Master-Detail Body -->
@@ -41,14 +44,29 @@
       <!-- Right Content Panel -->
       <div class="cfg-content" v-loading="loading">
         <div class="cfg-panel-header">
-          <span class="panel-title">{{ selectedSection === 'all' ? (isZh ? '完整 JSON 配置' : 'Full JSON Configuration') : (isZh ? `配置段：${sectionLabel(selectedSection)}` : `Section: ${selectedSection}`) }}</span>
-          <span class="panel-hint">
-            {{ selectedSection === 'all'
-              ? (isZh ? '在线保存当前仅写入 server / security / logging 三个配置段' : 'Online save currently only writes server / security / logging sections')
-              : SUPPORTED_SECTIONS.includes(selectedSection)
-                ? (isZh ? '该配置段支持在线保存' : 'This section supports online save')
-                : (isZh ? '该配置段暂不支持在线保存，请修改 config.yaml 后 Reload' : 'This section is read-only online. Edit config.yaml and Reload instead.') }}
-          </span>
+          <div class="cfg-panel-heading">
+            <span class="panel-title">{{ selectedSection === 'all' ? (isZh ? '完整 JSON 配置' : 'Full JSON Configuration') : (isZh ? `配置段：${sectionLabel(selectedSection)}` : `Section: ${selectedSection}`) }}</span>
+            <span class="panel-hint">
+              {{ selectedSection === 'all'
+                ? (isZh ? '在线保存当前仅写入 server / security / logging 三个配置段' : 'Online save currently only writes server / security / logging sections')
+                : SUPPORTED_SECTIONS.includes(selectedSection)
+                  ? (isZh ? '该配置段支持在线保存' : 'This section supports online save')
+                  : (isZh ? '该配置段暂不支持在线保存，请修改 config.yaml 后 Reload' : 'This section is read-only online. Edit config.yaml and Reload instead.') }}
+            </span>
+          </div>
+
+          <div class="cfg-panel-actions">
+            <button v-if="selectedSection !== 'all'" class="cs-btn" @click="syncSectionText">{{ isZh ? '重新加载配置段 JSON' : 'Reload Section JSON' }}</button>
+            <button class="cs-btn" :disabled="reloading" @click="handleReload">
+              {{ reloading ? (isZh ? '重载中...' : 'Reloading...') : (isZh ? '重载' : 'Reload') }}
+            </button>
+            <button class="cs-btn" :disabled="validating" @click="handleValidate">
+              {{ validating ? (isZh ? '校验中...' : 'Validating...') : (isZh ? '校验' : 'Validate') }}
+            </button>
+            <button class="cs-btn cs-btn-primary" :disabled="saving" @click="handleSave">
+              {{ saving ? (isZh ? '保存中...' : 'Saving...') : (isZh ? '保存' : 'Save') }}
+            </button>
+          </div>
         </div>
 
         <textarea
@@ -56,27 +74,7 @@
           class="cfg-json-editor cs-font-mono"
           spellcheck="false"
         />
-
-        <div v-if="selectedSection !== 'all'" class="cfg-json-actions">
-          <button class="cs-btn cs-btn-xs" @click="syncSectionText">{{ isZh ? '重新加载配置段 JSON' : 'Reload Section JSON' }}</button>
-        </div>
       </div>
-    </div>
-
-    <!-- Bottom Action Bar (CS Native Button Row) -->
-    <div class="cfg-bottom-bar">
-      <button class="cs-btn cs-btn-primary" :disabled="saving" @click="handleSave">
-        {{ saving ? (isZh ? '保存中...' : 'Saving...') : (isZh ? '保存' : 'Save') }}
-      </button>
-      <button class="cs-btn" :disabled="validating" @click="handleValidate">
-        {{ validating ? (isZh ? '校验中...' : 'Validating...') : (isZh ? '校验' : 'Validate') }}
-      </button>
-      <button class="cs-btn" :disabled="reloading" @click="handleReload">
-        {{ reloading ? (isZh ? '重载中...' : 'Reloading...') : (isZh ? '重载' : 'Reload') }}
-      </button>
-      <button class="cs-btn" @click="handleEnvVars">{{ isZh ? '环境变量' : 'Env Vars' }}</button>
-      <button class="cs-btn" @click="handleSchema">{{ isZh ? '配置结构' : 'Schema' }}</button>
-      <button class="cs-btn" @click="handleHelp">{{ isZh ? '帮助' : 'Help' }}</button>
     </div>
 
     <!-- Schema Dialog -->
@@ -92,7 +90,7 @@
     <!-- Environment Variables Dialog -->
     <el-dialog v-model="envDialogVisible" :title="isZh ? '环境变量说明' : 'Environment Variable Reference'" width="640px" append-to-body class="cs-dialog">
       <div class="env-table-wrap">
-        <el-table :data="envRows" size="small" height="360px" class="cs-session-table">
+        <el-table :data="envRows" height="360px" class="cs-session-table">
           <template #empty>
             <EmptyState variant="inline" :title="isZh ? '暂无环境变量' : 'No environment variables'" />
           </template>
@@ -385,39 +383,51 @@ onMounted(() => {
 }
 
 .cfg-toolbar {
-  height: 32px;
+  min-height: 48px;
   background: var(--cs-panel);
-  border-bottom: 1px solid var(--cs-border);
+  border-bottom: 1px solid var(--cs-card-border);
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0 10px;
+  padding: 8px 16px;
   flex-shrink: 0;
+  flex-wrap: wrap;
 }
 
 .cfg-title-group {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 10px;
 }
 
 .cfg-title {
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--cs-text-bright);
 }
 
+/* 状态 tag：已加载实心绿 / 加载中灰 */
 .cfg-status {
-  font-size: 11px;
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
   color: var(--cs-text-dim);
+  background: color-mix(in srgb, var(--cs-offline) 18%, transparent);
 }
 
 .cfg-status.online {
-  color: var(--cs-online);
+  color: #ffffff;
+  background: var(--cs-online);
 }
 
 .cfg-status.offline {
-  color: var(--cs-offline);
+  color: var(--cs-text-dim);
+  background: color-mix(in srgb, var(--cs-offline) 18%, transparent);
 }
 
 .cfg-spacer {
@@ -428,14 +438,17 @@ onMounted(() => {
   flex: 1;
   display: flex;
   min-height: 0;
+  padding: 16px;
+  gap: 16px;
 }
 
 .cfg-sidebar {
-  width: 180px;
-  border-right: 1px solid var(--cs-border);
-  background: var(--cs-bg);
+  width: 200px;
+  border: 1px solid var(--cs-card-border);
+  border-radius: 8px;
+  background: var(--cs-panel);
   overflow-y: auto;
-  padding: 4px 0;
+  padding: 8px;
   flex-shrink: 0;
 }
 
@@ -443,9 +456,12 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 12px;
-  font-size: 12px;
+  height: 36px;
+  padding: 0 10px;
+  margin-bottom: 2px;
+  font-size: 14px;
   color: var(--cs-text);
+  border-radius: 6px;
   cursor: pointer;
   user-select: none;
 }
@@ -456,13 +472,13 @@ onMounted(() => {
 }
 
 .cfg-nav-item.active {
-  background: var(--cs-active);
-  color: #ffffff;
+  background: color-mix(in srgb, var(--cs-active) 10%, transparent);
+  color: var(--cs-active);
   font-weight: 500;
 }
 
 .nav-icon {
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .nav-label {
@@ -473,10 +489,12 @@ onMounted(() => {
 }
 
 .nav-badge {
-  font-size: 9px;
-  padding: 1px 4px;
-  border-radius: 2px;
-  background: color-mix(in srgb, var(--cs-online) 25%, transparent);
+  font-size: 12px;
+  padding: 0 6px;
+  height: 20px;
+  line-height: 20px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--cs-online) 14%, transparent);
   color: var(--cs-online);
 }
 
@@ -485,65 +503,68 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  padding: 8px;
-  gap: 6px;
+  background: var(--cs-panel);
+  border: 1px solid var(--cs-card-border);
+  border-radius: 8px;
+  overflow: hidden;
 }
 
 .cfg-panel-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--cs-card-border);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.cfg-panel-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.cfg-panel-actions {
+  display: flex;
+  align-items: center;
   gap: 8px;
   flex-shrink: 0;
+  flex-wrap: wrap;
 }
 
 .panel-title {
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--cs-text-bright);
 }
 
 .panel-hint {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--cs-text-dim);
-  text-align: right;
 }
 
 .cfg-json-editor {
   flex: 1;
-  width: 100%;
+  width: auto;
+  margin: 12px 16px 16px;
   resize: none;
   background: var(--cs-console);
   color: var(--cs-text);
-  border: 1px solid var(--cs-border);
-  border-radius: 2px;
-  padding: 8px;
-  font-size: 12px;
-  line-height: 1.5;
+  border: 1px solid var(--cs-card-border);
+  border-radius: 8px;
+  padding: 12px;
+  font-size: 13px;
+  line-height: 1.6;
   white-space: pre;
   overflow: auto;
 }
 
 .cfg-json-editor:focus {
-  outline: 1px solid var(--cs-active);
-}
-
-.cfg-json-actions {
-  display: flex;
-  justify-content: flex-end;
-  flex-shrink: 0;
-}
-
-.cfg-bottom-bar {
-  height: 38px;
-  background: var(--cs-panel);
-  border-top: 1px solid var(--cs-border);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 0 12px;
-  flex-shrink: 0;
+  outline: none;
+  border-color: var(--cs-active);
 }
 
 .env-table-wrap {
@@ -553,7 +574,7 @@ onMounted(() => {
 
 .cs-dialog-footer {
   display: flex;
-  justify-content: center;
+  justify-content: flex-end;
   gap: 8px;
 }
 </style>

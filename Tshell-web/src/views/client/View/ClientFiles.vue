@@ -10,10 +10,10 @@
             {{ isZh ? '文件系统' : 'Filesystem' }}
           </span>
           <div class="fm-tree-btns">
-            <button class="cs-btn cs-btn-xs" :title="isZh ? '展开全部目录' : 'Expand All'" @click.stop="expandAllTree">
+            <button class="ic-btn" :title="isZh ? '展开全部目录' : 'Expand All'" @click.stop="expandAllTree">
               <el-icon><FolderOpened /></el-icon>
             </button>
-            <button class="cs-btn cs-btn-xs" :title="isZh ? '折叠全部目录' : 'Collapse All'" @click.stop="collapseAllTree">
+            <button class="ic-btn" :title="isZh ? '折叠全部目录' : 'Collapse All'" @click.stop="collapseAllTree">
               <el-icon><Fold /></el-icon>
             </button>
           </div>
@@ -24,7 +24,6 @@
             v-model="treeSearchText"
             :placeholder="isZh ? '搜索目录...' : 'Filter directories...'"
             :prefix-icon="Search"
-            size="small"
             clearable
             class="fm-search-input"
           />
@@ -68,14 +67,14 @@
         <div class="fm-toolbar">
           <!-- 导航按键 -->
           <div class="fm-nav-group">
-            <button class="cs-btn cs-btn-xs" :title="isZh ? '磁盘驱动器 / 根目录' : 'Drives / Home'" @click="goClientHome">
+            <button class="ic-btn" :title="isZh ? '刷新目录' : 'Refresh'" @click="refreshCurrentFolder">
+              <el-icon><Refresh /></el-icon>
+            </button>
+            <button class="ic-btn" :title="isZh ? '磁盘驱动器 / 根目录' : 'Drives / Home'" @click="goClientHome">
               <el-icon><HomeFilled /></el-icon>
             </button>
-            <button class="cs-btn cs-btn-xs" :disabled="!canGoUp" :title="isZh ? '上一级目录' : 'Up'" @click="goUpLevel">
+            <button class="ic-btn" :disabled="!canGoUp" :title="isZh ? '上一级目录' : 'Up'" @click="goUpLevel">
               <el-icon><Top /></el-icon>
-            </button>
-            <button class="cs-btn cs-btn-xs" :title="isZh ? '刷新目录' : 'Refresh'" @click="refreshCurrentFolder">
-              <el-icon><Refresh /></el-icon>
             </button>
           </div>
 
@@ -94,7 +93,6 @@
               v-else
               ref="pathInputRef"
               v-model="currentPath"
-              size="small"
               class="fm-path-el-input cs-font-mono"
               :placeholder="isZh ? '输入文件路径，按回车或点击前往切换目录...' : 'Enter file path and press Enter...'"
               clearable
@@ -119,7 +117,6 @@
               v-model="tableSearchKeyword"
               :placeholder="isZh ? '过滤当前列表,回车递归搜索' : 'Filter list, Enter to search deep'"
               :prefix-icon="Search"
-              size="small"
               clearable
               class="fm-table-search"
               :loading="deepSearching"
@@ -134,23 +131,51 @@
 
           <!-- 顶部快捷操作 -->
           <div class="fm-quick-actions">
-            <button class="cs-btn cs-btn-xs" @click="createNewFolder">
+            <button class="cs-btn cs-btn-primary" @click="createNewFolder">
               <el-icon><FolderAdd /></el-icon>
               <span>{{ isZh ? '新建文件夹' : 'New Folder' }}</span>
             </button>
-            <button class="cs-btn cs-btn-xs" @click="createNewFile">
+            <button class="cs-btn cs-btn-primary" @click="createNewFile">
               <el-icon><DocumentAdd /></el-icon>
               <span>{{ isZh ? '新建文件' : 'New File' }}</span>
             </button>
-            <button class="cs-btn cs-btn-xs" @click="showUploadDialog">
+            <button class="cs-btn cs-btn-primary" @click="showUploadDialog">
               <el-icon><Upload /></el-icon>
               <span>{{ isZh ? '上传文件' : 'Upload' }}</span>
             </button>
-            <button class="cs-btn cs-btn-xs" @click="showWgetDialog">
+            <button class="cs-btn" @click="showWgetDialog">
               <el-icon><Download /></el-icon>
               <span>{{ isZh ? 'wget 下载' : 'wget File' }}</span>
             </button>
           </div>
+        </div>
+
+        <!-- 操作条（vshell：操作集中在表格上方，取代原底部按钮行） -->
+        <div class="fm-action-bar">
+          <button class="cs-btn" @click="fetchDrives">
+            {{ isZh ? '驱动器 (Drives)' : 'Drives' }}
+          </button>
+          <button class="cs-btn" :disabled="selectedFiles.length === 0" @click="handleFileView()">
+            {{ isZh ? '查看/编辑 (View)' : 'View' }}
+          </button>
+          <button class="cs-btn" :disabled="selectedFiles.length === 0" @click="handleFileDownload()">
+            {{ isZh ? '下载 (Download)' : 'Download' }}
+          </button>
+          <button class="cs-btn" :disabled="selectedFiles.length === 0" @click="handleFileExecute()">
+            {{ isZh ? '执行 (Execute)...' : 'Execute...' }}
+          </button>
+          <button class="cs-btn cs-btn-danger" :disabled="selectedFiles.length === 0" @click="deleteSelectedFiles">
+            {{ isZh ? '删除 (Delete)' : 'Delete' }}
+          </button>
+          <button class="cs-btn" @click="handleHelp">
+            {{ isZh ? '帮助 (Help)' : 'Help' }}
+          </button>
+
+          <div class="fm-spacer" />
+
+          <span class="fm-status-info">
+            {{ isZh ? `共 ${filteredFiles.length} 项 | 路径: ${currentPath || '/'}` : `${filteredFiles.length} items | ${currentPath || '/'}` }}
+          </span>
         </div>
 
         <!-- 文件列表表格 -->
@@ -204,11 +229,11 @@
             </el-table-column>
 
             <template #empty>
-              <EmptyState
-                variant="inline"
-                :title="isZh ? '当前目录无文件或尚未加载' : 'Directory Empty or Not Loaded'"
-                :desc="isZh ? '点击【刷新列表】或输入路径加载文件系统。' : 'Click List or enter path to browse files.'"
-              />
+              <div class="fm-empty">
+                <el-icon class="fm-empty-icon"><FolderOpened /></el-icon>
+                <div class="fm-empty-title">{{ isZh ? '当前目录无文件或尚未加载' : 'Directory Empty or Not Loaded' }}</div>
+                <div class="fm-empty-desc">{{ isZh ? '点击【刷新】或在上方输入路径加载目标文件系统。' : 'Click Refresh or enter a path above to browse the target filesystem.' }}</div>
+              </div>
             </template>
           </el-table>
 
@@ -218,49 +243,8 @@
               :page-size="PAGE_SIZE"
               :total="filteredFiles.length"
               layout="prev, pager, next"
-              :small="true"
             />
           </div>
-        </div>
-
-        <!-- 底部 Cobalt Strike 4.x 操作按钮栏 -->
-        <div class="fm-bottom-bar">
-          <button class="cs-btn" @click="refreshCurrentFolder">
-            {{ isZh ? '刷新列表 (List)' : 'List' }}
-          </button>
-          <button class="cs-btn" @click="fetchDrives">
-            {{ isZh ? '驱动器 (Drives)' : 'Drives' }}
-          </button>
-          <button class="cs-btn cs-btn-primary" @click="showUploadDialog">
-            {{ isZh ? '上传 (Upload)...' : 'Upload...' }}
-          </button>
-          <button class="cs-btn" @click="createNewFolder">
-            {{ isZh ? '新建文件夹' : 'Make Directory' }}
-          </button>
-          <button class="cs-btn" @click="createNewFile">
-            {{ isZh ? '新建文件' : 'New File' }}
-          </button>
-          <button class="cs-btn" :disabled="selectedFiles.length === 0" @click="handleFileView()">
-            {{ isZh ? '查看/编辑 (View)' : 'View' }}
-          </button>
-          <button class="cs-btn" :disabled="selectedFiles.length === 0" @click="handleFileDownload()">
-            {{ isZh ? '下载 (Download)' : 'Download' }}
-          </button>
-          <button class="cs-btn" :disabled="selectedFiles.length === 0" @click="handleFileExecute()">
-            {{ isZh ? '执行 (Execute)...' : 'Execute...' }}
-          </button>
-          <button class="cs-btn cs-btn-danger" :disabled="selectedFiles.length === 0" @click="deleteSelectedFiles">
-            {{ isZh ? '删除 (Delete)' : 'Delete' }}
-          </button>
-          <button class="cs-btn" @click="handleHelp">
-            {{ isZh ? '帮助 (Help)' : 'Help' }}
-          </button>
-
-          <div class="fm-spacer" />
-
-          <span class="fm-status-info">
-            {{ isZh ? `共 ${filteredFiles.length} 项 | 路径: ${currentPath || '/'}` : `${filteredFiles.length} items | ${currentPath || '/'}` }}
-          </span>
         </div>
       </div>
     </div>
@@ -381,13 +365,13 @@
         <div class="cs-form-row">
           <label class="cs-form-label">{{ isZh ? '程序路径:' : 'Program:' }}</label>
           <div class="cs-form-input-wrap">
-            <el-input v-model="executeForm.path" size="small" readonly />
+            <el-input v-model="executeForm.path" readonly />
           </div>
         </div>
         <div class="cs-form-row">
           <label class="cs-form-label">{{ isZh ? '运行参数:' : 'Arguments:' }}</label>
           <div class="cs-form-input-wrap">
-            <el-input v-model="executeForm.args" size="small" :placeholder="isZh ? '命令行参数（可选）' : 'CLI arguments (optional)'" />
+            <el-input v-model="executeForm.args" :placeholder="isZh ? '命令行参数（可选）' : 'CLI arguments (optional)'" />
           </div>
         </div>
       </div>
@@ -457,13 +441,13 @@
         <div class="cs-form-row">
           <label class="cs-form-label">URL:</label>
           <div class="cs-form-input-wrap">
-            <el-input v-model="wgetForm.url" size="small" placeholder="http://example.com/payload.exe" />
+            <el-input v-model="wgetForm.url" placeholder="http://example.com/payload.exe" />
           </div>
         </div>
         <div class="cs-form-row">
           <label class="cs-form-label">{{ isZh ? '保存路径:' : 'Save Path:' }}</label>
           <div class="cs-form-input-wrap">
-            <el-input v-model="wgetForm.path" size="small" :placeholder="currentPath" />
+            <el-input v-model="wgetForm.path" :placeholder="currentPath" />
           </div>
         </div>
       </div>
@@ -486,7 +470,7 @@
       append-to-body
     >
       <div class="cs-dialog-body cs-font-ui">
-        <div style="font-size: 12px; margin-bottom: 10px;">
+        <div class="fm-dl-file">
           <b>{{ isZh ? '下载文件: ' : 'File: ' }}</b><code>{{ currentDownloadFile?.name }}</code>
         </div>
         <el-progress
@@ -494,7 +478,7 @@
           :status="downloadStatus === 'success' ? 'success' : (downloadStatus === 'error' ? 'exception' : '')"
           :stroke-width="12"
         />
-        <div v-if="downloadSpeed" style="font-size: 11px; color: var(--cs-text-dim); margin-top: 8px;">
+        <div v-if="downloadSpeed" class="fm-dl-speed">
           {{ isZh ? `下载速度: ${downloadSpeed}` : `Speed: ${downloadSpeed}` }}
         </div>
       </div>
@@ -517,7 +501,7 @@
       class="cs-dialog"
       append-to-body
     >
-      <div class="cs-dialog-body cs-font-ui" style="line-height: 1.6; font-size: 12px; color: var(--cs-text);">
+      <div class="cs-dialog-body cs-font-ui fm-help-body">
         <p><b>{{ isZh ? '刷新列表 (List):' : 'List:' }}</b> {{ isZh ? '获取并展示当前目录的所有文件与子目录。' : 'Query and list files in current directory.' }}</p>
         <p><b>{{ isZh ? '驱动器 (Drives):' : 'Drives:' }}</b> {{ isZh ? '列出目标系统的所有盘符与挂载点。' : 'Query all logical drives and mount points.' }}</p>
         <p><b>{{ isZh ? '上传/下载 (Upload/Download):' : 'Upload/Download:' }}</b> {{ isZh ? '在操作机与被控主机之间安全传输文件。' : 'Transfer files between server and beacon.' }}</p>
@@ -545,7 +529,6 @@ import { useGlobalFileTreeStore } from '@/stores/fileTree'
 import { useCurrentFileNode } from '@/stores/currentFileNode'
 import { useClientsStore } from '@/stores/clients'
 import { useI18nStore } from '@/stores/i18n'
-import EmptyState from '@/components/Common/EmptyState.vue'
 import { detectClientOs } from '@/utils/clientUtils'
 
 const i18nStore = useI18nStore()
@@ -1659,7 +1642,7 @@ function handleHelp() {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: var(--cs-bg, #f0f0f0);
+  background: var(--cs-bg);
   overflow: hidden;
 }
 
@@ -1667,46 +1650,79 @@ function handleHelp() {
   flex: 1;
   display: flex;
   overflow: hidden;
+  padding: 12px;
 }
 
-/* 左侧文件树 */
+/* 左侧文件树卡片 */
 .fm-sidebar {
   width: 280px;
-  background: var(--cs-panel, #ffffff);
-  border-right: 1px solid var(--cs-border, #c8c8c8);
+  background: var(--cs-card-bg);
+  border: 1px solid var(--cs-card-border);
+  border-radius: 8px;
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
+  overflow: hidden;
 }
 
 .fm-sidebar-header {
-  height: 32px;
-  background: var(--cs-titlebar-bg, #e6e6e6);
-  border-bottom: 1px solid var(--cs-border, #c8c8c8);
+  height: 38px;
+  background: transparent;
+  border-bottom: 1px solid var(--cs-card-border);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 8px;
+  padding: 0 12px;
+  flex-shrink: 0;
 }
 
 .fm-sidebar-title {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 600;
-  color: var(--cs-text-bright, #111111);
+  color: var(--cs-text-bright);
 }
 
 .fm-tree-btns {
   display: flex;
-  gap: 4px;
+  gap: 2px;
+}
+
+/* 工具条图标按钮：32×32 / 6px 圆角 / 悬停浅灰底 */
+.ic-btn {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  font-size: 16px;
+  color: var(--cs-text);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 120ms ease;
+  flex-shrink: 0;
+}
+
+.ic-btn:hover:not(:disabled) {
+  background: var(--cs-hover);
+  color: var(--cs-active);
+}
+
+.ic-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .fm-tree-search-wrap {
-  padding: 6px 8px;
-  border-bottom: 1px solid var(--cs-border, #c8c8c8);
-  background: var(--cs-panel, #ffffff);
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--cs-card-border);
+  background: transparent;
+  flex-shrink: 0;
 }
 
 .fm-search-input {
@@ -1716,20 +1732,18 @@ function handleHelp() {
 .fm-tree-content {
   flex: 1;
   overflow-y: auto;
-  padding: 4px 0;
+  padding: 4px 6px;
 }
 
 .fm-file-tree {
   background: transparent !important;
-  color: var(--cs-text, #333333) !important;
-  font-size: 12px;
+  color: var(--cs-text) !important;
 }
 
 .fm-tree-node {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
   width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1747,42 +1761,51 @@ function handleHelp() {
   white-space: nowrap;
 }
 
-/* 右侧主内容 */
+/* 右侧主内容卡片 */
 .fm-content {
   flex: 1;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: var(--cs-bg, #f0f0f0);
+  background: var(--cs-card-bg);
+  border: 1px solid var(--cs-card-border);
+  border-radius: 8px;
 }
 
 .fm-toolbar {
-  height: 36px;
-  background: var(--cs-panel, #ffffff);
-  border-bottom: 1px solid var(--cs-border, #c8c8c8);
+  height: 48px;
+  background: transparent;
+  border-bottom: 1px solid var(--cs-card-border);
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0 8px;
+  padding: 0 12px;
   flex-shrink: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.fm-toolbar::-webkit-scrollbar {
+  display: none;
 }
 
 .fm-nav-group {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
 }
 
 .fm-sidebar-resizer {
-  width: 4px;
-  background: var(--cs-border, #c8c8c8);
+  width: 8px;
+  background: transparent;
+  border-radius: 4px;
   cursor: col-resize;
   transition: background 150ms ease;
   user-select: none;
   flex-shrink: 0;
 }
 .fm-sidebar-resizer:hover {
-  background: var(--cs-active, #007acc);
+  background: color-mix(in srgb, var(--cs-active) 35%, transparent);
 }
 
 .fm-path-container {
@@ -1794,11 +1817,11 @@ function handleHelp() {
   display: flex;
   align-items: center;
   gap: 2px;
-  height: 28px;
-  padding: 0 8px;
-  background: var(--cs-bg, #f0f0f0);
-  border: 1px solid var(--cs-border, #c8c8c8);
-  border-radius: 2px;
+  height: 32px;
+  padding: 0 10px;
+  background: var(--cs-bg);
+  border: 1px solid var(--cs-border-strong);
+  border-radius: 6px;
   cursor: pointer;
   overflow-x: auto;
   scrollbar-width: none;
@@ -1813,33 +1836,32 @@ function handleHelp() {
 .crumb-root,
 .crumb-item {
   padding: 1px 4px;
-  border-radius: 2px;
+  border-radius: 4px;
   font-size: 13px;
-  color: var(--cs-text-bright, #111111);
+  color: var(--cs-text);
   white-space: nowrap;
   transition: all 100ms ease;
 }
 .crumb-root:hover,
 .crumb-item:hover {
-  background: var(--cs-hover, #e4e4e4);
-  color: var(--cs-active, #007acc);
-  text-decoration: underline;
+  background: var(--cs-hover);
+  color: var(--cs-active);
 }
 .crumb-sep {
-  color: var(--cs-text-dim, #777777);
-  font-size: 12px;
+  color: var(--cs-text-dim);
+  font-size: 13px;
   user-select: none;
 }
 .crumb-edit-icon {
   margin-left: auto;
   padding-left: 6px;
-  color: var(--cs-text-dim, #777777);
+  color: var(--cs-text-dim);
   font-size: 13px;
   opacity: 0.7;
   flex-shrink: 0;
 }
 .crumb-edit-icon:hover {
-  color: var(--cs-active, #007acc);
+  color: var(--cs-active);
   opacity: 1;
 }
 
@@ -1847,71 +1869,92 @@ function handleHelp() {
   width: 100%;
 }
 
-:deep(.fm-path-el-input .el-input__wrapper) {
-  background: var(--cs-panel, #ffffff) !important;
-  border: 1px solid var(--cs-border, #c8c8c8) !important;
-  box-shadow: none !important;
-  padding: 0 8px !important;
-}
-
 :deep(.fm-path-el-input .el-input__inner) {
-  color: var(--cs-text-bright, #111111) !important;
-  font-family: var(--cs-font-mono) !important;
-  font-size: 12px !important;
-}
-
-:deep(.fm-path-el-input .el-input-group__append) {
-  background: var(--cs-panel, #ffffff) !important;
-  border: 1px solid var(--cs-border, #c8c8c8) !important;
-  border-left: none !important;
-  padding: 0 4px !important;
+  font-family: var(--cs-font-mono);
+  font-size: 13px;
 }
 
 .fm-go-btn {
-  border-radius: 0 !important;
-  padding: 2px 8px !important;
-  height: 22px !important;
+  height: 24px;
+  padding: 0 12px;
+  border-radius: 4px;
 }
 
 .fm-filter-wrap {
-  width: 140px;
-}
-
-:deep(.fm-table-search .el-input__wrapper),
-:deep(.fm-search-input .el-input__wrapper) {
-  background: var(--cs-panel, #ffffff) !important;
-  border: 1px solid var(--cs-border, #c8c8c8) !important;
-  box-shadow: none !important;
-}
-
-:deep(.fm-table-search .el-input__inner),
-:deep(.fm-search-input .el-input__inner) {
-  color: var(--cs-text, #333333) !important;
-  font-size: 12px !important;
+  width: 200px;
+  flex-shrink: 0;
 }
 
 .fm-quick-actions {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* 操作条（表格上方，取代原底部按钮行） */
+.fm-action-bar {
+  height: 48px;
+  background: transparent;
+  border-bottom: 1px solid var(--cs-card-border);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  flex-shrink: 0;
 }
 
 .fm-pager {
-  display: flex;
-  justify-content: center;
-  padding: 4px 0;
-  border-top: 1px solid var(--cs-border);
+  position: absolute;
+  right: 16px;
+  bottom: 12px;
+  z-index: 5;
+  padding: 4px 8px;
+  background: var(--cs-panel);
+  border: 1px solid var(--cs-card-border);
+  border-radius: 8px;
 }
 
 .fm-table-wrap {
   flex: 1;
   overflow: hidden;
+  position: relative;
+}
+
+/* 空状态：文件夹图标 48px + 说明 */
+.fm-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 40px 16px;
+  text-align: center;
+}
+
+.fm-empty-icon {
+  font-size: 48px;
+  color: var(--cs-text-dim);
+  line-height: 1;
+}
+
+.fm-empty-title {
+  font-size: 14px;
+  color: var(--cs-text);
+}
+
+.fm-empty-desc {
+  font-size: 13px;
+  color: var(--cs-text-dim);
+}
+
+.text-dim {
+  color: var(--cs-text-dim);
 }
 
 .fm-file-cell {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
 }
 
 .fm-file-name {
@@ -1933,6 +1976,7 @@ function handleHelp() {
   flex-shrink: 0;
 }
 
+/* 文件类型图标配色（图标彩色例外，保留原色） */
 .icon-folder { color: #ffc107; }
 .icon-binary { color: #52c41a; }
 .icon-script { color: #13c2c2; }
@@ -1941,26 +1985,14 @@ function handleHelp() {
 
 .folder-gold { color: #ffc107; }
 
-.name-folder { color: var(--cs-text-bright, #111111); font-weight: 500; }
+.name-folder { color: var(--cs-text-bright); font-weight: 500; }
 .name-binary { color: #52c41a; font-weight: 500; }
 .name-script { color: #13c2c2; }
-.name-doc { color: var(--cs-text, #333333); }
+.name-doc { color: var(--cs-text); }
 
 .fm-size-text.is-dir {
-  color: var(--cs-text-dim, #777777);
-  font-weight: bold;
-}
-
-/* 底部操作栏 */
-.fm-bottom-bar {
-  height: 38px;
-  background: var(--cs-panel, #ffffff);
-  border-top: 1px solid var(--cs-border, #c8c8c8);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 12px;
-  flex-shrink: 0;
+  color: var(--cs-text-dim);
+  font-weight: 500;
 }
 
 .fm-spacer {
@@ -1968,8 +2000,8 @@ function handleHelp() {
 }
 
 .fm-status-info {
-  font-size: 11px;
-  color: var(--cs-text-dim, #777777);
+  font-size: 13px;
+  color: var(--cs-text-dim);
   font-family: var(--cs-font-mono);
 }
 
@@ -1977,21 +2009,21 @@ function handleHelp() {
 .fm-editor-meta {
   display: flex;
   justify-content: space-between;
-  font-size: 12px;
-  color: var(--cs-text, #333333);
-  background: var(--cs-panel, #ffffff);
-  padding: 6px 10px;
-  border: 1px solid var(--cs-border, #c8c8c8);
-  border-radius: 2px;
-  margin-bottom: 8px;
+  font-size: 13px;
+  color: var(--cs-text);
+  background: var(--cs-panel);
+  padding: 8px 12px;
+  border: 1px solid var(--cs-card-border);
+  border-radius: 6px;
+  margin-bottom: 12px;
 }
 
 .fm-editor-box {
   display: flex;
   height: 460px;
-  background: var(--cs-panel, #ffffff);
-  border: 1px solid var(--cs-border, #c8c8c8);
-  border-radius: 2px;
+  background: var(--cs-console);
+  border: 1px solid var(--cs-border);
+  border-radius: 6px;
   overflow: hidden;
   box-sizing: border-box;
 }
@@ -2000,11 +2032,11 @@ function handleHelp() {
   width: 52px;
   min-width: 52px;
   padding: 8px 8px 8px 0;
-  background: var(--cs-hover, #f0f0f0);
-  border-right: 1px solid var(--cs-border, #c8c8c8);
-  color: var(--cs-text-dim, #888888);
-  font-family: var(--cs-font-mono, monospace) !important;
-  font-size: 12px !important;
+  background: var(--cs-hover);
+  border-right: 1px solid var(--cs-border);
+  color: var(--cs-text-dim);
+  font-family: var(--cs-font-mono) !important;
+  font-size: 13px !important;
   line-height: 20px !important;
   text-align: right;
   overflow: hidden;
@@ -2015,18 +2047,18 @@ function handleHelp() {
 .editor-line-num {
   height: 20px !important;
   line-height: 20px !important;
-  font-size: 12px !important;
+  font-size: 13px !important;
   box-sizing: border-box;
 }
 
 .fm-editor-textarea {
   flex: 1;
-  padding: 8px 10px;
-  background: var(--cs-panel, #ffffff);
+  padding: 8px 12px;
+  background: var(--cs-console);
   border: none;
-  color: var(--cs-text-bright, #111111);
-  font-family: var(--cs-font-mono, monospace) !important;
-  font-size: 12px !important;
+  color: var(--cs-text-bright);
+  font-family: var(--cs-font-mono) !important;
+  font-size: 13px !important;
   line-height: 20px !important;
   outline: none;
   resize: none;
@@ -2038,27 +2070,11 @@ function handleHelp() {
   tab-size: 4;
 }
 
-:root[data-theme="dark"] .fm-editor-box {
-  background: #141414;
-  border-color: #3c3f41;
-}
-
-:root[data-theme="dark"] .fm-editor-lines {
-  background: #1c1d20;
-  border-right-color: #3c3f41;
-  color: #666666;
-}
-
-:root[data-theme="dark"] .fm-editor-textarea {
-  background: #141414;
-  color: #e0e0e0;
-}
-
 /* 上传列表 */
 .fm-upload-path-hint {
-  font-size: 12px;
-  color: var(--cs-text, #333333);
-  padding: 4px 0 8px 0;
+  font-size: 13px;
+  color: var(--cs-text);
+  padding: 4px 0 12px 0;
 }
 
 .fm-upload-dragger {
@@ -2068,21 +2084,21 @@ function handleHelp() {
 .fm-upload-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
   max-height: 140px;
   overflow-y: auto;
-  margin-top: 10px;
+  margin-top: 12px;
 }
 
 .fm-upload-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 4px 8px;
-  background: var(--cs-panel, #ffffff);
-  border: 1px solid var(--cs-border, #c8c8c8);
-  border-radius: 2px;
-  font-size: 11px;
+  padding: 4px 10px;
+  background: var(--cs-panel);
+  border: 1px solid var(--cs-card-border);
+  border-radius: 6px;
+  font-size: 13px;
 }
 
 .fm-upload-name {
@@ -2093,8 +2109,27 @@ function handleHelp() {
 }
 
 .fm-upload-size {
-  color: var(--cs-text-dim, #777777);
+  color: var(--cs-text-dim);
   margin: 0 8px;
+}
+
+/* 下载进度对话框 */
+.fm-dl-file {
+  font-size: 13px;
+  color: var(--cs-text);
+  margin-bottom: 12px;
+}
+
+.fm-dl-speed {
+  font-size: 13px;
+  color: var(--cs-text-dim);
+  margin-top: 8px;
+}
+
+.fm-help-body {
+  line-height: 1.7;
+  font-size: 13px;
+  color: var(--cs-text);
 }
 </style>
 
@@ -2103,10 +2138,10 @@ function handleHelp() {
 .cs-file-ctx-menu {
   position: fixed !important;
   z-index: 999999 !important;
-  background: var(--cs-panel, #ffffff) !important;
-  border: 1px solid var(--cs-border, #c8c8c8) !important;
-  border-radius: 3px !important;
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.18) !important;
+  background: var(--cs-panel) !important;
+  border: 1px solid var(--cs-card-border) !important;
+  border-radius: 8px !important;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12), 0 3px 6px -4px rgba(0, 0, 0, 0.12) !important;
   padding: 4px 0 !important;
   min-width: 185px !important;
   max-height: calc(100vh - 20px) !important;
@@ -2117,50 +2152,30 @@ function handleHelp() {
 .cs-file-ctx-menu .ctx-item {
   display: flex !important;
   align-items: center !important;
-  padding: 6px 14px !important;
-  font-size: 12px !important;
-  color: var(--cs-text, #333333) !important;
+  padding: 8px 14px !important;
+  font-size: 13px !important;
+  color: var(--cs-text) !important;
   cursor: pointer !important;
   transition: background 0.1s, color 0.1s !important;
 }
 
 .cs-file-ctx-menu .ctx-item:hover {
-  background: var(--cs-hover, #e4e4e4) !important;
-  color: var(--cs-text-bright, #000000) !important;
+  background: var(--cs-hover) !important;
+  color: var(--cs-text-bright) !important;
 }
 
 .cs-file-ctx-menu .ctx-item.ctx-danger {
-  color: var(--cs-error, #d32f2f) !important;
+  color: var(--cs-error) !important;
 }
 
 .cs-file-ctx-menu .ctx-item.ctx-danger:hover {
-  background: rgba(211, 47, 47, 0.1) !important;
-  color: #d32f2f !important;
+  background: color-mix(in srgb, var(--cs-error) 10%, transparent) !important;
+  color: var(--cs-error) !important;
 }
 
 .cs-file-ctx-menu .ctx-divider {
   height: 1px !important;
-  background: var(--cs-border, #e0e0e0) !important;
+  background: var(--cs-card-border) !important;
   margin: 4px 0 !important;
-}
-
-/* 暗色主题下的右键菜单微调 */
-:root[data-theme="dark"] .cs-file-ctx-menu {
-  background: #2b2d30 !important;
-  border: 1px solid #3c3f41 !important;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6) !important;
-}
-
-:root[data-theme="dark"] .cs-file-ctx-menu .ctx-item {
-  color: #dcdcdc !important;
-}
-
-:root[data-theme="dark"] .cs-file-ctx-menu .ctx-item:hover {
-  background: #3875d7 !important;
-  color: #ffffff !important;
-}
-
-:root[data-theme="dark"] .cs-file-ctx-menu .ctx-divider {
-  background: #3c3f41 !important;
 }
 </style>

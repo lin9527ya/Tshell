@@ -5,6 +5,8 @@ import { usePermissStore } from '@/stores/userpermiss'
 import { Perm } from '@/utils/permiss'
 import { useUserStore } from '@/stores/user'
 import { cachedValidateToken, cachedValidateTokenDetailed, clearTokenCache } from '@/utils/auth/tokenValidator'
+import { BUSINESS_ROUTES } from './routes'
+import { useTabsStore } from '@/stores/tabs'
 
 // 绑定路由和vue
 const router = createRouter({
@@ -18,7 +20,7 @@ const router = createRouter({
         requiresAuth: true,
         title: 'Console'
       },
-      children: []
+      children: BUSINESS_ROUTES
     },
     {
       path: '/login',
@@ -117,6 +119,13 @@ router.beforeEach(async (to, from, next) => {
   
   // 如果不需要认证，直接通过
   next()
+})
+
+// 标签条 = 路由访问历史（vshell 模型）：每次进入业务路由登记一个标签
+router.afterEach((to) => {
+  if (to.name && to.matched.some((m) => m.name === 'Home')) {
+    useTabsStore().addVisited(to)
+  }
 })
 
 export default router

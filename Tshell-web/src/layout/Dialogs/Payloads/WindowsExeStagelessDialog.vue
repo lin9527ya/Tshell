@@ -220,94 +220,76 @@ function handleHelp() {
 </script>
 
 <style scoped>
-.cs-dialog-body {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-.cs-dialog-desc {
-  font-size: 15px;
-  color: var(--cs-text-dim);
-  line-height: 1.6;
-}
-.cs-form-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.cs-form-label {
-  min-width: 130px;
-  max-width: 150px;
-  font-size: 15.5px;
-  color: var(--cs-text);
-  text-align: right;
-  flex-shrink: 0;
-}
-.cs-form-input {
-  flex: 1;
-}
 .cs-input-with-btn {
   flex: 1;
   display: flex;
-  gap: 6px;
+  gap: 8px;
 }
 .cs-picker-btn {
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   background: var(--cs-panel);
-  border: 1px solid var(--cs-border);
-  border-radius: 2px;
+  border: 1px solid var(--cs-border-strong);
+  border-radius: 6px;
   color: var(--cs-text);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 14px;
+  font-size: 12px;
+  transition: all 120ms ease;
 }
 .cs-picker-btn:hover {
   background: var(--cs-hover);
   color: var(--cs-text-bright);
+  border-color: var(--cs-active);
 }
 .cs-checkbox-wrap {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 12px;
+  gap: 8px;
+  font-size: 13px;
   color: var(--cs-text);
   cursor: pointer;
 }
 .cs-adv-collapse {
-  border: 1px solid var(--cs-border);
-  border-radius: 2px;
+  border: none;
+  border-radius: 8px;
+  background: var(--cs-hover);
+  overflow: hidden;
+}
+.cs-adv-collapse :deep(.el-collapse-item__header) {
+  height: 40px;
+  padding: 0 12px;
+  background: transparent;
+  border: none;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--cs-text);
+}
+.cs-adv-collapse :deep(.el-collapse-item__wrap) {
+  background: transparent;
+  border: none;
+}
+.cs-adv-collapse :deep(.el-collapse-item__content) {
+  padding: 0 12px 12px;
+  font-size: 14px;
+  color: var(--cs-text);
 }
 .cs-adv-grid {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 0;
 }
 .cs-adv-unit {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--cs-text-dim);
   white-space: nowrap;
 }
 .cs-adv-hint {
-  margin-top: 6px;
-  font-size: 11px;
-  color: var(--cs-text-dim);
-  line-height: 1.5;
-}
-.cs-checkbox-wrap {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+  margin-top: 4px;
   font-size: 12px;
-  color: var(--cs-text);
-  cursor: pointer;
-}
-
-.cs-dialog-footer-center {
-  display: flex;
-  justify-content: center;
-  gap: 8px;
+  color: var(--cs-text-dim);
+  line-height: 1.6;
 }
 </style>

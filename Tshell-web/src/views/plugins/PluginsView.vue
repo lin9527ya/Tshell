@@ -1,6 +1,17 @@
 <template>
 <div class="plugin-container cs-font-ui">
-  <!-- CS Toolbar -->
+  <!-- 页签：插件 / 脚本（vshell：同域功能并页） -->
+  <div class="plug-tabs">
+    <div class="plug-tab" :class="{ active: view === 'plugins' }" @click="view = 'plugins'">
+      {{ isZh ? '插件运行' : 'Plugins' }}
+    </div>
+    <div class="plug-tab" :class="{ active: view === 'scripts' }" @click="view = 'scripts'">
+      {{ isZh ? '脚本 (CNA)' : 'Scripts (CNA)' }}
+    </div>
+  </div>
+
+  <template v-if="view === 'plugins'">
+  <!-- 工具条：左侧标题/计数，右侧操作 -->
   <div class="plug-toolbar">
     <div class="plug-title-group">
       <span class="plug-title">{{ isZh ? '内存执行与插件模块' : 'Memory Execution & Plugins' }}</span>
@@ -166,68 +177,58 @@
         />
       </el-form-item>
 
-      <!-- 插件输出区域重新设计 -->
+      <!-- 插件输出区域 -->
       <div class="output-section">
         <div class="output-header">
           <h4 class="output-title">📜 {{ isZh ? '执行输出' : 'Execution Output' }}</h4>
           <div class="output-controls">
-            <el-button-group size="small">
+            <el-button-group>
               <el-button @click="clearOutput" icon="Delete" :title="isZh ? '清空输出' : 'Clear Output'">{{ isZh ? '清空' : 'Clear' }}</el-button>
               <el-button @click="copyOutput" icon="CopyDocument" :title="isZh ? '复制全部' : 'Copy All'">{{ isZh ? '复制' : 'Copy' }}</el-button>
               <el-button @click="exportOutput" icon="Download" :title="isZh ? '导出日志' : 'Export Log'">{{ isZh ? '导出' : 'Export' }}</el-button>
               <el-button @click="refreshShellContent" icon="Refresh" :title="isZh ? '手动刷新' : 'Manual Refresh'" :disabled="!pluginForm.clientUid">{{ isZh ? '刷新' : 'Refresh' }}</el-button>
             </el-button-group>
+
+            <button
+              class="cs-btn cs-btn-primary"
+              @click="executePlugin"
+              :disabled="!pluginForm.clientUid || !pluginForm.selectedPlugin || !executionMode || pollingInterval !== null"
+            >
+              <span v-if="pollingInterval">{{ isZh ? '执行中...' : 'Executing...' }}</span>
+              <span v-else>{{ isZh ? '执行' : 'Execute' }} ({{ getExecutionModeText() }})</span>
+            </button>
+
+            <button
+              v-if="pollingInterval"
+              class="cs-btn cs-btn-danger"
+              @click="stopPolling"
+            >
+              {{ isZh ? '停止轮询' : 'Stop Polling' }}
+            </button>
           </div>
         </div>
         <div class="output-wrapper">
-          <textarea 
+          <textarea
             ref="outputTextarea"
-            v-model="pluginOutput" 
+            v-model="pluginOutput"
             placeholder="output"
             class="output-textarea"
             readonly
-            :style="{ height: outputHeight + 'px', width: outputWidth + 'px' }"
+            :style="userResized ? { height: outputHeight + 'px', width: outputWidth + 'px' } : {}"
           />
           <!-- 调整大小的拖拽手柄 -->
-          <div 
+          <div
             class="resize-handle-corner"
             @mousedown="startResize"
           />
-          <div 
+          <div
             class="resize-handle-right"
             @mousedown="startResizeRight"
           />
-          <div 
+          <div
             class="resize-handle-bottom"
             @mousedown="startResizeBottom"
           />
-        </div>
-        
-        <!-- CS Bottom Action Bar -->
-        <div class="plug-bottom-bar cs-font-ui">
-          <button 
-            class="cs-btn cs-btn-primary" 
-            @click="executePlugin" 
-            :disabled="!pluginForm.clientUid || !pluginForm.selectedPlugin || !executionMode || pollingInterval !== null"
-          >
-            <span v-if="pollingInterval">{{ isZh ? '执行中...' : 'Executing...' }}</span>
-            <span v-else>{{ isZh ? '执行' : 'Execute' }} ({{ getExecutionModeText() }})</span>
-          </button>
-          
-          <button 
-            v-if="pollingInterval" 
-            class="cs-btn cs-btn-danger" 
-            @click="stopPolling" 
-          >
-            {{ isZh ? '停止轮询' : 'Stop Polling' }}
-          </button>
-          
-          <button class="cs-btn" @click="showUploadDialog = true">
-            {{ isZh ? '上传插件' : 'Upload Plugin' }}
-          </button>
-          <button class="cs-btn" @click="clearOutput">
-            {{ isZh ? '清空输出' : 'Clear Output' }}
-          </button>
         </div>
       </div>
     </el-form>
@@ -264,7 +265,7 @@
               <div class="file-col filesize">{{ formatFileSize(file.size) }}</div>
               <div class="file-col status">{{ isZh ? '待上传' : 'Pending' }}</div>
               <div class="file-col operation">
-                <el-button type="text" size="small" @click="removeFile(index)">{{ isZh ? '删除' : 'Remove' }}</el-button>
+                <el-button type="text" @click="removeFile(index)">{{ isZh ? '删除' : 'Remove' }}</el-button>
               </div>
             </div>
           </div>
@@ -288,11 +289,14 @@
         </div>
       </template>
     </el-dialog>
+  </template>
+  <ScriptManagerPanel v-else />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed, onUnmounted } from 'vue';
+import { ref, onMounted, computed, onUnmounted, defineAsyncComponent } from 'vue';
+const ScriptManagerPanel = defineAsyncComponent(() => import('@/layout/ScriptManagerPanel.vue'));
 import { useI18nStore } from '@/stores/i18n';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { InfoFilled, UploadFilled, Delete, CopyDocument, Download, Refresh } from '@element-plus/icons-vue';
@@ -309,6 +313,7 @@ const userStore = useUserStore();
 
 // 表单数据
 const i18nStore = useI18nStore();
+const view = ref<'plugins' | 'scripts'>('plugins')
 const isZh = computed(() => i18nStore.isZh);
 
 const pluginForm = ref({
@@ -347,6 +352,8 @@ const isWindowsClient = computed(() => {
 // 输出框尺寸控制
 const outputHeight = ref(400);
 const outputWidth = ref(800);
+// 默认由 CSS 撑满容器（自适应）；用户拖拽过手柄后才固定为像素尺寸
+const userResized = ref(false);
 const outputTextarea = ref<HTMLTextAreaElement>();
 
 // 拖拽调整大小相关
@@ -394,6 +401,13 @@ const startResize = (e: MouseEvent) => {
   resizeType.value = 'both';
   startX = e.clientX;
   startY = e.clientY;
+  const el = outputTextarea.value;
+  if (el) {
+    // 自适应状态下以当前渲染尺寸作为拖拽起点，避免从 800x400 跳变
+    outputWidth.value = Math.round(el.getBoundingClientRect().width);
+    outputHeight.value = Math.round(el.getBoundingClientRect().height);
+  }
+  userResized.value = true;
   startWidth = outputWidth.value;
   startHeight = outputHeight.value;
 };
@@ -403,6 +417,9 @@ const startResizeRight = (e: MouseEvent) => {
   isResizing.value = true;
   resizeType.value = 'width';
   startX = e.clientX;
+  const el = outputTextarea.value;
+  if (el) outputWidth.value = Math.round(el.getBoundingClientRect().width);
+  userResized.value = true;
   startWidth = outputWidth.value;
 };
 
@@ -411,6 +428,9 @@ const startResizeBottom = (e: MouseEvent) => {
   isResizing.value = true;
   resizeType.value = 'height';
   startY = e.clientY;
+  const el = outputTextarea.value;
+  if (el) outputHeight.value = Math.round(el.getBoundingClientRect().height);
+  userResized.value = true;
   startHeight = outputHeight.value;
 };
 
@@ -1493,6 +1513,30 @@ const closeUploadDialog = () => {
 </script>
 
 <style scoped>
+.plug-tabs {
+  height: 40px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 16px;
+  background: var(--cs-panel);
+  border-bottom: 1px solid var(--cs-card-border);
+}
+.plug-tab {
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 12px;
+  font-size: 14px;
+  color: var(--cs-text);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.plug-tab:hover { color: var(--cs-active); }
+.plug-tab.active { color: var(--cs-active); border-bottom-color: var(--cs-active); }
+
 .plugin-container {
   height: 100%;
   display: flex;
@@ -1502,30 +1546,31 @@ const closeUploadDialog = () => {
 }
 
 .plug-toolbar {
-  height: 32px;
+  min-height: 48px;
   background: var(--cs-panel);
-  border-bottom: 1px solid var(--cs-border);
+  border-bottom: 1px solid var(--cs-card-border);
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0 10px;
+  padding: 8px 16px;
   flex-shrink: 0;
+  flex-wrap: wrap;
 }
 
 .plug-title-group {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 6px;
 }
 
 .plug-title {
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--cs-text-bright);
 }
 
 .plug-count {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--cs-text-dim);
 }
 
@@ -1536,43 +1581,29 @@ const closeUploadDialog = () => {
 .plugin-card {
   flex: 1;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
+  margin: 16px;
   padding: 16px;
-  background: transparent;
+  background: var(--cs-panel);
+  border: 1px solid var(--cs-card-border);
+  border-radius: 8px;
   box-sizing: border-box;
 }
 
-.plugin-title {
-  margin: 0 0 12px 0;
-  font-size: 24px;
-  font-weight: 600;
-  color: white;
-}
-
-.plugin-info {
-  margin: 0;
-  font-size: 14px;
-  line-height: 1.6;
-  color: rgba(255, 255, 255, 0.9);
-  opacity: 0.95;
-}
-
 .plugin-form {
-  margin-bottom: 16px;
+  /* 让输出区能拿到卡片剩余高度（flex 链：card -> form -> output-section -> wrapper） */
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 0;
   padding: 0;
   border-radius: 0;
   box-shadow: none;
   border: none;
   background: transparent;
   color: inherit;
-}
-
-/* 标签左对齐（原默认右对齐，选择框/按钮列显得凌乱） */
-.plugin-form :deep(.el-form-item__label) {
-  justify-content: flex-start;
-  text-align: left;
-  padding-right: 12px;
-  font-weight: 500;
-  white-space: nowrap;
 }
 
 /* 各表单项内容统一左对齐、上对齐 */
@@ -1605,30 +1636,30 @@ const closeUploadDialog = () => {
   flex-shrink: 0;
 }
 
-/* 插件详情信息条（CS 原生紧凑风格） */
+/* 插件详情信息条 */
 .plugin-detail-strip {
   width: 100%;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px 18px;
+  gap: 8px 20px;
   background: var(--cs-bg);
-  border: 1px solid var(--cs-border);
-  border-radius: 2px;
-  padding: 6px 10px;
+  border: 1px solid var(--cs-card-border);
+  border-radius: 8px;
+  padding: 10px 12px;
 }
 
 .pd-loading,
 .pd-empty {
-  font-size: 11px;
+  font-size: 13px;
   color: var(--cs-text-dim);
 }
 
 .pd-cell {
   display: flex;
   align-items: baseline;
-  gap: 5px;
-  font-size: 11px;
+  gap: 6px;
+  font-size: 13px;
 }
 
 .pd-label {
@@ -1651,16 +1682,23 @@ const closeUploadDialog = () => {
 /* 输出区域样式 */
 .output-section {
   position: relative;
-  margin-top: 20px;
+  margin-top: 16px;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .output-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 12px 16px;
-  background: var(--table-header-bg, #161b22);
-  border: 1px solid var(--theme-border-primary, rgba(255, 255, 255, 0.1));
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 8px 16px;
+  min-height: 48px;
+  background: var(--cs-table-head);
+  border: 1px solid var(--cs-card-border);
   border-bottom: none;
   border-radius: 8px 8px 0 0;
 }
@@ -1669,36 +1707,39 @@ const closeUploadDialog = () => {
   margin: 0;
   font-size: 14px;
   font-weight: 600;
-  color: var(--theme-text-primary, #ffffff);
+  color: var(--cs-text-bright);
 }
 
 .output-controls {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
 .output-wrapper {
   position: relative;
-  display: inline-block;
+  display: block;
+  flex: 1;
+  min-height: 0;
 }
 
 .output-textarea {
-  background: var(--cs-console);  /* 类似Shell的黑色背景 */
-  color: var(--cs-text);       /* 类似Shell的白色文字 */
-  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  background: var(--cs-console);
+  color: var(--cs-text);
+  font-family: var(--cs-font-mono);
   font-size: 13px;
-  border: 1px solid var(--cs-border);
+  border: 1px solid var(--cs-card-border);
   border-top: none;
   border-radius: 0 0 8px 8px;
   padding: 16px;
   resize: none;
   outline: none;
-  line-height: 1.5;
-  min-width: 400px;
+  line-height: 1.6;
+  min-width: 0;
   min-height: 200px;
-  width: 800px;
-  height: 400px;
+  width: 100%;
+  height: 100%;
   transition: border-color 0.3s ease;
   user-select: text; /* 确保可以复制文本 */
   -webkit-user-select: text;
@@ -1711,7 +1752,6 @@ const closeUploadDialog = () => {
 
 .output-textarea:focus {
   border-color: var(--cs-active);
-  box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.2);
 }
 
 /* 滚动条样式（与Shell一致） */
@@ -1767,7 +1807,7 @@ const closeUploadDialog = () => {
   cursor: ew-resize;
   z-index: 9;
   transform: translateY(-50%);
-  border-radius: 2px;
+  border-radius: 4px;
   opacity: 0.6;
   transition: opacity 0.3s ease;
 }
@@ -1782,7 +1822,7 @@ const closeUploadDialog = () => {
   cursor: ns-resize;
   z-index: 9;
   transform: translateX(-50%);
-  border-radius: 2px;
+  border-radius: 4px;
   opacity: 0.6;
   transition: opacity 0.3s ease;
 }
@@ -1793,101 +1833,68 @@ const closeUploadDialog = () => {
   opacity: 1;
 }
 
-/* 操作按钮样式 */
-.action-buttons {
-  display: flex;
-  gap: 12px;
-  margin-top: 15px;
-  z-index: 15;
-}
-
-.action-btn {
-  font-size: 14px;
-  font-weight: 500;
-  border-radius: 8px;
-  padding: 10px 20px;
-  box-shadow: 0 2px 8px rgba(64, 158, 255, 0.3);
-  border: none;
-  transition: all 0.3s ease;
-}
-
-.action-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 15px rgba(64, 158, 255, 0.4);
-}
-
-.upload-inline {
-  display: inline-block;
-}
-
-/* 执行模式按钮样式 */
+/* 执行模式选择：下划线页签（激活项主色 + 2px 下划线） */
 .execution-mode-buttons {
   display: flex;
-  gap: 12px;
   flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0;
+  width: 100%;
+  border-bottom: 1px solid var(--cs-card-border);
 }
 
 .mode-button {
-  font-size: 13px;
-  padding: 8px 16px;
-  border-radius: 8px;
-  border: 1px solid var(--theme-border-primary, rgba(255, 255, 255, 0.15));
-  background: var(--card-bg, rgba(255, 255, 255, 0.05));
-  color: var(--theme-text-primary, #ffffff);
-  transition: all 0.3s ease;
-  font-weight: 500;
-  min-width: 200px;
-  text-align: center;
+  height: 36px;
+  margin: 0 0 -1px 0 !important;
+  padding: 0 12px !important;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 400;
+  border: none !important;
+  border-bottom: 2px solid transparent !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  color: var(--cs-text) !important;
+  box-shadow: none !important;
+  transition: color 120ms ease, border-color 120ms ease;
 }
 
-.mode-button:hover {
-  border-color: var(--cs-active);
-  color: var(--cs-active);
-  background: rgba(64, 158, 255, 0.15);
-  transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(64, 158, 255, 0.2);
+.mode-button + .mode-button {
+  margin-left: 4px !important;
+}
+
+.mode-button:hover:not(.is-disabled) {
+  background: transparent !important;
+  color: var(--cs-active) !important;
+  transform: none;
+  box-shadow: none !important;
 }
 
 .mode-button.el-button--primary {
-  background: var(--cs-active);
-  border-color: var(--cs-active);
-  color: #ffffff;
-  box-shadow: 0 2px 8px rgba(64, 158, 255, 0.3);
+  background: transparent !important;
+  border-bottom-color: var(--cs-active) !important;
+  color: var(--cs-active) !important;
+  font-weight: 500;
 }
 
 .mode-button.el-button--primary:hover {
-  background: var(--cs-active-hover);
-  border-color: var(--cs-active-hover);
-  color: #ffffff;
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(64, 158, 255, 0.4);
+  background: transparent !important;
+  color: var(--cs-active) !important;
+  transform: none;
+  box-shadow: none !important;
+}
+
+.mode-button.is-disabled {
+  opacity: 0.45;
 }
 
 /* 表单项优化 */
 :deep(.el-form-item) {
-  margin-bottom: 24px;
+  margin-bottom: 20px;
 }
 
 :deep(.el-form-item__label) {
-  font-weight: 500;
-  color: var(--theme-text-primary, #ffffff);
-}
-
-:deep(.el-select),
-:deep(.el-input) {
-  border-radius: 8px;
-}
-
-:deep(.el-select .el-input__wrapper),
-:deep(.el-input .el-input__wrapper) {
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-  transition: all 0.3s ease;
-}
-
-:deep(.el-select .el-input__wrapper:hover),
-:deep(.el-input .el-input__wrapper:hover) {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  color: var(--cs-text);
 }
 
 /* 响应式适配 */
@@ -1896,19 +1903,14 @@ const closeUploadDialog = () => {
     margin: 8px;
     padding: 12px;
   }
-  
+
   .output-textarea {
     width: 100%;
     min-width: 300px;
   }
-  
-  .action-buttons {
-    flex-direction: column;
-    gap: 8px;
-  }
 }
 
-/* 上传对话框样式（与图中一致） */
+/* 上传对话框样式 */
 .upload-dialog-content {
   padding: 0;
 }
@@ -1916,40 +1918,42 @@ const closeUploadDialog = () => {
 .upload-info-banner {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 16px 20px;
-  background: var(--table-header-bg, #1e293b);
-  border: 1px solid var(--theme-border-primary, rgba(255, 255, 255, 0.15));
-  border-radius: 6px;
-  margin-bottom: 20px;
-  color: var(--theme-text-primary, #ffffff);
+  gap: 8px;
+  padding: 12px 16px;
+  background: var(--cs-bg);
+  border: 1px solid var(--cs-card-border);
+  border-radius: 8px;
+  margin-bottom: 16px;
+  color: var(--cs-text);
   font-size: 14px;
+  line-height: 1.6;
 }
 
 .upload-info-banner .info-icon {
-  margin-right: 8px;
   font-size: 16px;
+  color: var(--cs-active);
 }
 
 .select-file-btn {
   margin-left: auto;
   font-size: 14px;
+  flex-shrink: 0;
 }
 
 /* 文件列表区域 */
 .file-list-area {
-  background: var(--card-bg, #181e2a);
-  border: 1px solid var(--theme-border-primary, rgba(255, 255, 255, 0.1));
-  border-radius: 6px;
+  background: var(--cs-panel);
+  border: 1px solid var(--cs-card-border);
+  border-radius: 8px;
   overflow: hidden;
 }
 
 .file-list-header {
   display: flex;
-  background: var(--table-header-bg, #161b22);
-  border-bottom: 1px solid var(--theme-border-primary, rgba(255, 255, 255, 0.1));
-  font-weight: 500;
-  color: var(--theme-text-primary, #ffffff);
+  background: var(--cs-table-head);
+  border-bottom: 1px solid var(--cs-card-border);
+  font-weight: 600;
+  color: var(--cs-text);
   font-size: 14px;
 }
 
@@ -1961,7 +1965,8 @@ const closeUploadDialog = () => {
 
 .header-col,
 .file-col {
-  padding: 12px 16px;
+  height: 48px;
+  padding: 0 16px;
   display: flex;
   align-items: center;
 }
@@ -1996,7 +2001,7 @@ const closeUploadDialog = () => {
 
 .file-item {
   display: flex;
-  border-bottom: 1px solid var(--theme-border-primary, rgba(255, 255, 255, 0.06));
+  border-bottom: 1px solid var(--cs-card-border);
   transition: background-color 0.3s ease;
 }
 
@@ -2025,7 +2030,7 @@ const closeUploadDialog = () => {
 .upload-dialog-footer {
   text-align: right;
   padding-top: 16px;
-  border-top: 1px solid var(--cs-border);
+  border-top: 1px solid var(--cs-card-border);
   margin-top: 20px;
 }
 

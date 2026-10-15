@@ -1,96 +1,82 @@
 <template>
-  <div class="cs-login-page cs-font-ui">
-    <!-- 1:1 Cobalt Strike Connect Dialog Window -->
-    <div class="cs-connect-window">
-      <div class="cs-window-titlebar">
-        <span class="cs-titlebar-icon">
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="2" y="3" width="20" height="14" rx="2" />
-            <line x1="8" y1="21" x2="16" y2="21" />
-            <line x1="12" y1="17" x2="12" y2="21" />
-          </svg>
-        </span>
-        <span class="cs-titlebar-text">Connect to Team Server</span>
-      </div>
-
-      <div class="cs-connect-body">
-        <div class="cs-dialog-form">
-          <div class="cs-form-row">
-            <label class="cs-form-label">Host:</label>
-            <div class="cs-form-input">
-              <el-input v-model="connectHost" size="small" placeholder="127.0.0.1" class="cs-mono-input" />
-            </div>
-          </div>
-
-          <div class="cs-form-row">
-            <label class="cs-form-label">Port:</label>
-            <div class="cs-form-input">
-              <el-input v-model="connectPort" size="small" placeholder="8080" class="cs-mono-input" />
-            </div>
-          </div>
-
-          <div class="cs-form-row">
-            <label class="cs-form-label">User:</label>
-            <div class="cs-form-input">
-              <el-input v-model="param.username" size="small" placeholder="admin / neo" class="cs-mono-input" />
-            </div>
-          </div>
-
-          <div class="cs-form-row">
-            <label class="cs-form-label">Password:</label>
-            <div class="cs-form-input">
-              <el-input
-                v-model="param.password"
-                type="password"
-                show-password
-                size="small"
-                placeholder="password"
-                class="cs-mono-input"
-                @keyup.enter="submitLogin"
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- CS Centered Bottom Action Buttons -->
-      <div class="cs-connect-footer">
-        <button class="cs-btn cs-btn-primary" :disabled="loading" @click="submitLogin">
-          {{ loading ? 'Connecting...' : 'Connect' }}
-        </button>
-        <button class="cs-btn" @click="handleHelp">
-          Help
-        </button>
-      </div>
+  <div class="vs-login">
+    <!-- 左上 logo（vshell: top 12px / 高 30px） -->
+    <div class="vs-login-logo">
+      <img :src="logoUrl" alt="logo" />
+      <span>BladeShell</span>
     </div>
 
-    <div class="cs-login-status">
-      <span>BladeShell C2 · Cross-Platform Team Server Client (v4.9.1)</span>
+    <!-- 右上：明暗切换 + 语言 -->
+    <div class="vs-login-actions">
+      <button class="vs-login-icon" :title="isZh ? '切换主题' : 'Toggle theme'" @click="toggleTheme">
+        <VsIcon :name="isDark ? 'sun' : 'moon'" :size="18" />
+      </button>
+      <button class="vs-login-icon" :title="isZh ? '切换语言' : 'Language'" @click="i18nStore.toggleLocale()">
+        <VsIcon name="language" :size="18" />
+      </button>
+    </div>
+
+    <div class="vs-login-form">
+      <h2 class="vs-login-title">{{ isZh ? '登录' : 'Sign in' }}</h2>
+
+      <el-input
+        v-model="param.username"
+        size="large"
+        class="vs-login-input"
+        :placeholder="isZh ? '账号' : 'Username'"
+        @keyup.enter="submitLogin"
+      />
+      <el-input
+        v-model="param.password"
+        type="password"
+        size="large"
+        show-password
+        class="vs-login-input"
+        :placeholder="isZh ? '密码' : 'Password'"
+        @keyup.enter="submitLogin"
+      />
+
+      <button class="vs-login-submit" :disabled="loading" @click="submitLogin">
+        {{ loading ? (isZh ? '登录中…' : 'Signing in…') : isZh ? '登录' : 'Sign in' }}
+      </button>
+
+      <div class="vs-login-foot">BladeShell C2 · Team Server (v4.9.1)</div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { reactive, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import VsIcon from '@/layout-vshell/VsIcon.vue'
+import logoUrl from '@/assets/logo.svg'
 import { usePermissStore } from '@/stores/userpermiss'
 import { useUserStore } from '@/stores/user'
+import { useI18nStore } from '@/stores/i18n'
+import { useThemeStore } from '@/stores/theme'
 import UserApi from '@/api/user'
 import { primeAudio } from '@/utils/notifyAudio'
 
 const router = useRouter()
 const permiss = usePermissStore()
 const userinfo = useUserStore()
+const i18nStore = useI18nStore()
+const themeStore = useThemeStore()
 
-const connectHost = ref('127.0.0.1')
-const connectPort = ref('8080')
+const isZh = computed(() => i18nStore.isZh)
+const isDark = computed(() => themeStore.isDark)
+
 const loading = ref(false)
 
 const param = reactive({
   username: '',
   password: '',
 })
+
+function toggleTheme() {
+  themeStore.setTheme(isDark.value ? 'light' : 'dark')
+}
 
 function submitLogin() {
   if (!param.username || !param.password) {
@@ -135,111 +121,125 @@ function submitLogin() {
       loading.value = false
     })
 }
-
-function handleHelp() {
-  ElMessage.info('Connect Dialog: 指定 Team Server 的 Host、Port、User 和 Password 连接控制端。')
-}
 </script>
 
 <style scoped>
-.cs-login-page {
+/* vshell 登录页实测：底 #f3f3f4 / 标题 30px 粗体 / 输入 400×40 圆角 6 / 按钮全宽 #0960bd */
+.vs-login {
   width: 100vw;
   height: 100vh;
-  background: var(--cs-bg, #2b2d30);
+  background: var(--cs-bg, #f3f3f4);
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  padding-top: 12vh;
+  position: relative;
   user-select: none;
 }
 
-.cs-connect-window {
-  width: 360px;
-  background: var(--cs-panel, #3c3f41);
-  border: 1px solid var(--cs-border, #555555);
-  box-shadow: 2px 4px 16px rgba(0, 0, 0, 0.6);
-  display: flex;
-  flex-direction: column;
-}
-
-.cs-window-titlebar {
-  height: 26px;
-  background: var(--cs-titlebar-bg, #2b2d30);
-  border-bottom: 1px solid var(--cs-border, #555555);
+.vs-login-logo {
+  position: absolute;
+  top: 12px;
+  left: 16px;
+  height: 30px;
   display: flex;
   align-items: center;
-  padding: 0 8px;
+  gap: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--cs-text-bright);
+}
+
+.vs-login-logo img {
+  width: 30px;
+  height: 30px;
+}
+
+.vs-login-actions {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  align-items: center;
   gap: 6px;
 }
 
-.cs-titlebar-icon {
-  display: flex;
-  align-items: center;
-  color: var(--cs-active, #007acc);
-}
-
-.cs-titlebar-text {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--cs-text-bright, #ffffff);
-}
-
-.cs-connect-body {
-  padding: 16px 20px;
-}
-
-.cs-dialog-form {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.cs-form-row {
-  display: flex;
-  align-items: center;
-}
-
-.cs-form-label {
-  width: 75px;
-  font-size: 12px;
-  color: var(--cs-text, #c0c0c0);
-  text-align: right;
-  padding-right: 12px;
-  flex-shrink: 0;
-}
-
-.cs-form-input {
-  flex: 1;
-}
-
-.cs-mono-input :deep(.el-input__wrapper) {
-  background: var(--cs-bg, #1e1f22);
-  box-shadow: 0 0 0 1px var(--cs-border, #555555) inset;
-  border-radius: 2px;
-  height: 24px;
-}
-
-.cs-mono-input :deep(.el-input__inner) {
-  font-family: var(--cs-font-mono, monospace);
-  font-size: 12px;
-  color: var(--cs-text-bright, #ffffff);
-}
-
-.cs-connect-footer {
-  height: 38px;
-  background: var(--cs-titlebar-bg, #2b2d30);
-  border-top: 1px solid var(--cs-border, #555555);
-  display: flex;
+.vs-login-icon {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 12px;
-  padding: 0 12px;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  color: var(--cs-text);
+  cursor: pointer;
+  transition: color 0.2s, background 0.2s;
 }
 
-.cs-login-status {
-  margin-top: 16px;
-  font-size: 11px;
-  color: var(--cs-text-dim, #777777);
-  font-family: var(--cs-font-mono, monospace);
+.vs-login-icon:hover {
+  color: var(--cs-active);
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.vs-login-form {
+  width: 404px;
+  max-width: calc(100vw - 32px);
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.vs-login-title {
+  margin: 0 0 22px;
+  text-align: center;
+  font-size: 30px;
+  font-weight: 700;
+  color: var(--cs-text-bright);
+}
+
+.vs-login-input {
+  width: 100%;
+}
+
+.vs-login-input :deep(.el-input__wrapper) {
+  height: 40px;
+  border-radius: 6px;
+  box-shadow: 0 0 0 1px var(--cs-border-strong) inset;
+  background: var(--cs-panel);
+  padding: 1px 12px;
+}
+
+.vs-login-input :deep(.el-input__inner) {
+  font-size: 14px;
+  height: 38px;
+}
+
+.vs-login-submit {
+  height: 40px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--cs-active);
+  color: #fff;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.vs-login-submit:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--cs-active) 88%, #fff);
+}
+
+.vs-login-submit:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.vs-login-foot {
+  margin-top: -8px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--cs-text-dim);
 }
 </style>

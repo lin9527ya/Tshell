@@ -1,6 +1,6 @@
 <template>
   <div class="cs-security-center-view cs-font-ui">
-    <!-- CS Toolbar -->
+    <!-- 工具条：左侧标题，右侧操作 -->
     <div class="sc-toolbar">
       <div class="sc-title-group">
         <span class="sc-title">{{ isZh ? '安全中心' : 'Security Center' }}</span>
@@ -11,6 +11,15 @@
 
       <div class="sc-spacer" />
 
+      <button class="cs-btn cs-btn-primary" @click="showAddWhitelistDialog = true">
+        {{ isZh ? '添加白名单 IP' : 'Add Whitelist IP' }}
+      </button>
+      <button class="cs-btn" :disabled="!selectedBlockedRow" @click="selectedBlockedRow && handleUnblock(selectedBlockedRow)">
+        {{ isZh ? '解除封禁' : 'Unblock IP' }}
+      </button>
+      <button class="cs-btn" @click="handleHelp">
+        {{ isZh ? '帮助' : 'Help' }}
+      </button>
       <button class="cs-btn" :disabled="loading" @click="fetchData">
         {{ isZh ? '刷新' : 'Refresh' }}
       </button>
@@ -43,7 +52,6 @@
           <div class="sc-table-wrap">
             <el-table
               :data="whitelist"
-              size="small"
               height="100%"
               highlight-current-row
               class="cs-session-table"
@@ -76,7 +84,6 @@
           <div class="sc-table-wrap">
             <el-table
               :data="blockedIPs"
-              size="small"
               height="100%"
               highlight-current-row
               class="cs-session-table"
@@ -111,26 +118,25 @@
         <div v-else-if="currentTab === 'rate_limit'" class="sc-panel">
           <div class="sc-panel-header">
             <span class="panel-title">{{ isZh ? '防爆破与请求限流策略' : 'Anti-Bruteforce & Rate Limiting Policy' }}</span>
+            <button class="cs-btn cs-btn-primary" @click="handleSaveRateLimit">{{ isZh ? '保存策略' : 'Save Policy' }}</button>
           </div>
 
-          <div class="cs-form-container">
-            <div class="cs-form-row">
-              <label class="cs-form-label">{{ isZh ? '登录防爆破阈值（次/分钟）' : 'Login Max Attempts / min' }}:</label>
-              <el-input-number v-model="rateLimitForm.login_rate_limit" :min="1" :max="100" size="small" />
-            </div>
+          <div class="sc-panel-body">
+            <div class="cs-form-container">
+              <div class="cs-form-row">
+                <label class="cs-form-label">{{ isZh ? '登录防爆破阈值（次/分钟）' : 'Login Max Attempts / min' }}:</label>
+                <el-input-number v-model="rateLimitForm.login_rate_limit" :min="1" :max="100" />
+              </div>
 
-            <div class="cs-form-row">
-              <label class="cs-form-label">{{ isZh ? 'API 限流阈值（次/分钟）' : 'API Max Requests / min' }}:</label>
-              <el-input-number v-model="rateLimitForm.api_rate_limit" :min="10" :max="1000" size="small" />
-            </div>
+              <div class="cs-form-row">
+                <label class="cs-form-label">{{ isZh ? 'API 限流阈值（次/分钟）' : 'API Max Requests / min' }}:</label>
+                <el-input-number v-model="rateLimitForm.api_rate_limit" :min="10" :max="1000" />
+              </div>
 
-            <div class="cs-form-row">
-              <label class="cs-form-label">{{ isZh ? '自动封禁时长（分钟）' : 'Auto Block Duration in Minutes' }}:</label>
-              <el-input-number v-model="rateLimitForm.block_duration" :min="1" :max="1440" size="small" />
-            </div>
-
-            <div style="margin-top: 14px">
-              <button class="cs-btn cs-btn-primary" @click="handleSaveRateLimit">{{ isZh ? '保存策略' : 'Save Policy' }}</button>
+              <div class="cs-form-row">
+                <label class="cs-form-label">{{ isZh ? '自动封禁时长（分钟）' : 'Auto Block Duration in Minutes' }}:</label>
+                <el-input-number v-model="rateLimitForm.block_duration" :min="1" :max="1440" />
+              </div>
             </div>
           </div>
         </div>
@@ -141,22 +147,24 @@
             <span class="panel-title">{{ isZh ? '实时威胁防御指标' : 'Realtime Threat Defense Metrics' }}</span>
           </div>
 
-          <div class="sc-stats-grid">
-            <div class="stat-card">
-              <div class="stat-num">{{ stats.total_blocked || blockedIPs.length }}</div>
-              <div class="stat-lbl">{{ isZh ? '已封禁攻击总数' : 'Total Blocked Attacks' }}</div>
-            </div>
-            <div class="stat-card">
-              <div class="stat-num">{{ stats.whitelist_count || whitelist.length }}</div>
-              <div class="stat-lbl">{{ isZh ? '白名单条目数' : 'Active Whitelist Entries' }}</div>
-            </div>
-            <div class="stat-card">
-              <div class="stat-num">{{ stats.active_defense || 'ON' }}</div>
-              <div class="stat-lbl">{{ isZh ? 'WAF 与限流状态' : 'WAF & Rate Limiter State' }}</div>
-            </div>
-            <div class="stat-card">
-              <div class="stat-num">{{ stats.rate_limit_hits || 0 }}</div>
-              <div class="stat-lbl">{{ isZh ? '被限流请求数' : 'Rate Limit Throttled Requests' }}</div>
+          <div class="sc-panel-body">
+            <div class="sc-stats-grid">
+              <div class="stat-card">
+                <div class="stat-num">{{ stats.total_blocked || blockedIPs.length }}</div>
+                <div class="stat-lbl">{{ isZh ? '已封禁攻击总数' : 'Total Blocked Attacks' }}</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-num">{{ stats.whitelist_count || whitelist.length }}</div>
+                <div class="stat-lbl">{{ isZh ? '白名单条目数' : 'Active Whitelist Entries' }}</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-num">{{ stats.active_defense || 'ON' }}</div>
+                <div class="stat-lbl">{{ isZh ? 'WAF 与限流状态' : 'WAF & Rate Limiter State' }}</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-num">{{ stats.rate_limit_hits || 0 }}</div>
+                <div class="stat-lbl">{{ isZh ? '被限流请求数' : 'Rate Limit Throttled Requests' }}</div>
+              </div>
             </div>
           </div>
         </div>
@@ -167,27 +175,28 @@
             <span class="panel-title">{{ isZh ? '近 1 小时活跃访问 IP' : 'Active Access IPs (Last 1 Hour)' }}</span>
             <div class="sc-header-actions">
               <span class="sc-rt-hint">{{ realtimeStats.timestamp || (isZh ? '等待数据...' : 'Awaiting data...') }}</span>
-              <button class="cs-btn cs-btn-xs" :disabled="realtimeLoading" @click="fetchRealtimeStats">
+              <button class="cs-btn" :disabled="realtimeLoading" @click="fetchRealtimeStats">
                 {{ isZh ? '立即刷新' : 'Refresh Now' }}
               </button>
             </div>
           </div>
 
-          <div class="sc-rt-stats">
-            <div class="stat-card">
-              <div class="stat-num">{{ realtimeStats.total_active ?? 0 }}</div>
-              <div class="stat-lbl">{{ isZh ? '最近活跃来源数' : 'Recent Active Sources' }}</div>
-            </div>
-            <div class="stat-card">
-              <div class="stat-num">{{ realtimeStats.timeframe || 'last 1 hour' }}</div>
-              <div class="stat-lbl">{{ isZh ? '统计时间窗' : 'Timeframe' }}</div>
+          <div class="sc-panel-body">
+            <div class="sc-rt-stats">
+              <div class="stat-card">
+                <div class="stat-num">{{ realtimeStats.total_active ?? 0 }}</div>
+                <div class="stat-lbl">{{ isZh ? '最近活跃来源数' : 'Recent Active Sources' }}</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-num">{{ realtimeStats.timeframe || 'last 1 hour' }}</div>
+                <div class="stat-lbl">{{ isZh ? '统计时间窗' : 'Timeframe' }}</div>
+              </div>
             </div>
           </div>
 
-          <div class="sc-table-wrap" style="margin-top: 10px">
+          <div class="sc-table-wrap">
             <el-table
               :data="realtimeStats.recent_active_ips || []"
-              size="small"
               height="100%"
               highlight-current-row
               class="cs-session-table"
@@ -215,27 +224,11 @@
       </div>
     </div>
 
-    <!-- Bottom Action Bar (CS Native Button Row) -->
-    <div class="sc-bottom-bar">
-      <button class="cs-btn cs-btn-primary" @click="showAddWhitelistDialog = true">
-        {{ isZh ? '添加白名单 IP' : 'Add Whitelist IP' }}
-      </button>
-      <button class="cs-btn" :disabled="!selectedBlockedRow" @click="selectedBlockedRow && handleUnblock(selectedBlockedRow)">
-        {{ isZh ? '解除封禁' : 'Unblock IP' }}
-      </button>
-      <button class="cs-btn" @click="fetchData">
-        {{ isZh ? '全部刷新' : 'Refresh All' }}
-      </button>
-      <button class="cs-btn" @click="handleHelp">
-        {{ isZh ? '帮助' : 'Help' }}
-      </button>
-    </div>
-
     <!-- Add Whitelist Dialog -->
     <el-dialog v-model="showAddWhitelistDialog" :title="isZh ? '添加 IP 白名单' : 'Add IP Whitelist'" width="420px" class="cs-dialog" append-to-body>
       <div class="cs-form-row">
         <label class="cs-form-label">{{ isZh ? 'IP 地址 / CIDR' : 'IP Address / CIDR' }}:</label>
-        <el-input v-model="newWhitelistIP" :placeholder="isZh ? '例如 192.168.1.100 或 10.0.0.0/24' : 'e.g. 192.168.1.100 or 10.0.0.0/24'" size="small" />
+        <el-input v-model="newWhitelistIP" :placeholder="isZh ? '例如 192.168.1.100 或 10.0.0.0/24' : 'e.g. 192.168.1.100 or 10.0.0.0/24'" />
       </div>
       <template #footer>
         <div class="cs-dialog-footer">
@@ -451,30 +444,31 @@ onBeforeUnmount(() => {
 }
 
 .sc-toolbar {
-  height: 32px;
+  min-height: 48px;
   background: var(--cs-panel);
-  border-bottom: 1px solid var(--cs-border);
+  border-bottom: 1px solid var(--cs-card-border);
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0 10px;
+  padding: 8px 16px;
   flex-shrink: 0;
+  flex-wrap: wrap;
 }
 
 .sc-title-group {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 6px;
 }
 
 .sc-title {
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--cs-text-bright);
 }
 
 .sc-stats {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--cs-text-dim);
 }
 
@@ -489,21 +483,23 @@ onBeforeUnmount(() => {
 .sc-sidebar {
   width: 220px;
   background: var(--cs-panel);
-  border-right: 1px solid var(--cs-border);
+  border-right: 1px solid var(--cs-card-border);
   display: flex;
   flex-direction: column;
-  padding: 6px 0;
+  padding: 8px;
+  gap: 2px;
 }
 
 .sc-nav-item {
-  height: 30px;
+  height: 36px;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0 12px;
+  padding: 0 10px;
+  border-radius: 6px;
   cursor: pointer;
   color: var(--cs-text);
-  font-size: 12px;
+  font-size: 14px;
   transition: all 120ms ease;
   user-select: none;
 }
@@ -514,9 +510,20 @@ onBeforeUnmount(() => {
 }
 
 .sc-nav-item.active {
-  background: var(--cs-active);
-  color: #ffffff;
-  font-weight: 600;
+  background: color-mix(in srgb, var(--cs-active) 10%, transparent);
+  color: var(--cs-active);
+  font-weight: 500;
+}
+
+.nav-icon {
+  font-size: 14px;
+}
+
+.nav-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .sc-content {
@@ -525,6 +532,7 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  padding: 16px;
 }
 
 .sc-panel {
@@ -532,18 +540,30 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  padding: 12px 16px;
+  background: var(--cs-panel);
+  border: 1px solid var(--cs-card-border);
+  border-radius: 8px;
 }
 
 .sc-panel-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 10px;
+  gap: 12px;
+  min-height: 56px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--cs-card-border);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.sc-panel-body {
+  padding: 16px;
+  overflow-y: auto;
 }
 
 .panel-title {
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--cs-text-bright);
 }
@@ -551,65 +571,56 @@ onBeforeUnmount(() => {
 .sc-table-wrap {
   flex: 1;
   overflow: hidden;
-  border: 1px solid var(--cs-border);
+  min-height: 0;
 }
 
 .cs-form-container {
-  max-width: 500px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.cs-form-row {
+  max-width: 560px;
   display: flex;
   flex-direction: column;
   gap: 4px;
-}
-
-.cs-form-label {
-  font-size: 11px;
-  color: var(--cs-text);
 }
 
 .sc-stats-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 12px;
-  margin-top: 8px;
+  gap: 16px;
 }
 
 .stat-card {
-  background: var(--cs-panel);
-  border: 1px solid var(--cs-border);
+  background: var(--cs-bg);
+  border-radius: 8px;
   padding: 16px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 
 .stat-num {
-  font-size: 24px;
-  font-weight: 700;
+  font-size: 22px;
+  font-weight: 600;
   color: var(--cs-active);
   font-family: var(--cs-font-mono);
+  word-break: break-all;
 }
 
 .stat-lbl {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--cs-text-dim);
 }
 
 .text-danger { color: var(--cs-error); }
 
+.font-bold { font-weight: 600; }
+
 .sc-header-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
 }
 
 .sc-rt-hint {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--cs-text-dim);
   font-family: var(--cs-font-mono);
 }
@@ -617,28 +628,13 @@ onBeforeUnmount(() => {
 .sc-rt-stats {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 12px;
-  margin-top: 4px;
+  gap: 16px;
+  margin-bottom: 16px;
 }
 
-.sc-rt-stats .stat-card {
-  padding: 10px 14px;
-}
-
-.sc-rt-stats .stat-num {
-  font-size: 18px;
-  word-break: break-all;
-}
-
-.sc-bottom-bar {
-  height: 38px;
-  background: var(--cs-panel);
-  border-top: 1px solid var(--cs-border);
+.cs-dialog-footer {
   display: flex;
-  align-items: center;
-  justify-content: center;
+  justify-content: flex-end;
   gap: 8px;
-  padding: 0 12px;
-  flex-shrink: 0;
 }
 </style>

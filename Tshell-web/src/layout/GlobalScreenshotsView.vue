@@ -100,6 +100,23 @@
         <span>{{ isCapturing ? (isZh ? '抓取中...' : 'Capturing...') : (isZh ? '屏幕抓取' : 'Capture') }}</span>
       </button>
 
+      <!-- Item Actions (选中项) -->
+      <button class="cs-btn" :disabled="!selectedItem" @click="openFullscreen(selectedItem)">
+        {{ isZh ? '全屏查看' : 'Fullscreen' }}
+      </button>
+      <button class="cs-btn" :disabled="!selectedItem" @click="downloadItem(selectedItem)">
+        {{ isZh ? '保存/下载' : 'Save' }}
+      </button>
+      <button class="cs-btn cs-btn-danger" :disabled="!selectedItem" @click="deleteItem(selectedItem)">
+        {{ isZh ? '删除' : 'Delete' }}
+      </button>
+      <button class="cs-btn" :disabled="!filteredScreenshots.length" @click="handleClear">
+        {{ isZh ? '清空列表' : 'Clear' }}
+      </button>
+      <button class="cs-btn" @click="showHelp">
+        {{ isZh ? '帮助' : 'Help' }}
+      </button>
+
       <!-- Refresh Button -->
       <button class="gs-btn-icon" :title="isZh ? '刷新截图' : 'Refresh Screenshots'" @click="refreshAll">
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
@@ -107,6 +124,10 @@
           <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
         </svg>
       </button>
+
+      <span class="gs-status-info">
+        {{ isZh ? `当前目标: ${currentTargetDisplay} | 共 ${filteredScreenshots.length} 张截图` : `Target: ${currentTargetDisplay} | ${filteredScreenshots.length} captures` }}
+      </span>
     </div>
 
     <!-- Body Surface (Split / Table / Grid View) -->
@@ -230,40 +251,6 @@
       </div>
     </div>
 
-    <!-- Bottom Action Bar -->
-    <div class="gs-bottom-bar">
-      <button class="cs-btn cs-btn-primary" :disabled="isCapturing || !effectiveTargetUid" @click="handleCapture">
-        {{ isCapturing ? (isZh ? '抓取中...' : 'Capturing...') : (isZh ? '屏幕抓取' : 'Capture') }}
-      </button>
-      <button class="cs-btn" :disabled="!selectedItem" @click="openFullscreen(selectedItem)">
-        {{ isZh ? '全屏查看' : 'Fullscreen' }}
-      </button>
-      <button class="cs-btn" :disabled="!selectedItem" @click="zoomReset">
-        {{ isZh ? '重置比例 1:1' : 'Zoom 1:1' }}
-      </button>
-      <button class="cs-btn" :disabled="!selectedItem" @click="downloadItem(selectedItem)">
-        {{ isZh ? '保存/下载' : 'Save' }}
-      </button>
-      <button class="cs-btn cs-btn-danger" :disabled="!selectedItem" @click="deleteItem(selectedItem)">
-        {{ isZh ? '删除' : 'Delete' }}
-      </button>
-      <button class="cs-btn" :disabled="!filteredScreenshots.length" @click="handleClear">
-        {{ isZh ? '清空列表' : 'Clear' }}
-      </button>
-      <button class="cs-btn" @click="refreshAll">
-        {{ isZh ? '刷新' : 'Refresh' }}
-      </button>
-      <button class="cs-btn" @click="showHelp">
-        {{ isZh ? '帮助' : 'Help' }}
-      </button>
-
-      <div class="gs-bottom-spacer" />
-
-      <span class="gs-status-info">
-        {{ isZh ? `当前目标: ${currentTargetDisplay} | 共 ${filteredScreenshots.length} 张截图` : `Target: ${currentTargetDisplay} | ${filteredScreenshots.length} captures` }}
-      </span>
-    </div>
-
     <!-- Right-Click Context Menu -->
     <Teleport to="body">
       <div
@@ -341,17 +328,19 @@
 
 <script setup lang="ts">
 import { computed, inject, onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import type { ComputedRef, Ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Picture, Camera } from '@element-plus/icons-vue'
 import { useClientsStore } from '@/stores/clients'
-import { useWorkspaceStore } from '@/stores/workspace'
 import { useI18nStore } from '@/stores/i18n'
+import { useSessionSelectionStore } from '@/stores/sessionSelection'
 import { useScreenshotsStore } from '@/stores/screenshots'
 import type { ScreenshotItem } from '@/stores/screenshots'
 import EmptyState from '@/components/Common/EmptyState.vue'
 import { SESSION_MARKER_COLORS, rowTintStyle } from '@/utils/sessionColors'
 
+const router = useRouter()
 const props = withDefaults(
   defineProps<{
     uid?: string
@@ -362,7 +351,7 @@ const props = withDefaults(
 )
 
 const clientsStore = useClientsStore()
-const workspace = useWorkspaceStore()
+const selection = useSessionSelectionStore()
 const i18nStore = useI18nStore()
 const screenshotsStore = useScreenshotsStore()
 
@@ -420,8 +409,8 @@ const effectiveTargetUid = computed(() => {
   if (resolvedUid.value) {
     return resolvedUid.value
   }
-  if (workspace.primarySelectedUid) {
-    return workspace.primarySelectedUid
+  if (selection.primarySelectedUid) {
+    return selection.primarySelectedUid
   }
   return onlineClients.value.length ? onlineClients.value[0].Uid : ''
 })
@@ -541,12 +530,7 @@ function handleInteract(item?: ScreenshotItem | null) {
   if (!target) return
   const client = clientsStore.getClientByUid(target.uid)
   const label = client ? `${client.Username}@${client.Computer || client.ExternalIP}` : target.host
-  workspace.openTab({
-    id: `beacon:${target.uid}`,
-    title: isZh.value ? `会话交互: ${label}` : `Beacon: ${label}`,
-    component: 'beacon',
-    params: { uid: target.uid },
-  })
+  router.push(`/client/${target.uid}/console`)
 }
 
 function openFullscreen(item?: ScreenshotItem | null) {
@@ -682,66 +666,74 @@ onMounted(() => {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: var(--cs-panel);
+  background: var(--cs-bg);
   overflow: hidden;
   position: relative;
 }
 
-/* Toolbar */
+/* ===== 工具条：白底 + 1px 分隔线 ===== */
 .gs-toolbar {
+  flex-shrink: 0;
+  min-height: 48px;
   display: flex;
   align-items: center;
-  gap: 10px;
-  height: 36px;
-  padding: 0 12px;
-  background: var(--cs-titlebar-bg);
-  border-bottom: 1px solid var(--cs-border);
-  flex-shrink: 0;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px 16px;
+  background: var(--cs-panel);
+  border-bottom: 1px solid var(--cs-card-border);
 }
 
 .gs-title-group {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
 }
 
 .gs-title-icon {
-  font-size: 18px;
+  font-size: 16px;
   color: var(--cs-active);
 }
 
 .gs-title {
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--cs-text-bright);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .gs-count {
-  font-size: 16px;
+  font-size: 13px;
   color: var(--cs-text-dim);
+  white-space: nowrap;
 }
 
 .gs-scope-toggle {
   display: inline-flex;
   align-items: center;
-  background: var(--cs-bg, #181818);
-  border: 1px solid var(--cs-border, #333333);
-  border-radius: 4px;
-  padding: 2px;
   gap: 2px;
   margin-left: 6px;
+  padding: 2px;
+  background: var(--cs-panel);
+  border: 1px solid var(--cs-border-strong);
+  border-radius: 6px;
 }
 
 .gs-scope-btn {
-  height: 24px;
+  height: 26px;
   padding: 0 10px;
-  font-size: 14px;
+  font-family: var(--cs-font-ui);
+  font-size: 13px;
   color: var(--cs-text-dim);
   background: transparent;
   border: none;
-  border-radius: 3px;
+  border-radius: 4px;
   cursor: pointer;
   white-space: nowrap;
+  transition: background 120ms ease, color 120ms ease;
 }
 
 .gs-scope-btn:hover {
@@ -752,38 +744,45 @@ onMounted(() => {
 .gs-scope-btn.active {
   color: #ffffff;
   background: var(--cs-active);
-  font-weight: 600;
 }
 
-.gs-spacer { flex: 1; }
+.gs-spacer {
+  flex: 1;
+}
 
+/* 视图切换（分段控件） */
 .gs-btn-group {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 2px;
+  padding: 2px;
+  background: var(--cs-panel);
+  border: 1px solid var(--cs-border-strong);
+  border-radius: 6px;
 }
 
 .gs-btn {
-  background: transparent;
-  border: 1px solid var(--cs-border);
-  border-radius: 2px;
-  color: var(--cs-text);
-  font-size: 15px;
-  height: 28px;
+  height: 26px;
   padding: 0 10px;
+  font-family: var(--cs-font-ui);
+  font-size: 13px;
+  color: var(--cs-text-dim);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
   cursor: pointer;
+  white-space: nowrap;
+  transition: background 120ms ease, color 120ms ease;
 }
 
 .gs-btn:hover {
+  color: var(--cs-text);
   background: var(--cs-hover);
-  color: var(--cs-text-bright);
 }
 
 .gs-btn.active {
-  background: color-mix(in srgb, var(--cs-active) 25%, transparent);
-  border-color: var(--cs-active);
-  color: var(--cs-active);
-  font-weight: bold;
+  color: #ffffff;
+  background: var(--cs-active);
 }
 
 .gs-quality-group {
@@ -793,25 +792,27 @@ onMounted(() => {
 }
 
 .gs-label {
-  font-size: 15px;
+  font-size: 13px;
   color: var(--cs-text-dim);
+  white-space: nowrap;
 }
 
 .gs-search-input {
-  width: 240px;
+  width: 220px;
 }
 
 .gs-btn-icon {
-  background: var(--cs-panel);
-  border: 1px solid var(--cs-border);
-  color: var(--cs-text);
-  height: 28px;
-  width: 28px;
-  border-radius: 2px;
-  cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
+  width: 32px;
+  height: 32px;
+  color: var(--cs-text);
+  background: var(--cs-panel);
+  border: 1px solid var(--cs-border-strong);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
 }
 
 .gs-btn-icon:hover {
@@ -819,7 +820,14 @@ onMounted(() => {
   color: var(--cs-active);
 }
 
-/* Body */
+.gs-status-info {
+  font-family: var(--cs-font-mono);
+  font-size: 13px;
+  color: var(--cs-text-dim);
+  white-space: nowrap;
+}
+
+/* ===== 主体（分屏 / 表格 / 网格） ===== */
 .gs-body {
   flex: 1;
   min-height: 0;
@@ -841,31 +849,37 @@ onMounted(() => {
 
 .mode-split .gs-table-pane {
   flex: 0 0 52%;
-  border-right: 1px solid var(--cs-border);
+  border-right: 1px solid var(--cs-card-border);
 }
 
+/* 预览面板 */
 .gs-preview-pane {
   flex: 1;
   display: flex;
   flex-direction: column;
-  background: var(--cs-bg);
+  background: var(--cs-panel);
   overflow: hidden;
 }
 
 .gs-preview-header {
-  height: 36px;
+  flex-shrink: 0;
+  min-height: 44px;
   padding: 0 12px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: var(--cs-table-header);
-  border-bottom: 1px solid var(--cs-border);
+  gap: 8px;
+  background: var(--cs-panel);
+  border-bottom: 1px solid var(--cs-card-border);
 }
 
 .gs-preview-title {
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--cs-text-bright);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .gs-preview-tools {
@@ -878,9 +892,9 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 12px;
   background: var(--cs-console);
   overflow: hidden;
-  padding: 8px;
   position: relative;
 }
 
@@ -898,46 +912,47 @@ onMounted(() => {
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.7);
-  border-radius: 2px;
+  border-radius: 6px;
+  box-shadow: 0 3px 6px -4px rgba(0, 0, 0, 0.12), 0 6px 16px 0 rgba(0, 0, 0, 0.08);
   transition: transform 120ms ease-out;
 }
 
 .sc-floating-controls {
   position: absolute;
-  bottom: 16px;
   right: 16px;
+  bottom: 16px;
   display: flex;
   align-items: center;
   gap: 6px;
-  background: rgba(24, 24, 24, 0.85);
-  border: 1px solid var(--cs-border);
   padding: 4px 8px;
-  border-radius: 4px;
+  background: color-mix(in srgb, var(--cs-panel) 92%, transparent);
+  border: 1px solid var(--cs-card-border);
+  border-radius: 8px;
+  box-shadow: 0 3px 6px -4px rgba(0, 0, 0, 0.12), 0 6px 16px 0 rgba(0, 0, 0, 0.08);
   backdrop-filter: blur(4px);
   z-index: 10;
 }
 
 .zoom-text {
+  min-width: 46px;
   font-family: var(--cs-font-mono);
-  font-size: 14px;
-  color: var(--cs-text-bright);
-  min-width: 48px;
+  font-size: 13px;
   text-align: center;
+  color: var(--cs-text);
 }
 
 .gs-preview-placeholder {
-  color: var(--cs-text-dim);
-  font-size: 16px;
+  font-size: 14px;
   text-align: center;
+  color: var(--cs-text-dim);
 }
 
-/* Grid Mode */
+/* ===== 网格画廊 ===== */
 .gs-grid-wrap {
   position: relative;
   height: 100%;
   overflow-y: auto;
-  padding: 14px;
+  padding: 16px;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 16px;
@@ -945,34 +960,32 @@ onMounted(() => {
 }
 
 .gs-card {
-  background: var(--cs-bg);
-  border: 1px solid var(--cs-border);
-  border-radius: 4px;
-  overflow: hidden;
-  cursor: pointer;
   display: flex;
   flex-direction: column;
-  transition: all 120ms ease;
+  overflow: hidden;
+  background: var(--cs-card-bg);
+  border: 1px solid var(--cs-card-border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: border-color 120ms ease;
 }
 
 .gs-card:hover {
-  border-color: var(--cs-active);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  border-color: color-mix(in srgb, var(--cs-active) 55%, var(--cs-card-border));
 }
 
 .gs-card.selected {
   border-color: var(--cs-active);
-  box-shadow: 0 0 0 2px var(--cs-active);
 }
 
 .gs-card-img-wrap {
-  height: 170px;
-  background: var(--cs-console);
   position: relative;
-  overflow: hidden;
+  height: 170px;
   display: flex;
   align-items: center;
   justify-content: center;
+  overflow: hidden;
+  background: var(--cs-console);
 }
 
 .gs-card-img {
@@ -984,11 +997,11 @@ onMounted(() => {
 .gs-card-overlay {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.6);
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
+  background: rgba(0, 0, 0, 0.55);
   opacity: 0;
   transition: opacity 150ms ease;
 }
@@ -998,103 +1011,84 @@ onMounted(() => {
 }
 
 .gs-card-footer {
-  padding: 8px 10px;
-  background: var(--cs-titlebar-bg);
-  border-top: 1px solid var(--cs-border);
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: var(--cs-panel);
+  border-top: 1px solid var(--cs-card-border);
 }
 
 .gs-card-host {
-  font-size: 15px;
+  max-width: 160px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--cs-text-bright);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 160px;
 }
 
 .gs-card-time {
-  font-size: 13px;
-  color: var(--cs-text-dim);
   font-family: var(--cs-font-mono);
-}
-
-/* Bottom Bar */
-.gs-bottom-bar {
-  height: 38px;
-  padding: 0 12px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: var(--cs-panel);
-  border-top: 1px solid var(--cs-border);
-  flex-shrink: 0;
-}
-
-.gs-bottom-spacer { flex: 1; }
-
-.gs-status-info {
-  font-size: 15px;
+  font-size: 12px;
   color: var(--cs-text-dim);
-  font-family: var(--cs-font-mono);
 }
 
+/* ===== 单元格渲染 ===== */
 .mono-cell {
   font-family: var(--cs-font-mono);
-  font-size: 16px;
+  color: var(--cs-text);
 }
 
 .user-cell {
   font-weight: 600;
-  font-size: 16.5px;
-  color: var(--cs-text-bright);
+  color: var(--cs-text);
 }
 
 .host-cell {
-  font-size: 16.5px;
+  color: var(--cs-text);
 }
 
 .title-cell {
-  font-size: 16px;
   color: var(--cs-text);
 }
 
 .quality-badge {
-  display: inline-block;
-  padding: 1px 6px;
-  border-radius: 3px;
-  font-size: 13px;
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 4px;
+  font-size: 12px;
 }
 
 .quality-badge.q-0 {
-  background: color-mix(in srgb, var(--cs-text-dim) 20%, transparent);
+  background: color-mix(in srgb, var(--cs-text-dim) 16%, transparent);
   color: var(--cs-text-dim);
 }
 
 .quality-badge.q-1 {
-  background: color-mix(in srgb, var(--cs-active) 15%, transparent);
+  background: color-mix(in srgb, var(--cs-active) 12%, transparent);
   color: var(--cs-active);
 }
 
 .quality-badge.q-2 {
-  background: color-mix(in srgb, var(--cs-online) 15%, transparent);
+  background: color-mix(in srgb, var(--cs-online) 14%, transparent);
   color: var(--cs-online);
   font-weight: 600;
 }
 
-/* Context Menu */
+/* ===== 右键菜单 ===== */
 .cs-listener-ctx-menu {
   position: fixed;
-  background: var(--cs-panel);
-  border: 1px solid var(--cs-border);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
-  border-radius: 2px;
-  padding: 4px 0;
-  z-index: 9999;
   min-width: 180px;
+  padding: 4px;
+  background: var(--cs-panel);
+  border: 1px solid var(--cs-card-border);
+  border-radius: 8px;
+  box-shadow: 0 3px 6px -4px rgba(0, 0, 0, 0.12), 0 6px 16px 0 rgba(0, 0, 0, 0.08);
+  z-index: 9999;
 }
 
 .cs-listener-ctx-menu .ctx-item {
@@ -1102,50 +1096,72 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 14px;
-  font-size: 16.5px;
+  height: 32px;
+  padding: 0 10px;
+  font-size: 14px;
   color: var(--cs-text);
+  border-radius: 6px;
   cursor: pointer;
 }
 
 .cs-listener-ctx-menu .ctx-item:hover {
   background: var(--cs-hover);
-  color: var(--cs-text-bright);
+  color: var(--cs-active);
 }
 
 .cs-listener-ctx-menu .ctx-arrow {
+  margin-left: 14px;
   font-size: 12px;
   color: var(--cs-text-dim);
-  margin-left: 14px;
 }
 
 .cs-listener-ctx-menu .ctx-color-palette {
   position: absolute;
   top: -2px;
   left: 100%;
-  background: var(--cs-panel);
-  border: 1px solid var(--cs-border);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
-  border-radius: 2px;
-  padding: 6px;
   display: flex;
   gap: 6px;
+  padding: 6px;
+  background: var(--cs-panel);
+  border: 1px solid var(--cs-card-border);
+  border-radius: 8px;
+  box-shadow: 0 3px 6px -4px rgba(0, 0, 0, 0.12), 0 6px 16px 0 rgba(0, 0, 0, 0.08);
   z-index: 10000;
 }
 
 .color-box {
-  width: 24px;
-  height: 24px;
-  border: 1px solid var(--cs-border);
-  border-radius: 2px;
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--cs-border-strong);
+  border-radius: 4px;
   cursor: pointer;
 }
 
 .color-box:hover {
-  border-color: var(--cs-text-bright);
+  border-color: var(--cs-active);
 }
 
-/* Fullscreen Dialog */
+.cs-listener-ctx-menu .ctx-divider {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--cs-card-border);
+}
+
+.cs-listener-ctx-menu .ctx-item.is-highlight {
+  font-weight: 600;
+  color: var(--cs-active);
+}
+
+.cs-listener-ctx-menu .ctx-item.ctx-danger {
+  color: var(--cs-error);
+}
+
+.cs-listener-ctx-menu .ctx-item.ctx-danger:hover {
+  background: color-mix(in srgb, var(--cs-error) 12%, transparent);
+  color: var(--cs-error);
+}
+
+/* ===== 全屏查看对话框 ===== */
 .gs-fs-body {
   display: flex;
   flex-direction: column;
@@ -1156,21 +1172,21 @@ onMounted(() => {
 .gs-fs-img-wrap {
   width: 100%;
   height: 72vh;
-  background: var(--cs-console);
-  overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 4px;
-  border: 1px solid var(--cs-border);
+  overflow: hidden;
+  background: var(--cs-console);
+  border: 1px solid var(--cs-card-border);
+  border-radius: 8px;
 }
 
 .gs-fs-img {
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
-  transition: transform 100ms ease-out;
   cursor: grab;
+  transition: transform 100ms ease-out;
 }
 
 .gs-fs-controls {
@@ -1180,9 +1196,9 @@ onMounted(() => {
 }
 
 .zoom-label {
-  font-family: var(--cs-font-mono);
-  font-size: 16px;
   min-width: 56px;
+  font-family: var(--cs-font-mono);
+  font-size: 14px;
   text-align: center;
   color: var(--cs-text-dim);
 }

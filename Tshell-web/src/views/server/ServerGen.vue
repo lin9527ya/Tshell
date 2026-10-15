@@ -8,6 +8,21 @@
       </div>
       <div class="sg-spacer" />
       <span class="sg-tip">{{ isZh ? '根据监听器自动注入 VKey 与加密盐' : 'Automatic VKey & Salt injection based on Listener' }}</span>
+      <!-- 高级格式：HTA / Office 宏 / Windows EXE（原全局对话框收编到页内，下拉右对齐） -->
+      <el-dropdown trigger="click" placement="bottom-end" class="sg-dropdown" @command="openAdvDialog">
+        <button type="button" class="cs-btn">
+          {{ isZh ? '高级格式' : 'Advanced Formats' }}
+          <span class="sg-caret">▾</span>
+        </button>
+        <template #dropdown>
+          <el-dropdown-menu class="cs-menu-popper">
+            <el-dropdown-item command="hta">{{ isZh ? 'HTA 攻击' : 'HTML Application (HTA)' }}</el-dropdown-item>
+            <el-dropdown-item command="macro">{{ isZh ? 'Office 宏' : 'MS Office Macro' }}</el-dropdown-item>
+            <el-dropdown-item command="exe">{{ isZh ? 'Windows EXE' : 'Windows Executable' }}</el-dropdown-item>
+            <el-dropdown-item command="exeStageless">{{ isZh ? 'Windows EXE 无阶段' : 'Windows Executable (Stageless)' }}</el-dropdown-item>
+          </el-dropdown-menu>
+        </template>
+      </el-dropdown>
     </div>
 
     <div class="gen-card">
@@ -48,6 +63,12 @@
             <div class="tab-content">
               <el-icon class="tab-icon"><Connection /></el-icon>
               <span class="tab-description-large">{{ isZh ? 'DLL 正向客户端：rundll32 / regsvr32 加载（仅 Windows）' : 'DLL forward client: loaded via rundll32 / regsvr32 (Windows only)' }}</span>
+            </div>
+          </el-tab-pane>
+          <el-tab-pane :label="isZh ? '投递' : 'delivery'" name="delivery">
+            <div class="tab-content">
+              <el-icon class="tab-icon"><Link /></el-icon>
+              <span class="tab-description-large">{{ isZh ? 'Web 投递：Stager 托管 / 站点克隆 / 文件托管 / 投递日志' : 'Web delivery: stager hosting / site clone / file hosting / delivery logs' }}</span>
             </div>
           </el-tab-pane>
         </el-tabs>
@@ -435,8 +456,13 @@
           </div>
         </el-form>
 
-        <!-- Bottom Buttons (1:1 CS: [ Generate ] [ Help ]) -->
-        <div class="sg-bottom-bar">
+        <!-- 投递（合并原 站点管理 / 站点克隆 / 文件托管 / 投递日志） -->
+        <div v-if="activeTab === 'delivery'" class="delivery-pane">
+          <WebDelivery />
+        </div>
+
+        <!-- 表单页脚操作（vshell：表单卡内左对齐） -->
+        <div v-if="activeTab !== 'delivery'" class="sg-bottom-bar">
           <button
             class="cs-btn cs-btn-primary"
             :disabled="!isFormValid || generating"
@@ -444,17 +470,23 @@
           >
             {{ generating ? (isZh ? '生成中...' : 'Generating...') : (isZh ? '生成载荷' : 'Generate Payload') }}
           </button>
-          <button class="cs-btn" @click="ElMessage.info(isZh ? '载荷生成器说明' : 'Cobalt Strike Payload Generator Manual')">
+          <button class="cs-btn" @click="ElMessage.info(isZh ? '载荷生成器说明' : 'Payload Generator Manual')">
             {{ isZh ? '帮助' : 'Help' }}
           </button>
         </div>
       </div>
     </div>
+
+    <!-- 高级格式对话框（页内常驻局部 ref；原全局 store 挂载已移除） -->
+    <HtaAttackDialog v-model="htaVisible" />
+    <OfficeMacroDialog v-model="macroVisible" />
+    <WindowsExeDialog v-model="exeVisible" />
+    <WindowsExeStagelessDialog v-model="exeStagelessVisible" :key="exeStagelessKey" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { reactive, ref, computed } from 'vue';
+import { reactive, ref, computed, nextTick } from 'vue';
 import { ElMessage } from 'element-plus';
 import { useI18nStore } from '@/stores/i18n';
 import {
@@ -463,11 +495,18 @@ import {
   Files,
   Connection,
   Download,
+  Link,
   Refresh,
   RefreshRight,
 } from '@element-plus/icons-vue';
+import { defineAsyncComponent } from 'vue';
+const WebDelivery = defineAsyncComponent(() => import('@/views/server/WebDelivery.vue'));
 import ClientAPI from '@/api/clients';
 import PageHeader from '@/components/Common/PageHeader.vue';
+import HtaAttackDialog from '@/layout/Dialogs/Payloads/HtaAttackDialog.vue';
+import OfficeMacroDialog from '@/layout/Dialogs/Payloads/OfficeMacroDialog.vue';
+import WindowsExeDialog from '@/layout/Dialogs/Payloads/WindowsExeDialog.vue';
+import WindowsExeStagelessDialog from '@/layout/Dialogs/Payloads/WindowsExeStagelessDialog.vue';
 
 const i18nStore = useI18nStore();
 const isZh = computed(() => i18nStore.isZh);
@@ -477,6 +516,29 @@ const listenerDetails = ref<any[]>([]);
 const webDeliveryOptions = ref<any[]>([]);
 const activeTab = ref('stageless');
 const generating = ref(false);
+
+// 「高级格式 ▾」对话框（原全局 store 挂载 → 页内局部 ref）
+const htaVisible = ref(false);
+const macroVisible = ref(false);
+const exeVisible = ref(false);
+const exeStagelessVisible = ref(false);
+// 无阶段 EXE 弹窗自身没有「打开时初始化」逻辑：打开前换 key 强制重挂，避免上次的监听器/OPSEC 残留
+const exeStagelessKey = ref(0);
+
+const openAdvDialog = async (cmd: string) => {
+  if (cmd === 'hta') {
+    htaVisible.value = true;
+  } else if (cmd === 'macro') {
+    macroVisible.value = true;
+  } else if (cmd === 'exe') {
+    exeVisible.value = true;
+  } else if (cmd === 'exeStageless') {
+    // 先重挂空实例，再打开（保留 el-dialog 的打开动画）
+    exeStagelessKey.value += 1;
+    await nextTick();
+    exeStagelessVisible.value = true;
+  }
+};
 
 const formData = reactive({
   listener: '',
@@ -1006,6 +1068,17 @@ const refreshAddress = () => {
 </script>
 
 <style scoped>
+.delivery-pane {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.delivery-pane > * {
+  flex: 1;
+  min-height: 0;
+}
+
 .servergen-page {
   height: 100%;
   display: flex;
@@ -1032,13 +1105,13 @@ const refreshAddress = () => {
 }
 
 .sg-title {
-  font-size: 17px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--cs-text-bright);
 }
 
 .sg-desc {
-  font-size: 15px;
+  font-size: 13px;
   color: var(--cs-text-dim);
 }
 
@@ -1049,9 +1122,21 @@ const refreshAddress = () => {
   color: var(--cs-text-dim);
 }
 
+/* 「高级格式 ▾」下拉：与工具条按钮同高同圆角 */
+.sg-dropdown {
+  display: inline-flex;
+  align-items: center;
+}
+
+.sg-caret {
+  font-size: 10px;
+  line-height: 1;
+  color: var(--cs-text-dim);
+}
+
 .gen-card {
-  flex: 1;
-  min-height: 0;
+  /* vshell：表单卡贴合内容，不随视口拉伸（避免大屏下大片空白） */
+  flex: 0 0 auto;
   margin: 10px;
   background: var(--cs-panel);
   border: 1px solid var(--cs-border);
@@ -1060,13 +1145,13 @@ const refreshAddress = () => {
 }
 
 .tab-description-large {
-  font-size: 15px;
+  font-size: 13px;
 }
 
 .sg-bottom-bar {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 8px;
   padding-top: 16px;
   border-top: 1px solid var(--cs-border);
@@ -1168,7 +1253,7 @@ const refreshAddress = () => {
 .stager-info-box {
   background: var(--cs-bg, #0d1117);
   border: 1px solid var(--cs-border, #30363d);
-  border-radius: 2px;
+  border-radius: 4px;
   padding: 6px 10px;
   font-size: 12px;
   line-height: 1.7;

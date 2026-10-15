@@ -80,7 +80,6 @@
 import { computed, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useI18nStore } from '@/stores/i18n'
-import { useWorkspaceStore } from '@/stores/workspace'
 
 const props = defineProps<{
   modelValue: boolean
@@ -91,7 +90,6 @@ const emit = defineEmits<{
 }>()
 
 const i18nStore = useI18nStore()
-const workspace = useWorkspaceStore()
 const isZh = computed(() => i18nStore.isZh)
 
 const loading = ref(false)
@@ -125,49 +123,12 @@ function handleHelp() {
 </script>
 
 <style scoped>
-.cs-dialog-desc {
-  font-size: 12px;
-  color: var(--cs-text-dim);
-  background: var(--cs-bg);
-  padding: 8px 12px;
-  border: 1px solid var(--cs-border);
-  border-radius: 2px;
-  margin-bottom: 12px;
-  line-height: 1.4;
-}
-
-.cs-form-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 10px;
-}
-
-.cs-form-label {
-  width: 130px;
-  text-align: right;
-  font-size: 12px;
-  color: var(--cs-text-dim);
-  flex-shrink: 0;
-}
-
 .cs-form-label .req {
-  color: #f56c6c;
-}
-
-.cs-form-input-wrap {
-  flex: 1;
+  color: var(--cs-error);
 }
 
 .cs-form-input-wrap.has-append {
   display: flex;
-  gap: 4px;
-}
-
-.cs-dialog-footer-center {
-  display: flex;
-  justify-content: center;
-  gap: 10px;
-  padding: 6px 0;
+  gap: 8px;
 }
 </style>

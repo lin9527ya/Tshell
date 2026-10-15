@@ -25,7 +25,7 @@
           v-model="profileContent"
           class="cs-profile-textarea cs-font-mono"
           spellcheck="false"
-          :placeholder="isZh ? '# BladeShell C2 扩展通信画像配置...' : '# Cobalt Strike Malleable C2 Profile definition...'"
+          :placeholder="isZh ? '# BladeShell C2 扩展通信画像配置...' : '# C2 profile definition...'"
         />
       </div>
     </div>
@@ -42,19 +42,18 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { useWorkspaceStore } from '@/stores/workspace'
 import { useI18nStore } from '@/stores/i18n'
 import c2profileApi from '@/api/c2profile'
 
-const workspace = useWorkspaceStore()
+const props = defineProps<{ modelValue: boolean }>()
+const emit = defineEmits<{ (e: 'update:modelValue', val: boolean): void }>()
+
 const i18nStore = useI18nStore()
 const isZh = computed(() => i18nStore.isZh)
 
 const visible = computed({
-  get: () => workspace.dialogs.c2Profile,
-  set: (val) => {
-    if (!val) workspace.closeDialog('c2Profile')
-  },
+  get: () => props.modelValue,
+  set: (val) => emit('update:modelValue', val),
 })
 
 const defaultC2 = `# ============================================================
@@ -163,7 +162,7 @@ async function saveProfile() {
 }
 
 function close() {
-  workspace.closeDialog('c2Profile')
+  visible.value = false
 }
 </script>
 
@@ -172,22 +171,21 @@ function close() {
   display: flex;
   flex-direction: column;
   height: 420px;
-  gap: 8px;
+  gap: 10px;
 }
 
 .profile-toolbar {
-  height: 30px;
   display: flex;
   align-items: center;
   gap: 8px;
-  background: var(--cs-bg);
-  padding: 0 8px;
-  border: 1px solid var(--cs-border);
+  background: var(--cs-hover);
+  padding: 8px 12px;
+  border-radius: 8px;
 }
 
 .profile-title {
-  font-size: 12px;
-  color: var(--cs-text-bright);
+  font-size: 14px;
+  color: var(--cs-text);
 }
 
 .profile-spacer {
@@ -204,10 +202,11 @@ function close() {
   height: 100%;
   background: var(--cs-console);
   color: var(--cs-text);
-  border: 1px solid var(--cs-border);
-  padding: 10px;
-  font-size: 12px;
-  line-height: 1.5;
+  border: 1px solid var(--cs-border-strong);
+  border-radius: 6px;
+  padding: 12px;
+  font-size: 13px;
+  line-height: 1.6;
   resize: none;
   outline: none;
   font-family: var(--cs-font-mono);
@@ -215,6 +214,12 @@ function close() {
 }
 
 .cs-profile-textarea:focus {
-  border-color: #185abc;
+  border-color: var(--cs-active);
+}
+
+.cs-dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
 }
 </style>

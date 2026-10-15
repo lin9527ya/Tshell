@@ -42,24 +42,26 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { useWorkspaceStore } from '@/stores/workspace'
 import { useClientsStore } from '@/stores/clients'
 import { useI18nStore } from '@/stores/i18n'
 import ClientAPI from '@/api/clients'
 
-const workspace = useWorkspaceStore()
+// P3：页面内局部弹窗——可见性走 v-model，数据由宿主经 props 传入
+const props = withDefaults(
+  defineProps<{ modelValue: boolean; uid?: string; sleep?: number | string; uids?: string[] }>(),
+  { uid: '', sleep: 5, uids: () => [] },
+)
+const emit = defineEmits<{ (e: 'update:modelValue', value: boolean): void }>()
+const visible = computed({
+  get: () => props.modelValue,
+  set: (value) => emit('update:modelValue', value),
+})
+
 const clientsStore = useClientsStore()
 const i18nStore = useI18nStore()
 const isZh = computed(() => i18nStore.isZh)
 
-const visible = computed({
-  get: () => workspace.dialogs.sleep.visible,
-  set: (val) => {
-    if (!val) workspace.closeDialog('sleep')
-  },
-})
-
-const uid = computed(() => workspace.dialogs.sleep.uid)
+const uid = computed(() => props.uid)
 const sleepSec = ref(5)
 const jitter = ref(10)
 
@@ -69,15 +71,12 @@ const clientLabel = computed(() => {
   return `${client.value.Username || 'user'}@${client.value.Computer || 'host'}`
 })
 
-watch(
-  () => workspace.dialogs.sleep.visible,
-  (val) => {
-    if (val) {
-      sleepSec.value = workspace.dialogs.sleep.currentSleep || 5
-      jitter.value = 10
-    }
-  },
-)
+watch(visible, (val) => {
+  if (val) {
+    sleepSec.value = Number(props.sleep) || 5
+    jitter.value = 10
+  }
+})
 
 function setPreset(sec: number, jit: number) {
   sleepSec.value = sec
@@ -85,11 +84,11 @@ function setPreset(sec: number, jit: number) {
 }
 
 function close() {
-  workspace.closeDialog('sleep')
+  visible.value = false
 }
 
 async function applySleep() {
-  const targetUids = workspace.selectedUids.length ? workspace.selectedUids : (uid.value ? [uid.value] : [])
+  const targetUids = props.uids.length ? props.uids : (uid.value ? [uid.value] : [])
   if (!targetUids.length) return
   try {
     for (const u of targetUids) {
@@ -108,21 +107,15 @@ async function applySleep() {
 </script>
 
 <style scoped>
-.cs-dialog-body {
-  padding: 10px 0;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
 .dialog-row {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  align-items: center;
+  gap: 10px;
 }
 .dialog-label {
-  font-size: 12px;
-  color: var(--cs-text-dim);
-  font-weight: 500;
+  font-size: 14px;
+  color: var(--cs-text);
+  flex-shrink: 0;
 }
 .dialog-val {
   font-size: 13px;
@@ -137,7 +130,7 @@ async function applySleep() {
 .dialog-field {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 .quick-presets {
   display: flex;
@@ -147,18 +140,20 @@ async function applySleep() {
   padding-top: 4px;
 }
 .preset-label {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--cs-text-dim);
   margin-right: 4px;
 }
 .preset-btn {
   background: var(--cs-panel);
-  border: 1px solid var(--cs-border);
-  border-radius: 2px;
+  border: 1px solid var(--cs-border-strong);
+  border-radius: 4px;
   color: var(--cs-text);
-  font-size: 11px;
-  padding: 2px 8px;
+  font-size: 12px;
+  height: 24px;
+  padding: 0 8px;
   cursor: pointer;
+  transition: all 120ms ease;
 }
 .preset-btn:hover {
   background: var(--cs-hover);
@@ -168,6 +163,6 @@ async function applySleep() {
 .cs-dialog-footer {
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
+  gap: 12px;
 }
 </style>

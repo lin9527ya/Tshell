@@ -1,53 +1,73 @@
 <template>
   <div class="cs-listeners-panel cs-font-ui" @click="closeContextMenu">
-    <!-- CS Unified Toolbar -->
+    <!-- vshell 工具条：内容上方一行（左：标题 / 下划线页签，右：搜索 + 操作） -->
     <div class="cs-listener-toolbar">
-      <div class="cs-header-left">
-        <div class="cs-title-group">
-          <el-icon class="cs-title-icon"><Headset /></el-icon>
-          <span class="cs-title">{{ isZh ? '监听器管理' : 'Listeners' }}</span>
-        </div>
-
-        <!-- 扁平风格正反向监听器分段切换器 -->
-        <div class="cs-segmented-toggle">
-          <button
-            class="cs-segment-btn"
-            :class="{ active: activeView === 'normal' }"
-            @click="switchView('normal')"
-          >
-            <span class="seg-icon">⬇</span>
-            <span>{{ isZh ? '反向监听器' : 'Reverse Listeners' }}</span>
-            <span class="seg-badge">{{ listenersList.length }}</span>
-          </button>
-          <button
-            class="cs-segment-btn"
-            :class="{ active: activeView === 'forward' }"
-            @click="switchView('forward')"
-          >
-            <span class="seg-icon">⬆</span>
-            <span>{{ isZh ? '正向监听器' : 'Forward Listeners' }}</span>
-            <span class="seg-badge">{{ forwardCount }}</span>
-          </button>
-        </div>
+      <div class="cs-title-group">
+        <el-icon class="cs-title-icon"><Headset /></el-icon>
+        <span class="cs-title">{{ isZh ? '监听器管理' : 'Listeners' }}</span>
       </div>
+
+      <!-- 正/反向监听器：下划线页签（激活 = 主色字 + 2px 主色下划线） -->
+      <div class="cs-view-tabs">
+        <button
+          class="cs-view-tab"
+          :class="{ active: activeView === 'normal' }"
+          @click="switchView('normal')"
+        >
+          <span class="tab-label">{{ isZh ? '反向监听器' : 'Reverse Listeners' }}</span>
+          <span class="tab-badge">{{ listenersList.length }}</span>
+        </button>
+        <button
+          class="cs-view-tab"
+          :class="{ active: activeView === 'forward' }"
+          @click="switchView('forward')"
+        >
+          <span class="tab-label">{{ isZh ? '正向监听器' : 'Forward Listeners' }}</span>
+          <span class="tab-badge">{{ forwardCount }}</span>
+        </button>
+      </div>
+
+      <span v-if="activeView === 'normal'" class="cs-toolbar-hint">
+        {{ isZh ? `共 ${filteredListeners.length} 个反向监听器` : `${filteredListeners.length} reverse listener(s)` }}
+      </span>
 
       <div class="cs-spacer" />
 
-      <!-- 右侧统一搜索与刷新 -->
-      <div class="cs-header-right">
-        <el-input
-          v-model="searchKey"
-          :placeholder="activeView === 'normal' ? (isZh ? '过滤反向监听器 (名称/载荷/地址/备注)...' : 'Filter reverse listeners...') : (isZh ? '过滤正向监听器 (名称/载荷/地址/备注)...' : 'Filter forward listeners...')"
-          size="small"
-          clearable
-          class="cs-search"
-        />
+      <el-input
+        v-model="searchKey"
+        :placeholder="activeView === 'normal' ? (isZh ? '过滤反向监听器 (名称/载荷/地址/备注)...' : 'Filter reverse listeners...') : (isZh ? '过滤正向监听器 (名称/载荷/地址/备注)...' : 'Filter forward listeners...')"
+        clearable
+        class="cs-search"
+      >
+        <template #prefix>
+          <svg class="cs-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <circle cx="11" cy="11" r="7" />
+            <path d="M20 20l-3.6-3.6" />
+          </svg>
+        </template>
+      </el-input>
 
-        <button class="cs-btn" :disabled="currentLoading" @click="handleRefresh">
-          <el-icon :class="{ 'is-loading': currentLoading }"><Refresh /></el-icon>
-          <span>{{ isZh ? '刷新' : 'Refresh' }}</span>
-        </button>
-      </div>
+      <button class="cs-btn" :disabled="currentLoading" @click="handleRefresh">
+        <el-icon :class="{ 'is-loading': currentLoading }"><Refresh /></el-icon>
+        <span>{{ isZh ? '刷新' : 'Refresh' }}</span>
+      </button>
+
+      <!-- 攻击工具：正向连接 / 鱼叉式钓鱼（页面内局部弹窗） -->
+      <span class="cs-toolbar-divider" />
+      <button class="cs-btn" @click="showForwardConnect = true">{{ isZh ? '正向连接' : 'Forward Connect' }}</button>
+      <button class="cs-btn" @click="showSpearPhish = true">{{ isZh ? '钓鱼邮件' : 'Spear Phish' }}</button>
+
+      <!-- 反向监听器操作（正向视图的操作条由子面板自带） -->
+      <template v-if="activeView === 'normal'">
+        <span class="cs-toolbar-divider" />
+        <button class="cs-btn cs-btn-primary" @click="openAddDialog">{{ isZh ? '添加' : 'Add' }}</button>
+        <button class="cs-btn" :disabled="!selectedRow" @click="openEditDialog()">{{ isZh ? '编辑' : 'Edit' }}</button>
+        <button class="cs-btn" :disabled="!selectedRow || selectedRow.Status === 1" @click="() => handleStart(selectedRow)">{{ isZh ? '开启' : 'Start' }}</button>
+        <button class="cs-btn" :disabled="!selectedRow || selectedRow.Status !== 1" @click="() => handleStop(selectedRow)">{{ isZh ? '关闭' : 'Stop' }}</button>
+        <button class="cs-btn" :disabled="!selectedRow" @click="() => handleRestart(selectedRow)">{{ isZh ? '重启' : 'Restart' }}</button>
+        <button class="cs-btn cs-btn-danger" :disabled="!selectedRow" @click="() => handleRemove(selectedRow)">{{ isZh ? '删除' : 'Remove' }}</button>
+        <button class="cs-btn" @click="handleHelp">{{ isZh ? '帮助' : 'Help' }}</button>
+      </template>
     </div>
 
     <!-- 主体区域 -->
@@ -75,8 +95,7 @@
             <el-table-column prop="bindto" :label="isZh ? '回连地址' : 'bindto'" min-width="160" sortable show-overflow-tooltip />
             <el-table-column :label="isZh ? '状态' : 'status'" width="115" sortable align="center">
               <template #default="{ row }">
-                <span class="cs-status-indicator" :class="row.Status === 1 ? 'online' : 'offline'">
-                  <span class="status-dot" />
+                <span class="vs-status-tag" :class="row.Status === 1 ? 'is-online' : 'is-offline'">
                   {{ row.Status === 1 ? (isZh ? '监听中' : 'Listening') : (isZh ? '已停止' : 'Stopped') }}
                 </span>
               </template>
@@ -94,25 +113,9 @@
             </el-table-column>
 
             <template #empty>
-              <EmptyState variant="inline" :title="isZh ? '暂无反向监听器' : 'No Listeners Configured'" />
+              <EmptyState variant="inline" icon="📡" :title="isZh ? '暂无反向监听器' : 'No Listeners Configured'" />
             </template>
           </el-table>
-        </div>
-
-        <!-- Bottom Action Buttons (CS Native Button Row) -->
-        <div class="cs-bottom-bar">
-          <button class="cs-btn cs-btn-primary" @click="openAddDialog">{{ isZh ? '添加' : 'Add' }}</button>
-          <button class="cs-btn" :disabled="!selectedRow" @click="openEditDialog()">{{ isZh ? '编辑' : 'Edit' }}</button>
-          <button class="cs-btn" :disabled="!selectedRow || selectedRow.Status === 1" @click="() => handleStart(selectedRow)">{{ isZh ? '开启' : 'Start' }}</button>
-          <button class="cs-btn" :disabled="!selectedRow || selectedRow.Status !== 1" @click="() => handleStop(selectedRow)">{{ isZh ? '关闭' : 'Stop' }}</button>
-          <button class="cs-btn" :disabled="!selectedRow" @click="() => handleRestart(selectedRow)">{{ isZh ? '重启' : 'Restart' }}</button>
-          <button class="cs-btn cs-btn-danger" :disabled="!selectedRow" @click="() => handleRemove(selectedRow)">{{ isZh ? '删除' : 'Remove' }}</button>
-          <button class="cs-btn" @click="handleHelp">{{ isZh ? '帮助' : 'Help' }}</button>
-
-          <div class="cs-spacer" />
-          <span class="cs-status-hint">
-            {{ isZh ? `共 ${filteredListeners.length} 个反向监听器` : `${filteredListeners.length} reverse listener(s)` }}
-          </span>
         </div>
       </div>
 
@@ -183,6 +186,10 @@
       :saving="savingListener"
       @save="onListenerSaved"
     />
+
+    <!-- 页面内局部攻击弹窗（入口在本页工具条） -->
+    <ForwardConnectDialog v-model="showForwardConnect" />
+    <SpearPhishDialog v-model="showSpearPhish" />
   </div>
 </template>
 
@@ -191,6 +198,8 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Headset, Refresh } from '@element-plus/icons-vue'
 import EditListenerDialog from '@/layout/Dialogs/EditListenerDialog.vue'
+import ForwardConnectDialog from '@/layout/Dialogs/Attacks/ForwardConnectDialog.vue'
+import SpearPhishDialog from '@/layout/Dialogs/Attacks/SpearPhishDialog.vue'
 import ForwardListeners from './ForwardListeners.vue'
 import ListenerAPI from '@/api/listener'
 import { useI18nStore } from '@/stores/i18n'
@@ -231,6 +240,9 @@ const searchKey = ref('')
 const selectedRow = ref<ListenerItem | null>(null)
 const editingListener = ref<ListenerItem | null>(null)
 const showEditDialog = ref(false)
+// 攻击工具弹窗（页面内局部状态）
+const showForwardConnect = ref(false)
+const showSpearPhish = ref(false)
 
 const currentLoading = computed(() => (activeView.value === 'normal' ? loading.value : (forwardRef.value?.loading ?? false)))
 
@@ -560,92 +572,79 @@ onBeforeUnmount(() => {
   overflow: hidden;
 }
 
+/* 工具条：白底 + 底部分隔线由 vshell-ep.css 的 .cs-listener-toolbar 接管 */
 .cs-listener-toolbar {
-  height: 36px;
-  background: var(--cs-titlebar-bg);
-  border-bottom: 1px solid var(--cs-border);
+  min-height: 48px;
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 0 12px;
-  flex-shrink: 0;
-}
-
-.cs-header-left {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.cs-header-right {
-  display: flex;
-  align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
+  padding: 8px 12px;
+  flex-shrink: 0;
 }
 
 .cs-title-group {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 
 .cs-title-icon {
-  font-size: 18px;
-  color: #3884ff;
+  font-size: 16px;
+  color: var(--cs-active);
 }
 
 .cs-title {
-  font-size: 17px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--cs-text-bright);
-}
-
-/* 扁平风格分段切换器 */
-.cs-segmented-toggle {
-  display: inline-flex;
-  align-items: center;
-  background: var(--cs-bg, #181818);
-  border: 1px solid var(--cs-border, #333333);
-  border-radius: 4px;
-  padding: 2px;
-  gap: 2px;
-  user-select: none;
-}
-
-.cs-segment-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 26px;
-  padding: 0 10px;
-  font-size: 15px;
-  font-family: var(--cs-font-ui);
-  color: var(--cs-text-dim, #888888);
-  background: transparent;
-  border: none;
-  border-radius: 3px;
-  cursor: pointer;
-  transition: all 120ms ease;
   white-space: nowrap;
 }
 
-.cs-segment-btn:hover {
-  color: var(--cs-text-bright, #ffffff);
-  background: var(--cs-hover, #2a2a2a);
+/* 下划线页签（vshell：无填充块；激活 = 主色字 + 2px 主色下划线） */
+.cs-view-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
 }
 
-.cs-segment-btn.active {
-  color: #ffffff;
-  background: var(--cs-active);
+.cs-view-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 10px;
+  font-size: 14px;
+  font-family: var(--cs-font-ui);
+  color: var(--cs-text-dim);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  transition: color 120ms ease;
+  white-space: nowrap;
+}
+
+.cs-view-tab:hover {
+  color: var(--cs-text-bright);
+}
+
+.cs-view-tab.active {
+  color: var(--cs-active);
   font-weight: 600;
 }
 
-.seg-icon {
-  font-size: 13px;
-  line-height: 1;
+.cs-view-tab.active::after {
+  content: '';
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 0;
+  height: 2px;
+  background: var(--cs-active);
 }
 
-.seg-badge {
+.tab-badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -653,17 +652,31 @@ onBeforeUnmount(() => {
   height: 18px;
   padding: 0 5px;
   font-size: 12px;
+  line-height: 1;
   font-family: var(--cs-font-mono);
-  font-weight: bold;
   border-radius: 9px;
-  background: rgba(255, 255, 255, 0.2);
-  color: inherit;
+  background: var(--cs-table-head);
+  color: var(--cs-text-dim);
+  border: 1px solid var(--cs-card-border);
 }
 
-.cs-segment-btn:not(.active) .seg-badge {
-  background: var(--cs-panel, #222222);
-  color: var(--cs-text-dim, #888888);
-  border: 1px solid var(--cs-border, #383838);
+.cs-view-tab.active .tab-badge {
+  background: color-mix(in srgb, var(--cs-active) 12%, transparent);
+  border-color: color-mix(in srgb, var(--cs-active) 30%, transparent);
+  color: var(--cs-active);
+}
+
+.cs-toolbar-hint {
+  font-size: 12px;
+  color: var(--cs-text-dim);
+  white-space: nowrap;
+}
+
+.cs-toolbar-divider {
+  width: 1px;
+  height: 20px;
+  flex-shrink: 0;
+  background: var(--cs-card-border);
 }
 
 .cs-spacer {
@@ -671,7 +684,11 @@ onBeforeUnmount(() => {
 }
 
 .cs-search {
-  width: 280px;
+  width: 240px;
+}
+
+.cs-search-icon {
+  color: var(--cs-text-dim);
 }
 
 .cs-listener-body {
@@ -690,60 +707,44 @@ onBeforeUnmount(() => {
   overflow: hidden;
 }
 
+/* 表格铺满内容区（单元格底色/字号由全局 .cs-shell .el-table 统一） */
 .cs-table-container {
   flex: 1;
   overflow: hidden;
   position: relative;
-}
-
-.cs-bottom-bar {
-  height: 38px;
   background: var(--cs-panel);
-  border-top: 1px solid var(--cs-border);
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 10px;
-  padding: 0 12px;
-  flex-shrink: 0;
 }
 
-.cs-status-hint {
-  font-size: 16px;
-  color: var(--cs-text-dim);
-  font-family: var(--cs-font-mono);
-}
-
-.cs-status-indicator {
+/* 状态：在线实心绿 tag，离线灰 tag（20px / 4px 圆角 / 12px） */
+.vs-status-tag {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font-size: 16px;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
 }
 
-.cs-status-indicator .status-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  display: inline-block;
-}
-
-.cs-status-indicator.online .status-dot {
+.vs-status-tag.is-online {
   background: var(--cs-online);
-  box-shadow: 0 0 4px var(--cs-online);
+  color: #fff;
 }
 
-.cs-status-indicator.offline .status-dot {
-  background: var(--cs-offline);
+.vs-status-tag.is-offline {
+  background: color-mix(in srgb, var(--cs-offline) 22%, transparent);
+  color: var(--cs-text-dim);
 }
 
+/* 右键菜单：vshell 弹层观感（8px 圆角 + 柔和投影 + 32px 行高） */
 .cs-listener-ctx-menu {
   position: fixed;
+  padding: 4px;
   background: var(--cs-panel);
-  border: 1px solid var(--cs-border);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
-  border-radius: 2px;
-  padding: 4px 0;
+  border: 1px solid var(--cs-card-border);
+  border-radius: 8px;
+  box-shadow: 0 3px 6px -4px rgba(0, 0, 0, 0.12), 0 6px 16px 0 rgba(0, 0, 0, 0.08);
   z-index: 9999;
   min-width: 180px;
 }
@@ -753,15 +754,36 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 14px;
-  font-size: 16.5px;
+  height: 32px;
+  padding: 0 12px;
+  font-size: 14px;
   color: var(--cs-text);
+  border-radius: 6px;
   cursor: pointer;
 }
 
 .cs-listener-ctx-menu .ctx-item:hover {
   background: var(--cs-hover);
-  color: var(--cs-text-bright);
+  color: var(--cs-active);
+}
+
+.cs-listener-ctx-menu .ctx-item.disabled {
+  opacity: 0.45;
+}
+
+.cs-listener-ctx-menu .ctx-item.ctx-danger,
+.cs-listener-ctx-menu .ctx-item.ctx-danger:hover {
+  color: var(--cs-error);
+}
+
+.cs-listener-ctx-menu .ctx-item.ctx-danger:hover {
+  background: color-mix(in srgb, var(--cs-error) 12%, transparent);
+}
+
+.cs-listener-ctx-menu .ctx-divider {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--cs-card-border);
 }
 
 .cs-listener-ctx-menu .ctx-arrow {
@@ -772,27 +794,27 @@ onBeforeUnmount(() => {
 
 .cs-listener-ctx-menu .ctx-color-palette {
   position: absolute;
-  top: -2px;
+  top: -4px;
   left: 100%;
-  background: var(--cs-panel);
-  border: 1px solid var(--cs-border);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
-  border-radius: 2px;
   padding: 6px;
   display: flex;
   gap: 6px;
+  background: var(--cs-panel);
+  border: 1px solid var(--cs-card-border);
+  border-radius: 8px;
+  box-shadow: 0 3px 6px -4px rgba(0, 0, 0, 0.12), 0 6px 16px 0 rgba(0, 0, 0, 0.08);
   z-index: 10000;
 }
 
 .color-box {
   width: 24px;
   height: 24px;
-  border: 1px solid #444;
-  border-radius: 2px;
+  border: 1px solid var(--cs-border-strong);
+  border-radius: 4px;
   cursor: pointer;
 }
 
 .color-box:hover {
-  border-color: #ffffff;
+  border-color: var(--cs-active);
 }
 </style>

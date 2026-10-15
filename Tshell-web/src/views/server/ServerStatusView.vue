@@ -55,25 +55,29 @@
 
       <div class="sv-config-panel">
         <div class="sv-panel-header">{{ isZh ? '配置信息' : 'Configuration' }}</div>
-        <div class="sv-config-grid">
-          <div><b>{{ isZh ? '版本' : 'Version' }}:</b> {{ stats.config_info?.version || '-' }}</div>
-          <div><b>{{ isZh ? '日志级别' : 'Log Level' }}:</b> {{ stats.config_info?.log_level || '-' }}</div>
-          <div><b>{{ isZh ? 'Web 端口' : 'Web Port' }}:</b> {{ stats.config_info?.web_port || '-' }}</div>
-          <div><b>{{ isZh ? '日志路径' : 'Log Path' }}:</b> {{ stats.config_info?.log_file_path || '-' }}</div>
-          <div><b>Basic Auth:</b> {{ stats.config_info?.basic_auth ? 'On' : 'Off' }}</div>
+        <div class="sv-panel-body">
+          <div class="sv-config-grid">
+            <div><b>{{ isZh ? '版本' : 'Version' }}:</b> {{ stats.config_info?.version || '-' }}</div>
+            <div><b>{{ isZh ? '日志级别' : 'Log Level' }}:</b> {{ stats.config_info?.log_level || '-' }}</div>
+            <div><b>{{ isZh ? 'Web 端口' : 'Web Port' }}:</b> {{ stats.config_info?.web_port || '-' }}</div>
+            <div><b>{{ isZh ? '日志路径' : 'Log Path' }}:</b> {{ stats.config_info?.log_file_path || '-' }}</div>
+            <div><b>Basic Auth:</b> {{ stats.config_info?.basic_auth ? 'On' : 'Off' }}</div>
+          </div>
         </div>
       </div>
 
       <!-- 维护操作（后端 /client/reset-id：重排 sessions 自增 ID 序列） -->
       <div class="sv-config-panel">
         <div class="sv-panel-header">{{ isZh ? '维护操作' : 'Maintenance' }}</div>
-        <div class="sv-maintain-row">
-          <span class="sv-maintain-desc">
-            {{ isZh ? '将 sessions 表自增 ID 序列重置为当前最大 ID，下一次上线从 max+1 继续编号。' : 'Reset the sessions AUTOINCREMENT sequence to the current max ID; the next beacon continues from max+1.' }}
-          </span>
-          <button class="cs-btn cs-btn-danger" :disabled="resettingId" @click="handleResetClientId">
-            {{ resettingId ? (isZh ? '重置中...' : 'Resetting...') : (isZh ? '重置会话 ID 序列' : 'Reset Session ID Sequence') }}
-          </button>
+        <div class="sv-panel-body">
+          <div class="sv-maintain-row">
+            <span class="sv-maintain-desc">
+              {{ isZh ? '将 sessions 表自增 ID 序列重置为当前最大 ID，下一次上线从 max+1 继续编号。' : 'Reset the sessions AUTOINCREMENT sequence to the current max ID; the next beacon continues from max+1.' }}
+            </span>
+            <button class="cs-btn cs-btn-danger" :disabled="resettingId" @click="handleResetClientId">
+              {{ resettingId ? (isZh ? '重置中...' : 'Resetting...') : (isZh ? '重置会话 ID 序列' : 'Reset Session ID Sequence') }}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -150,40 +154,55 @@ onMounted(() => {
   overflow: hidden;
 }
 .sv-toolbar {
-  height: 32px;
+  height: 48px;
   background: var(--cs-panel);
-  border-bottom: 1px solid var(--cs-border);
+  border-bottom: 1px solid var(--cs-card-border);
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0 10px;
+  padding: 0 16px;
   flex-shrink: 0;
 }
-.sv-title-group { display: flex; align-items: center; gap: 6px; }
-.sv-title { font-size: 12px; font-weight: 600; color: var(--cs-text-bright); }
-.sv-count { font-size: 11px; color: var(--cs-text-dim); }
+.sv-title-group { display: flex; align-items: baseline; gap: 8px; }
+.sv-title { font-size: 14px; font-weight: 600; color: var(--cs-text-bright); }
+.sv-count { font-size: 12px; color: var(--cs-text-dim); }
 .sv-spacer { flex: 1; }
-.sv-body { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 12px; }
+.sv-body { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 16px; }
 .sv-stats-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
 }
 .sv-stat-card {
   background: var(--cs-panel);
-  border: 1px solid var(--cs-border);
-  border-radius: 2px;
-  padding: 10px 12px;
+  border: 1px solid var(--cs-card-border);
+  border-radius: 8px;
+  padding: 16px;
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
 .sv-stat-num { font-size: 22px; font-weight: 600; color: var(--cs-active); font-family: var(--cs-font-mono); }
-.sv-stat-lbl { font-size: 11px; color: var(--cs-text-dim); }
-.sv-config-panel { background: var(--cs-panel); border: 1px solid var(--cs-border); border-radius: 2px; padding: 10px 12px; }
-.sv-panel-header { font-size: 12px; font-weight: 600; color: var(--cs-text-bright); margin-bottom: 8px; }
-.sv-config-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 6px 16px; font-size: 12px; color: var(--cs-text); }
-.sv-config-grid b { color: var(--cs-text-bright); }
+.sv-stat-lbl { font-size: 12px; color: var(--cs-text-dim); }
+.sv-config-panel {
+  background: var(--cs-panel);
+  border: 1px solid var(--cs-card-border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.sv-panel-header {
+  height: 38px;
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--cs-text-bright);
+  border-bottom: 1px solid var(--cs-card-border);
+}
+.sv-panel-body { padding: 16px; }
+.sv-config-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px 16px; font-size: 14px; color: var(--cs-text); }
+.sv-config-grid b { color: var(--cs-text-bright); font-weight: 600; }
 .sv-maintain-row { display: flex; align-items: center; gap: 16px; }
-.sv-maintain-desc { flex: 1; font-size: 12px; color: var(--cs-text); line-height: 1.6; }
+.sv-maintain-desc { flex: 1; font-size: 13px; color: var(--cs-text-dim); line-height: 1.6; }
 </style>

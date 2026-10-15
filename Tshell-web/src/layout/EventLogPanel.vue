@@ -45,9 +45,9 @@
 
       <div class="el-spacer" />
 
-      <button class="el-btn" @click="loadAuditAndClientLogs">{{ isZh ? '刷新' : 'Refresh' }}</button>
-      <button class="el-btn" @click="clearLog">{{ isZh ? '清空' : 'Clear' }}</button>
-      <button class="el-btn" :class="{ active: follow }" @click="follow = !follow">
+      <button class="cs-btn cs-btn-xs" @click="loadAuditAndClientLogs">{{ isZh ? '刷新' : 'Refresh' }}</button>
+      <button class="cs-btn cs-btn-xs" @click="clearLog">{{ isZh ? '清空' : 'Clear' }}</button>
+      <button class="cs-btn cs-btn-xs" :class="{ 'cs-btn-primary': follow }" @click="follow = !follow">
         {{ follow ? (isZh ? '自动滚动：开' : 'Auto-Scroll: ON') : (isZh ? '自动滚动：关' : 'Auto-Scroll: OFF') }}
       </button>
       <span class="el-count">{{ filteredLines.length }} / {{ lines.length }} {{ isZh ? '条' : 'events' }}</span>
@@ -528,157 +528,174 @@ onMounted(async () => {
   overflow: hidden;
 }
 
+/* ===== 工具条：白底 + 1px 分隔线 ===== */
 .el-toolbar {
+  flex-shrink: 0;
+  min-height: 44px;
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
-  height: 36px;
-  padding: 0 12px;
-  border-bottom: 1px solid var(--cs-border);
-  background: var(--cs-titlebar-bg);
-  flex-shrink: 0;
+  padding: 6px 16px;
+  background: var(--cs-panel);
+  border-bottom: 1px solid var(--cs-card-border);
   user-select: none;
 }
 
 .el-title {
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 600;
-  color: var(--cs-text-dim);
-  text-transform: uppercase;
-  letter-spacing: .04em;
+  color: var(--cs-text-bright);
+  white-space: nowrap;
 }
 
+/* 分类筛选（分段控件） */
 .el-filter-group {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 4px;
-  margin-left: 12px;
+  gap: 2px;
+  padding: 2px;
+  background: var(--cs-panel);
+  border: 1px solid var(--cs-border-strong);
+  border-radius: 6px;
 }
 
 .el-filter-btn {
-  background: transparent;
-  border: 1px solid var(--cs-border);
-  border-radius: 2px;
+  height: 24px;
+  padding: 0 10px;
+  font-family: var(--cs-font-ui);
+  font-size: 13px;
   color: var(--cs-text-dim);
-  font-size: 16px;
-  padding: 2px 8px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
   cursor: pointer;
+  white-space: nowrap;
+  transition: background 120ms ease, color 120ms ease;
 }
 
 .el-filter-btn:hover {
-  color: var(--cs-text-bright);
+  color: var(--cs-text);
   background: var(--cs-hover);
 }
 
 .el-filter-btn.active {
-  background: var(--cs-active);
-  border-color: var(--cs-active);
   color: #ffffff;
-  font-weight: bold;
+  background: var(--cs-active);
 }
 
-.el-btn {
-  background: transparent;
-  border: 1px solid var(--cs-border);
-  border-radius: 2px;
-  color: var(--cs-text);
-  font-size: 16px;
-  padding: 2px 10px;
-  cursor: pointer;
+.el-spacer {
+  flex: 1;
 }
 
-.el-btn:hover {
-  background: var(--cs-hover);
-  color: var(--cs-text-bright);
+.el-count {
+  font-size: 13px;
+  color: var(--cs-text-dim);
+  white-space: nowrap;
 }
 
-.el-btn.active {
-  background: color-mix(in srgb, var(--cs-active) 25%, transparent);
-  border-color: var(--cs-active);
-  color: var(--cs-active);
-}
-
-.el-spacer { flex: 1; }
-.el-count { color: var(--cs-text-dim); font-size: 16px; }
-
+/* ===== 日志区（深色控制台本体保留；令牌随主题） ===== */
 .el-body {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
-  padding: 8px 12px;
-  font-size: 18px;
-  line-height: 1.6;
+  padding: 12px 16px;
+  font-family: var(--cs-font-mono);
+  font-size: 13px;
+  line-height: 1.7;
   background: var(--cs-console);
   color: var(--cs-text);
 }
 
 .el-line {
+  margin-bottom: 2px;
   white-space: pre-wrap;
   word-break: break-all;
-  margin-bottom: 2px;
 }
 
-.el-time { color: var(--cs-text-dim); margin-right: 6px; }
+.el-time {
+  margin-right: 6px;
+  color: var(--cs-text-dim);
+}
 
-.el-prefix { color: var(--cs-active); margin-right: 6px; font-weight: bold; }
-.el-prefix-online { color: var(--cs-online); margin-right: 6px; font-weight: bold; }
-.el-prefix-offline { color: var(--cs-error); margin-right: 6px; font-weight: bold; }
-.el-prefix-user { color: var(--cs-warning); margin-right: 6px; font-weight: bold; }
-.el-prefix-cred { color: var(--cs-log-cred); margin-right: 6px; font-weight: bold; }
-.el-prefix-error { color: var(--cs-error); margin-right: 6px; font-weight: bold; }
+.el-prefix,
+.el-prefix-online,
+.el-prefix-offline,
+.el-prefix-user,
+.el-prefix-cred,
+.el-prefix-error,
+.el-user {
+  margin-right: 6px;
+  font-weight: 600;
+}
 
-.el-user { color: var(--cs-online); margin-right: 6px; font-weight: bold; }
-.el-text { color: var(--cs-text); }
+.el-prefix { color: var(--cs-active); }
+.el-prefix-online { color: var(--cs-online); }
+.el-prefix-offline { color: var(--cs-error); }
+.el-prefix-user { color: var(--cs-log-cred); }
+.el-prefix-cred { color: var(--cs-log-cred); }
+.el-prefix-error { color: var(--cs-error); }
+.el-user { color: var(--cs-online); }
+
+.el-text {
+  color: var(--cs-text);
+}
 
 .el-type-beacon_online .el-text { color: var(--cs-online); }
 .el-type-beacon_offline .el-text { color: var(--cs-error); }
-.el-type-user_login .el-text { color: var(--cs-warning); }
+.el-type-user_login .el-text { color: var(--cs-log-cred); }
 .el-type-user_logout .el-text { color: var(--cs-log-cred); }
 .el-type-cred .el-text { color: var(--cs-log-cred); }
 .el-type-system .el-text { color: var(--cs-log-system); }
-.el-type-chat .el-text { color: var(--cs-text-bright); }
+.el-type-chat .el-text { color: var(--cs-text); font-weight: 600; }
 .el-type-error .el-text { color: var(--cs-error); }
 
 .el-empty {
-  color: var(--cs-text-dim);
-  text-align: center;
   margin-top: 40px;
-  font-size: 18px;
+  font-size: 13px;
+  text-align: center;
+  color: var(--cs-text-dim);
 }
 
+/* ===== 底部操作员聊天输入条 ===== */
 .el-chat-row {
+  flex-shrink: 0;
+  min-height: 48px;
   display: flex;
   align-items: center;
   gap: 10px;
-  height: 40px;
-  padding: 0 12px;
+  padding: 0 16px;
   background: var(--cs-panel);
-  border-top: 1px solid var(--cs-border);
-  flex-shrink: 0;
+  border-top: 1px solid var(--cs-card-border);
 }
 
 .chat-prompt {
-  color: var(--cs-online);
-  font-size: 18px;
+  font-family: var(--cs-font-mono);
+  font-size: 14px;
   font-weight: 600;
+  color: var(--cs-online);
+  white-space: nowrap;
 }
 
 .chat-input {
   flex: 1;
-  background: transparent;
-  border: 0;
+  height: 32px;
+  padding: 0 10px;
+  font-family: var(--cs-font-ui);
+  font-size: 14px;
+  color: var(--cs-text);
+  background: var(--cs-panel);
+  border: 1px solid var(--cs-border-strong);
+  border-radius: 6px;
   outline: 0;
-  color: var(--cs-text-bright);
-  font-family: var(--cs-font-mono);
-  font-size: 18px;
+  transition: border-color 120ms ease;
+}
+
+.chat-input:focus {
+  border-color: var(--cs-active);
 }
 
 .chat-input::placeholder {
   color: var(--cs-text-dim);
-  font-family: var(--cs-font-ui);
-}
-
-.cs-btn-xs {
-  font-size: 16px;
-  padding: 3px 10px;
 }
 </style>

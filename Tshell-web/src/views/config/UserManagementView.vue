@@ -1,6 +1,6 @@
 <template>
   <div class="cs-user-mgmt-view cs-font-ui">
-    <!-- CS Toolbar -->
+    <!-- 工具条：左侧标题/计数，右侧搜索与操作 -->
     <div class="um-toolbar">
       <div class="um-title-group">
         <span class="um-title">{{ isZh ? '用户管理' : 'User Management' }}</span>
@@ -12,14 +12,17 @@
       <el-input
         v-model="searchKey"
         :placeholder="isZh ? '过滤用户名...' : 'Filter username...'"
-        size="small"
         clearable
         class="um-search"
         @keyup.enter="fetchUsers"
       />
 
-      <button class="cs-btn" :disabled="loading" @click="fetchUsers">{{ isZh ? '刷新' : 'Refresh' }}</button>
+      <button class="cs-btn cs-btn-primary" @click="openAddDialog">{{ isZh ? '添加用户' : 'Add User' }}</button>
+      <button class="cs-btn" :disabled="!selectedRow" @click="selectedRow && openEditDialog(selectedRow)">{{ isZh ? '编辑' : 'Edit' }}</button>
+      <button class="cs-btn cs-btn-danger" :disabled="!selectedRow" @click="selectedRow && handleDelete(selectedRow)">{{ isZh ? '删除' : 'Delete' }}</button>
+      <button class="cs-btn" @click="handleHelp">{{ isZh ? '帮助' : 'Help' }}</button>
       <button class="cs-btn" @click="openChangePasswordDialog">{{ isZh ? '修改我的密码' : 'Change My Password' }}</button>
+      <button class="cs-btn" :disabled="loading" @click="fetchUsers">{{ isZh ? '刷新' : 'Refresh' }}</button>
     </div>
 
     <!-- Users Table -->
@@ -27,7 +30,6 @@
       <el-table
         v-loading="loading"
         :data="users"
-        size="small"
         height="100%"
         highlight-current-row
         class="cs-session-table"
@@ -58,15 +60,11 @@
         </el-table-column>
       </el-table>
 
-      <EmptyState v-if="!users.length && !loading" :title="isZh ? '暂无用户' : 'No users found'" />
-    </div>
-
-    <!-- Bottom Action Bar -->
-    <div class="um-bottom-bar">
-      <button class="cs-btn cs-btn-primary" @click="openAddDialog">{{ isZh ? '添加用户' : 'Add User' }}</button>
-      <button class="cs-btn" :disabled="!selectedRow" @click="selectedRow && openEditDialog(selectedRow)">{{ isZh ? '编辑' : 'Edit' }}</button>
-      <button class="cs-btn cs-btn-danger" :disabled="!selectedRow" @click="selectedRow && handleDelete(selectedRow)">{{ isZh ? '删除' : 'Delete' }}</button>
-      <button class="cs-btn" @click="handleHelp">{{ isZh ? '帮助' : 'Help' }}</button>
+      <EmptyState
+        v-if="!users.length && !loading"
+        icon="👤"
+        :title="isZh ? '暂无用户' : 'No users found'"
+      />
     </div>
 
     <!-- Add User Dialog -->
@@ -74,15 +72,15 @@
       <div class="cs-form-container">
         <div class="cs-form-row">
           <label class="cs-form-label">{{ isZh ? '用户名' : 'Username' }}:</label>
-          <el-input v-model="addForm.username" size="small" :placeholder="isZh ? '新用户名' : 'New operator name'" />
+          <el-input v-model="addForm.username" :placeholder="isZh ? '新用户名' : 'New operator name'" />
         </div>
         <div class="cs-form-row">
           <label class="cs-form-label">{{ isZh ? '密码' : 'Password' }}:</label>
-          <el-input v-model="addForm.password" size="small" type="password" show-password :placeholder="isZh ? '强密码' : 'Strong password'" />
+          <el-input v-model="addForm.password" type="password" show-password :placeholder="isZh ? '强密码' : 'Strong password'" />
         </div>
         <div class="cs-form-row">
           <label class="cs-form-label">{{ isZh ? '角色' : 'Role' }}:</label>
-          <el-select v-model="addForm.role" size="small" style="width: 100%">
+          <el-select v-model="addForm.role" style="width: 100%">
             <el-option :label="isZh ? '管理员' : 'admin'" value="admin" />
             <el-option :label="isZh ? '操作员' : 'operator'" value="operator" />
             <el-option :label="isZh ? '审计员' : 'auditor'" value="auditor" />
@@ -102,11 +100,11 @@
       <div class="cs-form-container">
         <div class="cs-form-row">
           <label class="cs-form-label">{{ isZh ? '用户名' : 'Username' }}:</label>
-          <el-input :model-value="resetForm.username" size="small" disabled />
+          <el-input :model-value="resetForm.username" disabled />
         </div>
         <div class="cs-form-row">
           <label class="cs-form-label">{{ isZh ? '新密码' : 'New Password' }}:</label>
-          <el-input v-model="resetForm.password" size="small" type="password" show-password :placeholder="isZh ? '新强密码' : 'New strong password'" />
+          <el-input v-model="resetForm.password" type="password" show-password :placeholder="isZh ? '新强密码' : 'New strong password'" />
         </div>
       </div>
       <template #footer>
@@ -121,15 +119,15 @@
       <div class="cs-form-container">
         <div class="cs-form-row">
           <label class="cs-form-label">{{ isZh ? '旧密码' : 'Old Password' }}:</label>
-          <el-input v-model="changePwdForm.old_password" size="small" type="password" show-password :placeholder="isZh ? '当前登录密码' : 'Current password'" />
+          <el-input v-model="changePwdForm.old_password" type="password" show-password :placeholder="isZh ? '当前登录密码' : 'Current password'" />
         </div>
         <div class="cs-form-row">
           <label class="cs-form-label">{{ isZh ? '新密码' : 'New Password' }}:</label>
-          <el-input v-model="changePwdForm.new_password" size="small" type="password" show-password :placeholder="isZh ? '新强密码' : 'New strong password'" />
+          <el-input v-model="changePwdForm.new_password" type="password" show-password :placeholder="isZh ? '新强密码' : 'New strong password'" />
         </div>
         <div class="cs-form-row">
           <label class="cs-form-label">{{ isZh ? '确认新密码' : 'Confirm' }}:</label>
-          <el-input v-model="changePwdForm.confirm" size="small" type="password" show-password :placeholder="isZh ? '再次输入新密码' : 'Repeat new password'" />
+          <el-input v-model="changePwdForm.confirm" type="password" show-password :placeholder="isZh ? '再次输入新密码' : 'Repeat new password'" />
         </div>
       </div>
       <template #footer>
@@ -362,30 +360,31 @@ onMounted(() => {
 }
 
 .um-toolbar {
-  height: 32px;
+  min-height: 48px;
   background: var(--cs-panel);
-  border-bottom: 1px solid var(--cs-border);
+  border-bottom: 1px solid var(--cs-card-border);
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0 10px;
+  padding: 8px 16px;
   flex-shrink: 0;
+  flex-wrap: wrap;
 }
 
 .um-title-group {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 6px;
 }
 
 .um-title {
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--cs-text-bright);
 }
 
 .um-count {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--cs-text-dim);
 }
 
@@ -403,41 +402,15 @@ onMounted(() => {
   position: relative;
 }
 
-.um-bottom-bar {
-  height: 38px;
-  background: var(--cs-panel);
-  border-top: 1px solid var(--cs-border);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 0 12px;
-  flex-shrink: 0;
-}
-
 .cs-form-container {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-}
-
-.cs-form-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.cs-form-label {
-  width: 110px;
-  font-size: 12px;
-  text-align: right;
-  color: var(--cs-text);
-  flex-shrink: 0;
+  gap: 4px;
 }
 
 .cs-dialog-footer {
   display: flex;
-  justify-content: center;
+  justify-content: flex-end;
   gap: 8px;
 }
 

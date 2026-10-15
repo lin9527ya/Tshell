@@ -155,36 +155,3 @@ function handleHelp() {
 }
 </script>
 
-<style scoped>
-.cs-dialog-body {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-.cs-dialog-desc {
-  font-size: 15px;
-  color: var(--cs-text-dim);
-  line-height: 1.6;
-}
-.cs-form-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.cs-form-label {
-  min-width: 130px;
-  max-width: 150px;
-  font-size: 15.5px;
-  color: var(--cs-text);
-  text-align: right;
-  flex-shrink: 0;
-}
-.cs-form-input {
-  flex: 1;
-}
-.cs-dialog-footer-center {
-  display: flex;
-  justify-content: center;
-  gap: 12px;
-}
-</style>

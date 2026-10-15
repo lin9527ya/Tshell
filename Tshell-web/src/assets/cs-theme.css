@@ -3,47 +3,56 @@
  * 默认暗色 Darcula 主题；支持 CS 经典明亮。
  */
 :root {
-  /* 基础色（明亮） */
-  --cs-bg: #f0f0f0;
+  /* 基础色（明亮）—— vshell-ui 分支：对齐 vshell 实测配色（antd v5 浅色系） */
+  --cs-bg: #f5f5f5;
   --cs-panel: #ffffff;
   --cs-console: #ffffff;
-  --cs-border: #c8c8c8;
-  --cs-hover: #e4e4e4;
+  --cs-border: #d9d9d9;
+  /* 更强/更弱的边框分两级：控件描边 #d9d9d9，卡片分隔 #f0f0f0 */
+  --cs-border-strong: #d9d9d9;
+  --cs-card-bg: #ffffff;
+  --cs-card-border: #f0f0f0;
+  --cs-table-head: #fafafa;
+  --cs-hover: #f5f5f5;
   /* 【修复】主色桥接: 由 theme store 写入的 --theme-primary 驱动,
-     改主色全站强调色(按钮/hover/焦点/选中)随之变化; fallback 为 CS 经典蓝 */
-  --cs-active: var(--theme-primary, #007acc);
+     改主色全站强调色(按钮/hover/焦点/选中)随之变化; fallback 为 vshell 蓝 */
+  --cs-active: var(--theme-primary, #0960bd);
   /* 选中行底色: 主色加深(保持白字高对比,同 CS 视觉) */
   --cs-selected: color-mix(in srgb, var(--cs-active) 78%, #04121f);
   /* 主色悬停(略亮) */
   --cs-active-hover: color-mix(in srgb, var(--cs-active) 88%, #ffffff);
 
   /* 标题栏/菜单栏/工具栏 */
-  --cs-titlebar-bg: #e6e6e6;
-  --cs-menubar-bg: #e6e6e6;
-  --cs-menubar-hover: #d5d5d5;
+  --cs-titlebar-bg: #ffffff;
+  --cs-menubar-bg: #ffffff;
+  --cs-menubar-hover: #f5f5f5;
   --cs-tab-active-bg: #ffffff;
-  --cs-tab-inactive-bg: #e2e2e2;
-  --cs-tab-hover-bg: #ececec;
+  --cs-tab-inactive-bg: #fafafa;
+  --cs-tab-hover-bg: #f5f5f5;
 
-  /* 状态色 */
-  --cs-online: #2e7d32;
+  /* 状态色（vshell：在线 #1ab394 / 语义色 vben 系） */
+  --cs-online: #1ab394;
   /* 日志/控制台强调色（凭据/系统 前缀,浅色下需保证对比度） */
   --cs-log-cred: #9a7b00;
   --cs-log-system: #00696b;
   /* 提权/管理员标记（橙） */
   --cs-elevated: #b25e00;
-  --cs-offline: #888888;
-  --cs-warning: #f9a825;
-  --cs-error: #d32f2f;
+  --cs-offline: #999999;
+  --cs-warning: #efbd47;
+  --cs-error: #ed6f6f;
+  /* 兼容旧引用（此前未定义导致颜色失效） */
+  --cs-accent: var(--cs-active);
+  --cs-table-header: var(--cs-table-head);
 
-  /* 文本 */
-  --cs-text: #333333;
-  --cs-text-bright: #111111;
-  --cs-text-dim: #777777;
+  /* 文本（antd v5：0.88 / 0.65 / 0.45） */
+  --cs-text: rgba(0, 0, 0, 0.88);
+  --cs-text-bright: rgba(0, 0, 0, 0.88);
+  --cs-text-dim: rgba(0, 0, 0, 0.45);
 
-  /* 字体 */
+  /* 字体（vshell = 系统 UI 栈 + 14px 基准） */
   --cs-font-mono: 'JetBrains Mono', 'Consolas', 'Menlo', 'Monaco', monospace;
-  --cs-font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --cs-font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial, sans-serif;
 
   /* 尺寸 */
   --cs-titlebar-h: 36px;
@@ -51,59 +60,63 @@
   --cs-sidebar-w: 260px;
 }
 
-/* 暗黑主题（CS 经典 Darcula） */
+/* 暗黑主题（对齐 vshell 暗色：component #151515 / content #1e1e1e / text #c9d1d9 / border #303030） */
 :root[data-theme="dark"] {
-  --cs-bg: #1e1f22;
-  --cs-panel: #2b2d30;
+  --cs-bg: #1e1e1e;
+  --cs-panel: #151515;
   --cs-console: #141414;
-  --cs-border: #3c3f41;
-  --cs-hover: #35383c;
+  --cs-border: #303030;
+  --cs-border-strong: #303030;
+  --cs-card-bg: #151515;
+  --cs-card-border: #303030;
+  --cs-table-head: #1a1a1a;
+  --cs-hover: #1e1e1e;
 
-  --cs-titlebar-bg: #2b2d30;
-  --cs-menubar-bg: #2b2d30;
-  --cs-menubar-hover: #3c3f41;
-  --cs-tab-active-bg: #2b2d30;
-  --cs-tab-inactive-bg: #222426;
-  --cs-tab-hover-bg: #323538;
+  --cs-titlebar-bg: #151515;
+  --cs-menubar-bg: #151515;
+  --cs-menubar-hover: #1e1e1e;
+  --cs-tab-active-bg: #151515;
+  --cs-tab-inactive-bg: #1a1a1a;
+  --cs-tab-hover-bg: #1e1e1e;
 
-  --cs-online: #4caf50;
+  --cs-online: #1ab394;
   --cs-offline: #757575;
   --cs-log-cred: #f1fa8c;
   --cs-log-system: #8be9fd;
   --cs-elevated: #ffa940;
-  --cs-warning: #ffc107;
-  --cs-error: #f44336;
+  --cs-warning: #efbd47;
+  --cs-error: #ed6f6f;
 
-  --cs-text: #c0c0c0;
+  --cs-text: #c9d1d9;
   --cs-text-bright: #ffffff;
-  --cs-text-dim: #888888;
+  --cs-text-dim: rgba(201, 209, 217, 0.5);
 }
 
-/* 字体工具类（已整体增大 50%） */
+/* 字体工具类（vshell 基准 14px） */
 .cs-font-ui {
   font-family: var(--cs-font-ui);
-  font-size: 18px;
+  font-size: 14px;
 }
 .cs-font-mono {
   font-family: var(--cs-font-mono);
-  font-size: 18px;
+  font-size: 14px;
 }
 
-/* CS 经典按钮样式 (Rectangular bevel / FlatLaf) */
+/* 按钮样式（vshell 观感：32px 高 / 6px 圆角 / 14px） */
 .cs-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  height: 30px;
-  padding: 0 14px;
-  font-size: 16.5px;
+  height: 32px;
+  padding: 0 15px;
+  font-size: 14px;
   font-family: var(--cs-font-ui);
-  font-weight: 500;
+  font-weight: 400;
   color: var(--cs-text);
   background: var(--cs-panel);
-  border: 1px solid var(--cs-border);
-  border-radius: 2px;
+  border: 1px solid var(--cs-border-strong);
+  border-radius: 6px;
   cursor: pointer;
   user-select: none;
   transition: all 120ms ease;
@@ -156,48 +169,51 @@
 
 .cs-btn-xs {
   height: 24px;
-  padding: 0 8px;
-  font-size: 15px;
+  padding: 0 7px;
+  font-size: 14px;
+  border-radius: 4px;
 }
 
-/* CS 对话框样式 */
+/* 对话框样式（vshell 观感：8px 圆角 / 白底 / 头部底边框分隔） */
 .cs-dialog {
-  border: 1px solid var(--cs-border) !important;
-  border-radius: 3px !important;
+  border: 1px solid var(--cs-card-border) !important;
+  border-radius: 8px !important;
   background: var(--cs-panel) !important;
-  box-shadow: 0 10px 38px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3) !important;
+  box-shadow: 0 6px 16px 0 rgba(0, 0, 0, 0.08), 0 3px 6px -4px rgba(0, 0, 0, 0.12),
+    0 9px 28px 8px rgba(0, 0, 0, 0.05) !important;
 }
 
 .cs-dialog .el-dialog__header {
-  padding: 10px 14px !important;
+  padding: 16px 24px !important;
   margin: 0 !important;
-  background: var(--cs-titlebar-bg) !important;
-  border-bottom: 1px solid var(--cs-border) !important;
+  background: transparent !important;
+  border-bottom: 1px solid var(--cs-card-border) !important;
 }
 
 .cs-dialog .el-dialog__title {
-  font-size: 18px !important;
+  font-size: 16px !important;
   font-weight: 600 !important;
   color: var(--cs-text-bright) !important;
 }
 
 .cs-dialog .el-dialog__headerbtn {
-  top: 8px !important;
-  right: 8px !important;
-  width: 18px !important;
-  height: 18px !important;
+  top: 14px !important;
+  right: 14px !important;
+  width: 22px !important;
+  height: 22px !important;
 }
 
 .cs-dialog .el-dialog__body {
-  padding: 12px 14px !important;
+  padding: 16px 24px !important;
   background: var(--cs-panel) !important;
   color: var(--cs-text) !important;
+  font-size: 14px !important;
 }
 
 .cs-dialog .el-dialog__footer {
-  padding: 8px 12px !important;
-  background: var(--cs-titlebar-bg) !important;
-  border-top: 1px solid var(--cs-border) !important;
+  padding: 12px 24px 16px !important;
+  background: transparent !important;
+  border-top: 1px solid var(--cs-card-border) !important;
 }
 
 /* CS Dialog Global Form & Typography Standardization (1.5x scaling) */
@@ -208,7 +224,7 @@
 }
 
 .cs-dialog-desc {
-  font-size: 15.5px !important;
+  font-size: 13px !important;
   color: var(--cs-text-dim) !important;
   line-height: 1.6 !important;
   margin-bottom: 8px !important;
@@ -222,9 +238,9 @@
 }
 
 .cs-form-label {
-  min-width: 130px !important;
+  min-width: 110px !important;
   max-width: 155px !important;
-  font-size: 15.5px !important;
+  font-size: 14px !important;
   color: var(--cs-text) !important;
   text-align: right !important;
   flex-shrink: 0 !important;
@@ -236,7 +252,7 @@
 }
 
 .cs-form-hint {
-  font-size: 14px !important;
+  font-size: 12px !important;
   color: var(--cs-text-dim) !important;
   line-height: 1.6 !important;
 }
@@ -252,10 +268,10 @@
 .cs-code-block {
   background: var(--cs-console) !important;
   border: 1px solid var(--cs-border) !important;
-  border-radius: 4px !important;
-  padding: 10px 14px !important;
+  border-radius: 6px !important;
+  padding: 8px 12px !important;
   font-family: var(--cs-font-mono) !important;
-  font-size: 15px !important;
+  font-size: 13px !important;
   color: var(--cs-active) !important;
   word-break: break-all !important;
   white-space: pre-wrap !important;
@@ -271,7 +287,7 @@
 }
 
 .cs-dialog .el-form-item__label {
-  font-size: 15.5px !important;
+  font-size: 14px !important;
   color: var(--cs-text) !important;
   line-height: 32px !important;
 }
@@ -338,9 +354,9 @@
 .cs-shell .el-dialog,
 .cs-shell .el-drawer,
 .cs-shell .el-popover {
-  background: var(--cs-panel);
-  border-color: var(--cs-border);
-  border-radius: 2px;
+  background: var(--cs-card-bg);
+  border-color: var(--cs-card-border);
+  border-radius: 8px;
   box-shadow: none;
 }
 
@@ -354,27 +370,28 @@
 .cs-shell .el-table th.el-table__cell,
 .cs-shell .el-table td.el-table__cell {
   background: var(--cs-panel);
-  border-color: var(--cs-border);
+  border-color: var(--cs-card-border);
   color: var(--cs-text);
-  font-size: 16.5px;
+  font-size: 14px;
 }
 
 .cs-shell .el-table th.el-table__cell {
-  color: var(--cs-text-dim);
+  background: var(--cs-table-head);
+  color: var(--cs-text);
   font-weight: 600;
-  font-size: 16.5px;
+  font-size: 14px;
 }
 
 .cs-shell .el-button {
-  border-radius: 2px;
+  border-radius: 6px;
 }
 
 .cs-shell .el-input__wrapper,
 .cs-shell .el-textarea__inner,
 .cs-shell .el-select__wrapper {
-  background: var(--cs-bg);
-  box-shadow: 0 0 0 1px var(--cs-border) inset;
-  border-radius: 2px;
+  background: var(--cs-panel);
+  box-shadow: 0 0 0 1px var(--cs-border-strong) inset;
+  border-radius: 6px;
   transition: box-shadow 120ms ease;
 }
 

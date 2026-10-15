@@ -61,32 +61,30 @@
 
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { useWorkspaceStore } from '@/stores/workspace'
 import { useI18nStore } from '@/stores/i18n'
 import ClientAPI from '@/api/clients'
 import { fetchListenerOptions, generateClientBinaryBlob, type ListenerOption } from './Payloads/payloadUtil'
 
-const workspace = useWorkspaceStore()
+const router = useRouter()
+// P3：页面内局部弹窗——可见性走 v-model，数据由宿主经 props 传入
+const props = withDefaults(defineProps<{ modelValue: boolean; uid?: string; pid?: string }>(), { uid: '', pid: '' })
+const emit = defineEmits<{ (e: 'update:modelValue', value: boolean): void }>()
+const visible = computed({
+  get: () => props.modelValue,
+  set: (value) => emit('update:modelValue', value),
+})
+
 const i18nStore = useI18nStore()
 const isZh = computed(() => i18nStore.isZh)
 
-const visible = computed({
-  get: () => workspace.dialogs.migrate.visible,
-  set: (v) => {
-    if (!v) workspace.closeDialog('migrate')
-  },
-})
-
 // 打开时从调用方预填 PID（进程面板选中进程直接带入）
-watch(
-  () => workspace.dialogs.migrate.visible,
-  (val) => {
-    if (val) {
-      form.pid = workspace.dialogs.migrate.pid || ''
-    }
-  },
-)
+watch(visible, (val) => {
+  if (val) {
+    form.pid = props.pid || ''
+  }
+})
 
 const listenerOptions = ref<ListenerOption[]>([])
 const busy = ref(false)
@@ -107,11 +105,11 @@ async function onDropdown(visibleState?: boolean) {
 }
 
 function close() {
-  workspace.closeDialog('migrate')
+  visible.value = false
 }
 
 async function handleMigrate() {
-  const uid = workspace.dialogs.migrate?.uid || workspace.primarySelectedUid || ''
+  const uid = props.uid || ''
   if (!uid) {
     ElMessage.warning(isZh.value ? '未指定执行会话' : 'No session selected')
     return
@@ -152,7 +150,7 @@ async function handleMigrate() {
       ElMessage.success(isZh.value ? '已内存下发并注入，新会话将以目标进程身份上线（结果见交互控制台）' : 'Shellcode dispatched in-memory and injected; new session will come online as the target process (see Interact console)')
     }
     // 打开控制台看结果
-    workspace.openTab({ id: `beacon:${uid}`, title: `beacon: ${uid.slice(0, 8)}`, component: 'beacon', params: { uid } })
+    router.push(`/client/${uid}/console`)
     close()
   } catch (e: any) {
     ElMessage.error(isZh.value ? '注入迁移失败: ' + (e?.message || e) : 'Migration failed: ' + (e?.message || e))
@@ -162,34 +160,3 @@ async function handleMigrate() {
 }
 </script>
 
-<style scoped>
-.cs-dialog-body {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.cs-dialog-desc {
-  font-size: 12px;
-  color: var(--cs-text-dim);
-  line-height: 1.4;
-}
-.cs-form-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.cs-form-label {
-  width: 82px;
-  font-size: 12px;
-  color: var(--cs-text);
-  flex-shrink: 0;
-}
-.cs-form-input {
-  flex: 1;
-}
-.cs-dialog-footer-center {
-  display: flex;
-  justify-content: center;
-  gap: 8px;
-}
-</style>

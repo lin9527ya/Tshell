@@ -89,28 +89,3 @@ function handleSet() {
 }
 </script>
 
-<style scoped>
-.cs-dialog-body {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.cs-form-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.cs-form-label {
-  width: 95px;
-  font-size: 12px;
-  color: var(--cs-text);
-  flex-shrink: 0;
-}
-.cs-form-input {
-  flex: 1;
-}
-.cs-dialog-footer-center {
-  display: flex;
-  justify-content: center;
-}
-</style>

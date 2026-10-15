@@ -1,11 +1,11 @@
 <template>
   <div class="cs-monitor-view cs-font-ui">
-    <!-- CS Toolbar -->
+    <!-- Toolbar -->
     <div class="mv-toolbar">
       <div class="mv-title-group">
         <el-icon class="mv-title-icon"><Monitor /></el-icon>
         <span class="mv-title">{{ isZh ? '屏幕实时监控: ' : 'Desktop: ' }}{{ currentClientTitle }}</span>
-        <span class="mv-status" :class="isMonitoring || hvncActive ? 'active' : ''">
+        <span class="mv-status" :class="isMonitoring || hvncActive ? 'is-on' : 'is-off'">
           {{ (isMonitoring || hvncActive) ? (isZh ? '● 实时推流中' : '● Live Streaming') : (isZh ? '● 未启动' : '● Idle') }}
         </span>
       </div>
@@ -14,11 +14,14 @@
 
       <!-- Mode Selector -->
       <span class="mv-label">{{ isZh ? '模式:' : 'Mode:' }}</span>
-      <el-select v-model="monitorMode" size="small" style="width: 120px">
+      <el-select v-model="monitorMode" style="width: 120px">
         <el-option :label="isZh ? '屏幕流' : 'Stream'" value="normal" />
         <el-option :label="isZh ? 'HVNC (隐蔽)' : 'HVNC'" value="hvnc" :disabled="isLinuxClient" />
       </el-select>
+    </div>
 
+    <!-- 操作条（vshell：操作集中在内容上方，取代原底部按钮行） -->
+    <div class="mv-action-bar">
       <button
         v-if="monitorMode === 'normal'"
         class="cs-btn"
@@ -48,6 +51,20 @@
         @click="hvncActive ? stopHvnc() : startHvnc()"
       >
         <span>{{ hvncActive ? (isZh ? '停止 HVNC' : 'Stop HVNC') : (isZh ? '启动 HVNC' : 'Start HVNC') }}</span>
+      </button>
+
+      <span class="mv-action-sep" />
+
+      <button class="cs-btn" :disabled="!streamUrl" @click="zoomReset">
+        {{ isZh ? '重置比例 1:1' : 'Zoom 1:1' }}
+      </button>
+
+      <button class="cs-btn" @click="toggleFullscreen">
+        {{ isFullscreen ? (isZh ? '退出全屏' : 'Exit Fullscreen') : (isZh ? '全屏查看' : 'Fullscreen') }}
+      </button>
+
+      <button class="cs-btn" @click="handleHelp">
+        {{ isZh ? '帮助' : 'Help' }}
       </button>
     </div>
 
@@ -122,53 +139,11 @@
         </div>
       </template>
     </div>
-
-    <!-- Bottom Action Bar (CS Native Button Row) -->
-    <div class="mv-bottom-bar">
-      <button
-        v-if="monitorMode === 'normal'"
-        class="cs-btn cs-btn-primary"
-        :disabled="isConnecting"
-        @click="toggleMonitoring"
-      >
-        {{ isMonitoring ? (isZh ? '停止推流' : 'Stop') : (isZh ? '开始推流' : 'Start Stream') }}
-      </button>
-
-      <button
-        v-if="monitorMode === 'hvnc'"
-        class="cs-btn cs-btn-primary"
-        :disabled="hvncConnecting || isLinuxClient"
-        @click="hvncActive ? stopHvnc() : startHvnc()"
-      >
-        {{ hvncActive ? (isZh ? '停止' : 'Stop') : (isZh ? '启动 HVNC' : 'Start HVNC') }}
-      </button>
-
-      <button
-        v-if="monitorMode === 'normal'"
-        class="cs-btn"
-        :disabled="!isMonitoring || !streamUrl"
-        @click="captureCurrentFrame"
-      >
-        {{ isZh ? '截图留存 (Snapshot)' : 'Snapshot' }}
-      </button>
-
-      <button class="cs-btn" :disabled="!streamUrl" @click="zoomReset">
-        {{ isZh ? '重置比例 1:1' : 'Zoom 1:1' }}
-      </button>
-
-      <button class="cs-btn" @click="toggleFullscreen">
-        {{ isFullscreen ? (isZh ? '退出全屏' : 'Exit Fullscreen') : (isZh ? '全屏查看' : 'Fullscreen') }}
-      </button>
-
-      <button class="cs-btn" @click="handleHelp">
-        {{ isZh ? '帮助' : 'Help' }}
-      </button>
-    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, inject, onMounted, onUnmounted, ref } from 'vue'
+import { computed, inject, onActivated, onDeactivated, onMounted, onUnmounted, ref } from 'vue'
 import type { ComputedRef, Ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -178,7 +153,6 @@ import { useClientsStore } from '@/stores/clients'
 import { useUserStore } from '@/stores/user'
 import { useI18nStore } from '@/stores/i18n'
 import { useScreenshotsStore } from '@/stores/screenshots'
-import { useTabActive } from '@/utils/useVisibilityInterval'
 import ClientAPI from '@/api/clients'
 import EmptyState from '@/components/Common/EmptyState.vue'
 
@@ -208,7 +182,6 @@ const currentClientTitle = computed(() => {
 
 const isMonitoring = ref(false)
 // 本标签是否为活动标签页(推流/HVNC 轮询在非活动时降速/暂停)
-const tabActive = useTabActive()
 const isConnecting = ref(false)
 const streamUrl = ref('')
 const zoomLevel = ref(1)
@@ -260,11 +233,16 @@ function onWheelZoom(e: WheelEvent) {
   else zoomOut()
 }
 
+// 标签被 KeepAlive 切走时暂停重资产请求（与 useVisibilityInterval 同源语义）
+const tabHidden = ref(false)
+onActivated(() => { tabHidden.value = false })
+onDeactivated(() => { tabHidden.value = true })
+
 async function fetchStreamFrame() {
   if (!isMonitoring.value) return
   // 【性能】桌面推流是最重的轮询(400ms/帧)。页面隐藏或本标签非活动时跳过请求,
   // 仅以 1s 慢速续排——切回标签立即恢复推流(此前切走的标签仍 2.5 req/s 全速拉流)
-  if (!tabActive.value || document.visibilityState === 'hidden') {
+  if (tabHidden.value || document.visibilityState === 'hidden') {
     streamTimer = window.setTimeout(fetchStreamFrame, 1000)
     return
   }
@@ -415,7 +393,7 @@ async function renderHvncFrame(bytes: Uint8Array) {
 async function pollHvncFrame() {
   if (!hvncActive.value || hvncWs) return
   // 【性能】非活动标签/页面隐藏时跳过轮询(interval 仍空转检查,恢复立即可用)
-  if (!tabActive.value || document.visibilityState === 'hidden') return
+  if (tabHidden.value || document.visibilityState === 'hidden') return
   try {
     const res = await ClientAPI.get_hvnc_frame({ uid: getUid(), sid: hvncSid.value })
     const d = res.data?.data
@@ -635,14 +613,14 @@ onUnmounted(() => {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: var(--cs-panel);
+  background: var(--cs-bg);
   overflow: hidden;
 }
 
 .mv-toolbar {
-  height: 36px;
-  background: var(--cs-titlebar-bg);
-  border-bottom: 1px solid var(--cs-border);
+  height: 48px;
+  background: var(--cs-panel);
+  border-bottom: 1px solid var(--cs-card-border);
   display: flex;
   align-items: center;
   gap: 10px;
@@ -654,39 +632,73 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
 }
 
 .mv-title-icon {
-  font-size: 18px;
+  font-size: 16px;
   color: var(--cs-log-system);
 }
 
 .mv-title {
-  font-size: 17px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--cs-text-bright);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
+/* 状态 tag：推流中实心绿底白字 / 空闲灰底灰字 */
 .mv-status {
-  font-size: 14px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  white-space: nowrap;
+  background: color-mix(in srgb, var(--cs-text-dim) 12%, transparent);
   color: var(--cs-text-dim);
-  font-weight: bold;
 }
 
-.mv-status.active {
-  color: var(--cs-online);
+.mv-status.is-on {
+  background: var(--cs-online);
+  color: #ffffff;
 }
 
 .mv-spacer { flex: 1; }
 
 .mv-label {
-  font-size: 15px;
+  font-size: 13px;
   color: var(--cs-text);
+}
+
+/* 操作条（vshell：操作集中在内容上方，取代原底部按钮行） */
+.mv-action-bar {
+  height: 48px;
+  background: var(--cs-panel);
+  border-bottom: 1px solid var(--cs-card-border);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  flex-shrink: 0;
+}
+
+.mv-action-sep {
+  width: 1px;
+  height: 20px;
+  background: var(--cs-card-border);
+  margin: 0 4px;
 }
 
 .mv-body {
   flex: 1;
+  margin: 12px;
   background: var(--cs-console);
+  border: 1px solid var(--cs-card-border);
+  border-radius: 8px;
   position: relative;
   overflow: hidden;
   display: flex;
@@ -708,7 +720,7 @@ onUnmounted(() => {
   max-width: 98%;
   max-height: 98%;
   object-fit: contain;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.9);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.18);
   transition: transform 100ms ease-out;
 }
 
@@ -722,15 +734,15 @@ onUnmounted(() => {
   background: rgba(24, 24, 24, 0.85);
   border: 1px solid var(--cs-border);
   padding: 4px 8px;
-  border-radius: 4px;
+  border-radius: 6px;
   backdrop-filter: blur(4px);
   z-index: 10;
 }
 
 .zoom-text {
   font-family: var(--cs-font-mono);
-  font-size: 14px;
-  color: var(--cs-text-bright);
+  font-size: 13px;
+  color: #ffffff;
   min-width: 48px;
   text-align: center;
 }
@@ -750,8 +762,8 @@ onUnmounted(() => {
   border: 1px solid var(--cs-border);
   border-radius: 4px;
   padding: 4px 10px;
-  font-size: 14px;
-  color: var(--cs-text-bright);
+  font-size: 12px;
+  color: #ffffff;
   font-family: var(--cs-font-mono);
   pointer-events: none;
 }
@@ -759,17 +771,19 @@ onUnmounted(() => {
 .mv-empty-screen {
   color: var(--cs-text-dim);
   text-align: center;
+  padding: 24px;
 }
 
-.mv-bottom-bar {
-  height: 38px;
-  background: var(--cs-panel);
-  border-top: 1px solid var(--cs-border);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 0 12px;
-  flex-shrink: 0;
+.mv-empty-screen :deep(.cs-empty-icon) {
+  font-size: 48px;
+}
+
+.mv-empty-screen :deep(.cs-empty-title) {
+  font-size: 14px;
+  color: var(--cs-text);
+}
+
+.mv-empty-screen :deep(.cs-empty-desc) {
+  font-size: 13px;
 }
 </style>

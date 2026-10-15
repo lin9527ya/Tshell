@@ -61,12 +61,14 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useI18nStore } from '@/stores/i18n'
-import { useWorkspaceStore } from '@/stores/workspace'
+import { useSessionSelectionStore } from '@/stores/sessionSelection'
 import { fetchListenerOptions, type ListenerOption } from './Payloads/payloadUtil'
 
 const i18nStore = useI18nStore()
+const router = useRouter()
 const isZh = computed(() => i18nStore.isZh)
 
 export type { ListenerOption }
@@ -91,7 +93,7 @@ const visible = computed({
 const selectedRow = ref<ListenerOption | null>(null)
 const listeners = ref<ListenerOption[]>([])
 const loading = ref(false)
-const workspace = useWorkspaceStore()
+const workspace = useSessionSelectionStore()
 
 // 打开时拉取真实监听器列表（后端 /client/listener/details）
 async function loadListeners() {
@@ -132,7 +134,7 @@ function handleChoose() {
 
 function handleAdd() {
   // 跳转监听器页面创建新监听器
-  workspace.openTab({ id: 'listeners', title: isZh.value ? '监听器' : 'Listeners', component: 'listeners' })
+  router.push('/listener')
   visible.value = false
 }
 
@@ -146,35 +148,21 @@ function handleHelp() {
 </script>
 
 <style scoped>
-.cs-dialog-body {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.cs-dialog-desc {
-  font-size: 12px;
-  color: var(--cs-text-dim);
-  line-height: 1.4;
-}
 .cs-table-wrap {
-  border: 1px solid var(--cs-border);
+  border-radius: 8px;
+  overflow: hidden;
 }
 .cs-empty-hint {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--cs-warning);
-  line-height: 1.5;
+  line-height: 1.6;
 }
 .st-online {
   color: var(--cs-online);
-  font-size: 11px;
+  font-size: 12px;
 }
 .st-offline {
   color: var(--cs-text-dim);
-  font-size: 11px;
-}
-.cs-dialog-footer-center {
-  display: flex;
-  justify-content: center;
-  gap: 8px;
+  font-size: 12px;
 }
 </style>

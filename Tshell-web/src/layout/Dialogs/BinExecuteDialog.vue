@@ -8,20 +8,20 @@
     class="cs-dialog"
   >
     <div class="cs-dialog-body">
-      <div class="dialog-row">
-        <label class="dialog-label">{{ isZh ? '目标客户端:' : 'Target:' }}</label>
+      <div class="cs-form-row">
+        <label class="cs-form-label">{{ isZh ? '目标客户端:' : 'Target:' }}</label>
         <span class="dialog-val cs-font-mono">{{ clientLabel }}</span>
       </div>
 
-      <div class="dialog-row">
-        <label class="dialog-label">{{ isZh ? '执行模式:' : 'Mode:' }}</label>
-        <el-select v-model="mode" size="small" style="width: 100%">
+      <div class="cs-form-row">
+        <label class="cs-form-label">{{ isZh ? '执行模式:' : 'Mode:' }}</label>
+        <el-select v-model="mode" size="small" class="cs-form-input">
           <el-option v-for="m in modeOptions" :key="m.value" :label="m.label" :value="m.value" />
         </el-select>
       </div>
 
-      <div class="dialog-row">
-        <label class="dialog-label">{{ isZh ? '载荷文件:' : 'Payload File:' }}</label>
+      <div class="cs-form-row">
+        <label class="cs-form-label">{{ isZh ? '载荷文件:' : 'Payload File:' }}</label>
         <div class="dialog-file-row">
           <el-upload
             :auto-upload="false"
@@ -30,16 +30,16 @@
             :on-remove="onFileRemove"
             :on-exceed="onFileExceed"
           >
-            <el-button size="small">{{ isZh ? '选择文件' : 'Select File' }}</el-button>
+            <button type="button" class="cs-btn">{{ isZh ? '选择文件' : 'Select File' }}</button>
           </el-upload>
           <span v-if="selectedFile" class="dialog-hint cs-font-mono">{{ selectedFile.name }} ({{ (selectedFile.size / 1024).toFixed(1) }} KB)</span>
           <span v-else class="dialog-hint">{{ fileHint }}</span>
         </div>
       </div>
 
-      <div class="dialog-row">
-        <label class="dialog-label">{{ isZh ? '参数:' : 'Arguments:' }}</label>
-        <el-input v-model="args" size="small" :placeholder="isZh ? '可选执行参数' : 'Optional arguments'" />
+      <div class="cs-form-row">
+        <label class="cs-form-label">{{ isZh ? '参数:' : 'Arguments:' }}</label>
+        <el-input v-model="args" size="small" class="cs-form-input" :placeholder="isZh ? '可选执行参数' : 'Optional arguments'" />
       </div>
     </div>
 
@@ -56,25 +56,25 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, type UploadFile } from 'element-plus'
-import { useWorkspaceStore } from '@/stores/workspace'
 import { useClientsStore } from '@/stores/clients'
 import { useI18nStore } from '@/stores/i18n'
 import ClientAPI from '@/api/clients'
 
-const workspace = useWorkspaceStore()
+const router = useRouter()
 const clientsStore = useClientsStore()
 const i18nStore = useI18nStore()
 const isZh = computed(() => i18nStore.isZh)
 
+const props = withDefaults(defineProps<{ modelValue: boolean; uid?: string; mode?: string }>(), { uid: '', mode: 'execute-assembly' })
+const emit = defineEmits<{ (e: 'update:modelValue', value: boolean): void }>()
 const visible = computed({
-  get: () => workspace.dialogs.binExecute.visible,
-  set: (val) => {
-    if (!val) workspace.closeDialog('binExecute')
-  },
+  get: () => props.modelValue,
+  set: (value) => emit('update:modelValue', value),
 })
 
-const uid = computed(() => workspace.dialogs.binExecute.uid)
+const uid = computed(() => props.uid)
 const client = computed(() => clientsStore.getClientByUid(uid.value))
 const clientLabel = computed(() => {
   if (!client.value) return uid.value.slice(0, 8)
@@ -110,10 +110,10 @@ const fileHint = computed(() => {
 })
 
 watch(
-  () => workspace.dialogs.binExecute.visible,
+  visible,
   (val) => {
     if (val) {
-      mode.value = workspace.dialogs.binExecute.mode || 'execute-assembly'
+      mode.value = props.mode || 'execute-assembly'
       args.value = ''
       selectedFile.value = null
     }
@@ -133,7 +133,7 @@ function onFileExceed() {
 }
 
 function close() {
-  workspace.closeDialog('binExecute')
+  visible.value = false
 }
 
 async function doExecute() {
@@ -149,12 +149,7 @@ async function doExecute() {
       ElMessage.success(isZh.value ? `已下发 ${mode.value} 执行请求` : `${mode.value} execution dispatched`)
       close()
       // 跳转到 Beacon 控制台：后端已把 `$ mode file args` 写入 shell 历史，控制台 3s 轮询自动回显
-      workspace.openTab({
-        id: `beacon:${uid.value}`,
-        title: isZh.value ? `会话交互: ${clientLabel.value}` : `Beacon: ${clientLabel.value}`,
-        component: 'beacon',
-        params: { uid: uid.value },
-      })
+      router.push(`/client/${uid.value}/console`)
     } else {
       const msg = res.data?.data || res.data?.error || (isZh.value ? '执行失败' : 'Execution failed')
       ElMessage.error(String(msg))
@@ -169,32 +164,23 @@ async function doExecute() {
 </script>
 
 <style scoped>
-.cs-dialog-body {
-  padding: 10px 0;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-.dialog-row {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.dialog-label {
-  font-size: 12px;
-  color: var(--cs-text-dim);
-}
 .dialog-val {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--cs-text-bright);
 }
 .dialog-file-row {
+  flex: 1;
   display: flex;
   align-items: center;
   gap: 10px;
 }
 .dialog-hint {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--cs-text-dim);
+}
+.cs-dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
 }
 </style>

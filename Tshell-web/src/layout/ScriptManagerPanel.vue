@@ -26,6 +26,15 @@
         class="sm-search"
       />
 
+      <button class="cs-btn cs-btn-primary" @click="handleLoad">
+        {{ isZh ? '加载' : 'Load' }}
+      </button>
+      <button class="cs-btn cs-btn-danger" :disabled="!selectedRow" @click="handleUnload">
+        {{ isZh ? '卸载' : 'Unload' }}
+      </button>
+      <button class="cs-btn" :disabled="!selectedRow" @click="handleReload">
+        {{ isZh ? '重载' : 'Reload' }}
+      </button>
       <button class="cs-btn" @click="handleRefresh">{{ isZh ? '刷新' : 'Refresh' }}</button>
       <button class="cs-btn" @click="handleReloadAll">{{ isZh ? '全部重载' : 'Reload All' }}</button>
     </div>
@@ -72,19 +81,6 @@
           {{ f.name }}
         </span>
       </div>
-    </div>
-
-    <!-- Bottom Buttons: [ Load ] [ Unload ] [ Reload ] -->
-    <div class="sm-bottom-bar">
-      <button class="cs-btn cs-btn-primary" @click="handleLoad">
-        {{ isZh ? '加载' : 'Load' }}
-      </button>
-      <button class="cs-btn cs-btn-danger" :disabled="!selectedRow" @click="handleUnload">
-        {{ isZh ? '卸载' : 'Unload' }}
-      </button>
-      <button class="cs-btn" :disabled="!selectedRow" @click="handleReload">
-        {{ isZh ? '重载' : 'Reload' }}
-      </button>
     </div>
   </div>
 </template>
@@ -253,36 +249,40 @@ function handleReloadAll() {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: var(--cs-bg);
+  background: var(--cs-panel);
   overflow: hidden;
 }
 
+/* 工具条：白底 + 1px 分隔线 */
 .sm-toolbar {
-  height: 32px;
-  background: var(--cs-panel);
-  border-bottom: 1px solid var(--cs-border);
+  flex-shrink: 0;
+  min-height: 48px;
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
-  padding: 0 10px;
-  flex-shrink: 0;
+  padding: 6px 16px;
+  background: var(--cs-panel);
+  border-bottom: 1px solid var(--cs-card-border);
 }
 
 .sm-title-group {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 
 .sm-title {
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--cs-text-bright);
+  white-space: nowrap;
 }
 
 .sm-count {
-  font-size: 11px;
+  font-size: 13px;
   color: var(--cs-text-dim);
+  white-space: nowrap;
 }
 
 .sm-spacer {
@@ -296,67 +296,59 @@ function handleReloadAll() {
 .sm-table-wrap {
   flex: 1;
   overflow: hidden;
+  position: relative;
 }
 
 .script-name {
+  font-weight: 600;
   color: var(--cs-text-bright);
 }
 
 .path-text {
-  font-size: 11px;
   color: var(--cs-text);
 }
 
 .evt-text {
-  font-size: 11px;
-  color: var(--cs-accent);
+  color: var(--cs-text-dim);
 }
 
+/* 脚本目录（底部条） */
 .sm-avail {
   flex-shrink: 0;
   max-height: 84px;
   overflow-y: auto;
-  border-top: 1px solid var(--cs-border);
+  padding: 8px 16px;
   background: var(--cs-panel);
-  padding: 6px 10px;
+  border-top: 1px solid var(--cs-card-border);
 }
 
 .sm-avail-title {
-  font-size: 11px;
-  color: var(--cs-text-dim);
   display: block;
-  margin-bottom: 4px;
+  margin-bottom: 6px;
+  font-size: 13px;
+  color: var(--cs-text-dim);
 }
 
 .sm-avail-list {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: 6px;
 }
 
 .sm-avail-item {
-  font-size: 11px;
-  padding: 1px 6px;
-  border: 1px solid var(--cs-border);
-  border-radius: 2px;
+  padding: 2px 8px;
+  font-size: 13px;
   color: var(--cs-text);
+  background: var(--cs-panel);
+  border: 1px solid var(--cs-border-strong);
+  border-radius: 4px;
   cursor: pointer;
+  transition: color 120ms ease, border-color 120ms ease, background 120ms ease;
 }
 
 .sm-avail-item:hover {
-  border-color: var(--cs-accent);
-  color: var(--cs-accent);
-}
-
-.sm-bottom-bar {
-  height: 38px;
-  background: var(--cs-panel);
-  border-top: 1px solid var(--cs-border);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 0 12px;
-  flex-shrink: 0;
+  color: var(--cs-active);
+  border-color: var(--cs-active);
+  background: var(--cs-hover);
 }
 </style>

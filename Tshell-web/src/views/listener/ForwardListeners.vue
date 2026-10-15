@@ -1,25 +1,48 @@
 <template>
   <div class="cs-fl-panel cs-font-ui" @click="closeContextMenu">
-    <!-- CS Toolbar (Standalone mode only) -->
-    <div v-if="!embedded" class="cs-fl-toolbar">
-      <div class="cs-title-group">
-        <span class="cs-title">{{ isZh ? '正向监听器' : 'Forward Listeners' }}</span>
-        <span class="cs-count">({{ forwardList.length }} {{ isZh ? '个' : 'total' }})</span>
-      </div>
+    <!-- vshell 工具条：独立模式带标题/搜索；嵌入式只留操作（标题与搜索由父面板提供） -->
+    <div class="cs-fl-toolbar">
+      <template v-if="!embedded">
+        <div class="cs-title-group">
+          <span class="cs-title">{{ isZh ? '正向监听器' : 'Forward Listeners' }}</span>
+          <span class="cs-count">({{ forwardList.length }} {{ isZh ? '个' : 'total' }})</span>
+        </div>
 
-      <div class="cs-spacer" />
+        <div class="cs-spacer" />
 
-      <el-input
-        v-model="localSearchKey"
-        :placeholder="isZh ? '过滤类型、地址、备注...' : 'Filter type, address, note...'"
-        size="small"
-        clearable
-        class="cs-search"
-      />
+        <el-input
+          v-model="localSearchKey"
+          :placeholder="isZh ? '过滤类型、地址、备注...' : 'Filter type, address, note...'"
+          clearable
+          class="cs-search"
+        >
+          <template #prefix>
+            <svg class="cs-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <circle cx="11" cy="11" r="7" />
+              <path d="M20 20l-3.6-3.6" />
+            </svg>
+          </template>
+        </el-input>
 
-      <button class="cs-btn" :disabled="loading" @click="fetchListeners">
-        {{ isZh ? '刷新' : 'Refresh' }}
-      </button>
+        <button class="cs-btn" :disabled="loading" @click="fetchListeners">
+          {{ isZh ? '刷新' : 'Refresh' }}
+        </button>
+
+        <span class="cs-toolbar-divider" />
+      </template>
+
+      <button class="cs-btn cs-btn-primary" @click="openAddDialog">{{ isZh ? '添加' : 'Add' }}</button>
+      <button class="cs-btn" :disabled="!selectedRow" @click="openEditDialog()">{{ isZh ? '编辑' : 'Edit' }}</button>
+      <button class="cs-btn" :disabled="!selectedRow" @click="() => handleConnect(selectedRow)">{{ isZh ? '连接' : 'Connect' }}</button>
+      <button class="cs-btn" :disabled="!selectedRow || selectedRow.Status === 1" @click="() => handleStart(selectedRow)">{{ isZh ? '开启' : 'Start' }}</button>
+      <button class="cs-btn" :disabled="!selectedRow || selectedRow.Status !== 1" @click="() => handleStop(selectedRow)">{{ isZh ? '关闭' : 'Stop' }}</button>
+      <button class="cs-btn cs-btn-danger" :disabled="!selectedRow" @click="() => handleRemove(selectedRow)">{{ isZh ? '删除' : 'Remove' }}</button>
+      <button class="cs-btn" @click="handleHelp">{{ isZh ? '帮助' : 'Help' }}</button>
+
+      <div class="cs-spacer" v-if="embedded" />
+      <span class="cs-status-hint" v-if="embedded">
+        {{ isZh ? `共 ${filteredListeners.length} 个正向监听器` : `${filteredListeners.length} forward listener(s)` }}
+      </span>
     </div>
 
     <!-- Forward Listeners Table (CS Style) -->
@@ -43,8 +66,7 @@
         <el-table-column prop="bindto" :label="isZh ? '回连地址' : 'bindto'" min-width="170" sortable show-overflow-tooltip />
         <el-table-column :label="isZh ? '状态' : 'status'" width="115" sortable align="center">
           <template #default="{ row }">
-            <span class="cs-status-indicator" :class="row.Status === 1 ? 'online' : 'offline'">
-              <span class="status-dot" />
+            <span class="vs-status-tag" :class="row.Status === 1 ? 'is-online' : 'is-offline'">
               {{ row.Status === 1 ? (isZh ? '监听中' : 'Listening') : (isZh ? '已停止' : 'Stopped') }}
             </span>
           </template>
@@ -62,25 +84,9 @@
         </el-table-column>
 
         <template #empty>
-          <EmptyState variant="inline" :title="isZh ? '暂无正向监听器' : 'No Forward Listeners Configured'" />
+          <EmptyState variant="inline" icon="🔌" :title="isZh ? '暂无正向监听器' : 'No Forward Listeners Configured'" />
         </template>
       </el-table>
-    </div>
-
-    <!-- Bottom Action Buttons (CS Native Button Row) -->
-    <div class="cs-bottom-bar">
-      <button class="cs-btn cs-btn-primary" @click="openAddDialog">{{ isZh ? '添加' : 'Add' }}</button>
-      <button class="cs-btn" :disabled="!selectedRow" @click="openEditDialog()">{{ isZh ? '编辑' : 'Edit' }}</button>
-      <button class="cs-btn" :disabled="!selectedRow" @click="() => handleConnect(selectedRow)">{{ isZh ? '连接' : 'Connect' }}</button>
-      <button class="cs-btn" :disabled="!selectedRow || selectedRow.Status === 1" @click="() => handleStart(selectedRow)">{{ isZh ? '开启' : 'Start' }}</button>
-      <button class="cs-btn" :disabled="!selectedRow || selectedRow.Status !== 1" @click="() => handleStop(selectedRow)">{{ isZh ? '关闭' : 'Stop' }}</button>
-      <button class="cs-btn cs-btn-danger" :disabled="!selectedRow" @click="() => handleRemove(selectedRow)">{{ isZh ? '删除' : 'Remove' }}</button>
-      <button class="cs-btn" @click="handleHelp">{{ isZh ? '帮助' : 'Help' }}</button>
-
-      <div class="cs-spacer" v-if="embedded" />
-      <span class="cs-status-hint" v-if="embedded">
-        {{ isZh ? `共 ${filteredListeners.length} 个正向监听器` : `${filteredListeners.length} forward listener(s)` }}
-      </span>
     </div>
 
     <!-- Right-Click Context Menu -->
@@ -548,14 +554,14 @@ onBeforeUnmount(() => {
   overflow: hidden;
 }
 
+/* 工具条：白底 + 底部分隔线由 vshell-ep.css 的 .cs-fl-toolbar 接管 */
 .cs-fl-toolbar {
-  height: 36px;
-  background: var(--cs-titlebar-bg);
-  border-bottom: 1px solid var(--cs-border);
+  min-height: 48px;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 0 12px;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 12px;
   flex-shrink: 0;
 }
 
@@ -566,14 +572,16 @@ onBeforeUnmount(() => {
 }
 
 .cs-title {
-  font-size: 17px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--cs-text-bright);
+  white-space: nowrap;
 }
 
 .cs-count {
-  font-size: 16px;
+  font-size: 12px;
   color: var(--cs-text-dim);
+  white-space: nowrap;
 }
 
 .cs-spacer {
@@ -581,63 +589,64 @@ onBeforeUnmount(() => {
 }
 
 .cs-search {
-  width: 260px;
+  width: 240px;
 }
 
+.cs-search-icon {
+  color: var(--cs-text-dim);
+}
+
+.cs-toolbar-divider {
+  width: 1px;
+  height: 20px;
+  flex-shrink: 0;
+  background: var(--cs-card-border);
+}
+
+.cs-status-hint {
+  font-size: 12px;
+  color: var(--cs-text-dim);
+  white-space: nowrap;
+}
+
+/* 表格铺满内容区（单元格底色/字号由全局 .cs-shell .el-table 统一） */
 .cs-table-container {
   flex: 1;
   overflow: hidden;
   position: relative;
-}
-
-.cs-bottom-bar {
-  height: 38px;
   background: var(--cs-panel);
-  border-top: 1px solid var(--cs-border);
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 10px;
-  padding: 0 12px;
-  flex-shrink: 0;
 }
 
-.cs-status-hint {
-  font-size: 16px;
-  color: var(--cs-text-dim);
-  font-family: var(--cs-font-mono);
-}
-
-.cs-status-indicator {
+/* 状态：在线实心绿 tag，离线灰 tag（20px / 4px 圆角 / 12px） */
+.vs-status-tag {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font-size: 16px;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
 }
 
-.cs-status-indicator .status-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  display: inline-block;
-}
-
-.cs-status-indicator.online .status-dot {
+.vs-status-tag.is-online {
   background: var(--cs-online);
-  box-shadow: 0 0 4px var(--cs-online);
+  color: #fff;
 }
 
-.cs-status-indicator.offline .status-dot {
-  background: var(--cs-offline);
+.vs-status-tag.is-offline {
+  background: color-mix(in srgb, var(--cs-offline) 22%, transparent);
+  color: var(--cs-text-dim);
 }
 
+/* 右键菜单：vshell 弹层观感（8px 圆角 + 柔和投影 + 32px 行高） */
 .cs-fl-ctx-menu {
   position: fixed;
+  padding: 4px;
   background: var(--cs-panel);
-  border: 1px solid var(--cs-border);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
-  border-radius: 2px;
-  padding: 4px 0;
+  border: 1px solid var(--cs-card-border);
+  border-radius: 8px;
+  box-shadow: 0 3px 6px -4px rgba(0, 0, 0, 0.12), 0 6px 16px 0 rgba(0, 0, 0, 0.08);
   z-index: 9999;
   min-width: 180px;
 }
@@ -647,15 +656,36 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 14px;
-  font-size: 16.5px;
+  height: 32px;
+  padding: 0 12px;
+  font-size: 14px;
   color: var(--cs-text);
+  border-radius: 6px;
   cursor: pointer;
 }
 
 .cs-fl-ctx-menu .ctx-item:hover {
   background: var(--cs-hover);
-  color: var(--cs-text-bright);
+  color: var(--cs-active);
+}
+
+.cs-fl-ctx-menu .ctx-item.disabled {
+  opacity: 0.45;
+}
+
+.cs-fl-ctx-menu .ctx-item.ctx-danger,
+.cs-fl-ctx-menu .ctx-item.ctx-danger:hover {
+  color: var(--cs-error);
+}
+
+.cs-fl-ctx-menu .ctx-item.ctx-danger:hover {
+  background: color-mix(in srgb, var(--cs-error) 12%, transparent);
+}
+
+.cs-fl-ctx-menu .ctx-divider {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--cs-card-border);
 }
 
 .cs-fl-ctx-menu .ctx-arrow {
@@ -666,27 +696,27 @@ onBeforeUnmount(() => {
 
 .cs-fl-ctx-menu .ctx-color-palette {
   position: absolute;
-  top: -2px;
+  top: -4px;
   left: 100%;
-  background: var(--cs-panel);
-  border: 1px solid var(--cs-border);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
-  border-radius: 2px;
   padding: 6px;
   display: flex;
   gap: 4px;
+  background: var(--cs-panel);
+  border: 1px solid var(--cs-card-border);
+  border-radius: 8px;
+  box-shadow: 0 3px 6px -4px rgba(0, 0, 0, 0.12), 0 6px 16px 0 rgba(0, 0, 0, 0.08);
   z-index: 10000;
 }
 
 .color-box {
   width: 20px;
   height: 20px;
-  border: 1px solid #444;
-  border-radius: 2px;
+  border: 1px solid var(--cs-border-strong);
+  border-radius: 4px;
   cursor: pointer;
 }
 
 .color-box:hover {
-  border-color: #ffffff;
+  border-color: var(--cs-active);
 }
 </style>

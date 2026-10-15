@@ -8,11 +8,11 @@
     class="cs-dialog"
   >
     <div class="cs-dialog-body">
-      <div class="dialog-row">
-        <label class="dialog-label">{{ isZh ? '目标客户端:' : 'Target:' }}</label>
+      <div class="cs-form-row">
+        <label class="cs-form-label">{{ isZh ? '目标客户端:' : 'Target:' }}</label>
         <span class="dialog-val">{{ clientLabel }}</span>
       </div>
-      <div class="dialog-row">
+      <div class="dialog-field">
         <label class="dialog-label">{{ isZh ? '备注信息（支持多行）:' : 'Note (multi-line):' }}</label>
         <el-input
           v-model="noteText"
@@ -36,24 +36,23 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { useWorkspaceStore } from '@/stores/workspace'
 import { useClientsStore } from '@/stores/clients'
 import { useI18nStore } from '@/stores/i18n'
 import ClientAPI from '@/api/clients'
 
-const workspace = useWorkspaceStore()
+// P3：页面内局部弹窗——可见性走 v-model，数据由宿主经 props 传入
+const props = withDefaults(defineProps<{ modelValue: boolean; uid?: string; note?: string }>(), { uid: '', note: '' })
+const emit = defineEmits<{ (e: 'update:modelValue', value: boolean): void }>()
+const visible = computed({
+  get: () => props.modelValue,
+  set: (value) => emit('update:modelValue', value),
+})
+
 const clientsStore = useClientsStore()
 const i18nStore = useI18nStore()
 const isZh = computed(() => i18nStore.isZh)
 
-const visible = computed({
-  get: () => workspace.dialogs.note.visible,
-  set: (val) => {
-    if (!val) workspace.closeDialog('note')
-  },
-})
-
-const uid = computed(() => workspace.dialogs.note.uid)
+const uid = computed(() => props.uid)
 const noteText = ref('')
 
 const client = computed(() => clientsStore.getClientByUid(uid.value))
@@ -62,15 +61,12 @@ const clientLabel = computed(() => {
   return `${client.value.Username || 'user'}@${client.value.Computer || 'host'} (${client.value.ExternalIP || client.value.InternalIP || '?'})`
 })
 
-watch(
-  () => workspace.dialogs.note.visible,
-  (val) => {
-    if (val) {
-      noteText.value = workspace.dialogs.note.note || client.value?.Note || ''
-      loadFullNote()
-    }
-  },
-)
+watch(visible, (val) => {
+  if (val) {
+    noteText.value = props.note || client.value?.Note || ''
+    loadFullNote()
+  }
+})
 
 // 拉取完整笔记（Notes 表，独立于客户端 Note 快照）
 async function loadFullNote() {
@@ -87,7 +83,7 @@ async function loadFullNote() {
 }
 
 function close() {
-  workspace.closeDialog('note')
+  visible.value = false
 }
 
 async function saveNote() {
@@ -113,21 +109,14 @@ async function clearNote() {
 </script>
 
 <style scoped>
-.cs-dialog-body {
-  padding: 10px 0;
+.dialog-field {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-}
-.dialog-row {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 .dialog-label {
-  font-size: 12px;
-  color: var(--cs-text-dim);
-  font-weight: 500;
+  font-size: 14px;
+  color: var(--cs-text);
 }
 .dialog-val {
   font-size: 13px;
@@ -137,7 +126,7 @@ async function clearNote() {
 .cs-dialog-footer {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
 }
 .footer-spacer { flex: 1; }
 </style>

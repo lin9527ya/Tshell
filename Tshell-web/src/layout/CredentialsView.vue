@@ -42,6 +42,10 @@
 
       <div class="cv-spacer" />
 
+      <button class="cs-btn" @click="toggleShowPasswords">
+        {{ showPasswords ? (isZh ? '隐藏明文' : 'Hide Passwords') : (isZh ? '显示明文' : 'Show Passwords') }}
+      </button>
+
       <el-input
         v-model="searchKey"
         :placeholder="isZh ? '过滤用户、域、主机、哈希、备注...' : 'Filter user, realm, host, hash...'"
@@ -50,6 +54,30 @@
         class="cv-search-input"
       />
 
+      <button class="cs-btn cs-btn-primary" @click="openAddDialog">
+        {{ isZh ? '添加凭证' : 'Add' }}
+      </button>
+      <button class="cs-btn" :disabled="!selectedRow" @click="openEditDialog">
+        {{ isZh ? '编辑凭据' : 'Edit' }}
+      </button>
+      <button class="cs-btn" :disabled="!selectedRow || !selectedRow.password" @click="copySelectedPassword">
+        {{ isZh ? '复制密码' : 'Copy Pwd' }}
+      </button>
+      <button class="cs-btn" :disabled="!selectedRow || !selectedRow.hash" @click="copySelectedHash">
+        {{ isZh ? '复制哈希' : 'Copy Hash' }}
+      </button>
+      <button class="cs-btn" :disabled="!credsStore.credentials.length" @click="exportData">
+        {{ isZh ? '导出凭证' : 'Export' }}
+      </button>
+      <button class="cs-btn cs-btn-danger" :disabled="!selectedRow" @click="deleteSelected">
+        {{ isZh ? '删除选中' : 'Delete' }}
+      </button>
+      <button class="cs-btn cs-btn-danger" :disabled="!credsStore.credentials.length" @click="clearAll">
+        {{ isZh ? '清空全部' : 'Clear All' }}
+      </button>
+      <button class="cs-btn" @click="showHelp">
+        {{ isZh ? '帮助' : 'Help' }}
+      </button>
       <button class="cs-btn" @click="refresh">
         <el-icon><Refresh /></el-icon>
         <span>{{ isZh ? '刷新' : 'Refresh' }}</span>
@@ -139,40 +167,6 @@
       </el-table>
     </div>
 
-    <!-- Bottom Action Bar (CS Native Button Row) -->
-    <div class="cv-bottom-bar">
-      <button class="cs-btn cs-btn-primary" @click="openAddDialog">
-        {{ isZh ? '添加凭证 (Add)' : 'Add' }}
-      </button>
-      <button class="cs-btn" :disabled="!selectedRow" @click="openEditDialog">
-        {{ isZh ? '编辑凭据 (Edit)' : 'Edit' }}
-      </button>
-      <button class="cs-btn" :disabled="!selectedRow || !selectedRow.password" @click="copySelectedPassword">
-        {{ isZh ? '复制密码 (Copy Pwd)' : 'Copy Pwd' }}
-      </button>
-      <button class="cs-btn" :disabled="!selectedRow || !selectedRow.hash" @click="copySelectedHash">
-        {{ isZh ? '复制哈希 (Copy Hash)' : 'Copy Hash' }}
-      </button>
-      <button class="cs-btn" @click="toggleShowPasswords">
-        {{ showPasswords ? (isZh ? '隐藏明文' : 'Hide Passwords') : (isZh ? '显示明文' : 'Show Passwords') }}
-      </button>
-
-      <div class="cv-bottom-spacer" />
-
-      <button class="cs-btn" :disabled="!credsStore.credentials.length" @click="exportData">
-        {{ isZh ? '导出凭证 (Export)' : 'Export' }}
-      </button>
-      <button class="cs-btn cs-btn-danger" :disabled="!selectedRow" @click="deleteSelected">
-        {{ isZh ? '删除选中 (Delete)' : 'Delete' }}
-      </button>
-      <button class="cs-btn cs-btn-danger" :disabled="!credsStore.credentials.length" @click="clearAll">
-        {{ isZh ? '清空全部 (Clear)' : 'Clear All' }}
-      </button>
-      <button class="cs-btn" @click="showHelp">
-        {{ isZh ? '帮助' : 'Help' }}
-      </button>
-    </div>
-
     <!-- Add/Edit Credential Dialog -->
     <el-dialog
       v-model="editDialogVisible"
@@ -242,12 +236,12 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Key, Refresh, CopyDocument } from '@element-plus/icons-vue'
 import { useCredentialsStore, type CredentialItem } from '@/stores/credentials'
-import { useWorkspaceStore } from '@/stores/workspace'
 import { useI18nStore } from '@/stores/i18n'
+import { useSessionSelectionStore } from '@/stores/sessionSelection'
 import EmptyState from '@/components/Common/EmptyState.vue'
 
 const credsStore = useCredentialsStore()
-const workspace = useWorkspaceStore()
+const workspace = useSessionSelectionStore()
 const i18nStore = useI18nStore()
 const isZh = computed(() => i18nStore.isZh)
 
@@ -484,15 +478,17 @@ onBeforeUnmount(() => {
   overflow: hidden;
 }
 
+/* ===== 工具条：白底 + 1px 分隔线，左标题/筛选，右搜索/操作 ===== */
 .cv-toolbar {
-  height: 36px;
-  background: var(--cs-titlebar-bg);
-  border-bottom: 1px solid var(--cs-border);
+  flex-shrink: 0;
+  min-height: 48px;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 0 12px;
-  flex-shrink: 0;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px 16px;
+  background: var(--cs-panel);
+  border-bottom: 1px solid var(--cs-card-border);
 }
 
 .cv-title-group {
@@ -502,42 +498,46 @@ onBeforeUnmount(() => {
 }
 
 .cv-title-icon {
-  font-size: 18px;
-  color: #ffc107;
+  font-size: 16px;
+  color: var(--cs-warning);
 }
 
 .cv-title {
-  font-size: 17px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--cs-text-bright);
+  white-space: nowrap;
 }
 
 .cv-count {
-  font-size: 16px;
+  font-size: 13px;
   color: var(--cs-text-dim);
+  white-space: nowrap;
 }
 
 .cv-filter-pills {
   display: inline-flex;
   align-items: center;
-  background: var(--cs-bg, #181818);
-  border: 1px solid var(--cs-border, #333333);
-  border-radius: 4px;
-  padding: 2px;
   gap: 2px;
   margin-left: 6px;
+  padding: 2px;
+  background: var(--cs-panel);
+  border: 1px solid var(--cs-border-strong);
+  border-radius: 6px;
 }
 
 .cv-pill {
-  height: 24px;
+  height: 26px;
   padding: 0 10px;
-  font-size: 14px;
+  font-family: var(--cs-font-ui);
+  font-size: 13px;
   color: var(--cs-text-dim);
   background: transparent;
   border: none;
-  border-radius: 3px;
+  border-radius: 4px;
   cursor: pointer;
   white-space: nowrap;
+  transition: background 120ms ease, color 120ms ease;
 }
 
 .cv-pill:hover {
@@ -548,13 +548,14 @@ onBeforeUnmount(() => {
 .cv-pill.active {
   color: #ffffff;
   background: var(--cs-active);
-  font-weight: 600;
 }
 
-.cv-spacer { flex: 1; }
+.cv-spacer {
+  flex: 1;
+}
 
 .cv-search-input {
-  width: 260px;
+  width: 240px;
 }
 
 .cv-table-wrap {
@@ -563,34 +564,34 @@ onBeforeUnmount(() => {
   position: relative;
 }
 
+/* ===== 单元格渲染 ===== */
 .user-cell {
-  color: var(--cs-text-bright);
-  font-size: 16.5px;
+  color: var(--cs-text);
 }
 
-.pwd-cell-wrap, .hash-cell-wrap {
+.pwd-cell-wrap,
+.hash-cell-wrap {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  padding: 2px 6px;
+  border-radius: 6px;
   cursor: pointer;
-  padding: 2px 4px;
-  border-radius: 3px;
   transition: background 120ms ease;
 }
 
-.pwd-cell-wrap:hover, .hash-cell-wrap:hover {
+.pwd-cell-wrap:hover,
+.hash-cell-wrap:hover {
   background: var(--cs-hover);
 }
 
 .pwd-cell {
-  color: #52c41a;
-  font-size: 16px;
-  font-weight: bold;
+  font-weight: 600;
+  color: var(--cs-online);
 }
 
 .hash-cell {
-  color: #40a9ff;
-  font-size: 15px;
+  color: var(--cs-active);
 }
 
 .copy-icon {
@@ -599,63 +600,54 @@ onBeforeUnmount(() => {
 }
 
 .copy-icon:hover {
-  color: #ffffff;
+  color: var(--cs-active);
 }
 
 .source-badge {
-  display: inline-block;
-  padding: 1px 6px;
-  border-radius: 3px;
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 4px;
   font-size: 12px;
   font-weight: 600;
 }
 
-.source-mimikatz, .source-logonpasswords {
-  background: rgba(245, 34, 45, 0.2);
-  color: #ff7875;
+.source-mimikatz,
+.source-logonpasswords {
+  background: color-mix(in srgb, var(--cs-error) 14%, transparent);
+  color: var(--cs-error);
 }
 
 .source-hashdump {
-  background: rgba(250, 140, 22, 0.2);
-  color: #ffa940;
+  background: color-mix(in srgb, var(--cs-warning) 18%, transparent);
+  color: color-mix(in srgb, var(--cs-warning) 75%, var(--cs-text));
 }
 
 .source-manual {
-  background: rgba(24, 144, 255, 0.15);
-  color: #40a9ff;
+  background: color-mix(in srgb, var(--cs-active) 12%, transparent);
+  color: var(--cs-active);
 }
 
-.cv-bottom-bar {
-  height: 38px;
-  padding: 0 12px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: var(--cs-panel);
-  border-top: 1px solid var(--cs-border);
-  flex-shrink: 0;
-}
-
-.cv-bottom-spacer { flex: 1; }
-
+/* ===== 对话框 ===== */
 .cs-dialog-form {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
 }
 
 .form-field {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
 }
 
 .form-label {
   width: 120px;
-  font-size: 15px;
+  flex-shrink: 0;
+  font-size: 14px;
   color: var(--cs-text);
   text-align: right;
-  flex-shrink: 0;
 }
 
 .cs-dialog-footer-center {
@@ -664,16 +656,16 @@ onBeforeUnmount(() => {
   gap: 12px;
 }
 
-/* Context Menu */
+/* ===== 右键菜单 ===== */
 .cs-listener-ctx-menu {
   position: fixed;
-  background: var(--cs-panel);
-  border: 1px solid var(--cs-border);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
-  border-radius: 2px;
-  padding: 4px 0;
-  z-index: 9999;
   min-width: 180px;
+  padding: 4px;
+  background: var(--cs-panel);
+  border: 1px solid var(--cs-card-border);
+  border-radius: 8px;
+  box-shadow: 0 3px 6px -4px rgba(0, 0, 0, 0.12), 0 6px 16px 0 rgba(0, 0, 0, 0.08);
+  z-index: 9999;
 }
 
 .cs-listener-ctx-menu .ctx-item {
@@ -681,14 +673,36 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 14px;
-  font-size: 16.5px;
+  height: 32px;
+  padding: 0 10px;
+  font-size: 14px;
   color: var(--cs-text);
+  border-radius: 6px;
   cursor: pointer;
 }
 
 .cs-listener-ctx-menu .ctx-item:hover {
   background: var(--cs-hover);
-  color: var(--cs-text-bright);
+  color: var(--cs-active);
+}
+
+.cs-listener-ctx-menu .ctx-item.is-highlight {
+  font-weight: 600;
+  color: var(--cs-active);
+}
+
+.cs-listener-ctx-menu .ctx-item.ctx-danger {
+  color: var(--cs-error);
+}
+
+.cs-listener-ctx-menu .ctx-item.ctx-danger:hover {
+  background: color-mix(in srgb, var(--cs-error) 12%, transparent);
+  color: var(--cs-error);
+}
+
+.cs-listener-ctx-menu .ctx-divider {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--cs-card-border);
 }
 </style>

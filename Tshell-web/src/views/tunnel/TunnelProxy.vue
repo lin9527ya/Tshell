@@ -1,6 +1,17 @@
 <template>
   <div class="tunnel-proxy-container cs-font-ui">
-    <!-- CS Toolbar -->
+    <!-- 页签：隧道 / SOCKS5（vshell：同域功能并页） -->
+    <div class="tp-tabs">
+      <div class="tp-tab" :class="{ active: view === 'tunnel' }" @click="view = 'tunnel'">
+        {{ isZh ? '隧道代理' : 'Tunnels' }}
+      </div>
+      <div class="tp-tab" :class="{ active: view === 'socks5' }" @click="view = 'socks5'">
+        {{ isZh ? 'SOCKS5 代理' : 'SOCKS5' }}
+      </div>
+    </div>
+
+    <template v-if="view === 'tunnel'">
+    <!-- vshell 工具条：左（标题 + 计数），右（筛选 + 操作） -->
     <div class="tp-toolbar">
       <div class="tp-title-group">
         <span class="tp-title">{{ isZh ? '隧道代理' : 'Proxy Pivots' }}</span>
@@ -9,7 +20,7 @@
 
       <div class="tp-spacer" />
 
-      <el-select v-model="protocolFilter" :placeholder="isZh ? '协议' : 'Protocol'" clearable size="small" style="width: 100px">
+      <el-select v-model="protocolFilter" :placeholder="isZh ? '协议' : 'Protocol'" clearable class="tp-filter">
         <el-option :label="isZh ? '全部' : 'ALL'" value="" />
         <el-option label="TCP" value="tcp" />
         <el-option label="UDP" value="udp" />
@@ -17,7 +28,7 @@
         <el-option label="SOCKS5" value="socks5" />
       </el-select>
 
-      <el-select v-model="statusFilter" :placeholder="isZh ? '状态' : 'Status'" clearable size="small" style="width: 90px">
+      <el-select v-model="statusFilter" :placeholder="isZh ? '状态' : 'Status'" clearable class="tp-filter-sm">
         <el-option :label="isZh ? '全部' : 'ALL'" value="" />
         <el-option :label="isZh ? '活跃' : 'Active'" value="1" />
         <el-option :label="isZh ? '停止' : 'Stopped'" value="0" />
@@ -27,247 +38,23 @@
         v-model="searchKeyword"
         :placeholder="isZh ? '过滤备注、地址、用户...' : 'Filter note, address, user...'"
         clearable
-        size="small"
         class="tp-search"
         @input="handleSearch"
-      />
+      >
+        <template #prefix>
+          <svg class="tp-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <circle cx="11" cy="11" r="7" />
+            <path d="M20 20l-3.6-3.6" />
+          </svg>
+        </template>
+      </el-input>
 
       <button class="cs-btn" @click="refreshTunnelList">
         {{ isZh ? '刷新' : 'Refresh' }}
       </button>
-    </div>
 
-    <!-- 隧道列表 -->
-    <div class="tp-table-wrap">
+      <span class="tp-toolbar-divider" />
 
-      <el-table
-        v-loading="loading"
-        :data="paginatedTunnelList"
-        row-key="id"
-        style="width: 100%"
-        stripe
-        table-layout="auto"
-        @selection-change="handleSelectionChange"
-      >
-        <!-- 批量选择列 -->
-        <el-table-column v-if="batchSelectMode" type="selection" width="55" :reserve-selection="true">
-          <template #header>
-            <span>{{ isZh ? '选择' : 'Select' }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column prop="id" label="ID" width="80" sortable />
-        <el-table-column prop="note" :label="isZh ? '备注' : 'Note'" width="212">
-          <template #default="{ row }">
-            <div class="note-container">
-              <span v-if="!row.isEditingNote" class="note-text">{{ row.note || '-' }}</span>
-              <el-input
-                v-else
-                v-model="row.tempNote"
-                @blur="saveNote(row)"
-                @keyup.enter="saveNote(row)"
-                size="small"
-                :placeholder="isZh ? '请输入备注' : 'Enter note'"
-              />
-              <el-button
-                v-if="!row.isEditingNote"
-                @click="editNote(row)"
-                type="text"
-                size="small"
-                class="edit-note-btn"
-              >
-                <el-icon><Edit /></el-icon>
-              </el-button>
-            </div>
-          </template>
-        </el-table-column>
-        <el-table-column prop="protocol" :label="isZh ? '协议' : 'Protocol'" width="152">
-          <template #default="{ row }">
-            <el-tag size="small">{{ row.protocol }}</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="serverPort" :label="isZh ? '服务端端口' : 'Port'" width="130" />
-        <el-table-column prop="targetAddress" :label="isZh ? '目标地址' : 'Target'" width="200" show-overflow-tooltip>
-          <template #default="{ row }">
-            <span v-if="row.targetAddress && (row.protocol === 'tcp' || row.protocol === 'udp')">
-              {{ row.targetAddress }}
-            </span>
-            <span v-else style="color: #c0c4cc;">-</span>
-          </template>
-        </el-table-column>
-        <el-table-column prop="username" :label="isZh ? '用户' : 'User'" width="152" show-overflow-tooltip>
-          <template #default="{ row }">
-            <span v-if="row.username && (row.protocol === 'socks5' || row.protocol === 'http')">
-              {{ row.username }}
-            </span>
-            <span v-else style="color: #c0c4cc;">-</span>
-          </template>
-        </el-table-column>
-        <el-table-column prop="password" :label="isZh ? '密码' : 'Password'" width="132">
-          <template #default="{ row }">
-            <span v-if="row.password && (row.protocol === 'socks5' || row.protocol === 'http')">
-              {{ '*'.repeat(Math.min(row.password.length, 8)) }}
-            </span>
-            <span v-else style="color: #c0c4cc;">-</span>
-          </template>
-        </el-table-column>
-        <el-table-column prop="status" :label="isZh ? '状态' : 'Status'" width="112">
-          <template #default="{ row }">
-            <el-tag
-              :type="row.status === 'active' ? 'success' : (row.status === 'loading' ? 'warning' : 'danger')"
-              size="small"
-            >
-              {{ row.status === 'active' ? (isZh ? '活跃' : 'Active') : (row.status === 'loading' ? (isZh ? '启动中' : 'Starting') : (isZh ? '已停止' : 'Stopped')) }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="clientStatus" :label="isZh ? '客户端状态' : 'Beacon'" width="132">
-          <template #default="{ row }">
-            <el-tag :type="row.clientOnline ? 'success' : 'danger'" size="small">
-              {{ row.clientOnline ? (isZh ? '在线' : 'Online') : (isZh ? '离线' : 'Offline') }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="createTime" :label="isZh ? '创建时间' : 'Created At'" width="182">
-          <template #default="{ row }">
-            <span style="white-space: nowrap">{{ formatTime(row.createTime) }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column :label="isZh ? '操作' : 'Actions'" width="300" fixed="right">
-          <template #default="{ row }">
-            <div class="action-buttons">
-              <el-button
-                type="success"
-                size="small"
-                @click="startTunnel(row)"
-                :disabled="row.status === 'active' || row.status === 'loading'"
-                :loading="row.status === 'loading'"
-              >
-                {{ isZh ? '启动' : 'Start' }}
-              </el-button>
-              <el-button
-                type="warning"
-                size="small"
-                @click="stopTunnel(row)"
-                :disabled="row.status !== 'active' || row.status === 'loading'"
-                :loading="row.status === 'loading'"
-              >
-                {{ isZh ? '停止' : 'Stop' }}
-              </el-button>
-              <el-button
-                type="primary"
-                size="small"
-                @click="editTunnel(row)"
-                :disabled="row.status === 'loading'"
-              >
-                {{ isZh ? '编辑' : 'Edit' }}
-              </el-button>
-              <el-button
-                type="danger"
-                size="small"
-                @click="deleteTunnel(row)"
-                :disabled="row.status === 'loading'"
-              >
-                {{ isZh ? '删除' : 'Remove' }}
-              </el-button>
-            </div>
-          </template>
-        </el-table-column>
-
-        <template #empty>
-          <EmptyState variant="inline" :title="isZh ? '暂无隧道代理' : 'No Tunnel Proxies Configured'" />
-        </template>
-      </el-table>
-    </div>
-
-    <!-- CS Native Inline Tunnel Configuration Panel (No Popup Dialog) -->
-    <div v-if="createDialogVisible" class="cs-inline-panel">
-      <div class="cs-inline-header">
-        <span class="cs-inline-title">{{ isEditMode ? (isZh ? '编辑隧道代理' : 'Edit Proxy Pivot') : (isZh ? '新建隧道代理' : 'New Proxy Pivot') }}</span>
-        <button class="cs-btn cs-btn-xs" @click="handleCloseDialog">{{ isZh ? '关闭' : 'Close' }}</button>
-      </div>
-
-      <div class="cs-inline-body">
-        <div class="cs-form-row">
-          <label class="cs-form-label"><span class="req">*</span> {{ isZh ? '选择客户端' : 'Beacon' }}</label>
-          <div class="cs-form-input-wrap">
-            <el-select 
-              v-model="tunnelForm.clientUid" 
-              :placeholder="isZh ? '请选择已上线的客户端' : 'Select online beacon'" 
-              size="small"
-              style="width: 100%"
-              :disabled="isEditMode"
-              @change="onClientChange"
-            >
-              <el-option 
-                v-for="client in onlineClients" 
-                :key="client.Uid" 
-                :label="getClientDisplayInfo(client)" 
-                :value="client.Uid" 
-              />
-            </el-select>
-          </div>
-        </div>
-
-        <div class="cs-form-row">
-          <label class="cs-form-label"><span class="req">*</span> {{ isZh ? '协议模式' : 'Protocol' }}</label>
-          <div class="cs-form-input-wrap">
-            <el-radio-group v-model="tunnelForm.protocol" size="small" @change="onProtocolChange">
-              <el-radio-button label="socks5">Socks5</el-radio-button>
-              <el-radio-button label="http">HTTP</el-radio-button>
-              <el-radio-button label="tcp">TCP</el-radio-button>
-              <el-radio-button label="udp">UDP</el-radio-button>
-            </el-radio-group>
-          </div>
-        </div>
-
-        <div class="cs-form-row">
-          <label class="cs-form-label">{{ isZh ? '备注' : 'Note' }}</label>
-          <div class="cs-form-input-wrap">
-            <el-input v-model="tunnelForm.note" size="small" :placeholder="isZh ? '请输入隧道用途备注' : 'Enter note'" />
-          </div>
-        </div>
-
-        <div class="cs-form-row">
-          <label class="cs-form-label"><span class="req">*</span> {{ isZh ? '服务端端口' : 'Port' }}</label>
-          <div class="cs-form-input-wrap">
-            <el-input-number v-model="tunnelForm.serverPort" size="small" :min="1" :max="65535" :placeholder="isZh ? '服务端代理端口' : 'Port'" />
-          </div>
-        </div>
-
-        <div v-if="tunnelForm.protocol === 'tcp' || tunnelForm.protocol === 'udp'" class="cs-form-row">
-          <label class="cs-form-label"><span class="req">*</span> {{ isZh ? '目标(IP:端口)' : 'Target' }}</label>
-          <div class="cs-form-input-wrap">
-            <el-input v-model="tunnelForm.targetAddress" size="small" :placeholder="isZh ? '例如: 192.168.1.100:3306' : 'e.g. 192.168.1.100:3306'" />
-          </div>
-        </div>
-
-        <div v-if="tunnelForm.protocol === 'socks5' || tunnelForm.protocol === 'http'" class="cs-form-row">
-          <label class="cs-form-label">{{ isZh ? '用户名' : 'Username' }}</label>
-          <div class="cs-form-input-wrap">
-            <el-input v-model="tunnelForm.username" size="small" :placeholder="isZh ? '可选认证用户名' : 'Optional username'" />
-          </div>
-        </div>
-
-        <div v-if="tunnelForm.protocol === 'socks5' || tunnelForm.protocol === 'http'" class="cs-form-row">
-          <label class="cs-form-label">{{ isZh ? '密码' : 'Password' }}</label>
-          <div class="cs-form-input-wrap">
-            <el-input v-model="tunnelForm.password" type="password" size="small" :placeholder="isZh ? '可选认证密码' : 'Optional password'" show-password />
-          </div>
-        </div>
-
-        <div class="cs-inline-footer">
-          <button class="cs-btn cs-btn-primary" :disabled="createLoading" @click="isEditMode ? updateTunnel() : createTunnel()">
-            {{ isEditMode ? (isZh ? '保存更新' : 'Save') : (isZh ? '创建隧道' : 'Create') }}
-          </button>
-          <button class="cs-btn" @click="resetForm">{{ isZh ? '重置' : 'Reset' }}</button>
-          <button class="cs-btn" @click="handleCloseDialog">{{ isZh ? '取消' : 'Cancel' }}</button>
-          <button class="cs-btn" @click="handleHelp">{{ isZh ? '帮助' : 'Help' }}</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Bottom Action Bar (CS Native Button Row) -->
-    <div class="tp-bottom-bar cs-font-ui">
       <button class="cs-btn cs-btn-primary" @click="showCreateDialog">
         {{ isZh ? '添加隧道' : 'Add Tunnel' }}
       </button>
@@ -283,26 +70,247 @@
       <button class="cs-btn" @click="handleHelp">
         {{ isZh ? '帮助' : 'Help' }}
       </button>
-
-      <div class="tp-spacer" />
-
-      <el-pagination
-        v-model:current-page="currentPage"
-        v-model:page-size="pageSize"
-        :page-sizes="[10, 20, 50, 100]"
-        :total="filteredTunnelList.length"
-        layout="total, prev, pager, next"
-        :small="true"
-        @size-change="handleSizeChange"
-        @current-change="handleCurrentChange"
-      />
     </div>
+
+    <div class="tp-content">
+      <!-- 内联配置面板（vshell 卡片：新建/编辑隧道，展开在表格上方） -->
+      <div v-if="createDialogVisible" class="cs-inline-panel">
+        <div class="cs-inline-header">
+          <span class="cs-inline-title">{{ isEditMode ? (isZh ? '编辑隧道代理' : 'Edit Proxy Pivot') : (isZh ? '新建隧道代理' : 'New Proxy Pivot') }}</span>
+          <button class="cs-btn cs-btn-xs" @click="handleCloseDialog">{{ isZh ? '关闭' : 'Close' }}</button>
+        </div>
+
+        <div class="cs-inline-body">
+          <div class="cs-form-row">
+            <label class="cs-form-label"><span class="req">*</span> {{ isZh ? '选择客户端' : 'Beacon' }}</label>
+            <div class="cs-form-input-wrap">
+              <el-select
+                v-model="tunnelForm.clientUid"
+                :placeholder="isZh ? '请选择已上线的客户端' : 'Select online beacon'"
+
+                style="width: 100%"
+                :disabled="isEditMode"
+                @change="onClientChange"
+              >
+                <el-option
+                  v-for="client in onlineClients"
+                  :key="client.Uid"
+                  :label="getClientDisplayInfo(client)"
+                  :value="client.Uid"
+                />
+              </el-select>
+            </div>
+          </div>
+
+          <div class="cs-form-row">
+            <label class="cs-form-label"><span class="req">*</span> {{ isZh ? '协议模式' : 'Protocol' }}</label>
+            <div class="cs-form-input-wrap">
+              <el-radio-group v-model="tunnelForm.protocol" @change="onProtocolChange">
+                <el-radio-button label="socks5">Socks5</el-radio-button>
+                <el-radio-button label="http">HTTP</el-radio-button>
+                <el-radio-button label="tcp">TCP</el-radio-button>
+                <el-radio-button label="udp">UDP</el-radio-button>
+              </el-radio-group>
+            </div>
+          </div>
+
+          <div class="cs-form-row">
+            <label class="cs-form-label">{{ isZh ? '备注' : 'Note' }}</label>
+            <div class="cs-form-input-wrap">
+              <el-input v-model="tunnelForm.note" :placeholder="isZh ? '请输入隧道用途备注' : 'Enter note'" />
+            </div>
+          </div>
+
+          <div class="cs-form-row">
+            <label class="cs-form-label"><span class="req">*</span> {{ isZh ? '服务端端口' : 'Port' }}</label>
+            <div class="cs-form-input-wrap">
+              <el-input-number v-model="tunnelForm.serverPort" :min="1" :max="65535" :placeholder="isZh ? '服务端代理端口' : 'Port'" />
+            </div>
+          </div>
+
+          <div v-if="tunnelForm.protocol === 'tcp' || tunnelForm.protocol === 'udp'" class="cs-form-row">
+            <label class="cs-form-label"><span class="req">*</span> {{ isZh ? '目标(IP:端口)' : 'Target' }}</label>
+            <div class="cs-form-input-wrap">
+              <el-input v-model="tunnelForm.targetAddress" :placeholder="isZh ? '例如: 192.168.1.100:3306' : 'e.g. 192.168.1.100:3306'" />
+            </div>
+          </div>
+
+          <div v-if="tunnelForm.protocol === 'socks5' || tunnelForm.protocol === 'http'" class="cs-form-row">
+            <label class="cs-form-label">{{ isZh ? '用户名' : 'Username' }}</label>
+            <div class="cs-form-input-wrap">
+              <el-input v-model="tunnelForm.username" :placeholder="isZh ? '可选认证用户名' : 'Optional username'" />
+            </div>
+          </div>
+
+          <div v-if="tunnelForm.protocol === 'socks5' || tunnelForm.protocol === 'http'" class="cs-form-row">
+            <label class="cs-form-label">{{ isZh ? '密码' : 'Password' }}</label>
+            <div class="cs-form-input-wrap">
+              <el-input v-model="tunnelForm.password" type="password" :placeholder="isZh ? '可选认证密码' : 'Optional password'" show-password />
+            </div>
+          </div>
+
+          <div class="cs-inline-footer">
+            <button class="cs-btn cs-btn-primary" :disabled="createLoading" @click="isEditMode ? updateTunnel() : createTunnel()">
+              {{ isEditMode ? (isZh ? '保存更新' : 'Save') : (isZh ? '创建隧道' : 'Create') }}
+            </button>
+            <button class="cs-btn" @click="resetForm">{{ isZh ? '重置' : 'Reset' }}</button>
+            <button class="cs-btn" @click="handleCloseDialog">{{ isZh ? '取消' : 'Cancel' }}</button>
+            <button class="cs-btn" @click="handleHelp">{{ isZh ? '帮助' : 'Help' }}</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 隧道列表（卡片：表格铺满 + 分页右下） -->
+      <div class="tp-table-card">
+        <div class="tp-table-wrap">
+          <el-table
+            v-loading="loading"
+            :data="paginatedTunnelList"
+            row-key="id"
+            height="100%"
+            style="width: 100%"
+            table-layout="auto"
+            @selection-change="handleSelectionChange"
+          >
+            <!-- 批量选择列 -->
+            <el-table-column v-if="batchSelectMode" type="selection" width="55" :reserve-selection="true">
+              <template #header>
+                <span>{{ isZh ? '选择' : 'Select' }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="id" label="ID" width="80" sortable />
+            <el-table-column prop="note" :label="isZh ? '备注' : 'Note'" width="212">
+              <template #default="{ row }">
+                <div class="note-container">
+                  <span v-if="!row.isEditingNote" class="note-text">{{ row.note || '-' }}</span>
+                  <el-input
+                    v-else
+                    v-model="row.tempNote"
+                    @blur="saveNote(row)"
+                    @keyup.enter="saveNote(row)"
+                    :placeholder="isZh ? '请输入备注' : 'Enter note'"
+                  />
+                  <button v-if="!row.isEditingNote" class="note-edit-btn" @click="editNote(row)">
+                    <el-icon><Edit /></el-icon>
+                  </button>
+                </div>
+              </template>
+            </el-table-column>
+            <el-table-column prop="protocol" :label="isZh ? '协议' : 'Protocol'" width="152">
+              <template #default="{ row }">
+                <span class="vs-chip">{{ row.protocol }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="serverPort" :label="isZh ? '服务端端口' : 'Port'" width="130" />
+            <el-table-column prop="targetAddress" :label="isZh ? '目标地址' : 'Target'" width="200" show-overflow-tooltip>
+              <template #default="{ row }">
+                <span v-if="row.targetAddress && (row.protocol === 'tcp' || row.protocol === 'udp')">
+                  {{ row.targetAddress }}
+                </span>
+                <span v-else class="vs-dim">-</span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="username" :label="isZh ? '用户' : 'User'" width="152" show-overflow-tooltip>
+              <template #default="{ row }">
+                <span v-if="row.username && (row.protocol === 'socks5' || row.protocol === 'http')">
+                  {{ row.username }}
+                </span>
+                <span v-else class="vs-dim">-</span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="password" :label="isZh ? '密码' : 'Password'" width="132">
+              <template #default="{ row }">
+                <span v-if="row.password && (row.protocol === 'socks5' || row.protocol === 'http')">
+                  {{ '*'.repeat(Math.min(row.password.length, 8)) }}
+                </span>
+                <span v-else class="vs-dim">-</span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="status" :label="isZh ? '状态' : 'Status'" width="112">
+              <template #default="{ row }">
+                <span
+                  class="vs-status-tag"
+                  :class="row.status === 'active' ? 'is-online' : (row.status === 'loading' ? 'is-warn' : 'is-offline')"
+                >
+                  {{ row.status === 'active' ? (isZh ? '活跃' : 'Active') : (row.status === 'loading' ? (isZh ? '启动中' : 'Starting') : (isZh ? '已停止' : 'Stopped')) }}
+                </span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="clientStatus" :label="isZh ? '客户端状态' : 'Beacon'" width="132">
+              <template #default="{ row }">
+                <span class="vs-status-tag" :class="row.clientOnline ? 'is-online' : 'is-offline'">
+                  {{ row.clientOnline ? (isZh ? '在线' : 'Online') : (isZh ? '离线' : 'Offline') }}
+                </span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="createTime" :label="isZh ? '创建时间' : 'Created At'" width="182">
+              <template #default="{ row }">
+                <span class="vs-nowrap">{{ formatTime(row.createTime) }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column :label="isZh ? '操作' : 'Actions'" width="300" fixed="right">
+              <template #default="{ row }">
+                <div class="action-buttons">
+                  <button
+                    class="cs-btn cs-btn-xs cs-btn-primary"
+                    :disabled="row.status === 'active' || row.status === 'loading'"
+                    @click="startTunnel(row)"
+                  >
+                    <span v-if="row.status === 'loading'" class="cs-btn-spin" />
+                    {{ isZh ? '启动' : 'Start' }}
+                  </button>
+                  <button
+                    class="cs-btn cs-btn-xs"
+                    :disabled="row.status !== 'active' || row.status === 'loading'"
+                    @click="stopTunnel(row)"
+                  >
+                    <span v-if="row.status === 'loading'" class="cs-btn-spin" />
+                    {{ isZh ? '停止' : 'Stop' }}
+                  </button>
+                  <button class="cs-btn cs-btn-xs" :disabled="row.status === 'loading'" @click="editTunnel(row)">
+                    {{ isZh ? '编辑' : 'Edit' }}
+                  </button>
+                  <button
+                    class="cs-btn cs-btn-xs cs-btn-danger"
+                    :disabled="row.status === 'loading'"
+                    @click="deleteTunnel(row)"
+                  >
+                    {{ isZh ? '删除' : 'Remove' }}
+                  </button>
+                </div>
+              </template>
+            </el-table-column>
+
+            <template #empty>
+              <EmptyState variant="inline" icon="🔀" :title="isZh ? '暂无隧道代理' : 'No Tunnel Proxies Configured'" />
+            </template>
+          </el-table>
+        </div>
+
+        <!-- 分页：卡片右下（vxe 观感） -->
+        <div class="tp-footer">
+          <el-pagination
+            v-model:current-page="currentPage"
+            v-model:page-size="pageSize"
+            :page-sizes="[10, 20, 50, 100]"
+            :total="filteredTunnelList.length"
+            layout="total, prev, pager, next"
+            @size-change="handleSizeChange"
+            @current-change="handleCurrentChange"
+          />
+        </div>
+      </div>
+    </div>
+    </template>
+    <Socks5View v-else />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { defineAsyncComponent } from 'vue'
+const Socks5View = defineAsyncComponent(() => import('./Socks5View.vue'))
 import { useI18nStore } from '@/stores/i18n'
 import { Plus, Edit, Refresh, Select, Delete } from '@element-plus/icons-vue'
 import ClientAPI from '@/api/clients'
@@ -355,6 +363,7 @@ interface TunnelForm {
 }
 
 const i18nStore = useI18nStore()
+const view = ref<'tunnel' | 'socks5'>('tunnel')
 const isZh = computed(() => i18nStore.isZh)
 
 // 数据状态
@@ -1052,6 +1061,30 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.tp-tabs {
+  height: 40px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 16px;
+  background: var(--cs-panel);
+  border-bottom: 1px solid var(--cs-card-border);
+}
+.tp-tab {
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 12px;
+  font-size: 14px;
+  color: var(--cs-text);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.tp-tab:hover { color: var(--cs-active); }
+.tp-tab.active { color: var(--cs-active); border-bottom-color: var(--cs-active); }
+
 .tunnel-proxy-container {
   height: 100%;
   display: flex;
@@ -1060,220 +1093,183 @@ onMounted(() => {
   overflow: hidden;
 }
 
+/* ===== 工具条：内容上方一行（左标题/计数，右筛选 + 操作） ===== */
 .tp-toolbar {
-  height: 32px;
-  background: var(--cs-panel);
-  border-bottom: 1px solid var(--cs-border);
+  min-height: 48px;
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
-  padding: 0 10px;
+  padding: 8px 12px;
+  background: var(--cs-panel);
+  border-bottom: 1px solid var(--cs-card-border);
   flex-shrink: 0;
 }
 
 .tp-title-group {
   display: flex;
-  align-items: center;
-  gap: 6px;
+  align-items: baseline;
+  gap: 8px;
 }
 
 .tp-title {
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--cs-text-bright);
+  white-space: nowrap;
 }
 
 .tp-count {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--cs-text-dim);
+  white-space: nowrap;
 }
 
 .tp-spacer {
   flex: 1;
 }
 
+.tp-filter {
+  width: 110px;
+}
+
+.tp-filter-sm {
+  width: 100px;
+}
+
 .tp-search {
-  width: 200px;
+  width: 220px;
+}
+
+.tp-search-icon {
+  color: var(--cs-text-dim);
+}
+
+.tp-toolbar-divider {
+  width: 1px;
+  height: 20px;
+  flex-shrink: 0;
+  background: var(--cs-card-border);
+}
+
+/* ===== 内容区：12px 留白，卡片承载表格与表单 ===== */
+.tp-content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  overflow: hidden;
+}
+
+/* 表格卡片：白底 + 1px 边 + 8px 圆角 + 无阴影 */
+.tp-table-card {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--cs-panel);
+  border: 1px solid var(--cs-card-border);
+  border-radius: 8px;
+  overflow: hidden;
 }
 
 .tp-table-wrap {
   flex: 1;
+  min-height: 0;
   overflow: hidden;
 }
 
-.tp-bottom-bar {
-  height: 38px;
-  background: var(--cs-panel);
-  border-top: 1px solid var(--cs-border);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 12px;
+/* 分页：卡片底部右下（vxe 观感） */
+.tp-footer {
   flex-shrink: 0;
-}
-
-/* 表格紧凑密度（对齐客户端管理） */
-:deep(.el-table) {
-  font-size: 13px;
-  width: 100% !important;
-  background-color: transparent !important;
-}
-
-:deep(.el-table__body-wrapper) {
-  overflow-x: auto;
-}
-
-:deep(.el-table .cell) {
-  word-break: break-word;
-}
-
-:deep(.el-table th) {
-  background-color: var(--table-header-bg, #f6f8fa) !important;
-  color: var(--text-primary, #1f2328) !important;
-  font-weight: 600;
-  padding: 6px 8px !important;
-}
-
-:deep(.el-table td) {
-  padding: 6px 8px !important;
-}
-
-:deep(.el-table .el-table__row:hover > td) {
-  background-color: var(--bg-hover, #f0f3f6) !important;
-}
-
-:deep(.el-form-item__label) {
-  font-weight: 500;
-}
-
-/* ===== 顶部工具栏（批量选择 + 搜索筛选合并为一条紧凑横条） ===== */
-.tunnel-toolbar {
+  height: 52px;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  background: var(--bg-secondary, #f6f8fa);
-  border-bottom: 1px solid var(--border-color, #e5e5e5);
-  border-radius: 10px 10px 0 0;
+  justify-content: flex-end;
+  padding: 0 12px;
+  border-top: 1px solid var(--cs-card-border);
 }
 
-.tunnel-search-input {
-  width: 240px;
-}
-
-.tunnel-filter-select {
-  width: 130px;
-}
-
-.toolbar-spacer {
-  flex: 1;
-}
-
-/* ===== 批量选择 ===== */
-.batch-buttons {
-  display: flex;
-  gap: 8px;
+/* ===== 单元格内容 ===== */
+/* 状态：在线实心绿 tag；离线灰 tag；启动中橙 tag（20px / 4px 圆角 / 12px） */
+.vs-status-tag {
+  display: inline-flex;
   align-items: center;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
 }
 
-/* ===== 操作按钮（紧凑） ===== */
+.vs-status-tag.is-online {
+  background: var(--cs-online);
+  color: #fff;
+}
+
+.vs-status-tag.is-warn {
+  background: color-mix(in srgb, var(--cs-warning) 22%, transparent);
+  color: var(--cs-elevated);
+}
+
+.vs-status-tag.is-offline {
+  background: color-mix(in srgb, var(--cs-offline) 22%, transparent);
+  color: var(--cs-text-dim);
+}
+
+/* 中性 chip（协议等非状态标签） */
+.vs-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1;
+  background: var(--cs-table-head);
+  border: 1px solid var(--cs-card-border);
+  color: var(--cs-text);
+}
+
+.vs-dim {
+  color: var(--cs-text-dim);
+}
+
+.vs-nowrap {
+  white-space: nowrap;
+}
+
+/* 行内操作：24px 紧凑按钮（危险项红字描边） */
 .action-buttons {
   display: flex;
   gap: 6px;
   flex-wrap: nowrap;
   align-items: center;
-  justify-content: flex-start;
 }
 
-.action-buttons .el-button {
-  margin: 0;
-  min-width: 52px;
-  flex-shrink: 0;
-  padding: 4px 8px;
-  font-size: 12px;
-  white-space: nowrap;
+.action-buttons .cs-btn {
+  padding: 0 8px;
 }
 
-/* ===== 分页（右对齐紧凑） ===== */
-.pagination-container {
-  display: flex;
-  justify-content: flex-end;
-  padding: 8px 12px;
-  border-top: 1px solid var(--border-color, #e5e5e5);
+.cs-btn-spin {
+  width: 10px;
+  height: 10px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: vs-spin 0.8s linear infinite;
 }
 
-/* ===== 协议选择 ===== */
-.protocol-options {
-  width: 100%;
+@keyframes vs-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
-.protocol-options .el-radio-button {
-  flex: 1;
-}
-
-.protocol-options .el-radio-button__inner {
-  width: 100%;
-  border-radius: 4px;
-}
-
-.protocol-options .el-radio-button:first-child .el-radio-button__inner {
-  border-top-left-radius: 4px;
-  border-bottom-left-radius: 4px;
-}
-
-.protocol-options .el-radio-button:last-child .el-radio-button__inner {
-  border-top-right-radius: 4px;
-  border-bottom-right-radius: 4px;
-}
-
-.protocol-description {
-  margin-top: 8px;
-}
-
-.protocol-description .el-alert {
-  border: 1px solid #67c23a;
-  background: var(--table-header-bg, #f6f8fa);
-}
-
-/* 内联协议选择（对话框内四个选项一行，紧凑） */
-.protocol-options-inline {
-  display: flex;
-  width: 100%;
-  gap: 0;
-}
-
-.protocol-options-inline .el-radio-button {
-  flex: 1;
-}
-
-.protocol-options-inline .el-radio-button__inner {
-  width: 100%;
-  text-align: center;
-  border-radius: 0;
-  padding: 8px 4px;
-  font-size: 13px;
-}
-
-.protocol-options-inline .el-radio-button:first-child .el-radio-button__inner {
-  border-top-left-radius: 4px;
-  border-bottom-left-radius: 4px;
-}
-
-.protocol-options-inline .el-radio-button:last-child .el-radio-button__inner {
-  border-top-right-radius: 4px;
-  border-bottom-right-radius: 4px;
-}
-
-/* 对话框表单紧凑 */
-:deep(.el-dialog__body) {
-  padding: 16px 20px;
-}
-
-:deep(.el-dialog__body .el-form-item) {
-  margin-bottom: 12px;
-}
-
-/* ===== 备注编辑 ===== */
+/* 备注单元格：文本 + 铅笔图标按钮 */
 .note-container {
   display: flex;
   align-items: center;
@@ -1285,70 +1281,66 @@ onMounted(() => {
   word-break: break-word;
 }
 
-.edit-note-btn {
-  padding: 4px;
-  margin-left: 4px;
-  min-width: auto;
+.note-edit-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  flex-shrink: 0;
+  font-size: 14px;
+  color: var(--cs-text-dim);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: color 120ms ease, background 120ms ease;
 }
 
-/* CS Native Inline Form Panel */
+.note-edit-btn:hover {
+  color: var(--cs-active);
+  background: var(--cs-hover);
+}
+
+/* ===== 内联配置面板（vshell 卡片；表单行样式由全局 .cs-form-row 提供） ===== */
 .cs-inline-panel {
+  flex-shrink: 0;
   background: var(--cs-panel);
-  border-top: 2px solid var(--cs-active);
-  border-bottom: 1px solid var(--cs-border);
-  padding: 10px 14px;
+  border: 1px solid var(--cs-card-border);
+  border-radius: 8px;
+  overflow: hidden;
 }
 
 .cs-inline-header {
+  height: 38px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 10px;
-  padding-bottom: 6px;
-  border-bottom: 1px solid var(--cs-border);
+  padding: 0 12px;
+  border-bottom: 1px solid var(--cs-card-border);
 }
 
 .cs-inline-title {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--cs-text-bright);
 }
 
 .cs-inline-body {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  max-width: 600px;
-}
-
-.cs-form-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.cs-form-label {
-  width: 120px;
-  text-align: right;
-  font-size: 12px;
-  color: var(--cs-text-dim);
-  flex-shrink: 0;
+  padding: 12px 16px;
 }
 
 .cs-form-label .req {
-  color: #f56c6c;
-}
-
-.cs-form-input-wrap {
-  flex: 1;
+  color: var(--cs-error);
 }
 
 .cs-inline-footer {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-top: 8px;
-  padding-left: 132px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--cs-card-border);
 }
 </style>
-

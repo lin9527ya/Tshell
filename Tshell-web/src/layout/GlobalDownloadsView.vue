@@ -40,10 +40,22 @@
         class="gd-search-input"
       />
 
+      <button class="cs-btn cs-btn-primary" :disabled="!selectedRow && !selectedRows.length" @click="handleDownloadSelected">
+        {{ isZh ? '下载到本地' : 'Download' }}
+      </button>
+      <button class="cs-btn cs-btn-danger" :disabled="!selectedRow && !selectedRows.length" @click="handleDeleteSelected">
+        {{ isZh ? '删除记录' : 'Delete' }}
+      </button>
       <button class="cs-btn" :disabled="loading" @click="refreshAll">
         <el-icon :class="{ 'is-loading': loading }"><Refresh /></el-icon>
         <span>{{ isZh ? '刷新' : 'Refresh' }}</span>
       </button>
+      <button class="cs-btn" @click="showHelp">
+        {{ isZh ? '帮助' : 'Help' }}
+      </button>
+      <span class="gd-status-info">
+        {{ isZh ? `共 ${filteredList.length} 个下载项` : `${filteredList.length} download items` }}
+      </span>
     </div>
 
     <!-- Table -->
@@ -131,28 +143,6 @@
         </template>
       </el-table>
     </div>
-
-    <!-- Bottom Action Bar (CS Native Button Row) -->
-    <div class="gd-bottom-bar">
-      <button class="cs-btn cs-btn-primary" :disabled="!selectedRow && !selectedRows.length" @click="handleDownloadSelected">
-        {{ isZh ? '下载到本地 (Sync)' : 'Download' }}
-      </button>
-      <button class="cs-btn cs-btn-danger" :disabled="!selectedRow && !selectedRows.length" @click="handleDeleteSelected">
-        {{ isZh ? '删除记录 (Delete)' : 'Delete' }}
-      </button>
-      <button class="cs-btn" @click="refreshAll">
-        {{ isZh ? '刷新列表' : 'Refresh' }}
-      </button>
-      <button class="cs-btn" @click="showHelp">
-        {{ isZh ? '帮助' : 'Help' }}
-      </button>
-
-      <div class="gd-bottom-spacer" />
-
-      <span class="gd-status-info">
-        {{ isZh ? `共 ${filteredList.length} 个下载项` : `${filteredList.length} download items` }}
-      </span>
-    </div>
   </div>
 </template>
 
@@ -162,9 +152,9 @@ import type { ComputedRef, Ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { FolderOpened, Refresh, Document } from '@element-plus/icons-vue'
 import { useClientsStore } from '@/stores/clients'
-import { useWorkspaceStore } from '@/stores/workspace'
 import { useI18nStore } from '@/stores/i18n'
-import { useTabActive, useVisibilityInterval } from '@/utils/useVisibilityInterval'
+import { useSessionSelectionStore } from '@/stores/sessionSelection'
+import { useVisibilityInterval } from '@/utils/useVisibilityInterval'
 import EmptyState from '@/components/Common/EmptyState.vue'
 import ClientAPI from '@/api/clients'
 
@@ -188,7 +178,7 @@ interface DownloadRow {
 }
 
 const clientsStore = useClientsStore()
-const workspace = useWorkspaceStore()
+const workspace = useSessionSelectionStore()
 const i18nStore = useI18nStore()
 const isZh = computed(() => i18nStore.isZh)
 
@@ -373,15 +363,13 @@ function showHelp() {
 }
 
 // 【性能】仅当存在未完成下载时轮询(原有条件保留),且本标签非活动/页面隐藏时暂停
-const tabActive = useTabActive()
 useVisibilityInterval(
   () => {
     if (downloadItems.value.some((d) => parseInt(d.downloadPart) < 100)) {
       refreshAll()
     }
   },
-  3000,
-  { isActive: () => tabActive.value },
+  3000
 )
 
 onMounted(() => {
@@ -398,60 +386,69 @@ onMounted(() => {
   overflow: hidden;
 }
 
+/* 工具条：白底 + 1px 分隔线 */
 .gd-toolbar {
-  height: 36px;
-  background: var(--cs-titlebar-bg);
-  border-bottom: 1px solid var(--cs-border);
+  flex-shrink: 0;
+  min-height: 48px;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 0 12px;
-  flex-shrink: 0;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px 16px;
+  background: var(--cs-panel);
+  border-bottom: 1px solid var(--cs-card-border);
 }
 
 .gd-title-group {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
 }
 
 .gd-title-icon {
-  font-size: 18px;
-  color: #ffc107;
+  font-size: 16px;
+  color: var(--cs-warning);
 }
 
 .gd-title {
-  font-size: 17px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--cs-text-bright);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .gd-count {
-  font-size: 16px;
+  font-size: 13px;
   color: var(--cs-text-dim);
+  white-space: nowrap;
 }
 
 .gd-scope-toggle {
   display: inline-flex;
   align-items: center;
-  background: var(--cs-bg, #181818);
-  border: 1px solid var(--cs-border, #333333);
-  border-radius: 4px;
-  padding: 2px;
   gap: 2px;
   margin-left: 6px;
+  padding: 2px;
+  background: var(--cs-panel);
+  border: 1px solid var(--cs-border-strong);
+  border-radius: 6px;
 }
 
 .gd-scope-btn {
-  height: 24px;
+  height: 26px;
   padding: 0 10px;
-  font-size: 14px;
+  font-family: var(--cs-font-ui);
+  font-size: 13px;
   color: var(--cs-text-dim);
   background: transparent;
   border: none;
-  border-radius: 3px;
+  border-radius: 4px;
   cursor: pointer;
   white-space: nowrap;
+  transition: background 120ms ease, color 120ms ease;
 }
 
 .gd-scope-btn:hover {
@@ -462,13 +459,14 @@ onMounted(() => {
 .gd-scope-btn.active {
   color: #ffffff;
   background: var(--cs-active);
-  font-weight: 600;
 }
 
-.gd-spacer { flex: 1; }
+.gd-spacer {
+  flex: 1;
+}
 
 .gd-search-input {
-  width: 260px;
+  width: 240px;
 }
 
 .gd-table-wrap {
@@ -477,6 +475,7 @@ onMounted(() => {
   position: relative;
 }
 
+/* ===== 单元格渲染 ===== */
 .gd-file-cell {
   display: flex;
   align-items: center;
@@ -488,41 +487,36 @@ onMounted(() => {
   flex-shrink: 0;
 }
 
-.icon-binary { color: #52c41a; }
-.icon-script { color: #13c2c2; }
-.icon-zip { color: #fa8c16; }
-.icon-doc { color: #8c8c8c; }
+.icon-binary {
+  color: var(--cs-online);
+}
+.icon-script {
+  color: var(--cs-log-system);
+}
+.icon-zip {
+  color: var(--cs-elevated);
+}
+.icon-doc {
+  color: var(--cs-text-dim);
+}
 
 .file-name-cell {
+  font-weight: 600;
   color: var(--cs-text-bright);
-  font-size: 16.5px;
 }
 
 .host-cell {
   color: var(--cs-text);
-  font-size: 16px;
 }
 
 .progress-cell {
   width: 100%;
 }
 
-.gd-bottom-bar {
-  height: 38px;
-  padding: 0 12px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: var(--cs-panel);
-  border-top: 1px solid var(--cs-border);
-  flex-shrink: 0;
-}
-
-.gd-bottom-spacer { flex: 1; }
-
 .gd-status-info {
-  font-size: 15px;
-  color: var(--cs-text-dim);
   font-family: var(--cs-font-mono);
+  font-size: 13px;
+  color: var(--cs-text-dim);
+  white-space: nowrap;
 }
 </style>

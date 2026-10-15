@@ -114,19 +114,18 @@ function consumeReportsTab(): string | null {
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { useWorkspaceStore } from '@/stores/workspace'
 import { useI18nStore } from '@/stores/i18n'
 import reportApi from '@/api/report'
 
-const workspace = useWorkspaceStore()
+const props = defineProps<{ modelValue: boolean }>()
+const emit = defineEmits<{ (e: 'update:modelValue', val: boolean): void }>()
+
 const i18nStore = useI18nStore()
 const isZh = computed(() => i18nStore.isZh)
 
 const visible = computed({
-  get: () => workspace.dialogs.reports,
-  set: (v) => {
-    if (!v) workspace.closeDialog('reports')
-  },
+  get: () => props.modelValue,
+  set: (v) => emit('update:modelValue', v),
 })
 
 const activeTab = ref('ioc')
@@ -195,7 +194,7 @@ function exportTTP() {
 }
 
 function close() {
-  workspace.closeDialog('reports')
+  visible.value = false
 }
 </script>
 
@@ -206,54 +205,50 @@ function close() {
 .rp-toolbar {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
+  gap: 12px;
+  margin-bottom: 12px;
 }
 .rp-meta {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--cs-text-dim);
   font-family: var(--cs-font-mono);
 }
 .rp-stats {
   display: flex;
-  gap: 10px;
-  margin-bottom: 8px;
+  gap: 12px;
+  margin-bottom: 12px;
 }
 .rp-stat-card {
-  border: 1px solid var(--cs-border);
-  border-radius: 3px;
-  padding: 6px 14px;
+  border-radius: 8px;
+  padding: 8px 16px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  background: var(--cs-panel);
+  background: var(--cs-hover);
 }
 .rp-stat-card b {
   font-size: 16px;
+  font-weight: 600;
   color: var(--cs-text-bright);
 }
 .rp-stat-card span {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--cs-text-dim);
+  margin-top: 2px;
 }
-.rp-online { color: #67c23a; }
+.rp-online { color: var(--cs-online); }
 .rp-offline { color: var(--cs-text-dim); }
 .rp-extra {
-  margin-top: 10px;
+  margin-top: 12px;
 }
 .rp-extra-title {
-  font-size: 11px;
+  font-size: 13px;
   color: var(--cs-text-dim);
-  margin-top: 6px;
+  margin-top: 8px;
 }
 .rp-extra-body {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--cs-text);
   word-break: break-all;
-}
-.cs-dialog-footer-center {
-  display: flex;
-  justify-content: center;
-  gap: 8px;
 }
 </style>

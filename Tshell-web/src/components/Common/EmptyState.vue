@@ -45,19 +45,21 @@ withDefaults(
 }
 
 .cs-empty-icon {
-  font-size: 26px;
+  font-size: 40px;
   line-height: 1;
-  opacity: 0.75;
+  opacity: 1;
+  color: var(--cs-text-dim, #999);
+  filter: grayscale(1);
 }
 
 .cs-empty-title {
-  font-size: 13px;
-  color: var(--cs-text-dim, #6e7681);
+  font-size: 14px;
+  color: var(--cs-text-dim, #999);
 }
 
 .cs-empty-desc {
-  font-size: 11px;
-  color: var(--cs-text-dim, #6e7681);
+  font-size: 12px;
+  color: var(--cs-text-dim, #999);
   opacity: 0.85;
   max-width: 420px;
   line-height: 1.6;

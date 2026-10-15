@@ -1,6 +1,6 @@
 <template>
   <div class="delivery-page cs-font-ui">
-    <!-- CS Toolbar -->
+    <!-- 工具条：左侧标题/计数，右侧操作 -->
     <div class="wd-toolbar">
       <div class="wd-title-group">
         <span class="wd-title">{{ isZh ? '站点管理与 Web 投递' : 'Hosted Sites & Payloads' }}</span>
@@ -10,7 +10,28 @@
       <div class="wd-spacer" />
 
       <button class="cs-btn cs-btn-primary" @click="openCreate">
-        {{ isZh ? '托管文件 / 新增站点' : 'Host File / Add Site' }}
+        {{ isZh ? '新增投递 / 站点' : 'New Delivery / Site' }}
+      </button>
+      <button class="cs-btn" @click="openCloneSite">
+        {{ isZh ? '克隆站点' : 'Clone Site' }}
+      </button>
+      <button class="cs-btn" @click="openHostFile">
+        {{ isZh ? '文件托管' : 'Host File' }}
+      </button>
+      <button class="cs-btn" :disabled="!selectedRow" @click="selectedRow && copyUrl(selectedRow)">
+        {{ isZh ? '复制 URL' : 'Copy URL' }}
+      </button>
+      <button class="cs-btn" :disabled="!selectedRow || statusOf(selectedRow) === 1" @click="selectedRow && handleOpen(selectedRow)">
+        {{ isZh ? '启动' : 'Launch' }}
+      </button>
+      <button class="cs-btn" :disabled="!selectedRow || statusOf(selectedRow) === 2" @click="selectedRow && handleClose(selectedRow)">
+        {{ isZh ? '停止' : 'Kill / Stop' }}
+      </button>
+      <button class="cs-btn cs-btn-danger" :disabled="!selectedRow" @click="selectedRow && handleDelete(selectedRow)">
+        {{ isZh ? '删除' : 'Remove' }}
+      </button>
+      <button class="cs-btn" @click="handleHelp">
+        {{ isZh ? '帮助' : 'Help' }}
       </button>
       <button class="cs-btn" @click="getWebDeliveryList">
         {{ isZh ? '刷新' : 'Refresh' }}
@@ -18,9 +39,9 @@
     </div>
 
     <div class="wd-table-wrap">
-    <el-table :data="tableData" row-key="id" stripe height="calc(100% - 12px)" style="width: 100%; margin-top: 12px" @selection-change="handleSelectionChange">
+    <el-table :data="tableData" row-key="id" height="100%" @selection-change="handleSelectionChange">
       <template #empty>
-        <EmptyState variant="inline" :title="isZh ? '暂无 Web 投递记录' : 'No Web Deliveries'" />
+        <EmptyState icon="🌐" variant="inline" :title="isZh ? '暂无 Web 投递记录' : 'No Web Deliveries'" />
       </template>
       <el-table-column type="selection" width="40" :reserve-selection="true" />
       <el-table-column type="expand" width="34">
@@ -124,28 +145,6 @@
     </el-table>
     </div>
 
-    <!-- Bottom Action Bar (CS Native Button Row) -->
-    <div class="wd-bottom-bar cs-font-ui">
-      <button class="cs-btn cs-btn-primary" @click="openCreate">
-        {{ isZh ? '托管文件' : 'Host File' }}
-      </button>
-      <button class="cs-btn" :disabled="!selectedRow" @click="selectedRow && copyUrl(selectedRow)">
-        {{ isZh ? '复制 URL' : 'Copy URL' }}
-      </button>
-      <button class="cs-btn" :disabled="!selectedRow || statusOf(selectedRow) === 1" @click="selectedRow && handleOpen(selectedRow)">
-        {{ isZh ? '启动' : 'Launch' }}
-      </button>
-      <button class="cs-btn" :disabled="!selectedRow || statusOf(selectedRow) === 2" @click="selectedRow && handleClose(selectedRow)">
-        {{ isZh ? '停止' : 'Kill / Stop' }}
-      </button>
-      <button class="cs-btn cs-btn-danger" :disabled="!selectedRow" @click="selectedRow && handleDelete(selectedRow)">
-        {{ isZh ? '删除' : 'Remove' }}
-      </button>
-      <button class="cs-btn" @click="handleHelp">
-        {{ isZh ? '帮助' : 'Help' }}
-      </button>
-    </div>
-
     <!-- 创建 Delivery Hub -->
     <el-dialog v-model="dialogVisible" :title="isZh ? '配置 Delivery Hub' : 'Configure Delivery Hub'" width="720px" destroy-on-close>
       <el-form :model="formData" label-width="130px">
@@ -226,7 +225,7 @@
             <div v-if="previewUrls.stager"><b>{{ isZh ? '分阶段' : 'Stager' }}:</b> <code>{{ previewUrls.stager }}</code></div>
             <div v-if="previewUrls.shellcode"><b>{{ isZh ? 'Shellcode' : 'SC' }}:</b> <code>{{ previewUrls.shellcode }}</code></div>
           </div>
-          <el-button size="small" @click="doPreviewUrls" style="margin-top:6px">{{ isZh ? '刷新预览' : 'Refresh Preview' }}</el-button>
+          <el-button @click="doPreviewUrls" style="margin-top:6px">{{ isZh ? '刷新预览' : 'Refresh Preview' }}</el-button>
         </el-form-item>
         <el-form-item :label="isZh ? 'URI 路径' : 'URI Path'">
           <el-input v-model="formData.uriPath" :placeholder="isZh ? '可选伪装路径；空则用随机 key' : 'Optional decoy path; random key if empty'" />
@@ -295,7 +294,7 @@
           <el-button link type="primary" @click="copyText(commandUrls.shellcode)">{{ isZh ? '复制' : 'Copy' }}</el-button>
         </div>
       </div>
-      <el-table :data="commandList" size="small" max-height="480">
+      <el-table :data="commandList" max-height="480">
         <el-table-column prop="name" :label="isZh ? '名称' : 'Name'" width="180" />
         <el-table-column prop="os" label="OS" width="90" />
         <el-table-column prop="description" :label="isZh ? '说明' : 'Description'" width="180" show-overflow-tooltip />
@@ -306,7 +305,7 @@
         </el-table-column>
         <el-table-column label="" width="80">
           <template #default="{ row }">
-            <el-button size="small" type="primary" @click="copyText(row.code)">{{ isZh ? '复制' : 'Copy' }}</el-button>
+            <el-button type="primary" @click="copyText(row.code)">{{ isZh ? '复制' : 'Copy' }}</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -314,7 +313,7 @@
 
     <!-- 访问日志 -->
     <el-dialog v-model="logsDialogVisible" :title="isZh ? '投递访问日志' : 'Delivery Access Logs'" width="900px">
-      <el-table :data="accessLogs" size="small" max-height="500">
+      <el-table :data="accessLogs" max-height="500">
         <el-table-column prop="created_at" :label="isZh ? '时间' : 'Time'" width="170" />
         <el-table-column prop="resource" :label="isZh ? '资源' : 'Resource'" width="90" />
         <el-table-column prop="client_ip" label="IP" width="130" />
@@ -380,7 +379,7 @@
             </template>
             <div v-else class="si-empty">{{ isZh ? '选择 WebDelivery 后点击【查询构建信息】' : 'Select a WebDelivery and query build info' }}</div>
           </div>
-          <el-button size="small" :loading="stagerInfoLoading" @click="fetchStagerBuildInfo">{{ isZh ? '查询构建信息' : 'Query Build Info' }}</el-button>
+          <el-button :loading="stagerInfoLoading" @click="fetchStagerBuildInfo">{{ isZh ? '查询构建信息' : 'Query Build Info' }}</el-button>
         </el-form-item>
         <el-form-item>
           <el-button type="primary" :loading="dynamicGenerating" @click="handleDynamicStager">{{ isZh ? '生成' : 'Generate' }}</el-button>
@@ -421,7 +420,7 @@
           :title="isZh ? '为每个 Stager 生成独立令牌（带使用配额，一次一密）。Stager 下载时携带 X-Delivery-Token 头，配额用完即返回 404。' : 'Issues a unique token per Stager with a usage quota. The Stager sends it in the X-Delivery-Token header; once the quota is used up the server returns 404.'"
         />
       </div>
-      <el-table :data="tokenRows" size="small" stripe>
+      <el-table :data="tokenRows">
         <el-table-column prop="token" :label="isZh ? '令牌' : 'Token'" min-width="160">
           <template #default="{ row }"><code>{{ row.token }}</code></template>
         </el-table-column>
@@ -436,7 +435,7 @@
         </el-table-column>
         <el-table-column :label="isZh ? '操作' : 'Actions'" width="90">
           <template #default="{ row }">
-            <el-button size="small" type="danger" link @click="deleteToken(row)">{{ isZh ? '删除' : 'Delete' }}</el-button>
+            <el-button type="danger" link @click="deleteToken(row)">{{ isZh ? '删除' : 'Delete' }}</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -451,7 +450,7 @@
       <el-form label-width="90px">
         <el-form-item :label="isZh ? '配额' : 'Quota'">
           <el-input-number v-model="tokenQuota" :min="1" :max="100" />
-          <span style="margin-left: 8px; font-size: 12px; color: #909399">{{ isZh ? '允许下载次数（默认 3）' : 'Allowed downloads (default 3)' }}</span>
+          <span class="hint">{{ isZh ? '允许下载次数（默认 3）' : 'Allowed downloads (default 3)' }}</span>
         </el-form-item>
         <el-form-item :label="isZh ? '备注' : 'Note'">
           <el-input v-model="tokenNote" :placeholder="isZh ? '如：Stager-Win-x64-钓鱼' : 'e.g. Stager-Win-x64-phish'" />
@@ -476,17 +475,23 @@
         <el-button type="primary" :loading="tokenCreating" @click="createToken">{{ isZh ? '生成' : 'Generate' }}</el-button>
       </template>
     </el-dialog>
+
+    <!-- 页内对话框（原全局 store 挂载收编到本页；局部 ref + v-model） -->
+    <CloneSiteDialog v-model="cloneSiteVisible" :key="cloneSiteKey" />
+    <HostFileDialog v-model="hostFileVisible" :key="hostFileKey" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18nStore } from '@/stores/i18n'
 import { Plus, Refresh } from '@element-plus/icons-vue'
 import ClientAPI from '@/api/clients'
 import PageHeader from '@/components/Common/PageHeader.vue'
 import EmptyState from '@/components/Common/EmptyState.vue'
+import CloneSiteDialog from '@/layout/Dialogs/CloneSiteDialog.vue'
+import HostFileDialog from '@/layout/Dialogs/HostFileDialog.vue'
 
 const i18nStore = useI18nStore()
 const isZh = computed(() => i18nStore.isZh)
@@ -705,6 +710,26 @@ const openCreate = () => {
   handleDropdown(true)
   loadDeliveryDefaults()
   doPreviewUrls()
+}
+
+// 页内对话框（原全局挂载 → 局部 ref）
+const cloneSiteVisible = ref(false)
+const cloneSiteKey = ref(0)
+const hostFileVisible = ref(false)
+const hostFileKey = ref(0)
+
+// 两个弹窗自身都没有「打开时初始化」逻辑：打开前换 key 强制重挂，避免上次表单/文件残留
+// （先重挂空实例再打开，保留 el-dialog 的打开动画）
+const openCloneSite = async () => {
+  cloneSiteKey.value += 1
+  await nextTick()
+  cloneSiteVisible.value = true
+}
+
+const openHostFile = async () => {
+  hostFileKey.value += 1
+  await nextTick()
+  hostFileVisible.value = true
 }
 
 const handleCreate = async () => {
@@ -1128,30 +1153,31 @@ onMounted(() => {
 }
 
 .wd-toolbar {
-  height: 36px;
-  background: var(--cs-titlebar-bg);
-  border-bottom: 1px solid var(--cs-border);
+  min-height: 48px;
+  background: var(--cs-panel);
+  border-bottom: 1px solid var(--cs-card-border);
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 0 12px;
+  gap: 8px;
+  padding: 8px 16px;
   flex-shrink: 0;
+  flex-wrap: wrap;
 }
 
 .wd-title-group {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  align-items: baseline;
+  gap: 6px;
 }
 
 .wd-title {
-  font-size: 17px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--cs-text-bright);
 }
 
 .wd-count {
-  font-size: 16px;
+  font-size: 12px;
   color: var(--cs-text-dim);
 }
 
@@ -1162,19 +1188,12 @@ onMounted(() => {
 .wd-table-wrap {
   flex: 1;
   overflow: hidden;
+  margin: 16px;
+  background: var(--cs-panel);
+  border: 1px solid var(--cs-card-border);
+  border-radius: 8px;
 }
 
-.wd-bottom-bar {
-  height: 38px;
-  background: var(--cs-panel);
-  border-top: 1px solid var(--cs-border);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 0 12px;
-  flex-shrink: 0;
-}
 .mb-16 {
   margin-bottom: 16px;
 }
@@ -1182,19 +1201,19 @@ onMounted(() => {
   margin-bottom: 12px;
 }
 .mono {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12px;
+  font-family: var(--cs-font-mono);
+  font-size: 13px;
 }
 .sub {
-  font-size: 11px;
-  color: #909399;
+  font-size: 12px;
+  color: var(--cs-text-dim);
 }
 .stager-info-box {
   background: var(--cs-bg);
-  border: 1px solid var(--cs-border);
-  border-radius: 2px;
-  padding: 6px 10px;
-  font-size: 12px;
+  border: 1px solid var(--cs-card-border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 13px;
   line-height: 1.7;
   color: var(--cs-text);
   margin-bottom: 8px;
@@ -1205,25 +1224,28 @@ onMounted(() => {
 }
 .si-loading,
 .si-empty {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--cs-text-dim);
+}
+.text-danger {
+  color: var(--cs-error);
 }
 .hint {
   margin-left: 8px;
-  color: #909399;
+  color: var(--cs-text-dim);
   font-size: 12px;
 }
 .url-box {
-  background: #0d1117;
-  border: 1px solid var(--cs-border);
-  border-radius: 4px;
+  background: var(--cs-console);
+  border: 1px solid var(--cs-card-border);
+  border-radius: 8px;
   padding: 10px 14px;
-  font-size: 15px;
+  font-size: 13px;
 }
 .url-box code {
-  font-size: 14.5px;
+  font-size: 13px;
   font-family: var(--cs-font-mono);
-  color: #58a6ff;
+  color: var(--cs-active);
   word-break: break-all;
 }
 .cmd {
@@ -1231,26 +1253,26 @@ onMounted(() => {
   white-space: pre-wrap;
   word-break: break-all;
   font-family: var(--cs-font-mono);
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1.5;
-  background: #0d1117;
-  color: #58a6ff;
+  background: var(--cs-console);
+  color: var(--cs-active);
   padding: 6px 10px;
-  border-radius: 3px;
-  border: 1px solid var(--cs-border);
+  border-radius: 6px;
+  border: 1px solid var(--cs-card-border);
 }
 </style>
 <style scoped>
 .wd-expand-detail {
   background: var(--cs-panel);
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--cs-border);
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--cs-card-border);
 }
 .wd-detail-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 6px 16px;
-  font-size: 12px;
+  gap: 8px 16px;
+  font-size: 13px;
   color: var(--cs-text);
 }
 .wd-detail-item b {

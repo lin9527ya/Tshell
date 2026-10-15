@@ -7,10 +7,10 @@
     class="cs-dialog"
     :close-on-click-modal="false"
   >
-    <div class="cs-form-container cs-font-ui">
+    <div class="cs-dialog-body cs-font-ui">
       <div class="cs-form-row">
         <label class="cs-form-label">{{ isZh ? '连接方式' : 'Connection Method' }}:</label>
-        <el-select v-model="form.connectionMethod" size="small" style="width: 100%">
+        <el-select v-model="form.connectionMethod" size="small" class="cs-form-input">
           <el-option label="TCP" value="TCP" />
           <el-option label="KCP/UDP" value="KCP/UDP" />
           <el-option label="WebSocket" value="WebSocket" />
@@ -20,19 +20,19 @@
       </div>
       <div class="cs-form-row">
         <label class="cs-form-label">{{ isZh ? 'IP / 域名' : 'IP / Domain' }}:</label>
-        <el-input v-model="form.ipAddress" :placeholder="isZh ? '正向客户端监听 IP 或域名' : 'Forward client listener IP / domain'" />
+        <el-input v-model="form.ipAddress" class="cs-form-input" :placeholder="isZh ? '正向客户端监听 IP 或域名' : 'Forward client listener IP / domain'" />
       </div>
       <div class="cs-form-row">
         <label class="cs-form-label">{{ isZh ? '端口' : 'Port' }}:</label>
-        <el-input v-model="form.port" placeholder="8080" />
+        <el-input v-model="form.port" class="cs-form-input" placeholder="8080" />
       </div>
       <div class="cs-form-row">
         <label class="cs-form-label">VKey:</label>
-        <el-input v-model="form.vkey" show-password :placeholder="isZh ? '可选，会话密钥' : 'Optional session key'" />
+        <el-input v-model="form.vkey" class="cs-form-input" show-password :placeholder="isZh ? '可选，会话密钥' : 'Optional session key'" />
       </div>
       <div class="cs-form-row">
         <label class="cs-form-label">{{ isZh ? '加密盐' : 'Encryption Salt' }}:</label>
-        <el-input v-model="form.encryptionSalt" show-password :placeholder="isZh ? '可选，流量加密盐' : 'Optional traffic salt'" />
+        <el-input v-model="form.encryptionSalt" class="cs-form-input" show-password :placeholder="isZh ? '可选，流量加密盐' : 'Optional traffic salt'" />
       </div>
       <div class="cs-form-row">
         <label class="cs-form-label">eBPF:</label>
@@ -105,9 +105,3 @@ async function handleConnect() {
 }
 </script>
 
-<style scoped>
-.cs-form-container { display: flex; flex-direction: column; gap: 12px; }
-.cs-form-row { display: flex; align-items: center; gap: 10px; }
-.cs-form-label { width: 110px; font-size: 12px; text-align: right; color: var(--cs-text); flex-shrink: 0; }
-.cs-dialog-footer-center { display: flex; justify-content: center; gap: 8px; }
-</style>

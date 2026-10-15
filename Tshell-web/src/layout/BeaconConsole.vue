@@ -49,7 +49,7 @@
         spellcheck="false"
         @keydown="onKeydown"
       />
-      <button class="bc-send-btn" @click="send">{{ isZh ? '运行' : 'Run' }}</button>
+      <button class="cs-btn cs-btn-primary" @click="send">{{ isZh ? '运行' : 'Run' }}</button>
     </div>
 
     <!-- 任务队列可视化对话框 -->
@@ -103,6 +103,7 @@
 
 <script setup lang="ts">
 import { computed, watch, onBeforeUnmount, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { Terminal } from 'xterm'
 import { FitAddon } from 'xterm-addon-fit'
 import { WebLinksAddon } from 'xterm-addon-web-links'
@@ -110,8 +111,7 @@ import 'xterm/css/xterm.css'
 import { useClientsStore } from '@/stores/clients'
 import { useI18nStore } from '@/stores/i18n'
 import { useCommandHistoryStore } from '@/stores/shellcommand'
-import { useWorkspaceStore } from '@/stores/workspace'
-import { useTabActive, useVisibilityInterval } from '@/utils/useVisibilityInterval'
+import { useVisibilityInterval } from '@/utils/useVisibilityInterval'
 import ClientAPI from '@/api/clients'
 import { ElMessage } from 'element-plus'
 
@@ -119,6 +119,7 @@ import { useCredentialsStore } from '@/stores/credentials'
 import { usePreferencesStore } from '@/stores/preferences'
 import EmptyState from '@/components/Common/EmptyState.vue'
 
+const router = useRouter()
 const props = defineProps<{ uid: string }>()
 
 const i18nStore = useI18nStore()
@@ -126,7 +127,6 @@ const isZh = computed(() => i18nStore.isZh)
 
 const clientsStore = useClientsStore()
 const historyStore = useCommandHistoryStore()
-const workspace = useWorkspaceStore()
 const credsStore = useCredentialsStore()
 const prefStore = usePreferencesStore()
 
@@ -168,8 +168,7 @@ let terminal: Terminal | null = null
 let fitAddon: FitAddon | null = null
 let lastLen = 0
 // 3s 轮询接入可见性治理: 页面隐藏或本标签非活动时暂停(fetchContent 为函数声明,已提升)
-const tabActive = useTabActive()
-useVisibilityInterval(fetchContent, 3000, { isActive: () => tabActive.value })
+useVisibilityInterval(fetchContent, 3000)
 
 const client = computed(() => clientsStore.getClientByUid(props.uid))
 const online = computed(() => client.value?.Online === '1')
@@ -361,30 +360,15 @@ function onKeydown(e: KeyboardEvent) {
 }
 
 function openFiles() {
-  workspace.openTab({
-    id: `files:${props.uid}`,
-    title: isZh.value ? `文件管理: ${host.value}` : `Files: ${host.value}`,
-    component: 'client-files',
-    params: { uid: props.uid },
-  })
+  router.push(`/client/${props.uid}/files`)
 }
 
 function openPids() {
-  workspace.openTab({
-    id: `pids:${props.uid}`,
-    title: isZh.value ? `进程列表: ${host.value}` : `Processes: ${host.value}`,
-    component: 'client-pids',
-    params: { uid: props.uid },
-  })
+  router.push(`/client/${props.uid}/process`)
 }
 
 function openScreenshots() {
-  workspace.openTab({
-    id: `screenshots:${props.uid}`,
-    title: isZh.value ? `屏幕截图: ${host.value}` : `Screenshots: ${host.value}`,
-    component: 'client-screenshots',
-    params: { uid: props.uid },
-  })
+  router.push(`/client/${props.uid}/screenshot`)
 }
 
 function fit() {
@@ -453,156 +437,250 @@ onBeforeUnmount(() => {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: #0a0a0a;
+  background: var(--cs-panel);
   overflow: hidden;
 }
 
-/* Header Bar */
+/* ===== 顶部信息栏（vshell 白底卡片头） ===== */
 .bc-header {
+  flex-shrink: 0;
+  min-height: 48px;
   display: flex;
   align-items: center;
-  gap: 14px;
-  height: 36px;
-  padding: 0 12px;
-  background: var(--cs-titlebar-bg);
-  border-bottom: 1px solid var(--cs-border);
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 6px 16px;
+  background: var(--cs-panel);
+  border-bottom: 1px solid var(--cs-card-border);
   color: var(--cs-text);
-  font-size: 16px;
-  flex-shrink: 0;
+  font-size: 14px;
   user-select: none;
 }
+
 .bc-status-group {
   display: flex;
   align-items: center;
   gap: 8px;
 }
+
 .bc-dot {
-  width: 9px;
-  height: 9px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
 }
+
 .bc-dot.online {
   background: var(--cs-online);
-  box-shadow: 0 0 4px var(--cs-online);
 }
+
 .bc-dot.offline {
   background: var(--cs-offline);
 }
+
 .bc-host {
+  font-size: 14px;
+  font-weight: 600;
   color: var(--cs-text-bright);
-  font-weight: 600;
-  font-size: 17px;
 }
+
 .bc-user {
-  color: var(--cs-text);
   font-family: var(--cs-font-mono);
+  font-size: 13px;
+  color: var(--cs-text-dim);
 }
+
 .bc-user.is-admin {
-  color: #f44336;
   font-weight: 600;
+  color: var(--cs-elevated);
 }
+
 .bc-meta-group {
   display: flex;
   align-items: center;
   gap: 6px;
   font-family: var(--cs-font-mono);
 }
+
 .bc-meta-pill {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  background: var(--cs-bg);
-  border: 1px solid var(--cs-border);
-  padding: 1px 6px;
-  border-radius: 2px;
-  font-size: 12.5px;
+  height: 20px;
+  padding: 0 7px;
+  font-size: 12px;
+  background: var(--cs-hover);
+  border: 1px solid var(--cs-card-border);
+  border-radius: 4px;
 }
+
 .pill-k {
   color: var(--cs-text-dim);
-  font-size: 11px;
-  text-transform: uppercase;
 }
+
 .bc-meta-pill b {
-  color: var(--cs-text-bright);
+  color: var(--cs-text);
+  font-weight: 600;
 }
-.bc-spacer { flex: 1; }
+
+.bc-spacer {
+  flex: 1;
+}
 
 .bc-quick-actions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
 }
+
 .bc-action-btn {
-  background: var(--cs-panel);
-  border: 1px solid var(--cs-border);
-  border-radius: 2px;
+  height: 28px;
+  padding: 0 10px;
+  font-family: var(--cs-font-ui);
+  font-size: 13px;
   color: var(--cs-text);
-  font-size: 15px;
-  padding: 2px 8px;
+  background: var(--cs-panel);
+  border: 1px solid var(--cs-border-strong);
+  border-radius: 6px;
   cursor: pointer;
+  white-space: nowrap;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
 }
+
 .bc-action-btn:hover {
   background: var(--cs-hover);
-  color: var(--cs-text-bright);
   border-color: var(--cs-active);
+  color: var(--cs-active);
 }
-.bc-last.ok { color: var(--cs-online); font-weight: 500; }
-.bc-last.err { color: var(--cs-offline); }
 
-/* Terminal Surface */
+.bc-last {
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.bc-last.ok {
+  color: var(--cs-online);
+}
+
+.bc-last.err {
+  color: var(--cs-offline);
+}
+
+/* ===== 终端本体（深色底保留：与 xterm.js 主题一致） ===== */
 .bc-term {
   flex: 1;
   min-height: 0;
-  padding: 6px 0 0 8px;
+  padding: 8px 0 0 10px;
   background: #0a0a0a;
 }
+
 .bc-term :deep(.xterm) {
   height: 100%;
 }
+
 .bc-term :deep(.xterm-viewport) {
   background: #0a0a0a;
 }
 
-/* Input Bar */
+/* ===== 输入条（vshell 白底工具条） ===== */
 .bc-input-row {
+  flex-shrink: 0;
+  min-height: 48px;
   display: flex;
   align-items: center;
   gap: 10px;
-  height: 40px;
-  padding: 0 12px;
+  padding: 0 16px;
   background: var(--cs-panel);
-  border-top: 1px solid var(--cs-border);
-  flex-shrink: 0;
+  border-top: 1px solid var(--cs-card-border);
 }
+
 .bc-prompt {
-  color: #007acc;
-  font-family: 'JetBrains Mono', Consolas, monospace;
-  font-size: 19px;
+  font-family: var(--cs-font-mono);
+  font-size: 14px;
   font-weight: 600;
+  color: var(--cs-active);
+  white-space: nowrap;
 }
+
 .bc-input {
   flex: 1;
-  background: transparent;
-  border: 0;
+  height: 32px;
+  padding: 0 10px;
+  font-family: var(--cs-font-mono);
+  font-size: 13px;
+  color: var(--cs-text);
+  background: var(--cs-panel);
+  border: 1px solid var(--cs-border-strong);
+  border-radius: 6px;
   outline: 0;
-  color: #f0f0f0;
-  font-family: 'JetBrains Mono', Consolas, monospace;
-  font-size: 18px;
+  transition: border-color 120ms ease;
 }
+
+.bc-input:focus {
+  border-color: var(--cs-active);
+}
+
 .bc-input::placeholder {
-  color: #555;
   font-family: var(--cs-font-ui);
+  color: var(--cs-text-dim);
 }
-.bc-send-btn {
-  background: var(--cs-active);
-  border: 0;
-  border-radius: 2px;
-  color: #fff;
-  font-size: 16px;
-  padding: 4px 14px;
-  cursor: pointer;
+
+/* ===== 任务队列对话框 ===== */
+.tq-container {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
-.bc-send-btn:hover {
-  background: #1a8cd8;
+
+.tq-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.tq-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.tq-stat {
+  font-size: 13px;
+  color: var(--cs-text-dim);
+}
+
+.tq-stat b {
+  color: var(--cs-text);
+}
+
+.tq-warn {
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--cs-warning);
+  background: color-mix(in srgb, var(--cs-warning) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--cs-warning) 40%, transparent);
+  border-radius: 6px;
+}
+
+.tq-hint {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--cs-text-dim);
+}
+
+.mono-cell {
+  font-family: var(--cs-font-mono);
+  color: var(--cs-text);
+}
+
+.tq-queued {
+  color: var(--cs-log-cred);
+  font-weight: 600;
+}
+
+.tq-removed {
+  color: var(--cs-online);
+  font-weight: 600;
 }
 </style>

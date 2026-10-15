@@ -1,6 +1,6 @@
 <template>
   <div class="audit-container cs-font-ui">
-    <!-- CS Toolbar -->
+    <!-- 工具条：左侧标题，右侧筛选与操作 -->
     <div class="al-toolbar">
       <div class="al-title-group">
         <span class="al-title">{{ isZh ? '审计日志' : 'Audit Logs' }}</span>
@@ -9,14 +9,14 @@
 
       <div class="al-spacer" />
 
-      <el-select v-model="query.level" :placeholder="isZh ? '级别' : 'Level'" clearable size="small" style="width: 100px">
+      <el-select v-model="query.level" :placeholder="isZh ? '级别' : 'Level'" clearable style="width: 110px">
         <el-option label="INFO" value="INFO" />
         <el-option label="WARN" value="WARN" />
         <el-option label="ERROR" value="ERROR" />
         <el-option label="SECURITY" value="SECURITY" />
       </el-select>
 
-      <el-select v-model="query.category" :placeholder="isZh ? '类别' : 'Category'" clearable size="small" style="width: 110px">
+      <el-select v-model="query.category" :placeholder="isZh ? '类别' : 'Category'" clearable style="width: 120px">
         <el-option label="AUTH" value="AUTH" />
         <el-option label="API" value="API" />
         <el-option label="FILE" value="FILE" />
@@ -28,14 +28,17 @@
       <el-input
         v-model="query.keyword"
         :placeholder="isZh ? '过滤关键字 / 用户...' : 'Filter keyword / user...'"
-        size="small"
         clearable
         class="al-search"
         @keyup.enter="loadLogs"
       />
 
-      <button class="cs-btn" @click="loadLogs">{{ isZh ? '查询' : 'Query' }}</button>
+      <button class="cs-btn cs-btn-primary" @click="loadLogs">{{ isZh ? '查询' : 'Query' }}</button>
       <button class="cs-btn" @click="resetQuery">{{ isZh ? '重置' : 'Reset' }}</button>
+      <button class="cs-btn" @click="loadLogs">{{ isZh ? '刷新' : 'Refresh' }}</button>
+      <button class="cs-btn" @click="handleExport">{{ isZh ? '导出日志' : 'Export Logs' }}</button>
+      <button class="cs-btn cs-btn-danger" @click="handleCleanup">{{ isZh ? '清理日志' : 'Cleanup Logs' }}</button>
+      <button class="cs-btn" @click="handleHelp">{{ isZh ? '帮助' : 'Help' }}</button>
     </div>
 
     <!-- 审计统计摘要（后端 /audit/statistics，24h/7d/30d） -->
@@ -61,7 +64,7 @@
         <div class="al-spacer" />
 
         <span class="al-stat-hint">{{ isZh ? '统计区间' : 'Range' }}:</span>
-        <el-select v-model="statsRange" size="small" style="width: 90px" @change="loadStatistics">
+        <el-select v-model="statsRange" style="width: 96px" @change="loadStatistics">
           <el-option label="24h" value="24h" />
           <el-option label="7d" value="7d" />
           <el-option label="30d" value="30d" />
@@ -74,7 +77,7 @@
         </button>
       </div>
 
-      <!-- 分布与 Top 列表（CS 原生紧凑明细） -->
+      <!-- 分布与 Top 列表（紧凑明细） -->
       <div v-if="statsExpanded" class="al-stats-detail">
         <div class="al-dist-col">
           <div class="al-detail-title">{{ isZh ? '级别分布' : 'By Level' }}</div>
@@ -83,11 +86,11 @@
               {{ k }}: {{ n }}
             </span>
           </div>
-          <div class="al-detail-title" style="margin-top: 8px">{{ isZh ? '类别分布' : 'By Category' }}</div>
+          <div class="al-detail-title" style="margin-top: 12px">{{ isZh ? '类别分布' : 'By Category' }}</div>
           <div class="al-tags">
             <span v-for="(n, k) in stats.logs_by_category || {}" :key="k" class="al-tag">{{ k }}: {{ n }}</span>
           </div>
-          <div class="al-detail-title" style="margin-top: 8px">{{ isZh ? '结果分布' : 'By Result' }}</div>
+          <div class="al-detail-title" style="margin-top: 12px">{{ isZh ? '结果分布' : 'By Result' }}</div>
           <div class="al-tags">
             <span v-for="(n, k) in stats.logs_by_result || {}" :key="k" class="al-tag" :class="String(k) === 'SUCCESS' ? 'lvl-info' : 'lvl-error'">
               {{ k }}: {{ n }}
@@ -103,7 +106,7 @@
               <span class="al-top-count">{{ u.count }}</span>
             </div>
           </div>
-          <div class="al-detail-title" style="margin-top: 8px">{{ isZh ? 'Top 10 来源 IP' : 'Top 10 Source IPs' }}</div>
+          <div class="al-detail-title" style="margin-top: 12px">{{ isZh ? 'Top 10 来源 IP' : 'Top 10 Source IPs' }}</div>
           <div class="al-top-list">
             <div v-for="ip in stats.top_ips || []" :key="ip.ip" class="al-top-row">
               <span class="al-top-name mono">{{ ip.ip }}</span>
@@ -117,61 +120,53 @@
 
     <!-- Table -->
     <div class="al-table-wrap">
-      <el-table
-        :data="logs"
-        size="small"
-        height="100%"
-        highlight-current-row
-        class="cs-session-table"
-      >
-        <el-table-column prop="timestamp" :label="isZh ? '时间' : 'Time'" width="160" sortable>
-          <template #default="{ row }">
-            <span class="mono-cell">{{ formatTime(row.timestamp) }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column prop="level" :label="isZh ? '级别' : 'Level'" width="90" align="center">
-          <template #default="{ row }">
-            <span class="arch-badge" :class="`lvl-${row.level?.toLowerCase()}`">{{ row.level }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column prop="category" :label="isZh ? '类别' : 'Category'" width="100" align="center">
-          <template #default="{ row }">
-            <span class="mono-cell">{{ row.category }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column prop="username" :label="isZh ? '用户' : 'User'" width="110" show-overflow-tooltip />
-        <el-table-column prop="client_ip" :label="isZh ? '来源 IP' : 'Source IP'" width="120" show-overflow-tooltip>
-          <template #default="{ row }">
-            <span class="mono-cell">{{ row.client_ip || '-' }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column prop="action" :label="isZh ? '动作' : 'Action'" width="130" show-overflow-tooltip />
-        <el-table-column prop="result" :label="isZh ? '结果' : 'Result'" width="90" align="center">
-          <template #default="{ row }">
-            <span :class="row.result === 'SUCCESS' ? 'text-online' : 'text-danger'">{{ row.result }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column prop="message" :label="isZh ? '消息' : 'Message'" min-width="260" show-overflow-tooltip />
-      </el-table>
-    </div>
+      <div class="al-table-box">
+        <el-table
+          :data="logs"
+          height="100%"
+          highlight-current-row
+          class="cs-session-table"
+        >
+          <el-table-column prop="timestamp" :label="isZh ? '时间' : 'Time'" width="160" sortable>
+            <template #default="{ row }">
+              <span class="mono-cell">{{ formatTime(row.timestamp) }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="level" :label="isZh ? '级别' : 'Level'" width="90" align="center">
+            <template #default="{ row }">
+              <span class="arch-badge" :class="`lvl-${row.level?.toLowerCase()}`">{{ row.level }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="category" :label="isZh ? '类别' : 'Category'" width="100" align="center">
+            <template #default="{ row }">
+              <span class="mono-cell">{{ row.category }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="username" :label="isZh ? '用户' : 'User'" width="110" show-overflow-tooltip />
+          <el-table-column prop="client_ip" :label="isZh ? '来源 IP' : 'Source IP'" width="120" show-overflow-tooltip>
+            <template #default="{ row }">
+              <span class="mono-cell">{{ row.client_ip || '-' }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="action" :label="isZh ? '动作' : 'Action'" width="130" show-overflow-tooltip />
+          <el-table-column prop="result" :label="isZh ? '结果' : 'Result'" width="90" align="center">
+            <template #default="{ row }">
+              <span :class="row.result === 'SUCCESS' ? 'text-online' : 'text-danger'">{{ row.result }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="message" :label="isZh ? '消息' : 'Message'" min-width="260" show-overflow-tooltip />
+        </el-table>
+      </div>
 
-    <!-- Bottom Action Bar (CS Native Button Row) -->
-    <div class="al-bottom-bar">
-      <button class="cs-btn" @click="loadLogs">{{ isZh ? '刷新' : 'Refresh' }}</button>
-      <button class="cs-btn" @click="handleExport">{{ isZh ? '导出日志' : 'Export Logs' }}</button>
-      <button class="cs-btn cs-btn-danger" @click="handleCleanup">{{ isZh ? '清理日志' : 'Cleanup Logs' }}</button>
-      <button class="cs-btn" @click="handleHelp">{{ isZh ? '帮助' : 'Help' }}</button>
-
-      <div class="al-spacer" />
-
-      <el-pagination
-        v-model:current-page="query.page"
-        v-model:page-size="query.page_size"
-        :total="total"
-        layout="total, prev, pager, next"
-        :small="true"
-        @change="loadLogs"
-      />
+      <div class="al-pager">
+        <el-pagination
+          v-model:current-page="query.page"
+          v-model:page-size="query.page_size"
+          :total="total"
+          layout="total, prev, pager, next"
+          @change="loadLogs"
+        />
+      </div>
     </div>
 
     <!-- Cleanup Dialog -->
@@ -190,7 +185,7 @@
 
         <div class="cs-form-row">
           <label class="cs-form-label">{{ isZh ? '快捷选择:' : 'Preset Range:' }}</label>
-          <el-select v-model="cleanupDays" size="small" style="width: 100%">
+          <el-select v-model="cleanupDays" style="width: 100%">
             <el-option :label="isZh ? '清理 7 天前的日志' : 'Older than 7 days'" :value="7" />
             <el-option :label="isZh ? '清理 14 天前的日志' : 'Older than 14 days'" :value="14" />
             <el-option :label="isZh ? '清理 30 天前的日志（默认）' : 'Older than 30 days (Default)'" :value="30" />
@@ -203,8 +198,8 @@
 
         <div class="cs-form-row" style="margin-top: 10px">
           <label class="cs-form-label">{{ isZh ? '自定义天数:' : 'Custom Days:' }}</label>
-          <el-input-number v-model="cleanupDays" :min="0" :max="3650" size="small" style="width: 140px" />
-          <span style="font-size: 11px; color: var(--cs-text-dim); margin-left: 8px">
+          <el-input-number v-model="cleanupDays" :min="0" :max="3650" style="width: 140px" />
+          <span class="al-cleanup-hint">
             {{ cleanupDays === 0 ? (isZh ? '（0 表示清空所有日志）' : '(0 = Clear all)') : (isZh ? `（清理 ${cleanupDays} 天前）` : `(Older than ${cleanupDays}d)`) }}
           </span>
         </div>
@@ -374,30 +369,31 @@ onMounted(() => {
 }
 
 .al-toolbar {
-  height: 32px;
+  min-height: 48px;
   background: var(--cs-panel);
-  border-bottom: 1px solid var(--cs-border);
+  border-bottom: 1px solid var(--cs-card-border);
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0 10px;
+  padding: 8px 16px;
   flex-shrink: 0;
+  flex-wrap: wrap;
 }
 
 .al-title-group {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 6px;
 }
 
 .al-title {
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--cs-text-bright);
 }
 
 .al-count {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--cs-text-dim);
 }
 
@@ -409,52 +405,55 @@ onMounted(() => {
   width: 200px;
 }
 
-/* 审计统计条（CS 原生紧凑风格） */
+/* 审计统计摘要（卡片式） */
 .al-stats-strip {
+  margin: 16px 16px 0;
   background: var(--cs-panel);
-  border-bottom: 1px solid var(--cs-border);
-  padding: 5px 10px;
+  border: 1px solid var(--cs-card-border);
+  border-radius: 8px;
+  padding: 12px 16px;
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 12px;
   flex-shrink: 0;
 }
 
 .al-stats-main {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 24px;
+  flex-wrap: wrap;
 }
 
 .al-stat-cell {
   display: flex;
   align-items: baseline;
-  gap: 5px;
+  gap: 8px;
 }
 
 .al-stat-num {
   font-family: var(--cs-font-mono);
-  font-size: 14px;
-  font-weight: 700;
+  font-size: 16px;
+  font-weight: 600;
   color: var(--cs-active);
 }
 
 .al-stat-lbl {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--cs-text-dim);
 }
 
 .al-stat-hint {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--cs-text-dim);
 }
 
 .al-stats-detail {
   display: flex;
-  gap: 16px;
-  border-top: 1px solid color-mix(in srgb, var(--cs-border) 60%, transparent);
-  padding-top: 6px;
-  max-height: 150px;
+  gap: 24px;
+  border-top: 1px solid var(--cs-card-border);
+  padding-top: 12px;
+  max-height: 220px;
   overflow-y: auto;
 }
 
@@ -465,24 +464,27 @@ onMounted(() => {
 }
 
 .al-detail-title {
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--cs-text-bright);
-  margin-bottom: 4px;
+  margin-bottom: 6px;
 }
 
 .al-tags {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: 6px;
 }
 
 .al-tag {
-  font-size: 10px;
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 8px;
+  font-size: 12px;
   font-family: var(--cs-font-mono);
-  padding: 1px 6px;
-  border: 1px solid var(--cs-border);
-  border-radius: 2px;
+  border: 1px solid var(--cs-card-border);
+  border-radius: 4px;
   color: var(--cs-text);
   background: var(--cs-bg);
 }
@@ -490,14 +492,14 @@ onMounted(() => {
 .al-top-list {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
 }
 
 .al-top-row {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 11px;
+  gap: 8px;
+  font-size: 12px;
   color: var(--cs-text);
 }
 
@@ -515,7 +517,7 @@ onMounted(() => {
 .al-top-bar {
   height: 6px;
   background: color-mix(in srgb, var(--cs-active) 70%, transparent);
-  border-radius: 1px;
+  border-radius: 4px;
 }
 
 .al-top-count {
@@ -526,31 +528,65 @@ onMounted(() => {
 .al-table-wrap {
   flex: 1;
   overflow: hidden;
+  margin: 16px;
+  display: flex;
+  flex-direction: column;
+  background: var(--cs-panel);
+  border: 1px solid var(--cs-card-border);
+  border-radius: 8px;
 }
 
-.al-bottom-bar {
-  height: 38px;
-  background: var(--cs-panel);
-  border-top: 1px solid var(--cs-border);
+.al-table-box {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.al-pager {
   display: flex;
+  justify-content: flex-end;
   align-items: center;
-  gap: 8px;
-  padding: 0 12px;
+  padding: 8px 16px;
+  border-top: 1px solid var(--cs-card-border);
   flex-shrink: 0;
 }
 
+.mono-cell {
+  font-family: var(--cs-font-mono);
+  font-size: 13px;
+}
+
+.al-cleanup-hint {
+  font-size: 12px;
+  color: var(--cs-text-dim);
+  margin-left: 8px;
+}
+
+/* 级别 / 结果 tag */
+.arch-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  background: var(--cs-hover);
+  color: var(--cs-text);
+}
+
 .lvl-info {
-  background: color-mix(in srgb, var(--cs-active) 20%, transparent);
+  background: color-mix(in srgb, var(--cs-active) 12%, transparent);
   color: var(--cs-active);
 }
 
 .lvl-warn {
-  background: color-mix(in srgb, var(--cs-warning) 20%, transparent);
+  background: color-mix(in srgb, var(--cs-warning) 18%, transparent);
   color: var(--cs-warning);
 }
 
 .lvl-error, .lvl-security {
-  background: color-mix(in srgb, var(--cs-error) 20%, transparent);
+  background: color-mix(in srgb, var(--cs-error) 14%, transparent);
   color: var(--cs-error);
 }
 
@@ -560,5 +596,11 @@ onMounted(() => {
 
 .text-danger {
   color: var(--cs-error);
+}
+
+.cs-dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 </style>

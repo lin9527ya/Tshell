@@ -146,53 +146,32 @@ function handleHelp() {
 </script>
 
 <style scoped>
-.cs-dialog-body {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
 .cs-table-wrap {
-  border: 1px solid var(--cs-border);
-}
-.cs-form-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.cs-form-label {
-  width: 85px;
-  font-size: 12px;
-  color: var(--cs-text);
-  flex-shrink: 0;
-}
-.cs-form-input {
-  flex: 1;
+  border-radius: 8px;
+  overflow: hidden;
 }
 .cs-input-with-btn {
   flex: 1;
   display: flex;
-  gap: 4px;
+  gap: 8px;
 }
 .cs-picker-btn {
   width: 24px;
   height: 24px;
   background: var(--cs-panel);
-  border: 1px solid var(--cs-border);
-  border-radius: 2px;
+  border: 1px solid var(--cs-border-strong);
+  border-radius: 6px;
   color: var(--cs-text);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 11px;
+  font-size: 12px;
+  transition: all 120ms ease;
 }
 .cs-picker-btn:hover {
   background: var(--cs-hover);
   color: var(--cs-text-bright);
-}
-.cs-dialog-footer-center {
-  display: flex;
-  justify-content: center;
-  gap: 8px;
+  border-color: var(--cs-active);
 }
 </style>

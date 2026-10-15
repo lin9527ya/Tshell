@@ -1,11 +1,14 @@
 <template>
   <div class="xterm-container cs-font-ui">
-    <!-- CS Toolbar -->
+    <!-- Toolbar -->
     <div class="term-toolbar">
       <div class="term-title-group">
         <span class="term-title">{{ isZh ? '终端交互: ' : 'Terminal: ' }}{{ clientInfo.username }}@{{ clientInfo.computer }}</span>
-        <span class="term-status" :class="isConnected ? 'online' : 'offline'">
-          ● {{ isConnected ? (isZh ? '已连接' : 'Connected') : isConnecting ? (isZh ? '连接中...' : 'Connecting...') : (isZh ? '未连接' : 'Disconnected') }}
+        <span
+          class="term-status"
+          :class="isConnected ? 'is-on' : (isConnecting ? 'is-connecting' : 'is-off')"
+        >
+          {{ isConnected ? (isZh ? '已连接' : 'Connected') : isConnecting ? (isZh ? '连接中...' : 'Connecting...') : (isZh ? '未连接' : 'Disconnected') }}
         </span>
       </div>
 
@@ -33,9 +36,9 @@
     <!-- 终端状态栏 -->
     <div class="terminal-status">
       <div class="status-left">
-        <el-tag :type="connectionStatus.type" size="small" effect="dark">
+        <span class="conn-tag" :class="`is-${connectionStatus.type}`">
           {{ connectionStatus.text }}
-        </el-tag>
+        </span>
         <span class="status-info">
           {{ terminalSize.cols }}×{{ terminalSize.rows }}
         </span>
@@ -62,6 +65,7 @@
       v-model="showSettings"
       title="终端设置"
       width="500px"
+      class="cs-dialog"
       :before-close="handleSettingsClose"
     >
       <el-form :model="terminalConfig" label-width="120px">
@@ -134,8 +138,10 @@
       </el-form>
       
       <template #footer>
-        <el-button @click="resetTerminalConfig">重置默认</el-button>
-        <el-button type="primary" @click="showSettings = false">确定</el-button>
+        <div class="cs-dialog-footer-center">
+          <button class="cs-btn cs-btn-primary" @click="showSettings = false">确定</button>
+          <button class="cs-btn" @click="resetTerminalConfig">重置默认</button>
+        </div>
       </template>
     </el-dialog>
 
@@ -144,6 +150,7 @@
       v-model="showError"
       title="连接错误"
       width="400px"
+      class="cs-dialog"
       :show-close="false"
     >
       <div class="error-content">
@@ -151,8 +158,10 @@
         <p>{{ errorMessage }}</p>
       </div>
       <template #footer>
-        <el-button @click="showError = false">关闭</el-button>
-        <el-button type="primary" @click="retryConnection">重试连接</el-button>
+        <div class="cs-dialog-footer-center">
+          <button class="cs-btn cs-btn-primary" @click="retryConnection">重试连接</button>
+          <button class="cs-btn" @click="showError = false">关闭</button>
+        </div>
       </template>
     </el-dialog>
   </div>
@@ -892,17 +901,27 @@ const maximizeTerminal = () => {
 
 const cleanup = () => {
   disconnectTerminal()
-  
+
   // 清理输入缓冲
-  
+
+  // WebGL addon 需先于 terminal.dispose() 卸载：addon 的还原回调会在终端服务销毁后
+  // 再调 _createRenderer()（此时返回 undefined），触发 xterm 的 setRenderer 空指针
+  if (webglAddon) {
+    try {
+      webglAddon.dispose()
+    } catch {
+      /* addon 卸载异常不影响后续清理 */
+    }
+    webglAddon = null
+  }
+
   if (terminal) {
     terminal.dispose()
     terminal = null
   }
-  
+
   fitAddon = null
   webLinksAddon = null
-  webglAddon = null
   unicode11Addon = null
 }
 
@@ -934,7 +953,7 @@ watch(isConnected, (connected) => {
 .xterm-container {
   display: flex;
   flex-direction: column;
-  background: var(--cs-panel);
+  background: var(--cs-bg);
   overflow: hidden;
   height: 100%;
   width: 100%;
@@ -948,44 +967,62 @@ watch(isConnected, (connected) => {
     border-radius: 0;
     box-shadow: none;
     z-index: 9999;
-    
+
     .terminal-body {
       flex: 1;
       height: 100%;
+      margin: 0;
+      border: none;
+      border-radius: 0;
     }
   }
 
   .term-toolbar {
-    height: 32px;
+    height: 48px;
     background: var(--cs-panel);
-    border-bottom: 1px solid var(--cs-border);
+    border-bottom: 1px solid var(--cs-card-border);
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 0 10px;
+    padding: 0 12px;
     flex-shrink: 0;
 
     .term-title-group {
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: 8px;
+      min-width: 0;
     }
 
     .term-title {
-      font-size: 12px;
+      font-size: 14px;
       font-weight: 600;
       color: var(--cs-text-bright);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
+    // 状态 tag：已连接实心绿底白字 / 空闲灰底
     .term-status {
-      font-size: 11px;
+      display: inline-flex;
+      align-items: center;
+      height: 20px;
+      padding: 0 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      white-space: nowrap;
+      background: color-mix(in srgb, var(--cs-text-dim) 12%, transparent);
       color: var(--cs-text-dim);
 
-      &.online {
-        color: var(--cs-online);
+      &.is-on {
+        background: var(--cs-online);
+        color: #ffffff;
       }
-      &.offline {
-        color: var(--cs-offline);
+
+      &.is-connecting {
+        background: color-mix(in srgb, var(--cs-warning) 18%, transparent);
+        color: var(--cs-warning);
       }
     }
 
@@ -998,10 +1035,10 @@ watch(isConnected, (connected) => {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    background: var(--cs-titlebar-bg, #252525);
-    padding: 2px 12px;
-    border-bottom: 1px solid var(--cs-border, #404040);
-    font-size: 11px;
+    background: var(--cs-panel);
+    padding: 4px 12px;
+    border-bottom: 1px solid var(--cs-card-border);
+    font-size: 12px;
     flex-shrink: 0;
 
     .status-left {
@@ -1009,8 +1046,36 @@ watch(isConnected, (connected) => {
       align-items: center;
       gap: 12px;
 
+      .conn-tag {
+        display: inline-flex;
+        align-items: center;
+        height: 20px;
+        padding: 0 8px;
+        border-radius: 4px;
+        font-size: 12px;
+        white-space: nowrap;
+        background: color-mix(in srgb, var(--cs-text-dim) 12%, transparent);
+        color: var(--cs-text-dim);
+
+        &.is-success {
+          background: var(--cs-online);
+          color: #ffffff;
+        }
+
+        &.is-warning {
+          background: color-mix(in srgb, var(--cs-warning) 18%, transparent);
+          color: var(--cs-warning);
+        }
+
+        &.is-danger {
+          background: color-mix(in srgb, var(--cs-error) 12%, transparent);
+          color: var(--cs-error);
+        }
+      }
+
       .status-info {
-        color: var(--cs-text-dim, #999);
+        color: var(--cs-text-dim);
+        font-family: var(--cs-font-mono);
       }
     }
 
@@ -1021,20 +1086,21 @@ watch(isConnected, (connected) => {
 
       .encoding-info,
       .cursor-info {
-        color: var(--cs-text-dim, #999);
-        font-family: var(--cs-font-mono, monospace);
+        color: var(--cs-text-dim);
+        font-family: var(--cs-font-mono);
       }
     }
   }
 
   .terminal-body {
     background: #0c0c0c;
+    margin: 12px;
+    border: 1px solid var(--cs-card-border);
+    border-radius: 8px;
     padding: 2px 4px;
     overflow: hidden;
     flex: 1;
     min-height: 0;
-    height: 100%;
-    width: 100%;
     position: relative;
     box-sizing: border-box;
 
@@ -1087,13 +1153,13 @@ watch(isConnected, (connected) => {
 :deep(.el-dialog) {
   .config-value {
     margin-left: 12px;
-    color: #409eff;
+    color: var(--cs-active);
     font-weight: 500;
   }
 
   .config-help {
     margin-top: 4px;
-    color: #909399;
+    color: var(--cs-text-dim);
   }
 }
 
@@ -1105,12 +1171,12 @@ watch(isConnected, (connected) => {
 
   .error-icon {
     font-size: 24px;
-    color: #f56c6c;
+    color: var(--cs-error);
   }
 
   p {
     margin: 0;
-    color: #606266;
+    color: var(--cs-text);
   }
 }
 

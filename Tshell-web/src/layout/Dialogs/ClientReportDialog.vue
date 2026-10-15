@@ -75,7 +75,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { useWorkspaceStore } from '@/stores/workspace'
 import { useI18nStore } from '@/stores/i18n'
 import ClientAPI from '@/api/clients'
 
@@ -94,18 +93,18 @@ interface ReportData {
   downloads: any[]
 }
 
-const workspace = useWorkspaceStore()
+// P3：页面内局部弹窗——可见性走 v-model，数据由宿主经 props 传入
+const props = withDefaults(defineProps<{ modelValue: boolean; uid?: string }>(), { uid: '' })
+const emit = defineEmits<{ (e: 'update:modelValue', value: boolean): void }>()
+const visible = computed({
+  get: () => props.modelValue,
+  set: (value) => emit('update:modelValue', value),
+})
+
 const i18nStore = useI18nStore()
 const isZh = computed(() => i18nStore.isZh)
 
-const visible = computed({
-  get: () => workspace.dialogs.clientReport.visible,
-  set: (val) => {
-    if (!val) workspace.closeDialog('clientReport')
-  },
-})
-
-const uid = computed(() => workspace.dialogs.clientReport.uid)
+const uid = computed(() => props.uid)
 
 const loading = ref(false)
 const report = ref<ReportData | null>(null)
@@ -118,28 +117,25 @@ function formatSize(size: number): string {
   return `${(size / 1024 / 1024).toFixed(2)} MB`
 }
 
-watch(
-  () => workspace.dialogs.clientReport.visible,
-  (val) => {
-    if (val) {
-      loading.value = true
-      report.value = null
-      downloadingFile.value = ''
-      ClientAPI.get_client_report(uid.value)
-        .then((res: any) => {
-          if (res.data && res.data.status === 200) {
-            report.value = res.data.data
-          }
-        })
-        .catch(() => {
-          ElMessage.error(isZh.value ? '获取报告失败' : 'Failed to load report')
-        })
-        .finally(() => {
-          loading.value = false
-        })
-    }
-  },
-)
+watch(visible, (val) => {
+  if (val) {
+    loading.value = true
+    report.value = null
+    downloadingFile.value = ''
+    ClientAPI.get_client_report(uid.value)
+      .then((res: any) => {
+        if (res.data && res.data.status === 200) {
+          report.value = res.data.data
+        }
+      })
+      .catch(() => {
+        ElMessage.error(isZh.value ? '获取报告失败' : 'Failed to load report')
+      })
+      .finally(() => {
+        loading.value = false
+      })
+  }
+})
 
 async function downloadLog(file: string) {
   try {
@@ -161,17 +157,11 @@ async function downloadLog(file: string) {
 }
 
 function close() {
-  workspace.closeDialog('clientReport')
+  visible.value = false
 }
 </script>
 
 <style scoped>
-.cs-dialog-body {
-  padding: 10px 0;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
 .report-wrap {
   min-height: 200px;
   max-height: 60vh;
@@ -190,27 +180,22 @@ function close() {
   margin-left: 16px;
 }
 .dialog-label {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--cs-text-dim);
 }
 .dialog-val {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--cs-text-bright);
 }
 .report-section {
-  border: 1px solid var(--cs-border);
-  border-radius: 2px;
-  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 .report-section-title {
-  font-size: 11px;
+  font-size: 14px;
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: .04em;
-  color: var(--cs-text-dim);
-  background: var(--cs-panel);
-  border-bottom: 1px solid var(--cs-border);
-  padding: 4px 8px;
+  color: var(--cs-text);
 }
 .report-log-list {
   max-height: 160px;
@@ -220,9 +205,9 @@ function close() {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 3px 8px;
+  padding: 5px 4px;
   font-size: 12px;
-  border-bottom: 1px solid var(--cs-border);
+  border-bottom: 1px solid var(--cs-card-border);
 }
 .report-log-row:last-child {
   border-bottom: none;
@@ -242,20 +227,27 @@ function close() {
 }
 .report-shell {
   margin: 0;
-  padding: 8px;
+  padding: 12px;
   max-height: 220px;
   overflow-y: auto;
-  font-size: 12px;
-  line-height: 1.5;
+  font-size: 13px;
+  line-height: 1.6;
   color: var(--cs-text);
   white-space: pre-wrap;
   word-break: break-all;
   background: var(--cs-console);
+  border: 1px solid var(--cs-border);
+  border-radius: 6px;
 }
 .report-empty {
   padding: 12px;
   font-size: 12px;
   color: var(--cs-text-dim);
   font-style: italic;
+}
+.cs-dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
 }
 </style>

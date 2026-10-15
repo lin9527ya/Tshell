@@ -2,24 +2,23 @@
   <div class="session-table-container cs-font-ui">
     <!-- Search / Count Toolbar(常驻;接原 searchKey 死代码,Ctrl+F 聚焦) -->
     <div class="cs-session-toolbar">
-      <input
-        ref="searchInputRef"
-        v-model="searchKey"
-        class="cs-session-search cs-font-mono"
-        :placeholder="isZh ? '过滤会话(IP/主机/用户/备注...)' : 'Filter sessions (IP/host/user/note...)'"
-        spellcheck="false"
-      />
-      <span v-if="searchKey" class="cs-session-search-clear" :title="isZh ? '清空过滤' : 'Clear'" @click="searchKey = ''">✕</span>
+      <span class="cs-session-title">{{ isZh ? '会话列表' : 'Sessions' }}</span>
+      <div class="cs-session-search-wrap">
+        <input
+          ref="searchInputRef"
+          v-model="searchKey"
+          class="cs-session-search"
+          :placeholder="isZh ? '过滤会话(IP/主机/用户/备注...)' : 'Filter sessions (IP/host/user/note...)'"
+          spellcheck="false"
+        />
+        <span v-if="searchKey" class="cs-session-search-clear" :title="isZh ? '清空过滤' : 'Clear'" @click="searchKey = ''">✕</span>
+      </div>
       <span class="cs-session-count" :title="isZh ? '匹配/总数' : 'matched / total'">
         {{ filteredClients.length }}/{{ clientsStore.clientsList.length }}
       </span>
-    </div>
 
-    <!-- Session Table (1:1 CS Column Layout) -->
-    <div class="cs-table-wrap">
-      <!-- Batch Action Bar (C14: 批量命令 / 分组 / 任务进度) — 绝对定位浮层:
-           原 v-if 插在表格上方,勾选首行时整表下移 38px(表头跳变) -->
-      <div v-if="batchUids.length" class="cs-batch-bar">
+      <!-- 批量态（vshell：勾选后操作出现在页头工具条，不再用浮动条） -->
+      <template v-if="batchUids.length">
         <span class="batch-count">{{ isZh ? `已选 ${batchUids.length} 个会话` : `${batchUids.length} selected` }}</span>
         <div class="batch-input-wrap">
           <input
@@ -33,14 +32,15 @@
             {{ batchSending ? (isZh ? '下发中...' : 'Sending...') : (isZh ? '下发' : 'Send') }}
           </button>
         </div>
-        <div class="batch-actions-group">
-          <button class="cs-btn cs-btn-xs" @click="batchSetGroup">{{ isZh ? '批量分组' : 'Set Group' }}</button>
-          <button class="cs-btn cs-btn-xs" @click="openBatchTasks">{{ isZh ? '任务进度' : 'Tasks' }}</button>
-          <button class="cs-btn cs-btn-xs" :disabled="!hasOfflineSelected" @click="cleanupOfflineBatch">{{ isZh ? '清理离线' : 'Clean Offline' }}</button>
-          <button class="cs-btn cs-btn-xs" @click="clearTableSelection">{{ isZh ? '取消选择' : 'Clear' }}</button>
-        </div>
-      </div>
+        <button class="cs-btn cs-btn-xs" @click="batchSetGroup">{{ isZh ? '批量分组' : 'Set Group' }}</button>
+        <button class="cs-btn cs-btn-xs" @click="openBatchTasks">{{ isZh ? '任务进度' : 'Tasks' }}</button>
+        <button class="cs-btn cs-btn-xs" :disabled="!hasOfflineSelected" @click="cleanupOfflineBatch">{{ isZh ? '清理离线' : 'Clean Offline' }}</button>
+        <button class="cs-btn cs-btn-xs" @click="clearTableSelection">{{ isZh ? '取消选择' : 'Clear' }}</button>
+      </template>
+    </div>
 
+    <!-- Session Table (1:1 CS Column Layout) -->
+    <div class="cs-table-wrap">
       <el-table
         ref="tableRef"
         v-loading="loading"
@@ -51,8 +51,6 @@
         highlight-current-row
         :header-cell-style="tableHeaderStyle"
         :row-class-name="getRowClass"
-        :row-style="getRowColorStyle"
-        @row-contextmenu="onRowContextMenu"
         @row-click="onRowClick"
         @row-dblclick="onRowDblClick"
         @selection-change="onSelectionChange"
@@ -193,7 +191,7 @@
         <el-table-column
           prop="Pid"
           :label="t('table.pid')"
-          width="65"
+          width="90"
           sortable
           :sort-orders="['ascending', 'descending', null]"
           align="right"
@@ -207,7 +205,7 @@
         <el-table-column
           prop="Arch"
           :label="t('table.arch')"
-          width="50"
+          width="70"
           align="center"
         >
           <template #default="{ row }">
@@ -219,12 +217,15 @@
         <el-table-column
           prop="last_active"
           :label="t('table.last')"
-          min-width="95"
+          min-width="140"
           sortable
           :sort-orders="['ascending', 'descending', null]"
           align="left"
         >
           <template #default="{ row }">
+            <span class="vs-online-tag" :class="row.Online ? 'is-online' : 'is-offline'">
+              {{ row.Online ? (isZh ? '在线' : 'ON') : (isZh ? '离线' : 'OFF') }}
+            </span>
             <span class="cs-cell-last cs-font-mono" :class="{ stale: !row.Online }">
               {{ formatLastActive(row) }}
             </span>
@@ -242,42 +243,72 @@
             <span class="cs-cell-text">{{ formatSleep(row) }}</span>
           </template>
         </el-table-column>
+
+        <!-- 操作（vshell：行内链接 + 更多下拉，替代 CS 右键菜单） -->
+        <el-table-column :label="isZh ? '操作' : 'Actions'" width="220" fixed="right">
+          <template #default="{ row }">
+            <div class="row-actions">
+              <a class="row-link" @click="gotoClient(row.Uid, 'console')">{{ isZh ? '主机管理' : 'Manage' }}</a>
+              <a class="row-link" @click="gotoClient(row.Uid, 'files')">{{ isZh ? '文件' : 'Files' }}</a>
+              <el-dropdown trigger="click" @command="(c: string) => onRowCmd(c, row)">
+                <a class="row-link">{{ isZh ? '更多' : 'More' }} ▾</a>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item command="note">{{ isZh ? '备注' : 'Note' }}</el-dropdown-item>
+                    <el-dropdown-item command="sleep">{{ isZh ? '回连间隔' : 'Sleep' }}</el-dropdown-item>
+                    <el-dropdown-item command="group">{{ isZh ? '设置分组' : 'Set Group' }}</el-dropdown-item>
+                    <el-dropdown-item command="alive">{{ isZh ? '检查存活' : 'Check Alive' }}</el-dropdown-item>
+                    <el-dropdown-item command="clientReport">{{ isZh ? '会话报告' : 'Session Report' }}</el-dropdown-item>
+                    <el-dropdown-item command="migrate" divided>{{ isZh ? '进程迁移' : 'Migrate' }}</el-dropdown-item>
+                    <el-dropdown-item command="disconnect">{{ isZh ? '断开连接' : 'Disconnect' }}</el-dropdown-item>
+                    <el-dropdown-item command="remove">{{ isZh ? '删除进程文件' : 'Delete Process File' }}</el-dropdown-item>
+                    <el-dropdown-item command="cleanup">{{ isZh ? '清理会话记录' : 'Clean Session Record' }}</el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
+            </div>
+          </template>
+        </el-table-column>
       </el-table>
 
       <!-- Empty State -->
       <EmptyState v-if="!filteredClients.length && !loading" :title="t('empty.no_sessions')" />
     </div>
 
-    <!-- 1:1 Cobalt Strike Right Click Context Menu -->
-    <CsBeaconContextMenu
-      v-model:visible="ctxMenu.visible"
-      :x="ctxMenu.x"
-      :y="ctxMenu.y"
-      :client="ctxClient"
-    />
+    <!-- P3：页面内局部弹窗（替代原全局 workspace.dialogs 状态机） -->
+    <NoteDialog v-model="noteDlg.visible" :uid="noteDlg.uid" :note="noteDlg.note" />
+    <SleepDialog v-model="sleepDlg.visible" :uid="sleepDlg.uid" :sleep="sleepDlg.sleep" :uids="workspace.selectedUids" />
+    <ProcessMigrateDialog v-model="migrateDlg.visible" :uid="migrateDlg.uid" :pid="migrateDlg.pid" />
+    <ClientReportDialog v-model="reportDlg.visible" :uid="reportDlg.uid" />
+
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useClientsStore, type ClientData } from '@/stores/clients'
-import { useWorkspaceStore } from '@/stores/workspace'
 import { useI18nStore } from '@/stores/i18n'
+import { useSessionSelectionStore } from '@/stores/sessionSelection'
 import { useVisibilityInterval } from '@/utils/useVisibilityInterval'
 import { detectClientOs } from '@/utils/clientUtils'
 import ClientAPI from '@/api/clients'
 import EmptyState from '@/components/Common/EmptyState.vue'
 import OsIcon from '@/components/Common/OsIcon.vue'
-import { rowTintStyle } from '@/utils/sessionColors'
-import CsBeaconContextMenu from './ContextMenu/CsBeaconContextMenu.vue'
+// P3：会话操作对话框（页面内局部弹窗）
+import NoteDialog from './Dialogs/NoteDialog.vue'
+import SleepDialog from './Dialogs/SleepDialog.vue'
+import ProcessMigrateDialog from './Dialogs/ProcessMigrateDialog.vue'
+import ClientReportDialog from './Dialogs/ClientReportDialog.vue'
 
 interface RowData extends ClientData {
   last_active?: string
 }
 
 const clientsStore = useClientsStore()
-const workspace = useWorkspaceStore()
+const workspace = useSessionSelectionStore()
+const router = useRouter()
 const i18nStore = useI18nStore()
 const isZh = computed(() => i18nStore.isZh)
 const t = (key: string, def?: string) => i18nStore.t(key, def)
@@ -292,8 +323,6 @@ function onFocusSearchEvent() {
   searchInputRef.value?.select()
 }
 const selectedRow = ref<RowData | null>(null)
-const ctxClient = ref<RowData | null>(null)
-const ctxMenu = ref({ visible: false, x: 0, y: 0 })
 
 const filteredClients = computed(() => {
   const list = clientsStore.clientsList as RowData[]
@@ -406,26 +435,14 @@ function getRowClass({ row }: { row: RowData }) {
   ].filter(Boolean).join(' ')
 }
 
-function getRowColorStyle({ row }: { row: RowData }) {
-  const color = workspace.sessionColors[row.Uid] || row.Color
-  if (color && color !== '#ffffff') {
-    return {
-      // td 背景读取该变量（见 .cs-table-wrap :deep(.el-table__row td) 样式），
-      // 明亮主题下也可见标记色调，避免被纯白底盖住
-      '--el-table-tr-bg-color': `${color}3d`,
-    }
-  }
-  return {}
-}
-
 const tableHeaderStyle = {
-  background: 'var(--cs-table-header)',
+  background: 'var(--cs-table-head)',
   color: 'var(--cs-text)',
   fontWeight: '600',
-  fontSize: '17px',
-  borderBottom: '1px solid var(--cs-border)',
-  height: '32px',
-  padding: '4px 0',
+  fontSize: '14px',
+  borderBottom: '1px solid var(--cs-card-border)',
+  height: '48px',
+  padding: '0',
 }
 
 function onRowClick(row: RowData) {
@@ -441,28 +458,121 @@ function onRowDblClick(row: RowData) {
   if (selectedRows.value.length <= 1) {
     workspace.setSelectedUids([row.Uid])
   }
-  const label = `${row.Username}@${row.Computer || row.ExternalIP}`
-  workspace.openTab({
-    id: `beacon:${row.Uid}`,
-    title: isZh.value ? `会话交互: ${label}` : `Beacon: ${label}`,
-    component: 'beacon',
-    params: { uid: row.Uid },
-  })
+  // 路由化：进入客户端管理页（命令控制页签）
+  router.push(`/client/${row.Uid}/console`)
 }
 
-function onRowContextMenu(row: RowData, column: any, event: MouseEvent) {
-  event.preventDefault()
+// ---- 行操作列（vshell 风格：行内链接/下拉替代 CS 右键菜单）----
+function gotoClient(uid: string, func: string) {
+  router.push(`/client/${uid}/${func}`)
+}
+
+// ---- 页面内局部弹窗状态（P3：取代 workspace.dialogs 全局状态机）----
+const noteDlg = ref({ visible: false, uid: '', note: '' })
+const sleepDlg = ref<{ visible: boolean; uid: string; sleep?: number | string }>({ visible: false, uid: '' })
+const migrateDlg = ref({ visible: false, uid: '', pid: '' })
+const reportDlg = ref({ visible: false, uid: '' })
+
+function onRowCmd(cmd: string, row: RowData) {
   selectedRow.value = row
-  // 如果右键的行不在已勾选的批量列表中，则切换为选中该行；如果在多选列表中，则保留批量多选以支持批量右键操作
-  if (!workspace.selectedUids.includes(row.Uid)) {
-    workspace.setSelectedUids([row.Uid])
+  workspace.setSelectedUids([row.Uid])
+  if (cmd === 'note') {
+    noteDlg.value = { visible: true, uid: row.Uid, note: row.Note || '' }
+  } else if (cmd === 'sleep') {
+    sleepDlg.value = { visible: true, uid: row.Uid, sleep: row.Sleep }
+  } else if (cmd === 'group') {
+    actSetGroup(row)
+  } else if (cmd === 'alive') {
+    actAlive(row)
+  } else if (cmd === 'clientReport') {
+    reportDlg.value = { visible: true, uid: row.Uid }
+  } else if (cmd === 'migrate') {
+    migrateDlg.value = { visible: true, uid: row.Uid, pid: '' }
+  } else if (cmd === 'disconnect') {
+    actDisconnect(row)
+  } else if (cmd === 'remove') {
+    actRemove(row)
+  } else if (cmd === 'cleanup') {
+    actCleanup(row)
   }
-  ctxClient.value = row
-  ctxMenu.value = {
-    visible: true,
-    x: event.clientX,
-    y: event.clientY,
+}
+
+async function actSetGroup(row: RowData) {
+  ElMessageBox.prompt(
+    isZh.value ? '设置会话分组（留空清除）:' : 'Set session group (empty clears):',
+    isZh.value ? '设置分组' : 'Set Group',
+    { confirmButtonText: isZh.value ? '设置' : 'Set', cancelButtonText: isZh.value ? '取消' : 'Cancel', inputValue: row.Group || '' },
+  ).then(async ({ value }) => {
+    try {
+      await ClientAPI.update_client_group({ uid: row.Uid, group: value || '' })
+      clientsStore.updateClient(row.Uid, { Group: value || '' })
+      ElMessage.success(isZh.value ? '分组已更新' : 'Group updated')
+    } catch (e: any) {
+      ElMessage.error(e?.message || (isZh.value ? '设置分组失败' : 'Failed to set group'))
+    }
+  }).catch(() => {})
+}
+
+async function actAlive(row: RowData) {
+  try {
+    const res = await ClientAPI.smart_offline_check({ uid: row.Uid })
+    const body = res.data
+    const st = String(body?.status || 'unknown')
+    const map: Record<string, string> = {
+      online: isZh.value ? '在线' : 'Online',
+      possibly_busy: isZh.value ? '可能忙碌' : 'Possibly Busy',
+      likely_offline: isZh.value ? '疑似离线' : 'Likely Offline',
+      offline: isZh.value ? '已离线' : 'Offline',
+    }
+    if (st === 'offline' || st === 'likely_offline') clientsStore.updateClient(row.Uid, { Online: '2' })
+    ElMessageBox.alert(`${row.Username}@${row.Computer || row.ExternalIP}: ${map[st] || st}\n${body?.message || ''}`, isZh.value ? '检查存活' : 'Check Alive', { confirmButtonText: isZh.value ? '确定' : 'OK' })
+    clientsStore.refreshClients().catch(() => {})
+  } catch (e: any) {
+    ElMessage.error(e?.message || (isZh.value ? '检测失败' : 'Check failed'))
   }
+}
+
+function actDisconnect(row: RowData) {
+  ElMessageBox.confirm(
+    isZh.value ? '确定断开该会话的客户端进程吗？会话记录将保留在列表中。' : 'Kill client process on this session? The session record will be kept.',
+    isZh.value ? '断开连接' : 'Disconnect',
+    { type: 'warning', confirmButtonText: isZh.value ? '断开' : 'Disconnect', cancelButtonText: isZh.value ? '取消' : 'Cancel' },
+  ).then(async () => {
+    await ClientAPI.disconnect_client({ uid: row.Uid })
+    clientsStore.fetchClients()
+    ElMessage.success(isZh.value ? '已发送断开指令' : 'Disconnect sent')
+  }).catch(() => {})
+}
+
+function actRemove(row: RowData) {
+  if (row.Online !== '1') {
+    ElMessage.warning(isZh.value ? '仅在线会话可删除进程文件' : 'Process file deletion requires an online session')
+    return
+  }
+  ElMessageBox.confirm(
+    isZh.value ? '确定删除被控端进程文件吗？客户端保持在线（Linux unlink / Windows 重命名解锁）。' : 'Delete the client process file? The beacon stays online.',
+    isZh.value ? '删除进程文件' : 'Delete Process File',
+    { type: 'warning', confirmButtonText: isZh.value ? '删除' : 'Delete', cancelButtonText: isZh.value ? '取消' : 'Cancel' },
+  ).then(async () => {
+    await ClientAPI.batch_command({ uids: [row.Uid], command: 'selfdelete' })
+    ElMessage.success(isZh.value ? '已下发删除指令' : 'Tasked')
+  }).catch(() => {})
+}
+
+function actCleanup(row: RowData) {
+  if (row.Online === '1') {
+    ElMessage.info(isZh.value ? '该会话在线，无需清理' : 'Session is online')
+    return
+  }
+  ElMessageBox.confirm(
+    isZh.value ? '确定删除该离线会话的记录吗？' : 'Remove this offline session record?',
+    isZh.value ? '清理会话记录' : 'Clean Session Record',
+    { type: 'warning', confirmButtonText: isZh.value ? '清理' : 'Clean', cancelButtonText: isZh.value ? '取消' : 'Cancel' },
+  ).then(async () => {
+    await ClientAPI.batch_delete_clients({ uids: [row.Uid] })
+    clientsStore.fetchClients()
+    ElMessage.success(isZh.value ? '已清理' : 'Cleaned')
+  }).catch(() => {})
 }
 
 const selectedRows = ref<RowData[]>([])
@@ -554,7 +664,7 @@ async function batchSetGroup() {
 }
 
 function openBatchTasks() {
-  workspace.openTab({ id: 'batch-tasks', title: isZh.value ? '批量任务' : 'Batch Tasks', component: 'batch-tasks' })
+  router.push('/tasks')
 }
 
 const tableRef = ref<any>(null)
@@ -589,6 +699,24 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+/* 行操作列（vshell：文字链接 + 下拉） */
+.row-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.row-link {
+  color: var(--cs-active);
+  font-size: 14px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.row-link:hover {
+  text-decoration: underline;
+}
+
 .session-table-container {
   height: 100%;
   display: flex;
@@ -603,29 +731,49 @@ onBeforeUnmount(() => {
   position: relative;
 }
 
-/* 常驻搜索工具栏(接原 searchKey 死代码) */
+/* ===== 工具条（vshell：白底 + 1px 分隔线，左标题/搜索，右计数） ===== */
 .cs-session-toolbar {
-  height: 32px;
   flex-shrink: 0;
+  min-height: 48px;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 12px;
-  background: var(--cs-titlebar-bg);
-  border-bottom: 1px solid var(--cs-border);
+  gap: 12px;
+  padding: 0 16px;
+  background: var(--cs-panel);
+  border-bottom: 1px solid var(--cs-card-border);
+}
+
+.cs-session-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--cs-text-bright);
+  white-space: nowrap;
+}
+
+.cs-session-search-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 320px;
+  max-width: 46vw;
 }
 
 .cs-session-search {
-  flex: 1;
-  max-width: 340px;
-  height: 24px;
-  background: var(--cs-bg);
-  border: 1px solid var(--cs-border);
-  border-radius: 2px;
+  width: 100%;
+  height: 32px;
+  padding: 0 28px 0 10px;
+  font-family: var(--cs-font-ui);
+  font-size: 14px;
   color: var(--cs-text);
-  padding: 0 8px;
-  font-size: 15px;
+  background: var(--cs-panel);
+  border: 1px solid var(--cs-border-strong);
+  border-radius: 6px;
   outline: none;
+  transition: border-color 120ms ease;
+}
+
+.cs-session-search::placeholder {
+  color: var(--cs-text-dim);
 }
 
 .cs-session-search:focus {
@@ -633,21 +781,27 @@ onBeforeUnmount(() => {
 }
 
 .cs-session-search-clear {
-  cursor: pointer;
+  position: absolute;
+  right: 9px;
+  font-size: 12px;
+  line-height: 1;
   color: var(--cs-text-dim);
-  font-size: 14px;
+  cursor: pointer;
 }
 
 .cs-session-search-clear:hover {
-  color: var(--cs-text-bright);
+  color: var(--cs-text);
 }
 
 .cs-session-count {
   margin-left: auto;
+  font-family: var(--cs-font-mono);
+  font-size: 13px;
   color: var(--cs-text-dim);
-  font-size: 14.5px;
+  white-space: nowrap;
 }
 
+/* ===== 单元格渲染 ===== */
 .beacon-os-icon-wrap {
   position: relative;
   display: inline-flex;
@@ -667,183 +821,143 @@ onBeforeUnmount(() => {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--cs-offline, #888888);
-  border: 1px solid var(--cs-panel, #ffffff);
-  box-shadow: 0 0 2px rgba(0, 0, 0, 0.4);
+  background: var(--cs-offline);
+  border: 1px solid var(--cs-panel);
 }
 .beacon-os-dot.online {
-  background: var(--cs-online, #4caf50);
-  box-shadow: 0 0 4px color-mix(in srgb, var(--cs-online, #4caf50) 80%, transparent);
+  background: var(--cs-online);
 }
 .beacon-os-svg {
   display: block;
 }
 
 .cs-cell-text {
-  font-size: 17px;
-  color: var(--cs-text-bright, #111111);
+  color: var(--cs-text);
 }
+
 .cs-cell-text.is-admin {
   font-weight: 600;
-  color: var(--cs-text-bright, #000000);
+  color: var(--cs-elevated);
 }
 
 .cs-cell-last {
-  font-size: 16px;
-  font-weight: bold;
+  font-weight: 500;
   font-style: italic;
-  color: var(--cs-text-bright, #111111);
+  color: var(--cs-text);
 }
+
 .cs-cell-last.stale {
-  font-weight: bold;
+  font-weight: 600;
   font-style: italic;
-  color: var(--cs-text-dim, #777777);
-  opacity: 0.8;
+  color: var(--cs-text-dim);
+}
+
+/* 在线/离线标签（vshell 客户端列表观感：#1ab394 实心 tag，20px 高 / 4px 圆角） */
+.vs-online-tag {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 7px;
+  margin-right: 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-style: normal;
+  line-height: 1;
+  vertical-align: middle;
+}
+
+.vs-online-tag.is-online {
+  background: var(--cs-online);
+  color: #fff;
+}
+
+.vs-online-tag.is-offline {
+  background: color-mix(in srgb, var(--cs-offline) 22%, transparent);
+  color: var(--cs-text-dim);
 }
 
 .cs-badge-listener {
-  font-size: 16px;
   padding: 1px 6px;
-  border-radius: 2px;
-  background: color-mix(in srgb, var(--cs-active) 15%, transparent);
-  color: var(--cs-active);
+  border-radius: 4px;
   font-family: var(--cs-font-mono);
+  font-size: 12px;
+  background: color-mix(in srgb, var(--cs-active) 12%, transparent);
+  color: var(--cs-active);
 }
 
-/* C14 Batch Action Bar */
+.cs-cell-note {
+  font-style: italic;
+  color: var(--cs-text-dim);
+}
+
+.cs-group-tag {
+  margin-left: 6px;
+  font-family: var(--cs-font-mono);
+  font-size: 13px;
+  font-style: normal;
+  color: var(--cs-active);
+}
+
+/* ===== C14 批量操作条（浮层，覆盖在表格上方） ===== */
 .cs-batch-bar {
-  min-height: 38px;
-  background: var(--cs-panel);
-  border-bottom: 1px solid var(--cs-border);
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 4px 12px;
-  flex-shrink: 0;
-  flex-wrap: wrap;
-  /* 浮层化: 勾选时覆盖在表格上方,不再把整表下推 38px(表头跳变) */
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
   z-index: 6;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  min-height: 48px;
+  padding: 6px 16px;
+  background: var(--cs-panel);
+  border-bottom: 1px solid var(--cs-card-border);
+  box-shadow: 0 3px 6px -4px rgba(0, 0, 0, 0.12), 0 6px 16px 0 rgba(0, 0, 0, 0.08);
 }
+
 .batch-count {
-  font-size: 15px;
-  color: var(--cs-active);
+  font-size: 13px;
   font-weight: 600;
+  color: var(--cs-active);
   white-space: nowrap;
 }
+
 .batch-input-wrap {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   flex: 1;
   min-width: 220px;
   max-width: 520px;
 }
+
 .batch-cmd-input {
   flex: 1;
-  height: 26px;
-  background: var(--cs-bg);
-  border: 1px solid var(--cs-border);
-  border-radius: 2px;
+  height: 32px;
+  padding: 0 10px;
+  font-family: var(--cs-font-mono);
+  font-size: 13px;
   color: var(--cs-text);
-  font-size: 15px;
-  padding: 0 8px;
+  background: var(--cs-panel);
+  border: 1px solid var(--cs-border-strong);
+  border-radius: 6px;
   outline: none;
 }
+
+.batch-cmd-input::placeholder {
+  color: var(--cs-text-dim);
+}
+
 .batch-cmd-input:focus {
   border-color: var(--cs-active);
 }
+
 .batch-actions-group {
   display: flex;
   align-items: center;
   gap: 6px;
   flex-shrink: 0;
 }
-
-.cs-cell-note {
-  font-size: 16px;
-  color: var(--cs-accent, #673ab7);
-  font-style: italic;
-}
-
-.cs-group-tag {
-  margin-left: 6px;
-  font-size: 15px;
-  font-style: normal;
-  color: var(--cs-active);
-  font-family: var(--cs-font-mono);
-  opacity: 0.85;
-}
 </style>
 
-<style>
-/* 1:1 Cobalt Strike Session Table Styles */
-.cs-session-table {
-  background: var(--cs-panel) !important;
-  color: var(--cs-text-bright) !important;
-  font-size: 17px !important;
-}
-.cs-session-table .el-table__header th {
-  background: var(--cs-table-header) !important;
-  color: var(--cs-text) !important;
-  padding: 4px 0 !important;
-  font-size: 17px !important;
-  border-bottom: 1px solid var(--cs-border) !important;
-}
-.cs-session-table .el-table__header th .cell {
-  white-space: nowrap !important;
-  word-break: keep-all !important;
-  padding: 0 6px !important;
-  line-height: 26px !important;
-}
-.cs-session-table .el-table__row {
-  height: 32px !important;
-  cursor: default !important;
-  color: var(--cs-text-bright) !important;
-}
-.cs-session-table .el-table__row td {
-  padding: 4px 0 !important;
-  border-bottom: 1px solid color-mix(in srgb, var(--cs-border) 40%, transparent) !important;
-  /* 会话标记色通过行内 --el-table-tr-bg-color 传入；未标记时回落面板底色 */
-  background-color: var(--el-table-tr-bg-color, var(--cs-panel)) !important;
-  color: var(--cs-text-bright) !important;
-}
-.cs-session-table .el-table__row td .cell {
-  white-space: nowrap !important;
-  padding: 0 6px !important;
-  line-height: 26px !important;
-  color: inherit !important;
-}
-.cs-session-table .el-table__row:hover td {
-  background-color: var(--cs-hover) !important;
-}
-
-/* 未选中行明确文字颜色，杜绝白底白字 */
-.cs-session-table .el-table__row:not(.current-row):not(.is-selected) .cs-cell-text {
-  color: var(--cs-text-bright) !important;
-}
-.cs-session-table .el-table__row:not(.current-row):not(.is-selected) .cs-cell-last {
-  color: var(--cs-text-bright) !important;
-}
-
-/* 选中行：CS 经典深蓝底纯白字，保持强对比 */
-.cs-session-table .el-table__row.current-row > td,
-.cs-session-table .el-table__row.is-selected > td {
-  background-color: #1a5c9a !important;
-  color: #ffffff !important;
-}
-.cs-session-table .el-table__row.current-row > td .cs-cell-text,
-.cs-session-table .el-table__row.current-row > td .cs-cell-last,
-.cs-session-table .el-table__row.current-row > td .cs-cell-note,
-.cs-session-table .el-table__row.current-row > td span,
-.cs-session-table .el-table__row.is-selected > td .cs-cell-text,
-.cs-session-table .el-table__row.is-selected > td .cs-cell-last,
-.cs-session-table .el-table__row.is-selected > td .cs-cell-note,
-.cs-session-table .el-table__row.is-selected > td span {
-  color: #ffffff !important;
-}
-</style>

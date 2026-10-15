@@ -93,7 +93,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18nStore } from '@/stores/i18n'
-import { useTabActive, useVisibilityInterval } from '@/utils/useVisibilityInterval'
+import { useVisibilityInterval } from '@/utils/useVisibilityInterval'
 import EmptyState from '@/components/Common/EmptyState.vue'
 import ClientAPI from '@/api/clients'
 
@@ -137,8 +137,7 @@ async function fetchTasks() {
 }
 
 // 【性能】5s 轮询接入可见性治理(非活动标签/页面隐藏时暂停)
-const tabActive = useTabActive()
-useVisibilityInterval(fetchTasks, 5000, { isActive: () => tabActive.value })
+useVisibilityInterval(fetchTasks, 5000)
 
 onMounted(() => {
   fetchTasks()
@@ -150,105 +149,138 @@ onMounted(() => {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: var(--cs-bg);
+  background: var(--cs-panel);
   overflow: hidden;
 }
+
+/* 工具条：白底 + 1px 分隔线 */
 .bt-toolbar {
-  height: 32px;
-  background: var(--cs-panel);
-  border-bottom: 1px solid var(--cs-border);
+  flex-shrink: 0;
+  min-height: 48px;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0 10px;
-  flex-shrink: 0;
+  padding: 0 16px;
+  background: var(--cs-panel);
+  border-bottom: 1px solid var(--cs-card-border);
 }
+
 .bt-title-group {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
+
 .bt-title {
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--cs-text-bright);
 }
+
 .bt-count {
-  font-size: 11px;
+  font-size: 13px;
   color: var(--cs-text-dim);
 }
+
 .bt-spacer {
   flex: 1;
 }
+
 .bt-table-wrap {
   flex: 1;
   overflow: hidden;
   position: relative;
 }
 
+/* 状态 tag（实心，20px / 4px 圆角） */
+.bt-table-wrap :deep(.el-tag) {
+  height: 20px;
+  padding: 0 7px;
+  font-size: 12px;
+  border: none;
+  border-radius: 4px;
+}
+
+.bt-table-wrap :deep(.el-tag--success) {
+  background: var(--cs-online);
+  color: #ffffff;
+}
+
+.bt-table-wrap :deep(.el-tag--warning) {
+  background: var(--cs-warning);
+  color: #ffffff;
+}
+
+.bt-table-wrap :deep(.el-tag--info) {
+  background: color-mix(in srgb, var(--cs-text-dim) 14%, transparent);
+  color: var(--cs-text-dim);
+}
+
+/* ===== 展开行：各 Beacon 执行明细 ===== */
 .bt-expand-box {
-  padding: 10px 14px;
+  padding: 12px 16px;
   background: var(--cs-bg);
-  border-bottom: 1px solid var(--cs-border);
+  border-bottom: 1px solid var(--cs-card-border);
 }
 
 .bt-expand-title {
-  font-size: 12px;
+  margin-bottom: 8px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--cs-text-bright);
-  margin-bottom: 8px;
 }
 
 .bt-expand-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 10px;
+  gap: 12px;
 }
 
 .bt-result-card {
-  background: var(--cs-panel);
-  border: 1px solid var(--cs-border);
-  border-radius: 3px;
+  background: var(--cs-card-bg);
+  border: 1px solid var(--cs-card-border);
+  border-radius: 8px;
   overflow: hidden;
 }
 
 .bt-card-header {
-  padding: 4px 8px;
-  background: var(--cs-titlebar-bg);
-  border-bottom: 1px solid var(--cs-border);
   display: flex;
   align-items: center;
   justify-content: space-between;
+  padding: 6px 10px;
+  background: var(--cs-panel);
+  border-bottom: 1px solid var(--cs-card-border);
 }
 
 .bt-card-uid {
-  font-size: 11.5px;
-  font-weight: bold;
+  font-size: 13px;
+  font-weight: 600;
   color: var(--cs-active);
 }
 
 .bt-card-badge {
-  font-size: 10.5px;
-  color: var(--cs-online, #4caf50);
+  font-size: 12px;
+  color: var(--cs-online);
 }
 
 .bt-card-output {
-  padding: 6px 8px;
-  font-size: 11.5px;
-  line-height: 1.4;
+  max-height: 120px;
+  margin: 0;
+  padding: 8px 10px;
+  overflow-y: auto;
+  font-family: var(--cs-font-mono);
+  font-size: 13px;
+  line-height: 1.5;
   color: var(--cs-text);
   background: transparent;
-  margin: 0;
-  max-height: 120px;
-  overflow-y: auto;
   white-space: pre-wrap;
   word-break: break-all;
 }
 
 .bt-empty-hint {
-  font-size: 12px;
-  color: var(--cs-text-dim);
-  font-style: italic;
   padding: 6px 0;
+  font-size: 13px;
+  font-style: italic;
+  color: var(--cs-text-dim);
 }
 </style>

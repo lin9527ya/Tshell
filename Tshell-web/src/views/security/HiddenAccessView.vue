@@ -1,22 +1,30 @@
 <template>
   <div class="cs-hidden-access-view cs-font-ui">
-    <!-- CS Toolbar -->
+    <!-- 工具条：左侧标题/状态，右侧操作按钮 -->
     <div class="ha-toolbar">
       <div class="ha-title-group">
         <span class="ha-title">{{ isZh ? '隐藏访问网关' : 'Stealth Access Gateway' }}</span>
         <span class="ha-status" :class="form.enabled ? 'online' : 'offline'">
-          ● {{ form.enabled ? (isZh ? '隐藏伪装已开启' : 'Stealth Cloaking Active') : (isZh ? '直接访问（已禁用）' : 'Direct Access (Disabled)') }}
+          {{ form.enabled ? (isZh ? '隐藏伪装已开启' : 'Stealth Cloaking Active') : (isZh ? '直接访问（已禁用）' : 'Direct Access (Disabled)') }}
         </span>
       </div>
 
       <div class="ha-spacer" />
 
-      <button class="cs-btn cs-btn-primary" :disabled="saving" @click="handleSave">
-        {{ saving ? (isZh ? '保存中...' : 'Saving...') : (isZh ? '应用配置' : 'Apply Config') }}
+      <button class="cs-btn" @click="handleHelp">
+        {{ isZh ? '帮助' : 'Help' }}
+      </button>
+
+      <button class="cs-btn" @click="handleRegenerateKey">
+        {{ isZh ? '重新生成密钥' : 'Regenerate Secret Key' }}
       </button>
 
       <button class="cs-btn" :disabled="loading" @click="fetchStatus">
         {{ isZh ? '刷新' : 'Refresh' }}
+      </button>
+
+      <button class="cs-btn cs-btn-primary" :disabled="saving" @click="handleSave">
+        {{ saving ? (isZh ? '保存中...' : 'Saving...') : (isZh ? '应用配置' : 'Apply Config') }}
       </button>
     </div>
 
@@ -25,82 +33,74 @@
       <div class="ha-card">
         <div class="ha-card-header">
           <span class="card-title">{{ isZh ? '隐藏访问与蜜罐伪装' : 'Stealth Access & Honey Entry Cloaking' }}</span>
-          <span class="card-desc">
-            {{ isZh ? '通过动态蜜罐令牌与诱饵反向代理路径，隐藏 Team Server 登录入口和 Beacon C2 监听器端点。' : 'Obfuscates Team Server login and Beacon C2 listener endpoints behind dynamic honey tokens and decoy reverse-proxy paths.' }}
-          </span>
         </div>
 
-        <div class="cs-form-container">
-          <div class="cs-form-row">
-            <label class="cs-form-label">{{ isZh ? '启用隐藏访问伪装' : 'Enable Stealth Access Cloaking' }}:</label>
-            <el-switch v-model="form.enabled" size="small" />
-          </div>
+        <div class="ha-card-body">
+          <p class="card-desc">
+            {{ isZh ? '通过动态蜜罐令牌与诱饵反向代理路径，隐藏 Team Server 登录入口和 Beacon C2 监听器端点。' : 'Obfuscates Team Server login and Beacon C2 listener endpoints behind dynamic honey tokens and decoy reverse-proxy paths.' }}
+          </p>
 
-          <div class="cs-form-row">
-            <label class="cs-form-label">{{ isZh ? '访问密钥' : 'Secret Access Key' }}:</label>
-            <div class="input-with-btn">
-              <el-input
-                v-model="form.secret_key"
-                :placeholder="isZh ? '加密访问密钥' : 'Cryptographic secret key'"
-                size="small"
-                show-password
-                class="cs-input-mono"
-              />
-              <button class="cs-btn" @click="handleRegenerateKey">{{ isZh ? '重新生成' : 'Regenerate' }}</button>
+          <div class="cs-form-container">
+            <div class="cs-form-row">
+              <label class="cs-form-label">{{ isZh ? '启用隐藏访问伪装' : 'Enable Stealth Access Cloaking' }}:</label>
+              <el-switch v-model="form.enabled" />
             </div>
-          </div>
 
-          <div class="cs-form-row">
-            <label class="cs-form-label">{{ isZh ? '允许的隐藏入口路径' : 'Allowed Access Paths' }}:</label>
-            <el-input
-              v-model="pathsText"
-              type="textarea"
-              :rows="3"
-              placeholder="/api/v1/telemetry&#10;/gateway/health&#10;/static/assets/bundle.js"
-              class="cs-input-mono"
-            />
-            <span class="cs-hint">{{ isZh ? '多个隐藏入口路径请使用换行分隔。' : 'Separate multiple stealth entry paths by newlines.' }}</span>
-          </div>
+            <div class="cs-form-row">
+              <label class="cs-form-label">{{ isZh ? '访问密钥' : 'Secret Access Key' }}:</label>
+              <div class="input-with-btn">
+                <el-input
+                  v-model="form.secret_key"
+                  :placeholder="isZh ? '加密访问密钥' : 'Cryptographic secret key'"
+                  show-password
+                  class="cs-input-mono"
+                />
+                <button class="cs-btn" @click="handleRegenerateKey">{{ isZh ? '重新生成' : 'Regenerate' }}</button>
+              </div>
+            </div>
 
-          <div class="cs-form-row">
-            <label class="cs-form-label">{{ isZh ? '验证参数名' : 'Query Param Tokens' }}:</label>
-            <el-input
-              v-model="paramsText"
-              placeholder="sec_token, _k, auth_sig"
-              size="small"
-              class="cs-input-mono"
-            />
-            <span class="cs-hint">{{ isZh ? '网关校验的多个令牌参数，使用逗号分隔。' : 'Comma separated token parameters checked by gateway.' }}</span>
-          </div>
+            <div class="cs-form-row">
+              <label class="cs-form-label">{{ isZh ? '允许的隐藏入口路径' : 'Allowed Access Paths' }}:</label>
+              <div class="ha-field">
+                <el-input
+                  v-model="pathsText"
+                  type="textarea"
+                  :rows="3"
+                  placeholder="/api/v1/telemetry&#10;/gateway/health&#10;/static/assets/bundle.js"
+                  class="cs-input-mono"
+                />
+                <span class="cs-hint">{{ isZh ? '多个隐藏入口路径请使用换行分隔。' : 'Separate multiple stealth entry paths by newlines.' }}</span>
+              </div>
+            </div>
 
-          <div class="cs-form-row">
-            <label class="cs-form-label">{{ isZh ? '会话有效期（分钟）' : 'Stealth Session TTL in Minutes' }}:</label>
-            <el-input-number v-model="form.session_ttl" :min="5" :max="1440" size="small" style="width: 140px" />
-          </div>
+            <div class="cs-form-row">
+              <label class="cs-form-label">{{ isZh ? '验证参数名' : 'Query Param Tokens' }}:</label>
+              <div class="ha-field">
+                <el-input
+                  v-model="paramsText"
+                  placeholder="sec_token, _k, auth_sig"
+                  class="cs-input-mono"
+                />
+                <span class="cs-hint">{{ isZh ? '网关校验的多个令牌参数，使用逗号分隔。' : 'Comma separated token parameters checked by gateway.' }}</span>
+              </div>
+            </div>
 
-          <div class="ha-action-row">
-            <button class="cs-btn cs-btn-danger" @click="handleClearSessions">
-              {{ isZh ? '清空所有活动隐藏会话' : 'Flush All Active Stealth Sessions' }}
-            </button>
+            <div class="cs-form-row">
+              <label class="cs-form-label">{{ isZh ? '会话有效期（分钟）' : 'Stealth Session TTL in Minutes' }}:</label>
+              <el-input-number v-model="form.session_ttl" :min="5" :max="1440" style="width: 140px" />
+            </div>
+
+            <div class="ha-action-row">
+              <span class="ha-action-desc">
+                {{ isZh ? '清空后，当前所有未认证的隐藏访问会话将立即失效。' : 'Existing unauthenticated stealth sessions are invalidated immediately.' }}
+              </span>
+              <button class="cs-btn cs-btn-danger" @click="handleClearSessions">
+                {{ isZh ? '清空所有活动隐藏会话' : 'Flush All Active Stealth Sessions' }}
+              </button>
+            </div>
           </div>
         </div>
       </div>
-    </div>
-
-    <!-- Bottom Action Bar (CS Native Button Row) -->
-    <div class="ha-bottom-bar">
-      <button class="cs-btn cs-btn-primary" :disabled="saving" @click="handleSave">
-        {{ isZh ? '应用配置' : 'Apply Configuration' }}
-      </button>
-      <button class="cs-btn" @click="handleRegenerateKey">
-        {{ isZh ? '重新生成密钥' : 'Regenerate Secret Key' }}
-      </button>
-      <button class="cs-btn cs-btn-danger" @click="handleClearSessions">
-        {{ isZh ? '清空会话' : 'Flush Sessions' }}
-      </button>
-      <button class="cs-btn" @click="handleHelp">
-        {{ isZh ? '帮助' : 'Help' }}
-      </button>
     </div>
   </div>
 </template>
@@ -233,92 +233,118 @@ onMounted(() => {
 }
 
 .ha-toolbar {
-  height: 32px;
+  height: 48px;
   background: var(--cs-panel);
-  border-bottom: 1px solid var(--cs-border);
+  border-bottom: 1px solid var(--cs-card-border);
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0 10px;
+  padding: 0 16px;
   flex-shrink: 0;
 }
 
 .ha-title-group {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 10px;
 }
 
 .ha-title {
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--cs-text-bright);
 }
 
+/* 状态 tag：开启实心绿 / 关闭灰 */
 .ha-status {
-  font-size: 11px;
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
   color: var(--cs-text-dim);
+  background: color-mix(in srgb, var(--cs-offline) 18%, transparent);
 }
 
-.ha-status.online { color: var(--cs-online); }
-.ha-status.offline { color: var(--cs-offline); }
+.ha-status.online {
+  color: #ffffff;
+  background: var(--cs-online);
+}
+
+.ha-status.offline {
+  color: var(--cs-text-dim);
+  background: color-mix(in srgb, var(--cs-offline) 18%, transparent);
+}
 
 .ha-spacer { flex: 1; }
 
 .ha-body {
   flex: 1;
-  padding: 16px 20px;
+  padding: 16px;
   background: var(--cs-bg);
   overflow-y: auto;
 }
 
 .ha-card {
-  max-width: 680px;
+  max-width: 760px;
   background: var(--cs-panel);
-  border: 1px solid var(--cs-border);
-  padding: 16px 20px;
+  border: 1px solid var(--cs-card-border);
+  border-radius: 8px;
+  overflow: hidden;
 }
 
 .ha-card-header {
-  margin-bottom: 16px;
+  height: 38px;
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  align-items: center;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--cs-card-border);
 }
 
 .card-title {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--cs-text-bright);
 }
 
+.ha-card-body {
+  padding: 16px;
+}
+
 .card-desc {
-  font-size: 11px;
+  margin: 0 0 16px;
+  font-size: 13px;
   color: var(--cs-text-dim);
-  line-height: 1.4;
+  line-height: 1.6;
 }
 
 .cs-form-container {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-}
-
-.cs-form-row {
-  display: flex;
-  flex-direction: column;
   gap: 4px;
 }
 
-.cs-form-label {
-  font-size: 11px;
-  color: var(--cs-text);
-  font-weight: 500;
+/* label 右对齐由全局 .cs-form-label / .cs-form-row 提供，这里只补对齐细节 */
+.cs-form-row > .cs-form-label {
+  align-self: flex-start;
+  line-height: 32px;
 }
 
 .input-with-btn {
   display: flex;
+  flex: 1;
   gap: 8px;
+}
+
+.ha-field {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
 }
 
 .cs-input-mono {
@@ -326,25 +352,24 @@ onMounted(() => {
 }
 
 .cs-hint {
-  font-size: 10px;
+  font-size: 12px;
   color: var(--cs-text-dim);
+  line-height: 1.6;
 }
 
 .ha-action-row {
-  margin-top: 8px;
-  padding-top: 12px;
-  border-top: 1px solid var(--cs-border);
-}
-
-.ha-bottom-bar {
-  height: 38px;
-  background: var(--cs-panel);
-  border-top: 1px solid var(--cs-border);
+  margin-top: 12px;
+  padding-top: 16px;
+  border-top: 1px solid var(--cs-card-border);
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 0 12px;
-  flex-shrink: 0;
+  gap: 16px;
+}
+
+.ha-action-desc {
+  flex: 1;
+  font-size: 13px;
+  color: var(--cs-text-dim);
+  line-height: 1.6;
 }
 </style>

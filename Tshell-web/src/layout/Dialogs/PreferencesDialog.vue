@@ -188,7 +188,7 @@
 
     <!-- Centered Save Button -->
     <template #footer>
-      <div class="cs-preferences-footer">
+      <div class="cs-dialog-footer-center">
         <button class="cs-btn cs-btn-primary" @click="savePreferences">
           {{ isZh ? '保存设置' : 'Save' }}
         </button>
@@ -200,21 +200,20 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
-import { useWorkspaceStore } from '@/stores/workspace'
 import { useThemeStore } from '@/stores/theme'
 import { useI18nStore } from '@/stores/i18n'
 import { usePreferencesStore } from '@/stores/preferences'
 
-const workspace = useWorkspaceStore()
+const props = defineProps<{ modelValue: boolean }>()
+const emit = defineEmits<{ (e: 'update:modelValue', val: boolean): void }>()
+
 const themeStore = useThemeStore()
 const i18nStore = useI18nStore()
 const isZh = computed(() => i18nStore.isZh)
 
 const visible = computed({
-  get: () => workspace.dialogs.preferences,
-  set: (val) => {
-    if (!val) workspace.closeDialog('preferences')
-  },
+  get: () => props.modelValue,
+  set: (val) => emit('update:modelValue', val),
 })
 
 const activeCategory = ref('cobalt-strike')
@@ -302,54 +301,52 @@ function savePreferences() {
   prefStore.missedHeartbeats = pref.missedHeartbeats
   prefStore.audioNotify = pref.audioNotify
   ElMessage.success(isZh.value ? '偏好已保存(控制台/图/提示音设置已持久化)' : 'Preferences saved')
-  workspace.closeDialog('preferences')
+  visible.value = false
 }
 </script>
 
 <style scoped>
-.cs-preferences-dialog :deep(.el-dialog__body) {
-  padding: 10px 14px;
-}
-
 .cs-pref-layout {
   display: flex;
   height: 380px;
-  border: 1px solid var(--cs-border);
   background: var(--cs-panel);
+  border-radius: 8px;
+  overflow: hidden;
 }
 
 .cs-pref-sidebar {
-  width: 170px;
-  border-right: 1px solid var(--cs-border);
-  background: var(--cs-bg);
+  width: 176px;
+  border-right: 1px solid var(--cs-card-border);
+  background: var(--cs-hover);
   overflow-y: auto;
-  padding: 4px 0;
+  padding: 6px 0;
 }
 
 .pref-nav-item {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 12px;
-  font-size: 12px;
+  height: 34px;
+  padding: 0 12px;
+  font-size: 14px;
   color: var(--cs-text);
   cursor: pointer;
   user-select: none;
 }
 
 .pref-nav-item:hover {
-  background: var(--cs-hover);
+  background: var(--cs-panel);
   color: var(--cs-text-bright);
 }
 
 .pref-nav-item.active {
-  background: var(--cs-active);
-  color: #ffffff;
-  font-weight: 500;
+  background: color-mix(in srgb, var(--cs-active) 12%, transparent);
+  color: var(--cs-active);
+  font-weight: 600;
 }
 
 .nav-icon {
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .cs-pref-content {
@@ -361,14 +358,14 @@ function savePreferences() {
 
 .panel-desc {
   font-size: 13px;
-  color: var(--cs-text-bright);
-  margin-bottom: 18px;
+  color: var(--cs-text-dim);
+  margin-bottom: 16px;
 }
 
 .pref-form-grid {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 16px;
 }
 
 .form-row {
@@ -379,7 +376,7 @@ function savePreferences() {
 
 .row-label {
   width: 110px;
-  font-size: 12px;
+  font-size: 14px;
   color: var(--cs-text);
   text-align: right;
   flex-shrink: 0;
@@ -395,32 +392,18 @@ function savePreferences() {
   width: 240px;
 }
 
-.color-swatch {
-  width: 22px;
-  height: 22px;
-  border: 1px solid #000000;
-  cursor: pointer;
-  box-shadow: 0 0 2px rgba(0, 0, 0, 0.5);
-}
-
 .font-picker-row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 
 .pref-empty-note {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--cs-text-dim);
   padding: 12px;
-  background: var(--cs-bg);
-  border: 1px solid var(--cs-border);
-}
-
-.cs-preferences-footer {
-  display: flex;
-  justify-content: center;
-  padding: 8px 0;
+  background: var(--cs-hover);
+  border-radius: 8px;
 }
 
 /* 主题强调色预设 */
@@ -433,8 +416,9 @@ function savePreferences() {
 .color-swatch {
   width: 22px;
   height: 22px;
-  border-radius: 3px;
+  border-radius: 6px;
   border: 2px solid transparent;
+  box-shadow: 0 0 0 1px var(--cs-card-border);
   cursor: pointer;
   padding: 0;
   transition: transform 100ms ease, border-color 100ms ease;

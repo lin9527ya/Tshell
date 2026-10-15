@@ -49,7 +49,7 @@ defineProps<{
 
 .page-title {
   margin: 0;
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 600;
   color: var(--text-primary, #e6edf3);
   white-space: nowrap;

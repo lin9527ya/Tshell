@@ -1,41 +1,41 @@
 /* Enhanced Theme CSS Variables */
 :root {
-  /* 全局字号（整体调大 50%） */
-  --el-font-size-base: 22.5px;
-  --el-font-size-small: 19.5px;
-  --el-font-size-extra-small: 18px;
-  --font-size-base: 22.5px;
-  --font-size-sm: 19.5px;
-  --font-size-xs: 18px;
-  /* 主色调（Viper Light 微调） */
-  --theme-primary: #1677ff;
-  --theme-primary-light: #4096ff;
-  --theme-primary-dark: #1158c7;
-  --theme-primary-alpha: rgba(31, 111, 235, 0.1);
+  /* 全局字号（vshell 基准 14px） */
+  --el-font-size-base: 14px;
+  --el-font-size-small: 13px;
+  --el-font-size-extra-small: 12px;
+  --font-size-base: 14px;
+  --font-size-sm: 13px;
+  --font-size-xs: 12px;
+  /* 主色调（vshell #0960bd） */
+  --theme-primary: #0960bd;
+  --theme-primary-light: #2e7fd1;
+  --theme-primary-dark: #074c96;
+  --theme-primary-alpha: rgba(9, 96, 189, 0.1);
   
-  --theme-success: #1a7f37;
-  --theme-warning: #9a6700;
-  --theme-danger: #cf222e;
-  --theme-info: #8250df;
+  --theme-success: #55d187;
+  --theme-warning: #efbd47;
+  --theme-danger: #ed6f6f;
+  --theme-info: #0960bd;
   
-  /* 背景色（GitHub Light 系） */
+  /* 背景色（vshell 浅色：容器 #fff / 布局 #f5f5f5） */
   --theme-bg-primary: #ffffff;
-  --theme-bg-secondary: #f6f8fa;
-  --theme-bg-tertiary: #eaeef2;
+  --theme-bg-secondary: #f5f5f5;
+  --theme-bg-tertiary: #fafafa;
   --theme-bg-overlay: rgba(0, 0, 0, 0.5);
   
   /* 文字色 */
-  --theme-text-primary: #1f2328;
-  --theme-text-secondary: #57606a;
-  --theme-text-tertiary: #6e7781;
-  --theme-text-disabled: #8c959f;
+  --theme-text-primary: rgba(0, 0, 0, 0.88);
+  --theme-text-secondary: rgba(0, 0, 0, 0.65);
+  --theme-text-tertiary: rgba(0, 0, 0, 0.45);
+  --theme-text-disabled: rgba(0, 0, 0, 0.25);
   --theme-text-inverse: #ffffff;
   
   /* 边框色 */
-  --theme-border-primary: #d0d7de;
-  --theme-border-secondary: #d8dee4;
-  --theme-border-tertiary: #eaeef2;
-  --theme-border-hover: #afb8c1;
+  --theme-border-primary: #d9d9d9;
+  --theme-border-secondary: #f0f0f0;
+  --theme-border-tertiary: #f5f5f5;
+  --theme-border-hover: #0960bd;
   
   /* 阴影 */
   --theme-shadow-light: 0 2px 4px rgba(0, 0, 0, 0.05);
@@ -58,23 +58,23 @@
   --spacing-lg: 24px;
   --spacing-xl: 32px;
   
-  /* 圆角变量 */
-  --border-radius-small: 2px;
-  --border-radius-medium: 4px;
+  /* 圆角变量（vshell：控件 6px / 卡片 8px） */
+  --border-radius-small: 4px;
+  --border-radius-medium: 6px;
   --border-radius-large: 8px;
   --border-radius-round: 50%;
   
-  /* 字体变量（已整体增大 50%） */
+  /* 字体变量（vshell 基准 14px） */
   --font-family-primary: 'PingFang SC', 'Helvetica Neue', Helvetica, 'microsoft yahei', arial, STHeiTi, sans-serif;
   --font-family-mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
   
-  --font-size-xs: 18px;
-  --font-size-sm: 19.5px;
-  --font-size-base: 22.5px;
-  --font-size-lg: 24px;
-  --font-size-xl: 27px;
-  --font-size-2xl: 30px;
-  --font-size-3xl: 36px;
+  --font-size-xs: 12px;
+  --font-size-sm: 13px;
+  --font-size-base: 14px;
+  --font-size-lg: 16px;
+  --font-size-xl: 18px;
+  --font-size-2xl: 20px;
+  --font-size-3xl: 24px;
   
   --font-weight-light: 300;
   --font-weight-normal: 400;
@@ -158,41 +158,41 @@
 html.dark,
 html.dark,
 [data-theme="dark"] {
-  /* Viper 风格深色主题（GitHub Dark 系） */
-  --theme-primary: #388bfd;
-  --theme-primary-light: #58a6ff;
-  --theme-primary-dark: #316dca;
-  --theme-primary-alpha: rgba(56, 139, 253, 0.2);
+  /* 深色主题（vshell 暗色系：容器 #151515 / 布局 #1e1e1e） */
+  --theme-primary: #0960bd;
+  --theme-primary-light: #2e7fd1;
+  --theme-primary-dark: #074c96;
+  --theme-primary-alpha: rgba(9, 96, 189, 0.2);
   
   --theme-success: #3fb950;
   --theme-warning: #d29922;
   --theme-danger: #f85149;
   --theme-info: #58a6ff;
   
-  --theme-bg-primary: #0d1117;
-  --theme-bg-secondary: #161b22;
-  --theme-bg-tertiary: #21262d;
+  --theme-bg-primary: #1e1e1e;
+  --theme-bg-secondary: #151515;
+  --theme-bg-tertiary: #1a1a1a;
   --theme-bg-overlay: rgba(1, 4, 9, 0.8);
   
-  --theme-text-primary: #e6edf3;
-  --theme-text-secondary: #8b949e;
-  --theme-text-tertiary: #6e7681;
-  --theme-text-disabled: #484f58;
+  --theme-text-primary: #c9d1d9;
+  --theme-text-secondary: rgba(201, 209, 217, 0.75);
+  --theme-text-tertiary: rgba(201, 209, 217, 0.5);
+  --theme-text-disabled: rgba(201, 209, 217, 0.3);
   --theme-text-inverse: #0d1117;
   
-  --theme-border-primary: #30363d;
-  --theme-border-secondary: #21262d;
-  --theme-border-tertiary: #3d444d;
-  --theme-border-hover: #565f6b;
+  --theme-border-primary: #303030;
+  --theme-border-secondary: #1e1e1e;
+  --theme-border-tertiary: #3a3a3a;
+  --theme-border-hover: #0960bd;
   
   --theme-shadow-light: 0 2px 4px rgba(0, 0, 0, 0.5);
   --theme-shadow-medium: 0 4px 8px rgba(0, 0, 0, 0.6);
   --theme-shadow-heavy: 0 8px 16px rgba(0, 0, 0, 0.7);
   
   /* 深色模式下的布局配色 */
-  --sidebar-bg: #0d1117;
-  --sidebar-text: #e6edf3;
-  --sidebar-hover-bg: #21262d;
+  --sidebar-bg: #151515;
+  --sidebar-text: #c9d1d9;
+  --sidebar-hover-bg: #1e1e1e;
   --sidebar-active-bg: var(--theme-primary);
   --sidebar-active-text: #ffffff;
   --sidebar-border: #30363d;
@@ -204,46 +204,46 @@ html.dark,
   --card-header-bg: var(--theme-bg-tertiary);
 
   /* 新布局组件变量（深色 Viper 色） */
-  --bg-nav: #0d1117;
-  --bg-panel: #161b22;
-  --bg-secondary: #0d1117;
-  --bg-hover: #21262d;
-  --border-color: #30363d;
-  --text-primary: #e6edf3;
-  --text-secondary: #8b949e;
-  --text-tertiary: #6e7681;
+  --bg-nav: #151515;
+  --bg-panel: #151515;
+  --bg-secondary: #1e1e1e;
+  --bg-hover: #1e1e1e;
+  --border-color: #303030;
+  --text-primary: #c9d1d9;
+  --text-secondary: rgba(201, 209, 217, 0.75);
+  --text-tertiary: rgba(201, 209, 217, 0.5);
 
   /* Element Plus 暗色联动（覆盖默认 #141414 为 Viper 色） */
-  --el-bg-color: #0d1117;
-  --el-bg-color-overlay: #161b22;
-  --el-bg-color-page: #0d1117;
-  --el-fill-color-blank: #0d1117;
-  --el-fill-color-light: #21262d;
-  --el-fill-color-lighter: #161b22;
-  --el-fill-color-extra-light: #21262d;
-  --el-border-color: #30363d;
-  --el-border-color-light: #21262d;
-  --el-border-color-lighter: #21262d;
-  --el-border-color-extra-light: #161b22;
-  --el-text-color-primary: #e6edf3;
+  --el-bg-color: #151515;
+  --el-bg-color-overlay: #1f1f1f;
+  --el-bg-color-page: #1e1e1e;
+  --el-fill-color-blank: #151515;
+  --el-fill-color-light: #1e1e1e;
+  --el-fill-color-lighter: #1a1a1a;
+  --el-fill-color-extra-light: #1e1e1e;
+  --el-border-color: #303030;
+  --el-border-color-light: #303030;
+  --el-border-color-lighter: #262626;
+  --el-border-color-extra-light: #1e1e1e;
+  --el-text-color-primary: #c9d1d9;
   --el-text-color-regular: #c9d1d9;
-  --el-text-color-secondary: #8b949e;
-  --el-text-color-placeholder: #6e7681;
-  --el-text-color-disabled: #484f58;
-  --el-color-primary: #388bfd;
-  --el-color-success: #3fb950;
-  --el-color-warning: #d29922;
-  --el-color-danger: #f85149;
-  --el-card-bg-color: #161b22;
-  --el-table-bg-color: #0d1117;
-  --el-table-tr-bg-color: #0d1117;
-  --el-table-row-hover-bg-color: #21262d;
-  --el-table-border-color: #30363d;
+  --el-text-color-secondary: rgba(201, 209, 217, 0.75);
+  --el-text-color-placeholder: rgba(201, 209, 217, 0.5);
+  --el-text-color-disabled: rgba(201, 209, 217, 0.3);
+  --el-color-primary: #0960bd;
+  --el-color-success: #55d187;
+  --el-color-warning: #efbd47;
+  --el-color-danger: #ed6f6f;
+  --el-card-bg-color: #151515;
+  --el-table-bg-color: #151515;
+  --el-table-tr-bg-color: #151515;
+  --el-table-row-hover-bg-color: #1e1e1e;
+  --el-table-border-color: #303030;
 }
 
 /* 自适应主题切换动画 */
 body {
-  font-size: var(--el-font-size-base, 22.5px);
+  font-size: var(--el-font-size-base, 14px);
 }
 
 * {
@@ -301,7 +301,7 @@ body {
     --sidebar-width: 100%;
     --header-height: 60px;
     --content-padding: 15px;
-    --font-size-base: 22.5px;
+    --font-size-base: 14px;
   }
 }
 

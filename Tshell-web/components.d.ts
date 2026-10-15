@@ -44,7 +44,6 @@ declare module 'vue' {
     EmptyState: typeof import('./src/components/Common/EmptyState.vue')['default']
     OsIcon: typeof import('./src/components/Common/OsIcon.vue')['default']
     PageHeader: typeof import('./src/components/Common/PageHeader.vue')['default']
-    PerformanceMonitor: typeof import('./src/components/Common/PerformanceMonitor.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
   }
