@@ -24,9 +24,9 @@
 
       <!-- Right Option Panel -->
       <div class="cs-pref-content">
-        <!-- 1. Cobalt Strike / BladeShell -->
+        <!-- 1. Cobalt Strike / Tshell -->
         <div v-if="activeCategory === 'cobalt-strike'" class="pref-panel">
-          <div class="panel-desc">{{ isZh ? '配置平台核心参数与界面显示。' : 'Options to configure BladeShell platform.' }}</div>
+          <div class="panel-desc">{{ isZh ? '配置平台核心参数与界面显示。' : 'Options to configure Tshell platform.' }}</div>
 
           <div class="pref-form-grid">
             <div class="form-row">
@@ -141,7 +141,7 @@
           <div class="pref-form-grid">
             <div class="form-row">
               <label class="row-label">{{ isZh ? '报告 Logo:' : 'Report Logo:' }}</label>
-              <el-input v-model="pref.reportLogo" size="small" :placeholder="isZh ? '默认 BladeShell 标志' : 'Default BladeShell Logo'" style="width: 240px" />
+              <el-input v-model="pref.reportLogo" size="small" :placeholder="isZh ? '默认 Tshell 标志' : 'Default Tshell Logo'" style="width: 240px" />
             </div>
             <div class="form-row">
               <label class="row-label">{{ isZh ? '作者署名:' : 'Author Name:' }}</label>
@@ -219,7 +219,7 @@ const visible = computed({
 const activeCategory = ref('cobalt-strike')
 
 const categories = [
-  { id: 'cobalt-strike', label: 'BladeShell', zhLabel: '平台核心', icon: '🔧' },
+  { id: 'cobalt-strike', label: 'Tshell', zhLabel: '平台核心', icon: '🔧' },
   { id: 'console', label: 'Console', zhLabel: '控制台', icon: '🖥️' },
   { id: 'fingerprints', label: 'Fingerprints', zhLabel: '安全指纹', icon: '🏅' },
   { id: 'graph', label: 'Graph', zhLabel: '拓扑网络', icon: '📈' },

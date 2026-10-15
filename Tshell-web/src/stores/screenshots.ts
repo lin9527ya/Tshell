@@ -92,7 +92,7 @@ export const useScreenshotsStore = defineStore('screenshots', () => {
           user: clientUser,
           computer: clientComp,
           session: client?.Session || '1',
-          title: client ? `${clientComp} - [${client.InternalIP || client.ExternalIP || '127.0.0.1'}]` : 'BladeShell Screen',
+          title: client ? `${clientComp} - [${client.InternalIP || client.ExternalIP || '127.0.0.1'}]` : 'Tshell Screen',
           dataUrl,
           time: formatTime(),
           quality,

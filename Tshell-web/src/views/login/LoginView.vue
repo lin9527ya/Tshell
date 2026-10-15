@@ -3,7 +3,7 @@
     <!-- 左上 logo（vshell: top 12px / 高 30px） -->
     <div class="vs-login-logo">
       <img :src="logoUrl" alt="logo" />
-      <span>BladeShell</span>
+      <span>Tshell</span>
     </div>
 
     <!-- 右上：明暗切换 + 语言 -->
@@ -40,7 +40,7 @@
         {{ loading ? (isZh ? '登录中…' : 'Signing in…') : isZh ? '登录' : 'Sign in' }}
       </button>
 
-      <div class="vs-login-foot">BladeShell C2 · Team Server (v4.9.1)</div>
+      <div class="vs-login-foot">Tshell C2 · Team Server (v4.9.1)</div>
     </div>
   </div>
 </template>
@@ -50,7 +50,7 @@ import { computed, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import VsIcon from '@/layout-vshell/VsIcon.vue'
-import logoUrl from '@/assets/logo.svg'
+import logoUrl from '@/assets/logo.ico'
 import { usePermissStore } from '@/stores/userpermiss'
 import { useUserStore } from '@/stores/user'
 import { useI18nStore } from '@/stores/i18n'

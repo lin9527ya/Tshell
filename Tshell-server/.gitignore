@@ -25,6 +25,6 @@ temp
 # 重建到本目录,再编译服务端(见根目录 DEPLOYMENT.md 构建顺序)
 pkg/api/server/
 /tshell-server
-/rshell-server
+/tshell-server
 /tshell-server.exe
 /tshell.exe

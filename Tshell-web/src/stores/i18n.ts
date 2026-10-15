@@ -22,7 +22,7 @@ export const useI18nStore = defineStore(
     const dict: Record<LocaleType, Record<string, string>> = {
       zh: {
         // 8 大主菜单
-        'menu.cs': 'BladeShell',
+        'menu.cs': 'Tshell',
         'menu.view': '视图(V)',
         'menu.payload': '有效载荷(P)',
         'menu.attacks': '攻击(A)',
@@ -31,7 +31,7 @@ export const useI18nStore = defineStore(
         'menu.reporting': '报告(R)',
         'menu.help': '帮助(H)',
 
-        // BladeShell 菜单项
+        // Tshell 菜单项
         'menu.cs.new_conn': '新建连接(N)',
         'menu.cs.preferences': '偏好设置(P)',
         'menu.cs.visualization': '可视化(V)',
@@ -241,7 +241,7 @@ export const useI18nStore = defineStore(
 
       en: {
         // 8 Main Menus
-        'menu.cs': 'BladeShell',
+        'menu.cs': 'Tshell',
         'menu.view': 'View(V)',
         'menu.payload': 'Payloads(P)',
         'menu.attacks': 'Attacks(A)',
@@ -250,7 +250,7 @@ export const useI18nStore = defineStore(
         'menu.reporting': 'Reporting(R)',
         'menu.help': 'Help(H)',
 
-        // BladeShell Menu
+        // Tshell Menu
         'menu.cs.new_conn': 'New Connection(N)',
         'menu.cs.preferences': 'Preferences(P)',
         'menu.cs.visualization': 'Visualization(V)',

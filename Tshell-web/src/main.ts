@@ -189,7 +189,7 @@ app.directive("permiss", {
 // 设置页面标题的路由守卫
 router.beforeEach((to, from, next) => {
     const pageTitle = to.meta.title ? `${to.meta.title} - ` : ''
-    document.title = `${pageTitle}BladeShell`
+    document.title = `${pageTitle}Tshell`
     next()
 })
 

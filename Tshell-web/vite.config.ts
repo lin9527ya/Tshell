@@ -89,7 +89,9 @@ export default defineConfig(async () => {
             // console.log('文件信息', assetInfo.name)
             if (/\.(mp4|webm|ogg|mp3|wav|flac|aac)(\?.*)?$/i.test(assetInfo.name)) {
               extType = 'media'
-            } else if (/\.(png|jpe?g|gif|svg)(\?.*)?$/i.test(assetInfo.name)) {
+            } else if (/\.(png|jpe?g|gif|svg|ico)(\?.*)?$/i.test(assetInfo.name)) {
+              // ico 与图片同归 img/：后端只服务 /static /css /js /img 四个目录，
+              // 单列 ico/ 会 404（曾导致顶栏与登录页 logo 加载失败）
               extType = 'img'
             } else if (/\.(woff2?|eot|ttf|otf)(\?.*)?$/i.test(assetInfo.name)) {
               extType = 'fonts'

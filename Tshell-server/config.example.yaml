@@ -5,9 +5,9 @@
 # ============================================================
 
 application:
-    name: BladeShell          # 应用名称（显示于前端标题等）
+    name: Tshell          # 应用名称（显示于前端标题等）
     version: 2.0.2            # 版本号
-    author: BladeShell Team   # 作者标识
+    author: Tshell Team   # 作者标识
 
 server:
     host: 0.0.0.0             # HTTP 监听地址（0.0.0.0 = 所有网卡）

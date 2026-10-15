@@ -141,7 +141,7 @@ export const useUserStore = defineStore('user', {
         }
     },
     persist: {
-        key: 'bladeshell-user',
+        key: 'tshell-user',
         storage: localStorage,
         // OPSEC: access token 不持久化——仅存内存；页面刷新后登录态由 HttpOnly Cookie 维持
         // （服务端 AuthMiddleware 支持 Cookie 认证，JS 无法读取，防 XSS 窃取 token）。

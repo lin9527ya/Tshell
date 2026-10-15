@@ -456,7 +456,7 @@ func setDefaultValues(v reflect.Value) {
 
 // loadEnvironmentVariables 加载环境变量
 func (cm *ConfigManager) loadEnvironmentVariables() error {
-	return loadEnvVariables(reflect.ValueOf(cm.config).Elem(), "RSHELL")
+	return loadEnvVariables(reflect.ValueOf(cm.config).Elem(), "TSHELL")
 }
 
 // loadEnvVariables 递归加载环境变量

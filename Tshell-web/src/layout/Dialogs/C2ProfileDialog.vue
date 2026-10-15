@@ -25,7 +25,7 @@
           v-model="profileContent"
           class="cs-profile-textarea cs-font-mono"
           spellcheck="false"
-          :placeholder="isZh ? '# BladeShell C2 扩展通信画像配置...' : '# C2 profile definition...'"
+          :placeholder="isZh ? '# Tshell C2 扩展通信画像配置...' : '# C2 profile definition...'"
         />
       </div>
     </div>

@@ -15,7 +15,7 @@
           <label class="cs-form-label">{{ isZh ? '服务 / 任务名称:' : 'Service / Task Name:' }}</label>
           <el-input
             v-model="customName"
-            :placeholder="isZh ? '自定义名称（可选，默认 BladeShellSvc）' : 'Custom Name (optional, default BladeShellSvc)'"
+            :placeholder="isZh ? '自定义名称（可选，默认 TshellSvc）' : 'Custom Name (optional, default TshellSvc)'"
             style="width: 320px"
             clearable
           />

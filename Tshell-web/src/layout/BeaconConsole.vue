@@ -411,7 +411,7 @@ onMounted(() => {
   }
 
   // CS Banner Header
-  writeLine(`\x1b[1;36mBladeShell Beacon\x1b[0m — ${host.value} (${ip.value})`)
+  writeLine(`\x1b[1;36mTshell Beacon\x1b[0m — ${host.value} (${ip.value})`)
   writeLine(`\x1b[90m[*] User: ${user.value} | PID: ${pid.value} | Arch: ${arch.value} | Listener: ${listener.value}\x1b[0m`)
   writeLine(`\x1b[90m[${timestamp()}] Session interactive console ready.\x1b[0m\r\n`)
   writeLine(`\x1b[90m[${timestamp()}] ${isZh.value ? '非交互式 shell：命令与功能操作结果将自动回显到此处。' : 'Non-interactive shell: command and operation results are echoed here.'}\x1b[0m`)

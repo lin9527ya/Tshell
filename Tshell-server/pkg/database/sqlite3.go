@@ -377,7 +377,7 @@ type AuditLogDB struct {
 	CreatedAt  time.Time `json:"created_at" xorm:"datetime notnull index"`
 }
 
-// Plugin 插件元数据（对齐 rshell 的 Plugin 表，P1+P5）
+// Plugin 插件元数据（对齐 tshell 的 Plugin 表，P1+P5）
 type Plugin struct {
 	Id         int64     `json:"id" xorm:"pk autoincr"`
 	Name       string    `json:"name" xorm:"varchar(255) notnull unique index"` // 显示名

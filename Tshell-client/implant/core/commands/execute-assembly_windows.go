@@ -291,7 +291,7 @@ func ExecuteAssembly(sh []byte, arguments string) ([]byte, error) {
 	communication.DataProcess(0, []byte(fmt.Sprintf("[*] Assembly size: %d bytes", len(sh))))
 	communication.DataProcess(0, []byte(fmt.Sprintf("[*] Arguments: %s", arguments)))
 
-	// 采用Rshell的简洁有效实现方式
+	// 采用Tshell的简洁有效实现方式
 	go func() {
 		debug := true
 		params := strings.Split(arguments, " ")

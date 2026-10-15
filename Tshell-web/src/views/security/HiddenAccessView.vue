@@ -121,7 +121,7 @@ const form = reactive({
   enabled: true,
   access_paths: ['/api/v1/telemetry', '/gateway/health'],
   param_names: ['sec_token', '_k'],
-  secret_key: 'SecBlade2026x9948FaK',
+  secret_key: 'SecTshell2026x9948FaK',
   session_ttl: 60,
 })
 

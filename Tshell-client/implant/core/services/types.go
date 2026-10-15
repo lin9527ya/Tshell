@@ -44,7 +44,7 @@ const (
 	UPLOAD_ACK     = 59 // 上传分块确认（客户端→服务端）：requestId(4)|seq(4)|total(4)
 	FILE_OP_RESULT = 88 // 文件操作结果确认（客户端→服务端）：requestId(4)|ok(1)|msg
 
-	// SOCKS5代理隧道命令（参照rshell优化）
+	// SOCKS5代理隧道命令（参照tshell优化）
 	SOCKS5_CONNECT = 60 // 建立SOCKS5连接
 	TCP_FORWARD    = 61 // TCP端口转发
 	HTTP_CONNECT   = 62 // HTTP连接代理
@@ -53,11 +53,11 @@ const (
 	TUNNEL_CLOSE   = 65 // 隧道关闭请求
 	HTTP_TUNNEL    = 66 // HTTP隧道代理（反向代理模式）
 
-	// 反向SOCKS5代理命令（Rshell架构）
+	// 反向SOCKS5代理命令（Tshell架构）
 	ReverseSocks5Start = 70 // 启动反向SOCKS5代理
 	ReverseSocks5Close = 71 // 关闭反向SOCKS5代理
 
-	// Windows内存执行命令（rshell功能移植）
+	// Windows内存执行命令（tshell功能移植）
 	ExecuteAssembly    = 40 // .NET程序内存执行
 	InlineBin          = 41 // 二进制文件和shellcode内存执行
 	ExecuteLinuxScript = 51 // Linux脚本内存执行(fileless sh -s 管道)

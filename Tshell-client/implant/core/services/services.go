@@ -855,7 +855,7 @@ func CmdHvncInput(cmdBuf []byte) ([]byte, error) {
 	return commands.SendHvncInput(cmdBuf)
 }
 
-// Windows内存执行相关功能（从rshell移植）
+// Windows内存执行相关功能（从tshell移植）
 
 // CmdExecuteAssembly 处理.NET Assembly内存执行命令
 func CmdExecuteAssembly(cmdBuf []byte) ([]byte, error) {

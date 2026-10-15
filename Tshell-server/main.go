@@ -542,7 +542,7 @@ func main() {
 	// 基于休眠时间的智能检测API
 	protected.POST("/client/smart-offline-check", api.SmartOfflineCheck)
 
-	// Windows内存执行 API（rshell功能移植）
+	// Windows内存执行 API（tshell功能移植）
 	operatorOnly.POST("/bin/execute", api.ExecuteBin)
 	// 内存注入（纯内存通道，不落盘；替代原文件路径注入）
 	operatorOnly.POST("/client/inject-mem", api.InjectMem)

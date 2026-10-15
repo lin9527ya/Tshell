@@ -87,7 +87,7 @@
                 <label class="cs-form-label">{{ isZh ? '安全关键词' : 'Security Keyword' }}:</label>
                 <el-input
                   v-model="notifConfig.dingtalk.keyword"
-                  placeholder="e.g. Beacon / BladeShell"
+                  placeholder="e.g. Beacon / Tshell"
                   style="width: 240px"
                 />
               </div>
@@ -134,7 +134,7 @@
                 <label class="cs-form-label">{{ isZh ? '触发关键词（可选）' : 'Trigger Keyword' }}:</label>
                 <el-input
                   v-model="notifConfig.feishu.keyword"
-                  placeholder="e.g. BladeShell"
+                  placeholder="e.g. Tshell"
                   style="width: 240px"
                 />
               </div>
@@ -385,7 +385,7 @@ const notifConfig = reactive<NotificationConfig>({
   dingtalk: {
     enable: false,
     token: '',
-    keyword: 'BladeShell',
+    keyword: 'Tshell',
     secret: '',
   },
   wecom: {
@@ -396,7 +396,7 @@ const notifConfig = reactive<NotificationConfig>({
     enable: false,
     webhook: '',
     secret: '',
-    keyword: 'BladeShell',
+    keyword: 'Tshell',
   },
 })
 

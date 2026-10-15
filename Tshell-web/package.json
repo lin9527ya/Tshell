@@ -1,5 +1,5 @@
 {
-  "name": "bladeshell-web",
+  "name": "tshell-web",
   "version": "1.0.0",
   "private": true,
   "web-types": "./web-types.json",
@@ -16,7 +16,7 @@
     "lint": "eslint . --ext .vue,.js,.jsx,.cjs,.mjs,.ts,.tsx,.cts,.mts --fix --ignore-path .gitignore",
     "format": "prettier --write src/",
     "build:embed": "npm run build && node scripts/copy-to-backend.js",
-    "deploy:full": "npm run build:embed && cd ../Rshell---A-Cross-Platform-C2 && go build -o rshell-server ."
+    "deploy:full": "npm run build:embed && cd ../Tshell---A-Cross-Platform-C2 && go build -o tshell-server ."
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.1.0",

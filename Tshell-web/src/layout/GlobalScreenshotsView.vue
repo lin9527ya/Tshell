@@ -174,7 +174,7 @@
           </el-table-column>
           <el-table-column prop="title" :label="isZh ? '窗口标题 / 描述' : 'title'" min-width="200" sortable show-overflow-tooltip>
             <template #default="{ row }">
-              <span class="title-cell">{{ row.title || 'BladeShell' }}</span>
+              <span class="title-cell">{{ row.title || 'Tshell' }}</span>
             </template>
           </el-table-column>
 
@@ -192,7 +192,7 @@
       <!-- Preview Pane (Split Mode / Active Item) -->
       <div v-show="viewMode === 'split'" class="gs-preview-pane">
         <div class="gs-preview-header">
-          <span class="gs-preview-title">{{ selectedItem?.title || (selectedItem ? `BladeShell - [ ${selectedItem.computer || selectedItem.host} ]` : (isZh ? '画面预览' : 'Preview')) }}</span>
+          <span class="gs-preview-title">{{ selectedItem?.title || (selectedItem ? `Tshell - [ ${selectedItem.computer || selectedItem.host} ]` : (isZh ? '画面预览' : 'Preview')) }}</span>
           <div class="gs-preview-tools">
             <button class="cs-btn cs-btn-xs" :disabled="!selectedItem" @click="zoomReset">{{ isZh ? '1:1' : '1:1' }}</button>
             <button class="cs-btn cs-btn-xs" :disabled="!selectedItem" @click="openFullscreen(selectedItem)">{{ isZh ? '全屏' : 'Fullscreen' }}</button>

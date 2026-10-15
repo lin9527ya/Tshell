@@ -2,9 +2,10 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8">
-    <link rel="icon" href="/static/favicon.ico">
+    <!-- favicon 走 public/ 静态路径，不会被构建加 hash；换图标时请递增 v 以击穿浏览器缓存 -->
+    <link rel="icon" href="/static/favicon.ico?v=2">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BladeShell - C2 Platform</title>
+    <title>Tshell - C2 Platform</title>
   </head>
   <body>
     <div id="app"></div>

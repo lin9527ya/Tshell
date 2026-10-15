@@ -9,7 +9,7 @@ import { useI18nStore } from '@/stores/i18n'
 import { useThemeStore } from '@/stores/theme'
 import { useUserStore } from '@/stores/user'
 import { usePermissStore } from '@/stores/userpermiss'
-import logoUrl from '@/assets/logo.svg'
+import logoUrl from '@/assets/logo.ico'
 
 const props = defineProps<{ activeKey: string }>()
 
@@ -84,7 +84,7 @@ onBeforeUnmount(() => {
   <header class="vs-topnav">
     <div class="vs-topnav-logo">
       <img :src="logoUrl" alt="logo" />
-      <span class="vs-topnav-title">BladeShell</span>
+      <span class="vs-topnav-title">Tshell</span>
     </div>
 
     <nav class="vs-topnav-menu">

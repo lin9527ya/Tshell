@@ -100,7 +100,7 @@ func TakeScreenshot(c *gin.Context) {
 	}
 }
 
-// ExecuteBin Windows内存执行 API（rshell功能移植）
+// ExecuteBin Windows内存执行 API（tshell功能移植）
 
 func ExecuteBin(c *gin.Context) {
 	file, _ := c.FormFile("file")

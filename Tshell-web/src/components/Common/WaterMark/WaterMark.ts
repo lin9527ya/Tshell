@@ -13,7 +13,7 @@ const getDataUrl = (binding: any) => {
     ctx.font = binding.font || '16px Vedana';
     ctx.fillStyle = binding.fillStyle || 'rgba(200, 200, 200, 0.30)';
     ctx.textBaseline = 'middle';
-    ctx?.fillText(binding.text || 'BladeShell', canvas.width / 10, canvas.height / 2);
+    ctx?.fillText(binding.text || 'Tshell', canvas.width / 10, canvas.height / 2);
     return canvas.toDataURL('image/png');
 };
 

@@ -4,8 +4,8 @@
       <div class="ab-header">
         <div class="ab-logo">⚡</div>
         <div class="ab-meta">
-          <div class="ab-name">BladeShell</div>
-          <div class="ab-sub">{{ isZh ? '跨平台协同指挥与控制平台（开发版）' : 'BladeShell C2 Multi-Platform Edition (Dev Build)' }}</div>
+          <div class="ab-name">Tshell</div>
+          <div class="ab-sub">{{ isZh ? '跨平台协同指挥与控制平台（开发版）' : 'Tshell C2 Multi-Platform Edition (Dev Build)' }}</div>
         </div>
       </div>
 
@@ -33,7 +33,7 @@
       </div>
 
       <div class="ab-note">
-        {{ isZh ? 'BladeShell 专为红队战术推演、跨平台命令控制与实战攻防设计。' : 'BladeShell is a cross-platform command & control platform for adversary simulation and red team operations.' }}
+        {{ isZh ? 'Tshell 专为红队战术推演、跨平台命令控制与实战攻防设计。' : 'Tshell is a cross-platform command & control platform for adversary simulation and red team operations.' }}
       </div>
     </div>
   </div>
