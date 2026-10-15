@@ -9,7 +9,13 @@
 
 .vs-shell {
   --vs-primary: var(--theme-primary, #0960bd);
-  --vs-header-bg: #ffffff;
+  /* 顶栏/菜单底色由主题抽屉写入 --theme-*；未设置时用模式默认 */
+  --vs-header-bg: var(--theme-header-bg, #ffffff);
+  --vs-header-fg: var(--theme-header-fg, rgba(0, 0, 0, 0.88));
+  --vs-header-active: var(--theme-header-active, #0960bd);
+  --vs-tags-bg: #ffffff;
+  --vs-menu-bg: var(--theme-menu-bg, #001529);
+  --vs-menu-fg: var(--theme-menu-fg, rgba(255, 255, 255, 0.92));
   --vs-header-border: #eeeeee;
   --vs-text: rgba(0, 0, 0, 0.88);
   --vs-text-secondary: rgba(0, 0, 0, 0.65);
@@ -39,7 +45,7 @@
 
 /* 暗色（对齐 vshell: component #151515 / content #1e1e1e / text #c9d1d9 / border #303030） */
 :root[data-theme='dark'] .vs-shell {
-  --vs-header-bg: #151515;
+  --vs-tags-bg: #151515;
   --vs-header-border: #303030;
   --vs-text: #c9d1d9;
   --vs-text-secondary: rgba(201, 209, 217, 0.75);
@@ -86,7 +92,7 @@
 .vs-topnav-title {
   font-size: 16px;
   font-weight: 600;
-  color: var(--vs-text);
+  color: var(--vs-header-fg);
   white-space: nowrap;
 }
 
@@ -155,7 +161,7 @@
   gap: 6px;
   padding: 0 16px;
   font-size: 14px;
-  color: var(--vs-text);
+  color: var(--vs-header-fg);
   cursor: pointer;
   white-space: nowrap;
   transition: color 0.2s;
@@ -164,11 +170,11 @@
 
 .vs-nav-item:hover,
 .vs-nav-item.open {
-  color: var(--vs-primary);
+  color: var(--vs-header-active);
 }
 
 .vs-nav-item.active {
-  color: var(--vs-primary);
+  color: var(--vs-header-active);
 }
 
 .vs-nav-item.active::after {
@@ -253,6 +259,8 @@
 
 /* ================= 右侧动作区 ================= */
 .vs-topnav-actions {
+  /* 左侧菜单模式下顶栏不渲染导航，靠 auto 把动作区顶到右侧 */
+  margin-left: auto;
   min-width: 180px;
   height: 100%;
   display: flex;
@@ -269,7 +277,7 @@
   align-items: center;
   background: transparent;
   border: 0;
-  color: var(--vs-text);
+  color: var(--vs-header-fg);
   font-size: 16px;
   cursor: pointer;
   transition: color 0.2s;
@@ -293,7 +301,7 @@
   gap: 4px;
   padding: 0 8px;
   font-size: 14px;
-  color: var(--vs-text);
+  color: var(--vs-header-fg);
   cursor: pointer;
   transition: color 0.2s;
 }
@@ -317,7 +325,7 @@
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  background: var(--vs-header-bg);
+  background: var(--vs-tags-bg);
   border-bottom: 1px solid var(--vs-header-border);
   position: relative;
   z-index: 90;
@@ -440,4 +448,140 @@
   padding: 24px;
   color: var(--vs-text-dim);
   font-size: 14px;
+}
+
+/* ================= 左侧菜单模式（sidebar / mix / mix-sidebar） ================= */
+.vs-side-layout {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.vs-shell-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.vs-sidenav {
+  width: var(--vs-logo-w);
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--vs-menu-bg);
+  color: var(--vs-menu-fg);
+  border-right: 1px solid var(--vs-header-border);
+  overflow-x: hidden;
+  overflow-y: auto;
+  transition: width 0.2s;
+}
+
+/* mix-sidebar：80px 图标栏；collapsed：64px 仅图标 */
+.vs-sidenav.is-rail {
+  width: 80px;
+}
+
+.vs-sidenav.is-collapsed {
+  width: 64px;
+}
+
+.vs-side-logo {
+  height: var(--vs-header-h);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  overflow: hidden;
+}
+
+.vs-side-logo img {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  object-fit: contain;
+}
+
+.vs-side-logo-text {
+  font-size: 16px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.vs-side-items {
+  flex: 1;
+  min-height: 0;
+  padding: 6px 0;
+}
+
+.vs-side-item {
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 16px;
+  font-size: 14px;
+  color: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+
+.vs-side-item:hover {
+  background: color-mix(in srgb, var(--vs-menu-fg) 12%, transparent);
+}
+
+.vs-side-item.active {
+  background: var(--vs-primary);
+  color: #fff;
+}
+
+/* 折叠/图标栏：图标居中；图标栏额外在图标下带小字标签 */
+.vs-sidenav.is-collapsed .vs-side-item,
+.vs-sidenav.is-rail .vs-side-item {
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  padding: 6px 0;
+}
+
+.vs-sidenav.is-collapsed .vs-side-item {
+  min-height: 44px;
+}
+
+.vs-side-icon {
+  flex-shrink: 0;
+}
+
+.vs-side-rail-text {
+  font-size: 11px;
+  line-height: 1.1;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ================= 副栏顶栏（侧栏右侧的 slim 顶栏 / mix 的整宽顶栏） ================= */
+.vs-side-toggle {
+  padding: 0 12px;
+}
+
+.vs-breadcrumb {
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--vs-header-fg);
+  margin-left: 2px;
+}
+
+/* mix：logo 块嵌在整宽顶栏左端，底色跟随菜单主题 */
+.vs-mix-logo {
+  min-width: var(--vs-logo-w);
+  background: var(--vs-menu-bg);
+  color: var(--vs-menu-fg);
+}
+
+.vs-mix-logo .vs-topnav-title {
+  color: var(--vs-menu-fg);
 }

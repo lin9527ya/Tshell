@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import VsIcon from './VsIcon.vue'
-import PreferencesDialog from '@/layout/Dialogs/PreferencesDialog.vue'
+import ThemeDrawer from '@/layout-vshell/ThemeDrawer.vue'
 import ReportsDialog from '@/layout/Dialogs/ReportsDialog.vue'
 import { deriveMenu } from '@/router/routes'
 import { useI18nStore } from '@/stores/i18n'
@@ -11,7 +11,11 @@ import { useUserStore } from '@/stores/user'
 import { usePermissStore } from '@/stores/userpermiss'
 import logoUrl from '@/assets/logo.ico'
 
-const props = defineProps<{ activeKey: string }>()
+const props = withDefaults(
+  defineProps<{ activeKey: string; showMenu?: boolean; variant?: 'full' | 'slim' | 'mix' }>(),
+  { showMenu: true, variant: 'full' },
+)
+const emit = defineEmits<{ (e: 'toggle-side'): void }>()
 
 const i18nStore = useI18nStore()
 const themeStore = useThemeStore()
@@ -33,6 +37,12 @@ const navItems = computed(() =>
 )
 
 const label = (m: { title: string; titleEn: string }) => (isZh.value ? m.title : m.titleEn)
+
+// 副栏（左侧菜单模式）顶栏的面包屑 = 当前菜单项标题
+const activeTitle = computed(() => {
+  const hit = navItems.value.find((m) => m.name === props.activeKey)
+  return hit ? label(hit) : ''
+})
 
 function onNavClick(path: string) {
   router.push(path)
@@ -82,12 +92,26 @@ onBeforeUnmount(() => {
 
 <template>
   <header class="vs-topnav">
-    <div class="vs-topnav-logo">
+    <div v-if="props.variant === 'full'" class="vs-topnav-logo">
       <img :src="logoUrl" alt="logo" />
       <span class="vs-topnav-title">Tshell</span>
     </div>
 
-    <nav class="vs-topnav-menu">
+    <!-- mix 模式：logo 块用菜单底色，嵌在整宽顶栏左端 -->
+    <div v-if="props.variant === 'mix'" class="vs-topnav-logo vs-mix-logo">
+      <img :src="logoUrl" alt="logo" />
+      <span class="vs-topnav-title">Tshell</span>
+    </div>
+
+    <!-- 左侧菜单模式的副栏：汉堡（收起/展开侧栏）+ 当前页面标题 -->
+    <template v-if="props.variant !== 'full'">
+      <button class="vs-action-btn vs-side-toggle" :title="isZh ? '收起/展开菜单' : 'Collapse menu'" @click="emit('toggle-side')">
+        <VsIcon name="list-ul" :size="18" />
+      </button>
+      <span class="vs-topnav-title vs-breadcrumb">{{ activeTitle }}</span>
+    </template>
+
+    <nav v-if="props.showMenu" class="vs-topnav-menu">
       <div
         v-for="item in navItems"
         :key="item.name"
@@ -145,7 +169,7 @@ onBeforeUnmount(() => {
     </div>
 
     <!-- 用户菜单宿主弹窗（局部挂载；append-to-body 渲染到 body） -->
-    <PreferencesDialog v-model="showPreferences" />
+    <ThemeDrawer v-model="showPreferences" />
     <ReportsDialog v-model="showReports" />
   </header>
 </template>
