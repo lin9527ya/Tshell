@@ -55,6 +55,9 @@ func DynamicStageShellCodeGen(c *gin.Context) {
 		return
 	}
 
+	// 前端从监听器列表选的地址是脱敏值，先还原
+	request.Listener = resolveListenerAddress(request.Listener, "connect")
+
 	// 添加调试日志
 	logx.Infof("[DEBUG] 动态stager请求: Listener=%s, Port=%s, Format=%s\n", request.Listener, request.Port, request.Format)
 
@@ -329,6 +332,8 @@ func StageShellCodeGen(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": 400, "data": err.Error()})
 		return
 	}
+
+	shellcode.Listener = resolveListenerAddress(shellcode.Listener, "connect")
 
 	var wd database.WebDelivery
 	database.Engine.Where("listening_port = ?", shellcode.Port).Get(&wd)

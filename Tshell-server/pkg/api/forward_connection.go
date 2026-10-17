@@ -141,9 +141,11 @@ func ConnectForwardClient(c *gin.Context) {
 	})
 }
 
-// padForwardKeys 补齐主密钥(32)/盐(16)，返回 (nil, nil) 表示使用监听器默认配置
+// padForwardKeys 补齐主密钥(32)/盐(16)，返回 (nil, nil) 表示使用监听器默认配置。
+// 带脱敏标记的值来自监听器列表的预览（前端"连接"按钮直接携带该监听器的 VKey/盐），
+// 同样视为未提供——交给连接路径按监听器配置取真实密钥。
 func padForwardKeys(vkey, encryptSalt string) ([]byte, []byte) {
-	if vkey == "" || encryptSalt == "" {
+	if vkey == "" || encryptSalt == "" || isMaskedValue(vkey) || isMaskedValue(encryptSalt) {
 		return nil, nil
 	}
 	masterKey := make([]byte, 32)

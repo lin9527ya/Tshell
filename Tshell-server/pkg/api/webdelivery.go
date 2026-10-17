@@ -140,6 +140,8 @@ func StartWebDelivery(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": 400, "data": err.Error()})
 		return
 	}
+	// 前端从监听器列表选的地址是脱敏值，先还原：否则会把占位符落库并 patch 进载荷
+	req.Listener = resolveListenerAddress(req.Listener, "connect")
 	if req.Listener == "" || req.OS == "" || req.Arch == "" {
 	c.JSON(http.StatusOK, gin.H{"status": 400, "data": "listener/os/arch 必填"})
 		return
@@ -775,6 +777,7 @@ func PreviewDeliveryURLs(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": 400, "data": err.Error()})
 		return
 	}
+	req.Listener = resolveListenerAddress(req.Listener, "connect")
 	meta := database.WebDelivery{
 		ListenerConfig: req.Listener,
 		OS:             req.OS,

@@ -43,6 +43,13 @@ func AddListener(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	// 脱敏预览不是真实值：从列表里复制粘贴过来的地址/密钥会把占位符存成真实配置
+	for _, v := range []string{listener.ListenAddress, listener.ConnectAddress, listener.VKey, listener.EncryptionSalt} {
+		if isMaskedValue(v) {
+			c.JSON(http.StatusOK, gin.H{"status": 400, "data": "检测到脱敏预览值（含 " + maskedMarker + "），请填写真实值"})
+			return
+		}
+	}
 	if exists, _ := database.Engine.Where("listen_address LIKE ?", "%"+listener.ListenAddress).Exist(&database.Listener{}); exists {
 		c.JSON(http.StatusOK, gin.H{"status": 400, "data": "Listener already exists"})
 		return
@@ -95,10 +102,107 @@ func AddListener(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": 200, "data": "Listener added"})
 	go handleOpenPort(listener.Type, listener.ListenAddress, listener.VKey, listener.EncryptionSalt)
 }
+
+// maskedMarker 脱敏预览的占位符。凡含此标记的值都视为"不是真实值，而是对库中现有值的引用"：
+// 更新时保留原值、按地址查找时先还原、新建时拒绝（见 resolveListenerAddress / isMaskedValue）。
+const maskedMarker = "****"
+
+// isMaskedValue 判断值是否为脱敏预览
+func isMaskedValue(v string) bool { return strings.Contains(v, maskedMarker) }
+
+// maskSecretPreview 密钥类字段的脱敏预览：保留首 4 与末 2 字符。
+// 与前端 maskSecret 规则一致，且对其幂等（再掩码一次结果不变），故现有前端无需同步改动。
+// 空值仍返回空串，前端会显示"默认"（与改动前一致）。
+func maskSecretPreview(secret string) string {
+	if secret == "" {
+		return ""
+	}
+	if len(secret) <= 4 {
+		return maskedMarker
+	}
+	return secret[:4] + maskedMarker + secret[len(secret)-2:]
+}
+
+// maskListenerAddress 脱敏监听地址。仅 oss 类型把凭证放在地址里
+// （endpoint:accessKeyID:accessKeySecret:bucket，见 handleOpenPort 的 oss 分支），
+// 把 AK/SK 两段替换为占位符；其余类型（含 dns 的 addr:port:domain）不含凭证，原样返回。
+func maskListenerAddress(listenerType, addr string) string {
+	if !strings.EqualFold(listenerType, "oss") || addr == "" {
+		return addr
+	}
+	parts := strings.Split(addr, ":")
+	if len(parts) < 4 {
+		return addr
+	}
+	parts[1], parts[2] = maskedMarker, maskedMarker
+	return strings.Join(parts, ":")
+}
+
+// listenerResponse 监听器列表响应。字段名与 database.Listener 保持一致（前端按 row.VKey /
+// row.ListenAddress 读取），但密钥类字段只回脱敏预览，凭证不进浏览器。
+type listenerResponse struct {
+	Id                int64  `json:"Id"`
+	Type              string `json:"Type"`
+	ListenAddress     string `json:"ListenAddress"`
+	ConnectAddress    string `json:"ConnectAddress"`
+	Status            int    `json:"Status"`
+	HeartbeatTimeout  string `json:"HeartbeatTimeout"`
+	HeartbeatInterval string `json:"HeartbeatInterval"`
+	Note              string `json:"Note"`
+	VKey              string `json:"VKey"`
+	EncryptionSalt    string `json:"EncryptionSalt"`
+}
+
+func maskListenerForResponse(l database.Listener) listenerResponse {
+	return listenerResponse{
+		Id:                l.Id,
+		Type:              l.Type,
+		ListenAddress:     maskListenerAddress(l.Type, l.ListenAddress),
+		ConnectAddress:    maskListenerAddress(l.Type, l.ConnectAddress),
+		Status:            l.Status,
+		HeartbeatTimeout:  l.HeartbeatTimeout,
+		HeartbeatInterval: l.HeartbeatInterval,
+		Note:              l.Note,
+		VKey:              maskSecretPreview(l.VKey),
+		EncryptionSalt:    maskSecretPreview(l.EncryptionSalt),
+	}
+}
+
+// resolveListenerAddress 把可能带脱敏标记的地址还原为库中真实地址。
+// 前端从列表/详情接口拿到的是脱敏值，原样回传给开关、删除、重启、更新、生成等按地址
+// 查找的接口时必须先还原，否则查不到记录（动作全部失效）；生成接口更是会把脱敏串
+// patch 进客户端。非脱敏值走快路径原样返回，故对不含凭证的类型（绝大多数）完全无影响。
+// wantField 指明比对哪个字段："listen" 或 "connect"。还原不到时原样返回，由调用方按
+// 原逻辑报"监听器不存在"。
+func resolveListenerAddress(submitted, wantField string) string {
+	if !isMaskedValue(submitted) || database.Engine == nil {
+		return submitted
+	}
+	var all []database.Listener
+	if err := database.Engine.Find(&all); err != nil {
+		return submitted
+	}
+	for _, l := range all {
+		if wantField == "connect" {
+			if maskListenerAddress(l.Type, l.ConnectAddress) == submitted {
+				return l.ConnectAddress
+			}
+		} else if maskListenerAddress(l.Type, l.ListenAddress) == submitted {
+			return l.ListenAddress
+		}
+	}
+	return submitted
+}
+
 func ListListener(c *gin.Context) {
 	var listeners []database.Listener
 	database.Engine.Find(&listeners)
-	c.JSON(http.StatusOK, gin.H{"status": 200, "data": listeners})
+	// 只回脱敏预览：VKey/加密盐是会话密钥派生的根，oss 的 AK/SK 更是可直接复用的云凭证
+	result := make([]listenerResponse, 0, len(listeners))
+	for _, l := range listeners {
+		result = append(result, maskListenerForResponse(l))
+	}
+	c.JSON(http.StatusOK, gin.H{"status": 200, "data": result})
 }
 func OpenListener(c *gin.Context) {
 	var listener struct {
@@ -108,6 +212,8 @@ func OpenListener(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	// 前端从列表接口拿到的是脱敏地址，原样回传时先还原为库中真实地址
+	listener.ListenAddress = resolveListenerAddress(listener.ListenAddress, "listen")
 	var lis database.Listener
 	database.Engine.Where("listen_address = ?", listener.ListenAddress).Get(&lis)
 	if lis.Status == 2 {
@@ -130,6 +236,7 @@ func CloseListener(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	listener.ListenAddress = resolveListenerAddress(listener.ListenAddress, "listen")
 	var lis database.Listener
 	database.Engine.Where("listen_address = ?", listener.ListenAddress).Get(&lis)
 	if lis.Status == 1 {
@@ -151,6 +258,7 @@ func DeleteListener(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	listener.ListenAddress = resolveListenerAddress(listener.ListenAddress, "listen")
 	var lis database.Listener
 	database.Engine.Where("listen_address = ?", listener.ListenAddress).Get(&lis)
 	if lis.Status == 1 {
@@ -186,6 +294,15 @@ func UpdateListener(c *gin.Context) {
 		log.Printf("❌ [监听器更新] 参数绑定失败: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "参数绑定失败: " + err.Error()})
 		return
+	}
+
+	// 带脱敏标记的值是列表接口回给前端的预览，前端编辑框预填后原样回传，
+	// 在此归一为"未提供"——后续合并（留空即保留原值）与长度校验都按此处理。
+	if isMaskedValue(listener.VKey) {
+		listener.VKey = ""
+	}
+	if isMaskedValue(listener.EncryptionSalt) {
+		listener.EncryptionSalt = ""
 	}
 
 	// 检查必要参数
@@ -236,10 +353,11 @@ func UpdateListener(c *gin.Context) {
 	log.Printf("🔍 [监听器更新] 更新前状态 - ID: %d, 地址: %s -> %s, 状态: %d", listener.Id, currentListener.ListenAddress, listener.ListenAddress, currentListener.Status)
 
 	// 更新数据库中的监听器记录，保持原有状态
+	// 地址同样先还原脱敏值：否则 oss 监听器一编辑就会把 AK/SK 写成占位符
 	updateData := &database.Listener{
 		Type:              listener.Type,
-		ListenAddress:     listener.ListenAddress,     // 允许更新监听地址
-		ConnectAddress:    listener.ConnectAddress,
+		ListenAddress:     resolveListenerAddress(listener.ListenAddress, "listen"), // 允许更新监听地址
+		ConnectAddress:    resolveListenerAddress(listener.ConnectAddress, "connect"),
 		HeartbeatTimeout:  heartbeatTimeout,
 		HeartbeatInterval: heartbeatInterval,
 		Note:              listener.Note,
@@ -313,6 +431,7 @@ func BatchDeleteListeners(c *gin.Context) {
 	var failedAddresses []string
 
 	for _, address := range requestBody.ListenAddresses {
+		address = resolveListenerAddress(address, "listen")
 		log.Printf("[LISTENER-API] 🔍 处理删除监听器 地址: %s", address)
 
 		// 查找监听器记录
@@ -907,6 +1026,7 @@ func RestartListener(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	listener.ListenAddress = resolveListenerAddress(listener.ListenAddress, "listen")
 	var lis database.Listener
 	has, _ := database.Engine.Where("listen_address = ?", listener.ListenAddress).Get(&lis)
 	if !has {

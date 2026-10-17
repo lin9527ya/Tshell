@@ -76,6 +76,16 @@ func GenServer(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	// 前端生成载荷时会从监听器列表带上 VKey/加密盐（payloadUtil/ServerGen），
+	// 而列表接口现在只回脱敏预览：带标记的值视为"未提供"，回落到按地址/类型查库取真实密钥。
+	// 否则掩码会被 patch 进客户端，客户端上线即解密失败。
+	if isMaskedValue(serverBody.Vkey) {
+		serverBody.Vkey = ""
+	}
+	if isMaskedValue(serverBody.EncryptSalt) {
+		serverBody.EncryptSalt = ""
+	}
+
 	osType := serverBody.OsType
 	archType := serverBody.ArchType
 
@@ -87,6 +97,9 @@ func GenServer(c *gin.Context) {
 	listenerTmp := strings.SplitN(serverBody.Listener, "://", 2)
 	listenerType := strings.ToLower(listenerTmp[0]) // 转换为小写以匹配文件夹名
 	connectAddress := listenerTmp[1]
+	// 前端从 ShowListener/ShowListenerDetails 拿到的是脱敏地址，原样回传时先还原：
+	// 否则脱敏串会被 patch 进客户端配置（oss 尤其致命——AK/SK 变成占位符）
+	connectAddress = resolveListenerAddress(connectAddress, "connect")
 	// https 有独立客户端目录 server/https（含 https_ 前缀二进制）
 	binaryDir := listenerType
 
@@ -526,7 +539,8 @@ func ShowListener(c *gin.Context) {
 
 	var result []string
 	for _, listener := range listeners {
-		result = append(result, listener.Type+"://"+listener.ConnectAddress)
+		// 脱敏：oss 的 connect_address 承载 AK/SK
+		result = append(result, listener.Type+"://"+maskListenerAddress(listener.Type, listener.ConnectAddress))
 	}
 	c.JSON(http.StatusOK, gin.H{"status": 200, "data": result})
 
@@ -552,10 +566,10 @@ func ShowListenerDetails(c *gin.Context) {
 		// 使用直接查询到的数据，其中包含真实ID
 		detail := ListenerDetail{
 			ID:             listener.Id, // 直接使用数据库ID
-			URL:            listener.Type + "://" + listener.ConnectAddress,
+			URL:            listener.Type + "://" + maskListenerAddress(listener.Type, listener.ConnectAddress),
 			Protocol:       listener.Type,
-			ListenAddress:  listener.ListenAddress,
-			ConnectAddress: listener.ConnectAddress,
+			ListenAddress:  maskListenerAddress(listener.Type, listener.ListenAddress),
+			ConnectAddress: maskListenerAddress(listener.Type, listener.ConnectAddress),
 			Status:         listener.Status,
 		}
 		result = append(result, detail)
