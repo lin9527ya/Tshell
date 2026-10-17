@@ -4,11 +4,17 @@ import (
 	"BackendTemplate/pkg/connection"
 	"BackendTemplate/pkg/connection/tcp"
 	"BackendTemplate/pkg/database"
+	"encoding/json"
 	"io"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/gin-gonic/gin"
 )
 
 // stubLocalConn 只实现 connWithLocalAddr，用于验证归属判定中的端口比对。
@@ -173,5 +179,133 @@ func TestCleanupClientsForListenerScopedByAddress(t *testing.T) {
 	database.Engine.Where("uid = ?", uidOther).Get(&cOther)
 	if cOther.Online != "1" {
 		t.Errorf("同类型另一监听器(8082)上的客户端被误标离线, Online=%s", cOther.Online)
+	}
+}
+
+// TestHandleOpenPortRejectsDefaultKeyMarksStopped 启动失败必须把状态回置为已停止：
+// 原实现只在日志里拒绝，库里仍留着 Status=1，前端显示"监听中"、dashboard 计数虚高。
+func TestHandleOpenPortRejectsDefaultKeyMarksStopped(t *testing.T) {
+	tmpDir := t.TempDir()
+	old := database.DatabaseName
+	database.DatabaseName = filepath.Join(tmpDir, "test.db")
+	database.ConnectDateBase()
+	database.DatabaseName = old
+	defer database.Engine.Close()
+
+	const addr = "0.0.0.0:18098"
+	const defaultVKey, defaultSalt = "initial_master_key_12345678901", "initial_salt_123"
+	database.Engine.Insert(&database.Listener{
+		Type: "tcp", ListenAddress: addr, ConnectAddress: "c2.example.com:18098",
+		Status: 1, VKey: defaultVKey, EncryptionSalt: defaultSalt,
+	})
+
+	handleOpenPort("tcp", addr, defaultVKey, defaultSalt)
+
+	var lis database.Listener
+	if has, _ := database.Engine.Where("listen_address = ?", addr).Get(&lis); !has {
+		t.Fatal("监听器记录应仍在库中")
+	}
+	if lis.Status != 2 {
+		t.Errorf("启动失败后状态应为 2（已停止），实际 %d", lis.Status)
+	}
+	connection.MuClientListenerType.Lock()
+	_, hasHandle := connection.TCPServer[addr]
+	connection.MuClientListenerType.Unlock()
+	if hasHandle {
+		t.Error("密钥被拒时不应注册任何监听句柄")
+	}
+}
+
+// TestAddListenerRejectsDefaultKeyBeforeInsert 默认/占位符密钥必须在入库前就被拒：
+// 原实现先 Insert(Status:1) 再异步启动，被 J4 拒绝后库里会留下永远起不来的记录。
+func TestAddListenerRejectsDefaultKeyBeforeInsert(t *testing.T) {
+	tmpDir := t.TempDir()
+	old := database.DatabaseName
+	database.DatabaseName = filepath.Join(tmpDir, "test.db")
+	database.ConnectDateBase()
+	database.DatabaseName = old
+	defer database.Engine.Close()
+
+	const addr = "0.0.0.0:18099"
+	body := `{"type":"tcp","listenAddress":"` + addr + `","connectAddress":"c2.example.com:18099",` +
+		`"vkey":"initial_master_key_12345678901","encryptionSalt":"initial_salt_123"}`
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.POST("/listener/add", AddListener)
+
+	req := httptest.NewRequest(http.MethodPost, "/listener/add", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	var resp struct {
+		Status int    `json:"status"`
+		Data   string `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("响应解析失败: %v (body=%s)", err, w.Body.String())
+	}
+	if resp.Status != 400 {
+		t.Errorf("默认密钥应返回 status=400，实际 %d (body=%s)", resp.Status, w.Body.String())
+	}
+
+	var count int64
+	count, _ = database.Engine.Where("listen_address = ?", addr).Count(&database.Listener{})
+	if count != 0 {
+		t.Errorf("被拒的监听器不应入库，实际有 %d 条记录", count)
+	}
+}
+
+// TestHTTPBindFailureClearsHandleAndStatus 端口被占用导致 HTTP 监听起不来时，
+// 必须同时摘掉 connection.HttpServer 里的句柄并把状态回置为已停止。
+// 原实现只在 goroutine 里打一行日志：句柄留在 map 中会让 listenerHandleAlive 探活为 true
+// （"显示监听中、实际没在听"），且 DB 状态永远停在 1。
+func TestHTTPBindFailureClearsHandleAndStatus(t *testing.T) {
+	tmpDir := t.TempDir()
+	old := database.DatabaseName
+	database.DatabaseName = filepath.Join(tmpDir, "test.db")
+	database.ConnectDateBase()
+	database.DatabaseName = old
+	defer database.Engine.Close()
+
+	// 先占住一个端口，让后续 bind 必然失败
+	blocker, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("占位监听失败: %v", err)
+	}
+	defer blocker.Close()
+	addr := blocker.Addr().String()
+
+	const vkey, salt = "httpBindFailVKey0123456789abcd", "httpBindFailSalt"
+	database.Engine.Insert(&database.Listener{
+		Type: "http", ListenAddress: addr, ConnectAddress: addr,
+		Status: 1, VKey: vkey, EncryptionSalt: salt,
+	})
+
+	handleOpenPort("http", addr, vkey, salt)
+
+	// ListenAndServe 在 goroutine 中失败，轮询等待状态收敛
+	deadline := time.Now().Add(3 * time.Second)
+	var status int
+	var handleLeft bool
+	for time.Now().Before(deadline) {
+		var lis database.Listener
+		database.Engine.Where("listen_address = ?", addr).Get(&lis)
+		status = lis.Status
+		connection.MuClientListenerType.Lock()
+		_, handleLeft = connection.HttpServer[addr]
+		connection.MuClientListenerType.Unlock()
+		if status == 2 && !handleLeft {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	if handleLeft {
+		t.Error("bind 失败后 connection.HttpServer 中仍残留句柄（listenerHandleAlive 会误判为运行中）")
+	}
+	if status != 2 {
+		t.Errorf("bind 失败后状态应回置为 2（已停止），实际 %d", status)
 	}
 }

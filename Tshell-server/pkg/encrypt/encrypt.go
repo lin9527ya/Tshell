@@ -1277,6 +1277,24 @@ func ValidateListenerKeyConfig(vkey, encryptionSalt string) error {
 	return nil
 }
 
+// ValidateListenerKeyConfigForStart 启动/入库前的密钥检查：空密钥与公开默认值/占位符一律拒绝。
+// 与 handleOpenPort 的 J4 启动强制、AddListener 的入库前校验共用同一份判定，避免两处漂移。
+// 默认密钥（initial_master_key_12345678901 / initial_salt_123 / LISTENER_*_AAAA 占位符）
+// 是公开常量：流量可解密、可伪造客户端劫持会话。
+func ValidateListenerKeyConfigForStart(vkey, salt string) error {
+	if vkey == "" || salt == "" {
+		return fmt.Errorf("VKey/加密盐不能为空")
+	}
+	mk := make([]byte, 32)
+	copy(mk, []byte(vkey))
+	sl := make([]byte, 16)
+	copy(sl, []byte(salt))
+	if IsDefaultListenerKey(mk, sl) {
+		return fmt.Errorf("VKey/加密盐不能使用公开默认值或占位符（可预测，流量可解密、可伪造客户端）")
+	}
+	return nil
+}
+
 // GetAllListenerKeyConfigs 获取所有监听器的密钥配置信息
 func GetAllListenerKeyConfigs() ([]map[string]interface{}, error) {
 	if database.Engine == nil {

