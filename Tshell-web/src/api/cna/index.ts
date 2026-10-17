@@ -82,6 +82,16 @@ const cnaApi = {
     })
   },
 
+  // 执行 alias：脚本注册的命令会拦截控制台输入（服务端 ExecAlias，未命中返回 hit=false）。
+  // 原实现缺这个封装，而 /cna/alias-exec 是唯一一条"后端有路由、前端零消费"的接口。
+  execAlias(data: { uid: string; name: string; args: string[] }) {
+    return request({
+      url: '/cna/alias-exec',
+      method: 'post',
+      data,
+    })
+  },
+
   // 交互式求值脚本片段（Aggressor 控制台）
   evalScript(content: string, uid: string) {
     return request({
