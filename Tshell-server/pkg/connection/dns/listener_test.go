@@ -2,7 +2,11 @@ package dns
 
 import (
 	"net"
+	"strings"
 	"testing"
+	"time"
+
+	"github.com/miekg/dns"
 )
 
 // TestStartTwoInstancesAreIndependent 两个 DNS 监听器各自持有域名/前缀/端口/客户端表，
@@ -87,5 +91,66 @@ func TestStopListenerIsolatesAndIsIdempotent(t *testing.T) {
 	}
 	if b.stopped.Load() {
 		t.Error("停 X 不应把 Y 标记为停止")
+	}
+}
+
+// TestHandleRequestRoutedToCorrectInstance 真实 UDP 查询级别的验证：
+// 每个实例只应答自己域名的查询。原实现域名是包级的，后启动的实例会覆盖前一个的域名，
+// 两个监听器会对同一批查询都给出应答（或都不应答）。
+func TestHandleRequestRoutedToCorrectInstance(t *testing.T) {
+	a, err := Start("key-a", "127.0.0.1:0", "a.example.", "")
+	if err != nil {
+		t.Fatalf("启动 A 失败: %v", err)
+	}
+	defer StopListener("key-a")
+	b, err := Start("key-b", "127.0.0.1:0", "b.example.", "")
+	if err != nil {
+		t.Fatalf("启动 B 失败: %v", err)
+	}
+	defer StopListener("key-b")
+
+	addrA := a.packetConn.LocalAddr().String()
+	addrB := b.packetConn.LocalAddr().String()
+	uid := "0123456789abcdef0123456789abcdef"
+
+	// 让 uid 命中各自实例的客户端缓存（steady-state 路径）。否则 updateClientOnline
+	// 会走 DB 兜底分支，而本测试不初始化数据库。
+	for _, l := range []*Listener{a, b} {
+		l.dnsClientsLock.Lock()
+		l.dnsClients[uid] = &dnsClientInfo{uid: uid, listener: "dns", ip: "127.0.0.1", lastSeen: time.Now(), lastDBWrite: time.Now()}
+		l.dnsClientsLock.Unlock()
+	}
+
+	query := func(addr, name string) string {
+		t.Helper()
+		m := new(dns.Msg)
+		m.SetQuestion(dns.Fqdn(name), dns.TypeTXT)
+		c := new(dns.Client)
+		c.Timeout = 2 * time.Second
+		resp, _, err := c.Exchange(m, addr)
+		if err != nil {
+			t.Fatalf("查询 %s @ %s 失败: %v", name, addr, err)
+		}
+		for _, rr := range resp.Answer {
+			if txt, ok := rr.(*dns.TXT); ok {
+				return strings.Join(txt.Txt, "")
+			}
+		}
+		return ""
+	}
+
+	// 各自的域名 → 各自的实例应答（hb 端点固定回 "ok"）
+	if got := query(addrA, uid+".hb.0.a.example."); got != "ok" {
+		t.Errorf("A 应应答自己的域名，实际 TXT=%q", got)
+	}
+	if got := query(addrB, uid+".hb.0.b.example."); got != "ok" {
+		t.Errorf("B 应应答自己的域名，实际 TXT=%q", got)
+	}
+	// 交叉查询 → 不应答（域名不匹配，路由不到任何处理分支）
+	if got := query(addrA, uid+".hb.0.b.example."); got != "" {
+		t.Errorf("A 不应应答 B 的域名，实际 TXT=%q", got)
+	}
+	if got := query(addrB, uid+".hb.0.a.example."); got != "" {
+		t.Errorf("B 不应应答 A 的域名，实际 TXT=%q", got)
 	}
 }
