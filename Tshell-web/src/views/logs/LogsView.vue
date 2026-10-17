@@ -36,8 +36,9 @@
       <button class="cs-btn cs-btn-primary" @click="loadLogs">{{ isZh ? '查询' : 'Query' }}</button>
       <button class="cs-btn" @click="resetQuery">{{ isZh ? '重置' : 'Reset' }}</button>
       <button class="cs-btn" @click="loadLogs">{{ isZh ? '刷新' : 'Refresh' }}</button>
-      <button class="cs-btn" @click="handleExport">{{ isZh ? '导出日志' : 'Export Logs' }}</button>
-      <button class="cs-btn cs-btn-danger" @click="handleCleanup">{{ isZh ? '清理日志' : 'Cleanup Logs' }}</button>
+      <!-- 导出（外带全量日志）与清理（破坏性）是 adminOnly 接口，非 admin 隐藏按钮 -->
+      <button v-if="isAdmin" class="cs-btn" @click="handleExport">{{ isZh ? '导出日志' : 'Export Logs' }}</button>
+      <button v-if="isAdmin" class="cs-btn cs-btn-danger" @click="handleCleanup">{{ isZh ? '清理日志' : 'Cleanup Logs' }}</button>
       <button class="cs-btn" @click="handleHelp">{{ isZh ? '帮助' : 'Help' }}</button>
     </div>
 
@@ -224,10 +225,16 @@ import { computed, ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AuditAPI from '@/api/audit'
 import { useI18nStore } from '@/stores/i18n'
+import { usePermissStore } from '@/stores/userpermiss'
+import { Perm } from '@/utils/permiss'
 import { downloadBlob } from '@/layout/Dialogs/Payloads/payloadUtil'
 
 const i18nStore = useI18nStore()
 const isZh = computed(() => i18nStore.isZh)
+
+// 导出/清理对应后端 adminOnly 接口（/audit/export、DELETE /audit/cleanup）
+const permissStore = usePermissStore()
+const isAdmin = computed(() => permissStore.key.includes(Perm.AdminOnly))
 
 const logs = ref<Array<Record<string, any>>>([])
 const total = ref(0)

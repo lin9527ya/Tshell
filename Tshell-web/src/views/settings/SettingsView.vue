@@ -2,7 +2,7 @@
   <div class="st-page">
     <div class="st-tabs">
       <div
-        v-for="t in TABS"
+        v-for="t in visibleTabs"
         :key="t.key"
         class="st-tab"
         :class="{ active: t.key === tab }"
@@ -30,6 +30,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { SETTING_TABS, type SettingTab } from '@/router/routes'
 import C2ProfileDialog from '@/layout/Dialogs/C2ProfileDialog.vue'
 import { useI18nStore } from '@/stores/i18n'
+import { usePermissStore } from '@/stores/userpermiss'
+import { Perm } from '@/utils/permiss'
 
 defineOptions({ name: 'Settings' })
 
@@ -43,16 +45,32 @@ const tab = computed<SettingTab>(() => {
   return (SETTING_TABS as readonly string[]).includes(t) ? t : 'config'
 })
 
-const TABS: { key: SettingTab; zh: string; en: string }[] = [
-  { key: 'config', zh: '服务配置', en: 'Config' },
-  { key: 'status', zh: '服务器状态', en: 'Status' },
-  { key: 'users', zh: '用户管理', en: 'Users' },
-  { key: 'keys', zh: '密钥管理', en: 'Keys' },
-  { key: 'security', zh: '安全中心', en: 'Security' },
-  { key: 'hidden', zh: '隐蔽访问', en: 'Hidden Access' },
-  { key: 'logs', zh: '日志', en: 'Logs' },
-  { key: 'pool', zh: '连接池', en: 'Connections' },
+// permiss 必须与后端分组一致，否则会出现"页签点得开、接口必然 403"：
+//   config/users/keys/security/hidden → 后端 adminOnly          → '16'(AdminOnly，仅 admin)
+//   logs                              → 后端 admin+auditor       → '14'(Audit，admin+auditor)
+//   status/pool                       → 后端 protected（全角色）→ '1'(SystemView)
+const TABS: { key: SettingTab; zh: string; en: string; permiss: string }[] = [
+  { key: 'config', zh: '服务配置', en: 'Config', permiss: Perm.AdminOnly },
+  { key: 'status', zh: '服务器状态', en: 'Status', permiss: Perm.SystemView },
+  { key: 'users', zh: '用户管理', en: 'Users', permiss: Perm.AdminOnly },
+  { key: 'keys', zh: '密钥管理', en: 'Keys', permiss: Perm.AdminOnly },
+  { key: 'security', zh: '安全中心', en: 'Security', permiss: Perm.AdminOnly },
+  { key: 'hidden', zh: '隐蔽访问', en: 'Hidden Access', permiss: Perm.AdminOnly },
+  { key: 'logs', zh: '日志', en: 'Logs', permiss: Perm.Audit },
+  { key: 'pool', zh: '连接池', en: 'Connections', permiss: Perm.SystemView },
 ]
+
+const permissStore = usePermissStore()
+
+// 按角色过滤页签（原实现无条件渲染全部 8 个，operator/auditor 点开 6 个必然 403）
+const visibleTabs = computed(() => TABS.filter((t) => permissStore.key.includes(t.permiss)))
+
+// 当前页签不可见时落到第一个可见页签（例如 operator 直接访问 /setting/config）
+watch(visibleTabs, (tabs) => {
+  if (tabs.length > 0 && !tabs.some((t) => t.key === tab.value)) {
+    router.replace('/setting/' + tabs[0].key)
+  }
+}, { immediate: true })
 
 // 同 ClientDetail：先解析再交给 KeepAlive（Vue 3.3 不能缓存 async 包装器）
 const LOADERS: Record<SettingTab, () => Promise<{ default: Component }>> = {
