@@ -1,10 +1,24 @@
 package cna
 
 import (
+	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
+
+// maxOpenFileBytes open() 单文件读取上限，防一次读入超大文件撑爆服务端内存
+const maxOpenFileBytes = 10 << 20
+
+// getenvAllowed 允许脚本读取的环境变量白名单。
+// getenv 读的是**服务端进程**的环境（不是被控端的），其中包含监听器密钥、JWT 签名密钥、
+// 数据库口令等；按名放行比按名拒绝更可靠（拒绝列表永远漏，如 *_AK / *_DSN）。
+var getenvAllowed = map[string]bool{
+	"PATH": true, "HOME": true, "USER": true, "USERNAME": true,
+	"HOSTNAME": true, "COMPUTERNAME": true, "OS": true, "SHELL": true,
+	"TEMP": true, "TMPDIR": true, "TMP": true, "LANG": true, "PWD": true,
+}
 
 // builtinFunc 内建函数
 type builtinFunc func(ip *Interp, env *Env, args []Value) (Value, error)
@@ -326,11 +340,17 @@ func builtinSize(ip *Interp, env *Env, args []Value) (Value, error) {
 	return float64(0), nil
 }
 
+// builtinGetenv getenv("NAME")：仅返回白名单内的服务端环境变量，其余一律空串
+// （服务端环境含密钥类变量，原实现无限制返回，等于把进程环境交给任意脚本）
 func builtinGetenv(ip *Interp, env *Env, args []Value) (Value, error) {
 	if len(args) == 0 {
 		return nil, nil
 	}
-	return os.Getenv(ToString(args[0])), nil
+	name := ToString(args[0])
+	if !getenvAllowed[strings.ToUpper(name)] {
+		return "", nil
+	}
+	return os.Getenv(name), nil
 }
 
 // ---- 桥接相关（引擎回调） ----
@@ -436,13 +456,41 @@ func builtinSleep(ip *Interp, env *Env, args []Value) (Value, error) {
 	return nil, nil
 }
 
+// builtinOpen open("path")：只允许读取脚本目录内的文件。
+// 原实现是裸 os.ReadFile(任意路径) —— operator 角色经 /api/cna/eval 即可读
+// /etc/shadow、config.yaml、jwt_private.pem、database.db，等于把服务端进程的
+// 文件读权限交给脚本。这里用 os.Root 限定根目录：绝对路径按根目录相对解析，
+// ".." 与指向根外的符号链接一律被拒。
 func builtinOpen(ip *Interp, env *Env, args []Value) (Value, error) {
 	if len(args) == 0 {
 		return "", nil
 	}
-	data, err := os.ReadFile(ToString(args[0]))
+	if ip == nil || ip.rootDir == "" {
+		return nil, runErr("open 不可用：未绑定脚本目录")
+	}
+	rel := strings.TrimPrefix(filepath.Clean("/"+ToString(args[0])), "/")
+	if rel == "" || rel == "." {
+		return nil, runErr("open 需要文件路径")
+	}
+
+	root, err := os.OpenRoot(ip.rootDir)
 	if err != nil {
-		return nil, nil
+		return nil, runErr("open 不可用: %v", err)
+	}
+	defer root.Close()
+
+	f, err := root.Open(rel)
+	if err != nil {
+		return nil, runErr("open 拒绝访问 %q（仅限脚本目录内文件）: %v", ToString(args[0]), err)
+	}
+	defer f.Close()
+
+	if st, err := f.Stat(); err == nil && st.Size() > maxOpenFileBytes {
+		return nil, runErr("open 文件过大（上限 %d 字节）: %s", maxOpenFileBytes, rel)
+	}
+	data, err := io.ReadAll(io.LimitReader(f, maxOpenFileBytes))
+	if err != nil {
+		return nil, runErr("open 读取失败: %v", err)
 	}
 	return string(data), nil
 }

@@ -154,7 +154,7 @@ func (e *Engine) Load(name string) (*Script, error) {
 	s := &Script{
 		Name:    name,
 		Path:    full,
-		ip:      NewInterp(),
+		ip:      newInterpIn(e.dir),
 		events:  make(map[string][]*SubRef),
 		aliases: make(map[string]*SubRef),
 		menus:   make(map[string][]*MenuItem),
@@ -495,7 +495,7 @@ func (e *Engine) EvalScript(content, uid string) *ExecResult {
 		res.Error = err.Error()
 		return res
 	}
-	ip := NewInterp()
+	ip := newInterpIn(e.dir)
 	var output []string
 	ip.Log = func(format string, args ...interface{}) {
 		msg := fmt.Sprintf(format, args...)

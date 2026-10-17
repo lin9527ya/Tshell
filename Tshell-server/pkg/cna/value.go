@@ -197,15 +197,24 @@ type Interp struct {
 	ret Value
 	// maxSteps 防死循环步数上限（单次顶层执行）
 	steps int
+	// rootDir 脚本目录：open() 只能读取该目录内的文件（空表示不可用，fail-closed）
+	rootDir string
 	// Log 引擎日志回调（加载/事件执行信息）
 	Log func(format string, args ...interface{})
 }
 
-// NewInterp 创建解释器
+// NewInterp 创建解释器（无脚本根目录，open() 不可用）
 func NewInterp() *Interp {
+	return newInterpIn("")
+}
+
+// newInterpIn 创建解释器并绑定脚本根目录：open() 只允许读该目录内的文件。
+// 引擎的每个执行入口都用它构造解释器，避免把"能读服务端任意文件"的权限交给脚本。
+func newInterpIn(rootDir string) *Interp {
 	return &Interp{
 		globals: NewEnv(nil),
 		subs:    make(map[string]*SubRef),
+		rootDir: rootDir,
 		Log:     func(string, ...interface{}) {},
 	}
 }
