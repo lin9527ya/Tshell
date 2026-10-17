@@ -136,6 +136,9 @@ func HandleCommand(data []byte) {
 	case services.FileBrowse: //File Browser
 		result, err = services.CmdFileBrowse(cmdBuf)
 		callbackType = services.FileBrowse
+	case services.FileContent: //读取文件内容并在控制台输出(filecontent <path>)
+		result, err = commands.CmdFileContent(cmdBuf)
+		callbackType = 0
 	case services.FILE_SEARCH: //文件搜索(结果按 FileBrowse 格式回传,前端文件管理器直接渲染)
 		result, err = commands.CmdFileSearch(cmdBuf)
 		callbackType = services.FileBrowse
