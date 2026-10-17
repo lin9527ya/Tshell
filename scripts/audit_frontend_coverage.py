@@ -154,6 +154,14 @@ KNOWN_ZERO_USAGE = {
     'exit_client': 'do_exit 兼容别名',
     'update_note': 'add_uid_note 兼容别名',
     'update_sleep': 'edit_sleep 兼容别名',
+    # 以下封装在非 api 目录零调用，但按 docs/UI_SHELL_CONTRACT.md，
+    # src/api 是 main/vshell 两分支共享的内核、对外方法不得删除或改名，
+    # 因此保留封装并在此登记原因（而不是当死代码删掉）。
+    'do_exit': 'exit_client 内部调用（别名），并非真正零调用',
+    'select_color': '会话行颜色功能：CS 外壳使用，vshell 外壳暂未接入；main 分支仍需要',
+    'setClientColor': '同 select_color（指向同一后端 /client/color）',
+    'batchDeleteListeners': '监听器页暂无多选批量删除 UI；后端 /listener/batch-delete 保留',
+    'get_graph_data': '拓扑图尚无 vshell 页面；后端 /graph/data 能力保留',
 }
 
 

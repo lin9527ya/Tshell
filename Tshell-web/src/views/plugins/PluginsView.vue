@@ -305,11 +305,9 @@ import type { ClientInfo, PluginInfo } from '@/api/plugin';
 import ClientAPI from '@/api/clients';
 import type { ClientData } from '@/stores/clients';
 import { smartDecodeContent } from '@/utils/encoding';
-import { useUserStore } from '@/stores/user';
 import PageHeader from '@/components/Common/PageHeader.vue';
 
 // 用户状态
-const userStore = useUserStore();
 
 // 表单数据
 const i18nStore = useI18nStore();
@@ -870,22 +868,10 @@ Downloading plugin file...`;
     
     pluginOutput.value += isZh.value ? '\n正在发送命令到客户端...' : '\nSending command to client...';
     
-    // 使用ExecuteBin API调用Windows内存执行功能
-    const formData = new FormData();
-    formData.append('file', pluginFile);
-    formData.append('uid', clientUid);
-    formData.append('mode', executionMode.value);
-    formData.append('args', args);
-    
-    const response = await fetch('/api/bin/execute', {
-      method: 'POST',
-      headers: {
-        'Authorization2': 'Bearer ' + userStore.getToken()
-      },
-      body: formData
-    });
-    
-    const result = await response.json();
+    // 走统一封装（api/clients::execute_bin），不再手拼 fetch 与 Authorization2。
+    // 差异：非 200 会被请求层 reject（带后端文案），由下方 catch 统一展示。
+    const response = await ClientAPI.execute_bin(clientUid, pluginFile, args, executionMode.value);
+    const result = response?.data;
     
     if (result.status === 200) {
       pluginOutput.value += isZh.value
