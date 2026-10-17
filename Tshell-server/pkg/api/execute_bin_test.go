@@ -122,3 +122,62 @@ func TestExecuteBinAcceptsAllFrontendModes(t *testing.T) {
 		})
 	}
 }
+
+// TestExecuteBinAssemblySizeLimit execute-assembly 的程序集在客户端有 10MB 硬上限
+// （execute-assembly_windows.go 的 maxAssemblySize），服务端要提前拦下并说明原因，
+// 否则用户看到的是"命令已发送"然后一直等不到结果。
+func TestExecuteBinAssemblySizeLimit(t *testing.T) {
+	router := setupExecuteBinTest(t)
+
+	body := &bytes.Buffer{}
+	mw := multipart.NewWriter(body)
+	fw, err := mw.CreateFormFile("file", "big.dll")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fw.Write(bytes.Repeat([]byte("M"), maxAssemblyBytes+1024)); err != nil {
+		t.Fatal(err)
+	}
+	for k, v := range map[string]string{"uid": "known-uid-0001", "mode": "execute-assembly", "args": ""} {
+		if err := mw.WriteField(k, v); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := mw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/bin/execute", body)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("超限程序集应 400，实际 HTTP %d: %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "程序集过大") {
+		t.Fatalf("错误文案未指出程序集过大: %s", w.Body.String())
+	}
+
+	// 同尺寸的其他模式不受这条限制（上限是模式相关的）
+	body2 := &bytes.Buffer{}
+	mw2 := multipart.NewWriter(body2)
+	fw2, _ := mw2.CreateFormFile("file", "big.bin")
+	if _, err := fw2.Write(bytes.Repeat([]byte("B"), maxAssemblyBytes+1024)); err != nil {
+		t.Fatal(err)
+	}
+	for k, v := range map[string]string{"uid": "known-uid-0001", "mode": "inline-bin", "args": ""} {
+		if err := mw2.WriteField(k, v); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := mw2.Close(); err != nil {
+		t.Fatal(err)
+	}
+	req2 := httptest.NewRequest(http.MethodPost, "/api/bin/execute", body2)
+	req2.Header.Set("Content-Type", mw2.FormDataContentType())
+	w2 := httptest.NewRecorder()
+	router.ServeHTTP(w2, req2)
+	if strings.Contains(w2.Body.String(), "程序集过大") {
+		t.Fatalf("inline-bin 不该受程序集上限约束: %s", w2.Body.String())
+	}
+}

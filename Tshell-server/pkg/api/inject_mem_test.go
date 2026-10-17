@@ -3,10 +3,16 @@ package api
 import (
 	"bytes"
 	"encoding/binary"
+	"mime/multipart"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"BackendTemplate/pkg/command"
 	"BackendTemplate/pkg/connection"
+
+	"github.com/gin-gonic/gin"
 )
 
 func setInjectListenerType(t *testing.T, uid, listenerType string) {
@@ -88,5 +94,55 @@ func TestSendInjectMemQueuesChunksInOrder(t *testing.T) {
 	_ = first // 队列已取空，仅确认没有多余分块
 	if _, ok := command.CommandQueues.GetCommand(uid); ok {
 		t.Fatal("队列里有多余分块")
+	}
+}
+
+// injectMemRequest 构造 /api/client/inject-mem 的 multipart 请求
+func injectMemRequest(t *testing.T, uid, pid, tech string, payload []byte) *http.Request {
+	t.Helper()
+	body := &bytes.Buffer{}
+	mw := multipart.NewWriter(body)
+	fw, err := mw.CreateFormFile("file", "payload.bin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fw.Write(payload); err != nil {
+		t.Fatal(err)
+	}
+	for k, v := range map[string]string{"uid": uid, "pid": pid, "tech": tech} {
+		if err := mw.WriteField(k, v); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := mw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/client/inject-mem", body)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	return req
+}
+
+// TestInjectMemSizeLimitMatchesClient 服务端上限必须与客户端一致。
+// 客户端组装完成后有 12MB 硬上限（inject_mem_windows.go），服务端原来写 32MB 并注释
+// "与客户端上限一致" —— 12~32MB 的载荷会通过服务端校验、到客户端才被拒。
+func TestInjectMemSizeLimitMatchesClient(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.POST("/api/client/inject-mem", InjectMem)
+
+	// 刚过服务端上限：必须被拦下且文案给出真实原因
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, injectMemRequest(t, "uid-1", "1234", "auto",
+		bytes.Repeat([]byte("A"), injectMemMaxSize+1024)))
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("超限载荷应 400，实际 HTTP %d: %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "大小非法") {
+		t.Fatalf("错误文案未指出大小问题: %s", w.Body.String())
+	}
+
+	// 上限值本身要等于客户端的 12MB，否则这条断言没有意义
+	if injectMemMaxSize != 12*1024*1024 {
+		t.Fatalf("服务端上限 %d 与客户端的 12MB 不一致", injectMemMaxSize)
 	}
 }

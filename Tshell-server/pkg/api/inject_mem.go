@@ -29,8 +29,12 @@ type InjectMemRequest struct {
 }
 
 const (
-	injectMemMaxSize  = 32 * 1024 * 1024 // 32MB（与客户端上限一致）
-	injectMemChunk    = 1040500          // 分块大小（与上传通道一致）
+	// injectMemMaxSize 载荷上限。客户端组装完成后有 12MB 的硬上限
+	// （core/commands/inject_mem_windows.go 的 len(shellcode) > 12*1024*1024），
+	// 原来服务端写 32MB 并注释"与客户端上限一致"，实际会让 12~32MB 的载荷通过服务端校验、
+	// 到客户端才被拒 —— 这里对齐到客户端的值，让失败发生在有明确文案的这一侧。
+	injectMemMaxSize  = 12 * 1024 * 1024
+	injectMemChunk    = 1040500 // 分块大小（与上传通道一致）
 	injectMemTechAuto = "auto"
 )
 

