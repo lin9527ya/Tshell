@@ -753,17 +753,28 @@ func handleOpenPort(listenerType string, listenerAddress string, vkey string, sa
 		connection.MuClientListenerType.Unlock()
 		go oss.HandleOSSConnection(client, listenerAddress)
 	case "dns":
+		// 该类型的 listen_address 复用为 addr:port[:domain]
 		tmp := strings.Split(listenerAddress, ":")
+		if len(tmp) < 2 {
+			markListenerStartFailed(listenerType, listenerAddress, "dns 监听地址格式应为 addr:port[:domain]")
+			return
+		}
 		dnsAddr := tmp[0] + ":" + tmp[1]
 		domain := "dns.tshell."
 		if len(tmp) > 2 {
 			domain = tmp[2] + "."
 		}
 		// OPSEC: DNS 标签前缀随 Profile（客户端生成时同步 patch 同一值）
+		prefix := ""
 		if p := c2profile.GetDefault(); p != nil {
-			dns_listener.SetDNSLabelPrefix(sanitizeMasquerade(p.DNS.BeaconPrefix))
+			prefix = sanitizeMasquerade(p.DNS.BeaconPrefix)
 		}
-		go dns_listener.HandleDNSConnection(dnsAddr, domain)
+		// 同步启动：绑定失败要落回状态（原实现把 ListenAndServe 放在 goroutine 里，
+		// 失败只打日志，库里仍是"运行中"）。每个监听器一个实例，互不共享状态。
+		if _, err := dns_listener.Start(listenerAddress, dnsAddr, domain, prefix); err != nil {
+			markListenerStartFailed(listenerType, listenerAddress, err.Error())
+			return
+		}
 	case "tcp_forward", "kcp_forward", "ws_forward", "http_forward", "https_forward":
 		// 正向监听不 bind 本机端口：启用后主动拨 connect_address 上的正向客户端，
 		// 掉线按退避重连（server.go 自动创建记录处注释所称"启用后由 handleOpenPort 自动拨号"）。
@@ -894,7 +905,8 @@ func handleClosePort(listenerType string, listenerAddress string) error {
 		logx.Infof("✅ [监听器管理] %s 正向监听器已停止拨号: %s\n", strings.ToUpper(listenerType), listenerAddress)
 
 	case "dns":
-		dns_listener.Stop()
+		// 按地址停掉对应实例（原实现是包级 Stop()，多实例时会停掉最后启动的那个）
+		dns_listener.StopListener(listenerAddress)
 		logx.Infof("✅ [监听器管理] DNS监听器已关闭: %s\n", listenerAddress)
 	}
 
