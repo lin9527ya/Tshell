@@ -661,14 +661,29 @@ func handleOpenPort(listenerType string, listenerAddress string, vkey string, sa
 		connection.MuClientListenerType.Unlock()
 		logx.Println("Listening on:", listenerAddress)
 
+		var acceptErr error
 		for {
 			conn, err := tcpListener.Accept()
 			if err != nil {
-				logx.Println("Error accepting connection:", err)
+				acceptErr = err
 				break
 			}
 
 			go tcp.HandleTcpConnectionForWithKeys(conn, "tcp", []byte(vkey), []byte(salt))
+		}
+		// Accept 循环退出：正常关闭时 handleClosePort 已先摘除句柄；句柄仍在 map 里
+		// 说明监听器是运行中意外退出（socket 出错等）——此时必须摘句柄并回置状态，
+		// 否则界面显示运行中、dashboard 计数虚高，而端口已不再接受连接。
+		connection.MuClientListenerType.Lock()
+		stillOurs := connection.TCPServer[listenerAddress] == tcpListener
+		if stillOurs {
+			delete(connection.TCPServer, listenerAddress)
+		}
+		connection.MuClientListenerType.Unlock()
+		if stillOurs {
+			markListenerStartFailed(listenerType, listenerAddress, "TCP Accept 循环异常退出: "+acceptErr.Error())
+		} else {
+			logx.Infof("🔌 [监听器管理] TCP 监听 %s 已停止接受连接: %v\n", listenerAddress, acceptErr)
 		}
 	case "kcp":
 		lis, err := kcp.ListenWithOptions(listenerAddress, nil, 10, 3)
@@ -682,16 +697,29 @@ func handleOpenPort(listenerType string, listenerAddress string, vkey string, sa
 		connection.KCPServer[listenerAddress] = lis
 		connection.MuClientListenerType.Unlock()
 		// 循环等待客户端连接
+		var acceptErr error
 		for {
 			conn, err := lis.AcceptKCP()
 			if err != nil {
-				log.Println("Accept error:", err)
+				acceptErr = err
 				break
 			}
 			logx.Println("Client connected:", conn.RemoteAddr())
 
 			// 处理客户端连接
 			go k.HandleKCPConnectionForWithKeys(conn, "kcp", []byte(vkey), []byte(salt))
+		}
+		// 同上：句柄仍在 map 里说明是运行中意外退出
+		connection.MuClientListenerType.Lock()
+		stillOurs := connection.KCPServer[listenerAddress] == lis
+		if stillOurs {
+			delete(connection.KCPServer, listenerAddress)
+		}
+		connection.MuClientListenerType.Unlock()
+		if stillOurs {
+			markListenerStartFailed(listenerType, listenerAddress, "KCP Accept 循环异常退出: "+acceptErr.Error())
+		} else {
+			logx.Infof("🔌 [监听器管理] KCP 监听 %s 已停止接受连接: %v\n", listenerAddress, acceptErr)
 		}
 	case "http":
 		mux := http.NewServeMux()
