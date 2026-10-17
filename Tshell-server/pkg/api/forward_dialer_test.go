@@ -4,13 +4,10 @@ import (
 	"BackendTemplate/pkg/connection"
 	"BackendTemplate/pkg/database"
 	"fmt"
-	"net/http/httptest"
 	"path/filepath"
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/gin-gonic/gin"
 )
 
 // closeFunc 便于构造 io.Closer
@@ -170,8 +167,7 @@ func TestIsForwardListenerType(t *testing.T) {
 }
 
 // TestForwardListenerOpenCloseLifecycle 端到端接线：正向监听器"开启"启动拨号循环、
-// "关闭"停止它；listenerHandleAlive 据此探活（RestartListener 依赖探活避免句柄缺失时
-// 对同一个 gin.Context 二次写响应）。
+// "关闭"停止它（停止通道即句柄：关闭后应被摘除）。
 func TestForwardListenerOpenCloseLifecycle(t *testing.T) {
 	tmpDir := t.TempDir()
 	old := database.DatabaseName
@@ -189,9 +185,6 @@ func TestForwardListenerOpenCloseLifecycle(t *testing.T) {
 
 	handleOpenPort("tcp_forward", addr, "", "")
 
-	if !listenerHandleAlive("tcp_forward", addr) {
-		t.Fatal("开启后 listenerHandleAlive 应为 true（拨号循环已启动）")
-	}
 	connection.MuClientListenerType.Lock()
 	_, hasStop := connection.StopChan[addr]
 	connection.MuClientListenerType.Unlock()
@@ -199,13 +192,10 @@ func TestForwardListenerOpenCloseLifecycle(t *testing.T) {
 		t.Error("开启后应登记停止通道")
 	}
 
-	gin.SetMode(gin.TestMode)
-	c, _ := gin.CreateTestContext(httptest.NewRecorder())
-	handleClosePort("tcp_forward", addr, c)
-
-	if listenerHandleAlive("tcp_forward", addr) {
-		t.Error("关闭后 listenerHandleAlive 应为 false")
+	if err := handleClosePort("tcp_forward", addr); err != nil {
+		t.Errorf("关闭正向监听器不应报错: %v", err)
 	}
+
 	connection.MuClientListenerType.Lock()
 	_, hasStop = connection.StopChan[addr]
 	connection.MuClientListenerType.Unlock()

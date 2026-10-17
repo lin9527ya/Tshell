@@ -276,7 +276,7 @@ func TestAddListenerRejectsDefaultKeyBeforeInsert(t *testing.T) {
 
 // TestHTTPBindFailureClearsHandleAndStatus 端口被占用导致 HTTP 监听起不来时，
 // 必须同时摘掉 connection.HttpServer 里的句柄并把状态回置为已停止。
-// 原实现只在 goroutine 里打一行日志：句柄留在 map 中会让 listenerHandleAlive 探活为 true
+// 原实现只在 goroutine 里打一行日志：句柄留在 map 中会被当成「运行中」
 // （"显示监听中、实际没在听"），且 DB 状态永远停在 1。
 func TestHTTPBindFailureClearsHandleAndStatus(t *testing.T) {
 	tmpDir := t.TempDir()
@@ -320,7 +320,7 @@ func TestHTTPBindFailureClearsHandleAndStatus(t *testing.T) {
 	}
 
 	if handleLeft {
-		t.Error("bind 失败后 connection.HttpServer 中仍残留句柄（listenerHandleAlive 会误判为运行中）")
+		t.Error("bind 失败后 connection.HttpServer 中仍残留句柄（会被误判为运行中）")
 	}
 	if status != 2 {
 		t.Errorf("bind 失败后状态应回置为 2（已停止），实际 %d", status)

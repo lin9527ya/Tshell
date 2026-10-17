@@ -50,7 +50,10 @@ func AddListener(c *gin.Context) {
 			return
 		}
 	}
-	if exists, _ := database.Engine.Where("listen_address LIKE ?", "%"+listener.ListenAddress).Exist(&database.Listener{}); exists {
+	// 精确匹配：原用 LIKE "%"+地址 做子串匹配，建 "0.0.0.0:808" 会撞上已存在的
+	// "0.0.0.0:8080"（地址里的 % / _ 还会被当通配符）。其余接口一律按
+	// listen_address 精确查库，故此处也必须按精确值判重。
+	if exists, _ := database.Engine.Where("listen_address = ?", listener.ListenAddress).Exist(&database.Listener{}); exists {
 		c.JSON(http.StatusOK, gin.H{"status": 400, "data": "Listener already exists"})
 		return
 	}
@@ -242,7 +245,11 @@ func CloseListener(c *gin.Context) {
 	if lis.Status == 1 {
 		database.Engine.Where("listen_address = ?", listener.ListenAddress).Update(&database.Listener{Status: 2})
 		encrypt.InvalidateListenerKeyCache()
-		handleClosePort(lis.Type, lis.ListenAddress, c)
+		if err := handleClosePort(lis.Type, lis.ListenAddress); err != nil {
+			auditLogEvent("LISTENER_CLOSE", "FAILED", "关闭监听器 "+lis.Type+"://"+listener.ListenAddress+": "+err.Error(), nil)
+			c.JSON(http.StatusOK, gin.H{"status": 400, "data": "关闭监听器失败: " + err.Error()})
+			return
+		}
 		auditLogEvent("LISTENER_CLOSE", "SUCCESS", "关闭监听器 "+lis.Type+"://"+listener.ListenAddress, nil)
 		c.JSON(http.StatusOK, gin.H{"status": 200, "data": "Listener closed"})
 	} else {
@@ -262,7 +269,10 @@ func DeleteListener(c *gin.Context) {
 	var lis database.Listener
 	database.Engine.Where("listen_address = ?", listener.ListenAddress).Get(&lis)
 	if lis.Status == 1 {
-		handleClosePort(lis.Type, lis.ListenAddress, c)
+		// 关闭失败不阻断删除：状态已置为已停止，记录删掉后句柄也无需再持有
+		if err := handleClosePort(lis.Type, lis.ListenAddress); err != nil {
+			logx.Warnf("⚠️ [监听器] 删除前关闭 %s://%s 失败: %v\n", lis.Type, lis.ListenAddress, err)
+		}
 	}
 	database.Engine.Where("listen_address = ?", listener.ListenAddress).Delete(&database.Listener{})
 	encrypt.InvalidateListenerKeyCache()
@@ -455,7 +465,9 @@ func BatchDeleteListeners(c *gin.Context) {
 		// 如果监听器在线，先关闭它
 		if listener.Status == 1 {
 			log.Printf("[LISTENER-API] 🔄 关闭活跃监听器 地址: %s", address)
-			handleClosePort(listener.Type, listener.ListenAddress, c)
+			if err := handleClosePort(listener.Type, listener.ListenAddress); err != nil {
+				log.Printf("[LISTENER-API] ⚠️ 关闭监听器失败（继续删除） 地址: %s, 错误: %v", address, err)
+			}
 		}
 
 		// 从数据库删除监听器记录
@@ -764,7 +776,16 @@ func handleOpenPort(listenerType string, listenerAddress string, vkey string, sa
 		markListenerStartFailed(listenerType, listenerAddress, "未知的监听器类型")
 	}
 }
-func handleClosePort(listenerType string, listenerAddress string, c *gin.Context) {
+
+// handleClosePort 关闭监听器：先清理该监听器下的客户端连接，再按类型关闭监听句柄。
+// 不写 HTTP 响应——它是被多个接口复用的原语（关闭/删除/批量删除/重启），响应由调用方
+// 决定；原实现在句柄缺失分支直接 c.JSON，与调用方的响应构成双写（gin 报
+// "headers already written"，客户端看到的其实是先写进去的那份 400，与调用方以为
+// 返回的结果不一致）。
+// 返回 nil = 已关闭或本就没有句柄；返回错误 = 关闭动作本身失败。
+// 句柄缺失（状态为运行但句柄已丢，如启动失败或异常退出残留）只记日志不报错：
+// 调用方通常已把状态置为已停止，此时"没有句柄可关"不构成失败。
+func handleClosePort(listenerType string, listenerAddress string) error {
 	logx.Infof("🔄 [监听器管理] 开始关闭 %s 监听器: %s\n", listenerType, listenerAddress)
 
 	// 首先清理该监听器下的所有客户端连接
@@ -778,60 +799,52 @@ func handleClosePort(listenerType string, listenerAddress string, c *gin.Context
 		delete(connection.HttpServer, listenerAddress)
 		connection.MuClientListenerType.Unlock()
 		if srv == nil {
-			c.JSON(http.StatusOK, gin.H{"status": 400, "data": "Listener not found"})
-			return
+			logx.Warnf("⚠️ [监听器管理] WebSocket 监听 %s 无运行句柄，视为已停止\n", listenerAddress)
+			return nil
 		}
-		err := srv.Close()
+		if err := srv.Close(); err != nil {
+			return fmt.Errorf("WebSocket 监听器关闭失败: %w", err)
+		}
 		logx.Infof("✅ [监听器管理] WebSocket监听器已关闭: %s\n", listenerAddress)
-		if err != nil {
-			c.JSON(http.StatusOK, gin.H{"status": 400, "data": "Listener closed failed"})
-			return
-		}
 	case "tcp":
 		connection.MuClientListenerType.Lock()
 		lis := connection.TCPServer[listenerAddress]
 		delete(connection.TCPServer, listenerAddress)
 		connection.MuClientListenerType.Unlock()
 		if lis == nil {
-			c.JSON(http.StatusOK, gin.H{"status": 400, "data": "Listener not found"})
-			return
+			logx.Warnf("⚠️ [监听器管理] TCP 监听 %s 无运行句柄，视为已停止\n", listenerAddress)
+			return nil
 		}
-		err := lis.Close()
+		if err := lis.Close(); err != nil {
+			return fmt.Errorf("TCP 监听器关闭失败: %w", err)
+		}
 		logx.Infof("✅ [监听器管理] TCP监听器已关闭: %s\n", listenerAddress)
-		if err != nil {
-			c.JSON(http.StatusOK, gin.H{"status": 400, "data": "Listener closed failed"})
-			return
-		}
 	case "kcp":
 		connection.MuClientListenerType.Lock()
 		lis := connection.KCPServer[listenerAddress]
 		delete(connection.KCPServer, listenerAddress)
 		connection.MuClientListenerType.Unlock()
 		if lis == nil {
-			c.JSON(http.StatusOK, gin.H{"status": 400, "data": "Listener not found"})
-			return
+			logx.Warnf("⚠️ [监听器管理] KCP 监听 %s 无运行句柄，视为已停止\n", listenerAddress)
+			return nil
 		}
-		err := lis.Close()
+		if err := lis.Close(); err != nil {
+			return fmt.Errorf("KCP 监听器关闭失败: %w", err)
+		}
 		logx.Infof("✅ [监听器管理] KCP监听器已关闭: %s\n", listenerAddress)
-		if err != nil {
-			c.JSON(http.StatusOK, gin.H{"status": 400, "data": "Listener closed failed"})
-			return
-		}
 	case "http", "https":
 		connection.MuClientListenerType.Lock()
 		srv := connection.HttpServer[listenerAddress]
 		delete(connection.HttpServer, listenerAddress)
 		connection.MuClientListenerType.Unlock()
 		if srv == nil {
-			c.JSON(http.StatusOK, gin.H{"status": 400, "data": "Listener not found"})
-			return
+			logx.Warnf("⚠️ [监听器管理] %s 监听 %s 无运行句柄，视为已停止\n", strings.ToUpper(listenerType), listenerAddress)
+			return nil
 		}
-		err := srv.Close()
+		if err := srv.Close(); err != nil {
+			return fmt.Errorf("%s 监听器关闭失败: %w", strings.ToUpper(listenerType), err)
+		}
 		logx.Infof("✅ [监听器管理] %s监听器已关闭: %s\n", strings.ToUpper(listenerType), listenerAddress)
-		if err != nil {
-			c.JSON(http.StatusOK, gin.H{"status": 400, "data": "Listener closed failed"})
-			return
-		}
 	case "oss":
 		// 先取通道（锁内），再锁外发信号，最后删除 map 条目
 		// （避免"先删后发"导致 OSS 循环读到 nil 通道而永不接收，发送永久阻塞）
@@ -871,6 +884,7 @@ func handleClosePort(listenerType string, listenerAddress string, c *gin.Context
 	}
 
 	logx.Infof("🎯 [监听器管理] %s 监听器 %s 关闭完成，所有客户端已清理\n", listenerType, listenerAddress)
+	return nil
 }
 
 // cleanupClientsForListener 清理特定监听器下的所有客户端连接。
@@ -1034,18 +1048,13 @@ func RestartListener(c *gin.Context) {
 		return
 	}
 
-	// 运行中则先关停。探活句柄:句柄缺失时 handleClosePort 会向 c 写 400(双写风险),
-	// 此处先探测,不存在视为已停,跳过 close。
+	// 运行中则先关停。句柄缺失（异常退出残留）时 handleClosePort 只记日志不报错，
+	// 故无需再探活——原先的 listenerHandleAlive 只是为了规避它写响应造成的双写。
 	if lis.Status == 1 {
-		if listenerHandleAlive(lis.Type, lis.ListenAddress) {
-			database.Engine.Where("listen_address = ?", lis.ListenAddress).Update(&database.Listener{Status: 2})
-			encrypt.InvalidateListenerKeyCache()
-			handleClosePort(lis.Type, lis.ListenAddress, c)
-		} else {
-			// 状态为 1 但句柄已丢(异常退出残留): 仅落库置 2
-			database.Engine.Where("listen_address = ?", lis.ListenAddress).Update(&database.Listener{Status: 2})
-			encrypt.InvalidateListenerKeyCache()
-			logx.Warnf("⚠️ [监听器重启] %s://%s 状态为运行但句柄缺失,跳过关闭直接重启\n", lis.Type, lis.ListenAddress)
+		database.Engine.Where("listen_address = ?", lis.ListenAddress).Update(&database.Listener{Status: 2})
+		encrypt.InvalidateListenerKeyCache()
+		if err := handleClosePort(lis.Type, lis.ListenAddress); err != nil {
+			logx.Warnf("⚠️ [监听器重启] %s://%s 关闭阶段失败（仍继续重启）: %v\n", lis.Type, lis.ListenAddress, err)
 		}
 	}
 
@@ -1055,30 +1064,4 @@ func RestartListener(c *gin.Context) {
 	go handleOpenPort(lis.Type, lis.ListenAddress, lis.VKey, lis.EncryptionSalt)
 	auditLogEvent("LISTENER_RESTART", "SUCCESS", "重启监听器 "+lis.Type+"://"+lis.ListenAddress, nil)
 	c.JSON(http.StatusOK, gin.H{"status": 200, "data": "Listener restarted"})
-}
-
-// listenerHandleAlive 探测监听器运行句柄是否存在(避免 handleClosePort 在句柄
-// 缺失分支写响应造成双写)
-func listenerHandleAlive(listenerType, listenerAddress string) bool {
-	connection.MuClientListenerType.Lock()
-	defer connection.MuClientListenerType.Unlock()
-	switch listenerType {
-	case "websocket", "http", "https":
-		return connection.HttpServer[listenerAddress] != nil
-	case "tcp":
-		return connection.TCPServer[listenerAddress] != nil
-	case "kcp":
-		return connection.KCPServer[listenerAddress] != nil
-	case "oss":
-		_, ok := connection.StopChan[listenerAddress]
-		return ok
-	case "tcp_forward", "kcp_forward", "ws_forward", "http_forward", "https_forward":
-		// 正向监听器不 bind 端口，句柄即拨号循环的停止通道
-		_, ok := connection.StopChan[listenerAddress]
-		return ok
-	case "dns":
-		return true // DNS 单例监听器,句柄由 Stop() 管理
-	default:
-		return false
-	}
 }
