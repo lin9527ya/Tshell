@@ -15,6 +15,58 @@ import (
 )
 
 // TunnelProxyRequest 隧道代理请求结构
+// checkTunnelPortAvailable 校验业务端口及其 Agent 端口（= 端口 + 1000）在服务端范围内可用。
+// 两张表都要查：新表 TunnelProxy 与旧版 Socks5 各管一套隧道，不交叉校验的话同一端口可以在
+// 两张表里各建一条，直到 bind 时才撞车；同时 Agent 端口也参与占用判定 —— 端口 5000 的隧道
+// 与端口 6000 的隧道会抢 6000（原实现只校验 server_port 唯一）。
+// excludeTunnelID / excludeSocks5ID：更新时排除自身记录（传 0 表示不排除）。
+func checkTunnelPortAvailable(port int, excludeTunnelID, excludeSocks5ID int64) error {
+	if port < 1 || port > 65535-1000 {
+		return fmt.Errorf("端口需在 1-%d 之间（Agent 端口 = 端口+1000 也须合法）", 65535-1000)
+	}
+	// 需要避开的既有 server_port：本端口 / 本端口的 Agent 端口 / 以本端口为 Agent 端口的记录
+	conflict := []int{port, port + 1000}
+	if port > 1000 {
+		conflict = append(conflict, port-1000)
+	}
+	// 用 xorm 的 In(column, args...)：Where("col IN (?)", slice) 在本版本不会展开切片，
+	// 会把整个切片当成单个参数交给驱动而报 "unsupported type"（错误若被忽略就会静默放行）。
+	// 这里同时显式返回查询错误：校验失败即视为占用（fail-closed）。
+	intArgs := make([]interface{}, len(conflict))
+	strArgs := make([]interface{}, len(conflict))
+	for i, p := range conflict {
+		intArgs[i] = p
+		strArgs[i] = strconv.Itoa(p)
+	}
+
+	var tun database.TunnelProxy
+	q := database.Engine.In("server_port", intArgs...)
+	if excludeTunnelID > 0 {
+		q = q.And("id != ?", excludeTunnelID)
+	}
+	has, err := q.Get(&tun)
+	if err != nil {
+		return fmt.Errorf("检查端口占用失败: %w", err)
+	}
+	if has {
+		return fmt.Errorf("端口 %d 与已有隧道冲突（Agent 端口 = 端口+1000）：隧道 %d 占用 %d", port, tun.ID, tun.ServerPort)
+	}
+
+	var s5 database.Socks5
+	q2 := database.Engine.In("socks5port", strArgs...)
+	if excludeSocks5ID > 0 {
+		q2 = q2.And("id != ?", excludeSocks5ID)
+	}
+	has, err = q2.Get(&s5)
+	if err != nil {
+		return fmt.Errorf("检查端口占用失败: %w", err)
+	}
+	if has {
+		return fmt.Errorf("端口 %d 与已有 SOCKS5 代理冲突（Agent 端口 = 端口+1000）：记录 %d 占用 %s", port, s5.ID, s5.Socks5port)
+	}
+	return nil
+}
+
 // requireTunnelAuth socks5/http 隧道的端口是直接对外提供服务的：不设用户名密码时，
 // SOCKS5 侧会降级为 NoAuth、HTTP 侧此前完全没有认证 —— 等同于在服务器上开了一个
 // 公开代理。故这两类协议强制要求认证；tcp/udp 是按目标地址的定向转发，不涉及。
@@ -116,6 +168,12 @@ func CreateTunnelProxy(c *gin.Context) {
 			audit.GlobalAuditLogger.LogWithContext(c, audit.LogLevelError, audit.CategoryAPI, "TUNNEL_PROXY_CREATE", "FAILURE", "端口已被占用", nil)
 		}
 		c.JSON(http.StatusBadRequest, gin.H{"error": "端口已被占用"})
+		return
+	}
+
+	// Agent 端口（端口+1000）与旧版 Socks5 表也参与占用判定
+	if err := checkTunnelPortAvailable(req.ServerPort, 0, 0); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -351,6 +409,11 @@ func UpdateTunnelProxy(c *gin.Context) {
 				audit.GlobalAuditLogger.LogWithContext(c, audit.LogLevelError, audit.CategoryAPI, "TUNNEL_PROXY_UPDATE", "FAILURE", "端口已被占用", nil)
 			}
 			c.JSON(http.StatusBadRequest, gin.H{"error": "端口已被占用"})
+			return
+		}
+
+		if err := checkTunnelPortAvailable(req.ServerPort, id, 0); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
 	}

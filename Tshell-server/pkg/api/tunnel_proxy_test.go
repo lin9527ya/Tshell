@@ -92,3 +92,53 @@ func TestCreateTunnelProxyRequiresAuth(t *testing.T) {
 		t.Errorf("tcp 不需要凭据，应成功，实际 %d %s", st, msg)
 	}
 }
+
+// TestCheckTunnelPortAvailable 端口校验必须覆盖 Agent 端口（端口+1000）并交叉两张表：
+// 原实现只校验 server_port 唯一，于是「端口 5000 的隧道」和「端口 6000 的隧道」会抢 6000，
+// 新表与旧版 Socks5 表还能在同一端口上各建一条，直到 bind 才撞车。
+func TestCheckTunnelPortAvailable(t *testing.T) {
+	setupMaskTestDB(t)
+
+	// 新表：已有隧道占用 5000（其 Agent 端口为 6000）
+	database.Engine.Insert(&database.TunnelProxy{ClientUID: "u", Protocol: "tcp", ServerPort: 5000})
+	// 旧表：已有代理占用 7000（Agent 端口 8000）
+	database.Engine.Insert(&database.Socks5{UID: "u", Type: "socks5", Socks5port: "7000"})
+
+	cases := []struct {
+		name    string
+		port    int
+		wantErr bool
+	}{
+		{"本端口被新表占用", 5000, true},
+		{"本端口是新表记录的 Agent 端口", 6000, true},
+		{"本端口的 Agent 端口被新表占用", 4000, true},
+		{"本端口被旧表占用", 7000, true},
+		{"本端口是旧表记录的 Agent 端口", 8000, true},
+		{"本端口的 Agent 端口被旧表占用", 6000, true},
+		{"无冲突端口", 9000, false},
+		{"Agent 端口超过 65535", 65000, true},
+	}
+	for _, c := range cases {
+		err := checkTunnelPortAvailable(c.port, 0, 0)
+		if c.wantErr && err == nil {
+			t.Errorf("%s: 端口 %d 期望冲突，实际通过", c.name, c.port)
+		}
+		if !c.wantErr && err != nil {
+			t.Errorf("%s: 端口 %d 期望通过，实际 %v", c.name, c.port, err)
+		}
+	}
+
+	// 更新自身记录时应排除自己
+	var existing database.TunnelProxy
+	database.Engine.Where("server_port = ?", 5000).Get(&existing)
+	if err := checkTunnelPortAvailable(5000, existing.ID, 0); err != nil {
+		t.Errorf("更新时排除自身后应通过，实际 %v", err)
+	}
+
+	// 旧表更新时排除自身
+	var s5 database.Socks5
+	database.Engine.Where("socks5port = ?", "7000").Get(&s5)
+	if err := checkTunnelPortAvailable(7000, 0, s5.ID); err != nil {
+		t.Errorf("旧表更新排除自身后应通过，实际 %v", err)
+	}
+}

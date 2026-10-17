@@ -17,6 +17,12 @@ import (
 	"BackendTemplate/pkg/utils/logx"
 )
 
+// 说明：本文件是旧版 SOCKS5 代理接口（/socks5/*，写入 database.Socks5 表）。新实现见
+// tunnel_proxy.go 的 /tunnel-proxy/*（database.TunnelProxy 表），二者功能重叠：都能建
+// 反向 SOCKS5 隧道、都用「Agent 端口 = 业务端口 + 1000」，端口空间已交叉校验（见
+// checkTunnelPortAvailable）。前端目前把旧页面作为隧道页的一个子视图保留；待前端可重建后
+// 应移除本文件、/socks5 路由与 Socks5View.vue，统一到 /tunnel-proxy。
+
 // Socks5List 获取SOCKS5代理列表
 func Socks5List(c *gin.Context) {
 	log.Printf("[SOCKS5-API] 📋 收到获取SOCKS5列表请求")
@@ -92,6 +98,13 @@ func Socks5Start(c *gin.Context) {
 	}
 	// 无认证的 SOCKS5 端口等同于公开代理，强制要求凭据（与新隧道接口口径一致）
 	if err := requireTunnelAuth("socks5", socks5Body.Username, socks5Body.Password); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// 与新隧道接口交叉校验端口（含 Agent 端口 +1000）：两套实现各管一张表，
+	// 不交叉校验时同一端口会在两张表里各建一条，直到 bind 才撞车
+	if err := checkTunnelPortAvailable(socks5Body.ServerPort, 0, 0); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -562,6 +575,16 @@ func Socks5Update(c *gin.Context) {
 		effPass = requestBody.Password
 	}
 	if err := requireTunnelAuth("socks5", effUser, effPass); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// 与另一张表交叉校验端口（含 Agent 端口 +1000），排除自身记录
+	updatePort := requestBody.ServerPort
+	if updatePort == 0 {
+		updatePort, _ = strconv.Atoi(socks5Record.Socks5port)
+	}
+	if err := checkTunnelPortAvailable(updatePort, 0, int64(requestBody.ID)); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
