@@ -17,75 +17,91 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// stubLocalConn 只实现 connWithLocalAddr，用于验证归属判定中的端口比对。
-type stubLocalConn struct{ local net.Addr }
+// stubAddrs 只实现 connAddrs，用于验证归属判定中的端口比对。
+type stubAddrs struct{ local, remote net.Addr }
 
-func (s stubLocalConn) LocalAddr() net.Addr { return s.local }
+func (s stubAddrs) LocalAddr() net.Addr  { return s.local }
+func (s stubAddrs) RemoteAddr() net.Addr { return s.remote }
 
-// TestConnOnListener 覆盖归属判定的关键语义：通配监听地址与连接本端具体 IP
-// 整串不等，只能按端口判定；地址不含端口（oss/dns 复用 listen_address 字段）
-// 或取不到本端地址时无法判定，须回退为 true（保持原有按类型清理的语义）。
+// TestConnOnListener 覆盖归属判定的关键语义。
+// 反向监听比对本端端口：监听地址常绑通配地址，而 Accept 到的连接其 LocalAddr 是具体 IP，
+// 整串比较必然不匹配。正向监听比对远端端口：连接由本机拨出，监听地址即拨号目标，
+// 本端只是临时端口（若误按本端比对会全部判为不归属，关闭正向监听器时客户端不被清理）。
+// 地址不含端口（oss/dns 复用 listen_address 字段）或取不到地址时无法判定，
+// 须回退为 true（保持原有按类型清理的语义）。
 func TestConnOnListener(t *testing.T) {
+	loopback := &net.TCPAddr{IP: net.IPv4(192, 168, 1, 5), Port: 54321}
+
 	tests := []struct {
-		name     string
-		listener string
-		local    net.Addr
-		want     bool
-		why      string
+		name         string
+		listenerType string
+		listener     string
+		local        net.Addr
+		remote       net.Addr
+		want         bool
+		why          string
 	}{
+		// 反向：连接由本机 Accept，比对本端端口
 		{
-			name:     "通配监听_连接本端为具体IP_端口一致_判定归属",
-			listener: "0.0.0.0:8081",
-			local:    &net.TCPAddr{IP: net.IPv4(192, 168, 1, 5), Port: 8081},
-			want:     true,
-			why:      "0.0.0.0 与 192.168.1.5 整串不等，只能按端口判定",
+			name: "反向_通配监听_本端为具体IP_端口一致_判定归属", listenerType: "tcp", listener: "0.0.0.0:8081",
+			local:  &net.TCPAddr{IP: net.IPv4(192, 168, 1, 5), Port: 8081},
+			remote: &net.TCPAddr{IP: net.IPv4(10, 0, 0, 9), Port: 40001}, want: true,
+			why: "0.0.0.0 与 192.168.1.5 整串不等，只能按端口判定",
 		},
 		{
-			name:     "同类型另一监听器_端口不同_不归属",
-			listener: "0.0.0.0:8081",
-			local:    &net.TCPAddr{IP: net.IPv4(192, 168, 1, 5), Port: 8082},
-			want:     false,
-			why:      "本修复要拦的场景：关 8081 不得误断 8082 上的客户端",
+			name: "反向_同类型另一监听器_本端端口不同_不归属", listenerType: "tcp", listener: "0.0.0.0:8081",
+			local:  &net.TCPAddr{IP: net.IPv4(192, 168, 1, 5), Port: 8082},
+			remote: &net.TCPAddr{IP: net.IPv4(10, 0, 0, 9), Port: 40001}, want: false,
+			why: "本修复要拦的场景：关 8081 不得误断 8082 上的客户端",
 		},
 		{
-			name:     "IPv6通配_端口一致_判定归属",
-			listener: "[::]:8081",
-			local:    &net.TCPAddr{IP: net.IPv6loopback, Port: 8081},
-			want:     true,
+			name: "反向_IPv6通配_端口一致_判定归属", listenerType: "kcp", listener: "[::]:8081",
+			local: &net.TCPAddr{IP: net.IPv6loopback, Port: 8081}, want: true,
 		},
 		{
-			name:     "监听地址为域名_端口一致_判定归属",
-			listener: "c2.example.com:8081",
-			local:    &net.TCPAddr{IP: net.IPv4(10, 0, 0, 7), Port: 8081},
-			want:     true,
+			name: "反向_监听地址为域名_端口一致_判定归属", listenerType: "websocket", listener: "c2.example.com:8081",
+			local: &net.TCPAddr{IP: net.IPv4(10, 0, 0, 7), Port: 8081}, want: true,
+		},
+
+		// 正向：连接由本机拨出，监听地址即拨号目标，比对远端端口
+		{
+			name: "正向_远端为拨号目标_端口一致_判定归属", listenerType: "tcp_forward", listener: "10.0.0.5:8081",
+			local: loopback, remote: &net.TCPAddr{IP: net.IPv4(10, 0, 0, 5), Port: 8081}, want: true,
+			why: "本端是临时端口，若误按本端比对会判为不归属",
 		},
 		{
-			name:     "地址非hostport_无法判定_回退按类型",
-			listener: "oss:AK:SK:bucket",
-			local:    &net.TCPAddr{IP: net.IPv4(10, 0, 0, 7), Port: 8081},
-			want:     true,
-			why:      "oss/dns 复用 listen_address 承载凭证与域配置，取不到端口",
+			name: "正向_远端端口不同_不归属", listenerType: "tcp_forward", listener: "10.0.0.5:8081",
+			local: loopback, remote: &net.TCPAddr{IP: net.IPv4(10, 0, 0, 5), Port: 8082}, want: false,
 		},
 		{
-			name:     "本端地址不含端口_无法判定_回退按类型",
-			listener: "0.0.0.0:8081",
-			local:    &net.UnixAddr{Name: "/tmp/tshell.sock", Net: "unix"},
-			want:     true,
+			name: "正向_远端为域名解析后IP_按端口判定归属", listenerType: "ws_forward", listener: "client.example.com:8081",
+			local: loopback, remote: &net.TCPAddr{IP: net.IPv4(203, 0, 113, 9), Port: 8081}, want: true,
+			why: "远端是域名解析后的 IP，整串比较会不匹配，只能按端口",
+		},
+
+		// 无法判定 → 保持原有按类型语义
+		{
+			name: "地址非hostport_无法判定_回退按类型", listenerType: "tcp", listener: "oss:AK:SK:bucket",
+			local: loopback, want: true,
 		},
 		{
-			name:     "本端地址为空_无法判定_回退按类型",
-			listener: "0.0.0.0:8081",
-			local:    nil,
-			want:     true,
+			name: "本端地址不含端口_无法判定_回退按类型", listenerType: "tcp", listener: "0.0.0.0:8081",
+			local: &net.UnixAddr{Name: "/tmp/tshell.sock", Net: "unix"}, want: true,
+		},
+		{
+			name: "本端地址为空_无法判定_回退按类型", listenerType: "tcp", listener: "0.0.0.0:8081", want: true,
+		},
+		{
+			name: "正向远端地址为空_无法判定_回退按类型", listenerType: "tcp_forward", listener: "10.0.0.5:8081", want: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := connOnListener(stubLocalConn{local: tt.local}, tt.listener)
+			got := connOnListener(stubAddrs{local: tt.local, remote: tt.remote}, tt.listenerType, tt.listener)
 			if got != tt.want {
-				t.Fatalf("connOnListener(listener=%q, local=%v) = %v, want %v (%s)",
-					tt.listener, tt.local, got, tt.want, tt.why)
+				t.Fatalf("connOnListener(type=%s, listener=%q, local=%v, remote=%v) = %v, want %v (%s)",
+					tt.listenerType, tt.listener, tt.local, tt.remote, got, tt.want, tt.why)
 			}
 		})
 	}

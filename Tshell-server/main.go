@@ -295,7 +295,22 @@ func main() {
 	fmt.Println("✅ 通知管理器初始化成功")
 
 	database.Engine.Update(&database.Clients{Online: "2"})
+
+	// 监听器不随服务重启自动恢复：重启即自动对外开放 C2 监听端口风险更高，故统一置停，
+	// 由操作员手动启动（WebDelivery 相反——它保留 status=1 由 Delivery Hub 恢复）。
+	// 但要先把原本在跑的列出来，否则操作员只看到"全部已停止"，不知道重启前有哪些在跑。
+	var listenersRunningBeforeRestart []database.Listener
+	if err := database.Engine.Where("status = ?", 1).Find(&listenersRunningBeforeRestart); err != nil {
+		fmt.Printf("⚠️ 读取重启前监听器状态失败: %v\n", err)
+	}
 	database.Engine.Update(&database.Listener{Status: 2})
+	if n := len(listenersRunningBeforeRestart); n > 0 {
+		fmt.Printf("⚠️ 已置停 %d 个监听器（不自动恢复，需手动启动）：\n", n)
+		for _, lis := range listenersRunningBeforeRestart {
+			fmt.Printf("   %s://%s\n", lis.Type, lis.ListenAddress)
+		}
+	}
+
 	// WebDelivery 不再整体置关闭：由 Delivery Hub 按库中 status=1 记录恢复
 	delivery.GlobalHub.SetMainPort(*bindPort)
 

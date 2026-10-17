@@ -388,6 +388,15 @@ func registerHTTPRoutes(mux *http.ServeMux, vkey, salt string) {
 	})
 }
 
+// isForwardListenerType 正向监听类型：服务端主动拨出，不 bind 本机端口
+func isForwardListenerType(listenerType string) bool {
+	switch listenerType {
+	case "tcp_forward", "kcp_forward", "ws_forward", "http_forward", "https_forward":
+		return true
+	}
+	return false
+}
+
 // markListenerStartFailed 启动失败时把监听器状态回置为"已停止"。
 // 否则库里会留下 Status=1 却没有句柄的记录：前端显示"监听中"、dashboard 的监听器
 // 计数虚高，而 listenerHandleAlive 探活为 false（只有 RestartListener 会用到探活）。
@@ -410,10 +419,15 @@ func handleOpenPort(listenerType string, listenerAddress string, vkey string, sa
 
 	// J4: 启动强制——监听器无自定义密钥（默认/空）时拒绝启动
 	// （默认密钥为公开常量：流量可解密、可伪造客户端劫持会话）
-	// 与 AddListener 入库前共用 encrypt.ValidateListenerKeyConfigForStart，避免两处判定漂移
-	if err := encrypt.ValidateListenerKeyConfigForStart(vkey, salt); err != nil {
-		markListenerStartFailed(listenerType, listenerAddress, err.Error())
-		return
+	// 与 AddListener 入库前共用 encrypt.ValidateListenerKeyConfigForStart，避免两处判定漂移。
+	// 正向监听豁免：其密钥随客户端生成时的 patch 走，记录未配密钥时两端一致地使用正向
+	// 占位符默认值（encrypt.GetListenerKeyConfigForForward），这是既有设计；且正向不 bind
+	// 端口，J4 要防的"公开端口 + 可预测密钥"不成立。自动拨号处会对占位符密钥告警。
+	if !isForwardListenerType(listenerType) {
+		if err := encrypt.ValidateListenerKeyConfigForStart(vkey, salt); err != nil {
+			markListenerStartFailed(listenerType, listenerAddress, err.Error())
+			return
+		}
 	}
 
 	switch listenerType {
@@ -588,12 +602,29 @@ func handleOpenPort(listenerType string, listenerAddress string, vkey string, sa
 			dns_listener.SetDNSLabelPrefix(sanitizeMasquerade(p.DNS.BeaconPrefix))
 		}
 		go dns_listener.HandleDNSConnection(dnsAddr, domain)
+	case "tcp_forward", "kcp_forward", "ws_forward", "http_forward", "https_forward":
+		// 正向监听不 bind 本机端口：启用后主动拨 connect_address 上的正向客户端，
+		// 掉线按退避重连（server.go 自动创建记录处注释所称"启用后由 handleOpenPort 自动拨号"）。
+		// 密钥与手动连接、客户端生成同源：记录配了自定义密钥就用它，否则两端一致地使用正向
+		// 占位符默认值（见 encrypt.GetListenerKeyConfigForForward）。
+		target := listenerAddress
+		var flis database.Listener
+		if has, _ := database.Engine.Where("listen_address = ?", listenerAddress).Get(&flis); has && flis.ConnectAddress != "" {
+			target = flis.ConnectAddress
+		}
+		fmk, fsl := encrypt.GetListenerKeyConfigForForward(listenerType)
+		if encrypt.IsDefaultListenerKey(fmk, fsl) {
+			logx.Warnf("⚠️ [正向拨号] %s://%s 使用正向默认（占位符）密钥，流量可被解密；建议为该监听器配置自定义 VKey/加密盐并重新生成客户端\n", listenerType, listenerAddress)
+		}
+		connection.MuClientListenerType.Lock()
+		stopCh := make(chan bool, 1)
+		connection.StopChan[listenerAddress] = stopCh
+		connection.MuClientListenerType.Unlock()
+		go runForwardDialer(listenerType, target, fmk, fsl, stopCh)
+
 	default:
-		// 正向监听（*_forward）不 bind 本机端口：连接由 /client/forward-connect 按需发起。
-		// 此处不置失败状态——正向记录里 Status 的语义是"是否启用"（见 server.go 自动创建处），
-		// 且 GetListenerHeartbeatConfigByType 要求 status=1 才会用记录里的心跳配置。
-		// 注意 server.go 注释所称"启用后由 handleOpenPort 自动拨号"尚未实现，本分支目前是空操作。
-		logx.Warnf("⚠️ [监听器] %s://%s 无本机监听分支（正向监听不 bind 端口，Status 仅作启用标记，自动拨号未实现）\n", listenerType, listenerAddress)
+		// 未知类型无法启动：显式失败而不是静默返回（原实现静默 return，库里留下 Status=1）
+		markListenerStartFailed(listenerType, listenerAddress, "未知的监听器类型")
 	}
 }
 func handleClosePort(listenerType string, listenerAddress string, c *gin.Context) {
@@ -681,6 +712,22 @@ func handleClosePort(listenerType string, listenerAddress string, c *gin.Context
 		delete(connection.StopChan, listenerAddress)
 		connection.MuClientListenerType.Unlock()
 		logx.Infof("✅ [监听器管理] OSS监听器已关闭: %s\n", listenerAddress)
+	case "tcp_forward", "kcp_forward", "ws_forward", "http_forward", "https_forward":
+		// 先断会话再发停止信号：拨号循环的 run 阻塞在协议读循环里，只发信号不会让它返回
+		closeForwardSession(listenerAddress)
+		connection.MuClientListenerType.Lock()
+		ch := connection.StopChan[listenerAddress]
+		delete(connection.StopChan, listenerAddress)
+		connection.MuClientListenerType.Unlock()
+		if ch != nil {
+			select {
+			case ch <- true:
+			default:
+				// 非阻塞发送：循环可能正处于 select 之外，避免卡死关闭接口
+			}
+		}
+		logx.Infof("✅ [监听器管理] %s 正向监听器已停止拨号: %s\n", strings.ToUpper(listenerType), listenerAddress)
+
 	case "dns":
 		dns_listener.Stop()
 		logx.Infof("✅ [监听器管理] DNS监听器已关闭: %s\n", listenerAddress)
@@ -713,7 +760,7 @@ func cleanupClientsForListener(listenerType string, listenerAddress string) {
 			tcp.Mutex.Lock()
 			if conn, exists := tcp.TCPClientManger[uid]; exists && conn != nil {
 				// 同类型多监听器：不属于本监听器的客户端原样保留，不能动
-				if !connOnListener(conn, listenerAddress) {
+				if !connOnListener(conn, listenerType, listenerAddress) {
 					tcp.Mutex.Unlock()
 					logx.Infof("⏭️ [客户端清理] 跳过 %s：连接属于同类型其他监听器\n", uid)
 					continue
@@ -729,7 +776,7 @@ func cleanupClientsForListener(listenerType string, listenerAddress string) {
 			k.Mutex.Lock()
 			if conn, exists := k.KCPClientManger[uid]; exists && conn != nil {
 				// 同类型多监听器：不属于本监听器的客户端原样保留，不能动
-				if !connOnListener(conn, listenerAddress) {
+				if !connOnListener(conn, listenerType, listenerAddress) {
 					k.Mutex.Unlock()
 					logx.Infof("⏭️ [客户端清理] 跳过 %s：连接属于同类型其他监听器\n", uid)
 					continue
@@ -745,7 +792,7 @@ func cleanupClientsForListener(listenerType string, listenerAddress string) {
 			websocket.MuClientManager.Lock()
 			if conn, exists := websocket.ClientManager[uid]; exists && conn != nil {
 				// 同类型多监听器：不属于本监听器的客户端原样保留，不能动
-				if !connOnListener(conn, listenerAddress) {
+				if !connOnListener(conn, listenerType, listenerAddress) {
 					websocket.MuClientManager.Unlock()
 					logx.Infof("⏭️ [客户端清理] 跳过 %s：连接属于同类型其他监听器\n", uid)
 					continue
@@ -789,28 +836,36 @@ func cleanupClientsForListener(listenerType string, listenerAddress string) {
 	logx.Infof("✅ [客户端清理] 完成清理 %s 监听器，共清理 %d 个客户端连接\n", listenerType, cleanupCount)
 }
 
-// connWithLocalAddr 只要求能报出本端地址：*websocket.Conn 不满足 net.Conn 接口
-// （Read 签名不同），但有 LocalAddr 方法，故此处用最小接口而非 net.Conn。
-type connWithLocalAddr interface {
+// connAddrs 只要求能报出两端地址：*websocket.Conn 不满足 net.Conn 接口（Read 签名
+// 不同），但有 LocalAddr/RemoteAddr 方法，故此处用最小接口而非 net.Conn。
+type connAddrs interface {
 	LocalAddr() net.Addr
+	RemoteAddr() net.Addr
 }
 
-// connOnListener 判断一条已建立的连接是否来自指定的监听器。
-// 只比对端口：监听地址常绑定通配地址（0.0.0.0 / ::），而 Accept 到的连接其 LocalAddr
-// 是客户端实际到达的具体 IP，整串比较必然不匹配；同一协议类型下端口唯一标识一个监听器
-// （端口不能重复 bind），足以区分同类型的多个监听器。
-// 地址不是 host:port 形式（oss/dns 复用 listen_address 承载凭证与域配置）或取不到本端
+// connOnListener 判断一条已建立的连接是否属于指定的监听器。只比对端口：
+// 反向监听——连接由本机 Accept，比对本端（LocalAddr）端口；监听地址常绑通配地址
+// （0.0.0.0 / ::），而 Accept 到的连接其 LocalAddr 是客户端实际到达的具体 IP，
+// 整串比较必然不匹配；同一协议类型下端口唯一标识一个监听器（端口不能重复 bind）。
+// 正向监听——连接由本机拨出，监听地址即拨号目标（等于对端地址），须比对远端
+// （RemoteAddr）端口；此时本端只是临时端口，与监听地址无关。
+// 地址不是 host:port 形式（oss/dns 复用 listen_address 承载凭证与域配置）或取不到
 // 地址时无法判定，返回 true 以保持原有"按类型清理"的语义。
-func connOnListener(conn connWithLocalAddr, listenerAddress string) bool {
+func connOnListener(conn connAddrs, listenerType, listenerAddress string) bool {
 	_, wantPort, err := net.SplitHostPort(listenerAddress)
 	if err != nil || wantPort == "" {
 		return true
 	}
-	la := conn.LocalAddr()
-	if la == nil {
+	var addr net.Addr
+	if isForwardListenerType(listenerType) {
+		addr = conn.RemoteAddr()
+	} else {
+		addr = conn.LocalAddr()
+	}
+	if addr == nil {
 		return true
 	}
-	_, gotPort, err := net.SplitHostPort(la.String())
+	_, gotPort, err := net.SplitHostPort(addr.String())
 	if err != nil {
 		return true
 	}
@@ -872,11 +927,15 @@ func listenerHandleAlive(listenerType, listenerAddress string) bool {
 	switch listenerType {
 	case "websocket", "http", "https":
 		return connection.HttpServer[listenerAddress] != nil
-	case "tcp", "tcp_forward":
+	case "tcp":
 		return connection.TCPServer[listenerAddress] != nil
-	case "kcp", "kcp_forward":
+	case "kcp":
 		return connection.KCPServer[listenerAddress] != nil
 	case "oss":
+		_, ok := connection.StopChan[listenerAddress]
+		return ok
+	case "tcp_forward", "kcp_forward", "ws_forward", "http_forward", "https_forward":
+		// 正向监听器不 bind 端口，句柄即拨号循环的停止通道
 		_, ok := connection.StopChan[listenerAddress]
 		return ok
 	case "dns":
