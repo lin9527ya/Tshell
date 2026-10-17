@@ -271,6 +271,14 @@ func main() {
 	// 订阅客户端上线事件：触发 cna beacon_initial 事件（tcp/ws/kcp/http 各协议统一入口）
 	if command.GlobalEventBus != nil {
 		go func() {
+			// 事件分发跑在裸 goroutine 里，没有 Gin Recovery 兜底：单个脚本的
+			// panic 若逃逸会直接终止整个 C2 进程。脚本自身的护栏在 pkg/cna 内，
+			// 这里再兜一层，覆盖引擎之外（如事件总线本身）的异常。
+			defer func() {
+				if r := recover(); r != nil {
+					logx.Errorf("❌ [CNA] 事件分发 panic 已捕获: %v\n", r)
+				}
+			}()
 			ch := command.GlobalEventBus.Subscribe()
 			for ev := range ch {
 				if ev.Type == command.EventClientOnline && ev.UID != "" {

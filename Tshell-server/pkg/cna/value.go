@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Value Sleep 运行时值
@@ -195,8 +196,14 @@ type Interp struct {
 	flow controlFlow
 	// ret 返回值
 	ret Value
-	// maxSteps 防死循环步数上限（单次顶层执行）
+	// steps 单次顶层执行的已执行步数（配合 maxExecSteps 防死循环）
 	steps int
+	// depth 当前调用栈深度（配合 maxCallDepth 防无限递归导致的栈溢出致命错误）
+	depth int
+	// deadline 单次顶层执行的墙钟截止时间（零值表示不限）
+	deadline time.Time
+	// timeoutUsed 本次执行的墙钟上限（仅用于报错文案）
+	timeoutUsed time.Duration
 	// rootDir 脚本目录：open() 只能读取该目录内的文件（空表示不可用，fail-closed）
 	rootDir string
 	// Log 引擎日志回调（加载/事件执行信息）
@@ -219,15 +226,49 @@ func newInterpIn(rootDir string) *Interp {
 	}
 }
 
+// 解释器执行护栏。三条上限各挡一类"脚本把服务端拖死"的输入：
+// 步数挡死循环、深度挡无限递归、墙钟挡"每步都很慢"的长跑。
+const (
+	// maxExecSteps 单次顶层执行的步数上限
+	maxExecSteps = 5_000_000
+	// maxCallDepth 调用栈深度上限。Go 的栈溢出是 runtime fatal error
+	// （goroutine stack exceeds），recover 抓不住、进程直接退出，必须在递归进入前拦住。
+	maxCallDepth = 200
+)
+
+// tick 计一步并检查护栏。语句执行与**循环迭代**都要调用：循环体为空时
+// （while(1){}）ExecBlock 的语句循环一次都不进，只在 ExecBlock 里计数会漏掉它。
+func (ip *Interp) tick() error {
+	ip.steps++
+	if ip.steps > maxExecSteps {
+		return runErr("执行步数超限（疑似死循环），已终止")
+	}
+	if !ip.deadline.IsZero() && time.Now().After(ip.deadline) {
+		return runErr("脚本执行超时（上限 %s），已终止", ip.timeoutUsed)
+	}
+	return nil
+}
+
+// beginTopLevel 开始一次顶层执行：重置步数与调用深度，并按 timeout 设置墙钟上限（<=0 不限）
+func (ip *Interp) beginTopLevel(timeout time.Duration) {
+	ip.steps = 0
+	ip.depth = 0
+	ip.timeoutUsed = timeout
+	if timeout > 0 {
+		ip.deadline = time.Now().Add(timeout)
+	} else {
+		ip.deadline = time.Time{}
+	}
+}
+
 // ExecBlock 执行语句块
 func (ip *Interp) ExecBlock(blk *Block, env *Env) (Value, error) {
 	if blk == nil {
 		return nil, nil
 	}
 	for _, st := range blk.Stmts {
-		ip.steps++
-		if ip.steps > 5_000_000 {
-			return nil, runErr("执行步数超限（疑似死循环），已终止")
+		if err := ip.tick(); err != nil {
+			return nil, err
 		}
 		if err := ip.execStmt(st, env); err != nil {
 			return nil, err
@@ -241,6 +282,12 @@ func (ip *Interp) ExecBlock(blk *Block, env *Env) (Value, error) {
 
 // CallSub 调用函数（带参数绑定 $1..$9 与形参）
 func (ip *Interp) CallSub(fn *SubRef, args []Value, caller *Env) (Value, error) {
+	if ip.depth >= maxCallDepth {
+		return nil, runErr("调用层级过深（疑似无限递归，上限 %d 层），已终止", maxCallDepth)
+	}
+	ip.depth++
+	defer func() { ip.depth-- }()
+
 	// 环境链：函数局部环境 -> 调用点环境（事件上下文/全局） -> 闭包（函数定义处环境）
 	env := NewEnv(caller)
 	env.parent = caller
@@ -282,13 +329,18 @@ func (ip *Interp) CallSub(fn *SubRef, args []Value, caller *Env) (Value, error) 
 
 // ExecSub 顶层执行 sub（供引擎事件触发）
 func (ip *Interp) ExecSub(fn *SubRef, args []Value) (Value, error) {
-	ip.steps = 0
-	return ip.CallSub(fn, args, ip.globals)
+	return ip.ExecSubIn(fn, args, ip.globals)
 }
 
-// ExecSubIn 在指定调用环境（含事件上下文变量）中执行 sub
+// ExecSubIn 在指定调用环境（含事件上下文变量）中执行 sub，不设墙钟上限
 func (ip *Interp) ExecSubIn(fn *SubRef, args []Value, caller *Env) (Value, error) {
-	ip.steps = 0
+	return ip.ExecSubInTimeout(fn, args, caller, 0)
+}
+
+// ExecSubInTimeout 带墙钟上限的顶层执行（引擎的事件/alias/menu 入口使用）。
+// 步数与调用深度在此重置。
+func (ip *Interp) ExecSubInTimeout(fn *SubRef, args []Value, caller *Env, timeout time.Duration) (Value, error) {
+	ip.beginTopLevel(timeout)
 	return ip.CallSub(fn, args, caller)
 }
 
@@ -387,6 +439,10 @@ func (ip *Interp) execStmt(st Stmt, env *Env) error {
 		return nil
 	case *WhileStmt:
 		for {
+			// 迭代也要计步：空循环体不经过 ExecBlock 的语句循环
+			if err := ip.tick(); err != nil {
+				return err
+			}
 			c, err := ip.eval(s.Cond, env)
 			if err != nil {
 				return err
@@ -418,6 +474,9 @@ func (ip *Interp) execStmt(st Stmt, env *Env) error {
 			}
 		}
 		for {
+			if err := ip.tick(); err != nil {
+				return err
+			}
 			if s.Cond != nil {
 				c, err := ip.eval(s.Cond, env)
 				if err != nil {

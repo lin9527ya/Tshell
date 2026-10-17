@@ -7,6 +7,16 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
+)
+
+// 引擎级执行墙钟上限默认值。步数上限挡不住"每步都很慢"的脚本
+// （while(1){sleep(60000);} 每轮只算一步），墙钟是第二道闸。
+const (
+	// DefaultEvalTimeout 交互式 eval（/api/cna/eval）单次执行上限
+	DefaultEvalTimeout = 30 * time.Second
+	// DefaultEventTimeout 事件/alias/menu 单次执行上限
+	DefaultEventTimeout = 10 * time.Second
 )
 
 // ===== 引擎级回调（由 main/上层注入，避免包依赖环）=====
@@ -66,6 +76,26 @@ type Engine struct {
 	scripts map[string]*Script
 	order   []string
 	dir     string
+	// evalTimeout/eventTimeout 单次执行的墙钟上限（0 表示用 Default* 默认值；
+	// 测试可注入更短的值，无需真的等 30 秒）
+	evalTimeout  time.Duration
+	eventTimeout time.Duration
+}
+
+// evalTimeoutOrDefault 交互式 eval 的墙钟上限
+func (e *Engine) evalTimeoutOrDefault() time.Duration {
+	if e.evalTimeout > 0 {
+		return e.evalTimeout
+	}
+	return DefaultEvalTimeout
+}
+
+// eventTimeoutOrDefault 事件/alias/menu 的墙钟上限
+func (e *Engine) eventTimeoutOrDefault() time.Duration {
+	if e.eventTimeout > 0 {
+		return e.eventTimeout
+	}
+	return DefaultEventTimeout
 }
 
 // Global 全局引擎
@@ -272,10 +302,22 @@ func (e *Engine) FireEvent(event string, ctx map[string]Value) {
 					args = append(args, uid)
 				}
 			}
-			_, err := s.ip.ExecSubIn(h, args, env)
-			if err != nil {
-				logScriptError(s.Name, "事件 "+event, err)
-			}
+			// 与 execHandler 同一把锁：解释器状态（steps/depth/deadline/flow/ret）是
+			// 每个 Script 共享的，事件触发与 alias 执行并发时会互相踩。
+			// 顺带用 recover 兜住脚本 panic——FireClientEvent 跑在裸 goroutine 里
+			// （main.go 的客户端上线订阅），没有 Gin Recovery 兜底。
+			func() {
+				s.execMu.Lock()
+				defer s.execMu.Unlock()
+				defer func() {
+					if r := recover(); r != nil {
+						logScriptError(s.Name, "事件 "+event, fmt.Errorf("脚本 panic: %v", r))
+					}
+				}()
+				if _, err := s.ip.ExecSubInTimeout(h, args, env, e.eventTimeoutOrDefault()); err != nil {
+					logScriptError(s.Name, "事件 "+event, err)
+				}
+			}()
 		}
 	}
 }
@@ -450,8 +492,10 @@ func findMenuItem(items []*MenuItem, path []string) (*SubStmt, bool) {
 }
 
 // execHandler 执行 handler 并捕获输出（互斥保护临时 Log 捕获）
-func (e *Engine) execHandler(script *Script, fn *SubRef, args []string, uid string) *ExecResult {
-	res := &ExecResult{}
+// 注意：返回值必须具名——defer 里 recover 之后函数按零值返回，
+// 用非具名返回会把 *ExecResult 变成 nil 交给调用方。
+func (e *Engine) execHandler(script *Script, fn *SubRef, args []string, uid string) (res *ExecResult) {
+	res = &ExecResult{}
 	script.execMu.Lock()
 	defer script.execMu.Unlock()
 
@@ -477,7 +521,17 @@ func (e *Engine) execHandler(script *Script, fn *SubRef, args []string, uid stri
 	for _, a := range args {
 		vals = append(vals, a)
 	}
-	_, err := script.ip.ExecSubIn(fn, vals, env)
+	// 脚本 panic 不能带出 handler：解释器里的类型断言/索引越界都会 panic，
+	// 让它逃逸会把整个 C2 进程带走（Gin Recovery 只兜 HTTP handler 栈）。
+	defer func() {
+		if r := recover(); r != nil {
+			res.Error = fmt.Sprintf("脚本 panic: %v", r)
+			logScriptError(script.Name, "命令 "+fn.Name, fmt.Errorf("脚本 panic: %v", r))
+			res.Output = output
+		}
+	}()
+
+	_, err := script.ip.ExecSubInTimeout(fn, vals, env, e.eventTimeoutOrDefault())
 	if err != nil {
 		res.Error = err.Error()
 		logScriptError(script.Name, "命令 "+fn.Name, err)
@@ -488,14 +542,16 @@ func (e *Engine) execHandler(script *Script, fn *SubRef, args []string, uid stri
 
 // EvalScript 交互式求值脚本片段（不注册事件/alias，仅执行顶层语句与函数调用）。
 // 用于 Aggressor 控制台的 Eval 输入。
-func (e *Engine) EvalScript(content, uid string) *ExecResult {
-	res := &ExecResult{}
+// 注意：返回值必须具名——defer 里 recover 之后函数按零值返回（见 execHandler）
+func (e *Engine) EvalScript(content, uid string) (res *ExecResult) {
+	res = &ExecResult{}
 	stmts, err := Parse(content)
 	if err != nil {
 		res.Error = err.Error()
 		return res
 	}
 	ip := newInterpIn(e.dir)
+	ip.beginTopLevel(e.evalTimeoutOrDefault())
 	var output []string
 	ip.Log = func(format string, args ...interface{}) {
 		msg := fmt.Sprintf(format, args...)
@@ -504,6 +560,13 @@ func (e *Engine) EvalScript(content, uid string) *ExecResult {
 			EngineLog("log", fmt.Sprintf("[eval] %s", msg))
 		}
 	}
+	// 解释器 panic 只应变成一条脚本错误，不能掀掉整个服务端
+	defer func() {
+		if r := recover(); r != nil {
+			res.Error = fmt.Sprintf("脚本 panic: %v", r)
+			res.Output = output
+		}
+	}()
 	env := NewEnv(ip.globals)
 	if uid != "" {
 		env.SetLocal("_beacon_id", uid)
