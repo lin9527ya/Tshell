@@ -787,11 +787,16 @@ func main() {
 	protected.GET("/dashboard/stats", api.GetDashboardStats)
 
 	// 插件相关API
+	// 读接口（仅元数据：名称/大小/哈希）保留全角色，与 /client/clientslist、/client/file/tree 同级；
+	// 下载会外带可下发执行的载荷二进制，上传/删除会写入攻击载荷仓库 → 收紧到 admin+operator
+	// （口径同 /client/file/download、/bin/execute）。
+	// 注意：不要挂到 operatorFile —— FileOperationAuditMiddleware 会对请求体做无上限
+	// io.ReadAll，50MB 插件上传会整包驻留内存；插件审计在 handler 内直接记（见 plugin.go）。
 	protected.GET("/plugin/list", api.GetPlugins)
 	protected.GET("/plugin/details/:pluginName", api.GetPluginDetails)
-	protected.GET("/plugin/download/:pluginName", api.DownloadPlugin)
-	protected.POST("/plugin/upload", api.UploadPlugin)
-	protected.DELETE("/plugin/delete/:pluginName", api.DeletePlugin)
+	operatorOnly.GET("/plugin/download/:pluginName", api.DownloadPlugin)
+	operatorOnly.POST("/plugin/upload", api.UploadPlugin)
+	operatorOnly.DELETE("/plugin/delete/:pluginName", api.DeletePlugin)
 	protected.GET("/client/online-clients", api.GetOnlineClients)
 
 	// CNA 脚本（Aggressor Script 兼容）API

@@ -12,11 +12,30 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"BackendTemplate/pkg/audit"
 	"BackendTemplate/pkg/config"
 	"BackendTemplate/pkg/database"
 	"BackendTemplate/pkg/errors"
 	"BackendTemplate/pkg/utils/logx"
 )
+
+// auditPluginOp 记录插件仓库的文件操作审计（上传/下载/删除）。
+// 插件路由不挂 audit.FileOperationAuditMiddleware —— 该中间件对请求体做无上限
+// io.ReadAll，50MB 的插件上传会整包驻留内存；这里直接记同一种日志。
+// 成功与否取响应状态码，与中间件口径一致（<400 视为成功）。
+func auditPluginOp(c *gin.Context, operation, pluginName string) {
+	if audit.GlobalAuditLogger == nil {
+		return
+	}
+	username := ""
+	if u, exists := c.Get("username"); exists {
+		if s, ok := u.(string); ok {
+			username = s
+		}
+	}
+	audit.GlobalAuditLogger.LogFileOperation(c.ClientIP(), username, operation, pluginName,
+		c.Writer.Status() < 400, "")
+}
 
 // PluginInfo 插件信息结构体
 type PluginInfo struct {
@@ -163,6 +182,7 @@ func GetPluginDetails(c *gin.Context) {
 func DownloadPlugin(c *gin.Context) {
 	// 获取插件名称
 	plugginName := c.Param("pluginName")
+	defer func() { auditPluginOp(c, "PLUGIN_DOWNLOAD", plugginName) }()
 	if err := errors.ValidatePluginName(plugginName); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"status": 400, "message": err.Error()})
 		return
@@ -224,6 +244,9 @@ type UploadPluginResponse struct {
 }
 
 func UploadPlugin(c *gin.Context) {
+	// 审计用的文件名：解析 multipart 之前还不知道，defer 读的是最终值
+	auditName := ""
+	defer func() { auditPluginOp(c, "PLUGIN_UPLOAD", auditName) }()
 	file, err := c.FormFile("plugin")
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"status": 400, "message": "获取上传文件失败: " + err.Error()})
@@ -236,6 +259,7 @@ func UploadPlugin(c *gin.Context) {
 		return
 	}
 	filename := file.Filename
+	auditName = filename
 	if err := errors.ValidatePluginName(filename); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"status": 400, "message": "文件名非法: " + err.Error()})
 		return
@@ -299,6 +323,7 @@ func UploadPlugin(c *gin.Context) {
 // DeletePlugin 删除插件（DB + 文件）
 func DeletePlugin(c *gin.Context) {
 	pluginName := c.Param("pluginName")
+	defer func() { auditPluginOp(c, "PLUGIN_DELETE", pluginName) }()
 	if err := errors.ValidatePluginName(pluginName); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"status": 400, "message": err.Error()})
 		return

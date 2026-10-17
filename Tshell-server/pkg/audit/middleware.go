@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"net/url"
 	"strings"
 	"time"
 
@@ -238,6 +239,8 @@ func isSensitiveAPI(uri string) bool {
 		"/api/users", "/api/whitelist", "/api/security",
 		"/api/file", "/api/upload", "/api/download",
 		"/api/command", "/api/shell",
+		// 插件仓库：上传/下载/删除的是可下发执行的载荷，需记录详细审计
+		"/api/plugin",
 	}
 
 	for _, api := range sensitiveAPIs {
@@ -353,8 +356,33 @@ func extractFileOperationInfo(uri string, body []byte) (operation, filePath stri
 		operation = "COPY"
 	} else if len(uri) >= 9 && uri[:9] == "/api/file" {
 		operation = "READ"
+	} else if strings.HasPrefix(uri, "/api/plugin/upload") {
+		operation = "UPLOAD"
+	} else if strings.HasPrefix(uri, "/api/plugin/download/") {
+		operation = "DOWNLOAD"
+	} else if strings.HasPrefix(uri, "/api/plugin/delete/") {
+		operation = "DELETE"
 	} else {
 		return "", ""
+	}
+
+	// 插件下载/删除的文件名在 URI 末段（不在请求体里）
+	if filePath == "" {
+		for _, prefix := range []string{"/api/plugin/download/", "/api/plugin/delete/"} {
+			if !strings.HasPrefix(uri, prefix) {
+				continue
+			}
+			name := uri[len(prefix):]
+			if i := strings.IndexByte(name, '?'); i >= 0 {
+				name = name[:i]
+			}
+			if unescaped, err := url.PathUnescape(name); err == nil {
+				filePath = unescaped
+			} else {
+				filePath = name
+			}
+			break
+		}
 	}
 
 	// 尝试从请求体中提取文件路径
