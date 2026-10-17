@@ -652,11 +652,16 @@ func handleClosePort(listenerType string, listenerAddress string, c *gin.Context
 	logx.Infof("🎯 [监听器管理] %s 监听器 %s 关闭完成，所有客户端已清理\n", listenerType, listenerAddress)
 }
 
-// cleanupClientsForListener 清理特定监听器下的所有客户端连接
+// cleanupClientsForListener 清理特定监听器下的所有客户端连接。
+// Clients.Listener 只记录协议类型，同一类型可以存在多个监听器（不同端口），
+// 因此按类型枚举出的候选集还要按连接的本端端口判定归属，避免关闭一个监听器时
+// 误断同类型其他监听器上的客户端（见 connOnListener）。
 func cleanupClientsForListener(listenerType string, listenerAddress string) {
 	logx.Infof("🧹 [客户端清理] 开始清理 %s 监听器 %s 下的客户端连接\n", listenerType, listenerAddress)
 
-	// 获取该监听器下的所有客户端
+	// 候选集只能按类型枚举：DB 未记录每个客户端所属的监听器地址，
+	// 再由 connOnListener 按本端端口筛掉同类型其他监听器的客户端。
+	// 无持久连接的协议（http/oss/dns）取不到本端地址，无法判定归属，仍按类型处理。
 	var clients []database.Clients
 	database.Engine.Where("listener = ? AND online = '1'", listenerType).Find(&clients)
 
@@ -670,6 +675,12 @@ func cleanupClientsForListener(listenerType string, listenerAddress string) {
 		case "tcp", "tcp_forward", "http_forward", "https_forward":
 			tcp.Mutex.Lock()
 			if conn, exists := tcp.TCPClientManger[uid]; exists && conn != nil {
+				// 同类型多监听器：不属于本监听器的客户端原样保留，不能动
+				if !connOnListener(conn, listenerAddress) {
+					tcp.Mutex.Unlock()
+					logx.Infof("⏭️ [客户端清理] 跳过 %s：连接属于同类型其他监听器\n", uid)
+					continue
+				}
 				conn.Close()
 				delete(tcp.TCPClientManger, uid)
 				delete(tcp.ClientTimeManager, uid)
@@ -680,6 +691,12 @@ func cleanupClientsForListener(listenerType string, listenerAddress string) {
 		case "kcp", "kcp_forward":
 			k.Mutex.Lock()
 			if conn, exists := k.KCPClientManger[uid]; exists && conn != nil {
+				// 同类型多监听器：不属于本监听器的客户端原样保留，不能动
+				if !connOnListener(conn, listenerAddress) {
+					k.Mutex.Unlock()
+					logx.Infof("⏭️ [客户端清理] 跳过 %s：连接属于同类型其他监听器\n", uid)
+					continue
+				}
 				conn.Close()
 				delete(k.KCPClientManger, uid)
 				delete(k.ClientTimeManager, uid)
@@ -690,6 +707,12 @@ func cleanupClientsForListener(listenerType string, listenerAddress string) {
 		case "websocket", "ws_forward":
 			websocket.MuClientManager.Lock()
 			if conn, exists := websocket.ClientManager[uid]; exists && conn != nil {
+				// 同类型多监听器：不属于本监听器的客户端原样保留，不能动
+				if !connOnListener(conn, listenerAddress) {
+					websocket.MuClientManager.Unlock()
+					logx.Infof("⏭️ [客户端清理] 跳过 %s：连接属于同类型其他监听器\n", uid)
+					continue
+				}
 				// 发送关闭消息并关闭WebSocket连接
 				conn.WriteMessage(gorillaws.CloseMessage, gorillaws.FormatCloseMessage(gorillaws.CloseNormalClosure, "监听器关闭"))
 				conn.Close()
@@ -728,6 +751,35 @@ func cleanupClientsForListener(listenerType string, listenerAddress string) {
 
 	logx.Infof("✅ [客户端清理] 完成清理 %s 监听器，共清理 %d 个客户端连接\n", listenerType, cleanupCount)
 }
+
+// connWithLocalAddr 只要求能报出本端地址：*websocket.Conn 不满足 net.Conn 接口
+// （Read 签名不同），但有 LocalAddr 方法，故此处用最小接口而非 net.Conn。
+type connWithLocalAddr interface {
+	LocalAddr() net.Addr
+}
+
+// connOnListener 判断一条已建立的连接是否来自指定的监听器。
+// 只比对端口：监听地址常绑定通配地址（0.0.0.0 / ::），而 Accept 到的连接其 LocalAddr
+// 是客户端实际到达的具体 IP，整串比较必然不匹配；同一协议类型下端口唯一标识一个监听器
+// （端口不能重复 bind），足以区分同类型的多个监听器。
+// 地址不是 host:port 形式（oss/dns 复用 listen_address 承载凭证与域配置）或取不到本端
+// 地址时无法判定，返回 true 以保持原有"按类型清理"的语义。
+func connOnListener(conn connWithLocalAddr, listenerAddress string) bool {
+	_, wantPort, err := net.SplitHostPort(listenerAddress)
+	if err != nil || wantPort == "" {
+		return true
+	}
+	la := conn.LocalAddr()
+	if la == nil {
+		return true
+	}
+	_, gotPort, err := net.SplitHostPort(la.String())
+	if err != nil {
+		return true
+	}
+	return gotPort == wantPort
+}
+
 // auditLogEvent 业务审计快捷入口（D18）
 func auditLogEvent(action, result, message string, details map[string]interface{}) {
 	if audit.GlobalAuditLogger != nil {
