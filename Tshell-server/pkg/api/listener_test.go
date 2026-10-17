@@ -5,6 +5,7 @@ import (
 	"BackendTemplate/pkg/connection/tcp"
 	"BackendTemplate/pkg/database"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -323,5 +324,108 @@ func TestHTTPBindFailureClearsHandleAndStatus(t *testing.T) {
 	}
 	if status != 2 {
 		t.Errorf("bind 失败后状态应回置为 2（已停止），实际 %d", status)
+	}
+}
+
+// TestAddListenerRejectsShortKey 新建入口的长度档：过短的密钥会让派生密钥尾部零填充，
+// 有效强度低于字面长度，必须拒绝（原实现只拦空值与公开默认值，1 字节的 VKey 也能建成功）。
+func TestAddListenerRejectsShortKey(t *testing.T) {
+	tmpDir := t.TempDir()
+	old := database.DatabaseName
+	database.DatabaseName = filepath.Join(tmpDir, "test.db")
+	database.ConnectDateBase()
+	database.DatabaseName = old
+	defer database.Engine.Close()
+
+	const addr = "0.0.0.0:18095"
+	body := `{"type":"tcp","listenAddress":"` + addr + `","connectAddress":"c2.example.com:18095",` +
+		`"vkey":"tooshort","encryptionSalt":"0123456789abcdef"}`
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.POST("/listener/add", AddListener)
+
+	req := httptest.NewRequest(http.MethodPost, "/listener/add", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	var resp struct {
+		Status int    `json:"status"`
+		Data   string `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("响应解析失败: %v (body=%s)", err, w.Body.String())
+	}
+	if resp.Status != 400 {
+		t.Errorf("过短 VKey 应返回 status=400，实际 %d (body=%s)", resp.Status, w.Body.String())
+	}
+	var count int64
+	count, _ = database.Engine.Where("listen_address = ?", addr).Count(&database.Listener{})
+	if count != 0 {
+		t.Errorf("被拒的监听器不应入库，实际有 %d 条记录", count)
+	}
+}
+
+// TestUpdateListenerKeyValidation 更新接口的密钥校验分档：
+// 显式提交的短密钥必须拒绝；密钥留空（沿用旧值）时不得因旧值不合规而拒绝整个更新
+// ——否则编辑既有短密钥监听器的备注都会被拖累。
+func TestUpdateListenerKeyValidation(t *testing.T) {
+	tmpDir := t.TempDir()
+	old := database.DatabaseName
+	database.DatabaseName = filepath.Join(tmpDir, "test.db")
+	database.ConnectDateBase()
+	database.DatabaseName = old
+	defer database.Engine.Close()
+
+	const addr = "0.0.0.0:18096"
+	database.Engine.Insert(&database.Listener{
+		Type: "tcp", ListenAddress: addr, ConnectAddress: "c2.example.com:18096",
+		Status: 2, VKey: "legacy", EncryptionSalt: "legacy-salt", Note: "old",
+	})
+	var lis database.Listener
+	if has, _ := database.Engine.Where("listen_address = ?", addr).Get(&lis); !has {
+		t.Fatal("测试前置：监听器未插入成功")
+	}
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.POST("/listener/update", UpdateListener)
+
+	post := func(body string) (int, string) {
+		req := httptest.NewRequest(http.MethodPost, "/listener/update", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		var resp struct {
+			Status int    `json:"status"`
+			Data   string `json:"data"`
+		}
+		_ = json.Unmarshal(w.Body.Bytes(), &resp)
+		return resp.Status, resp.Data
+	}
+
+	// 1) 显式提交过短的 VKey → 拒绝，且不落库
+	if st, msg := post(fmt.Sprintf(`{"id":%d,"listenAddress":%q,"type":"tcp","vkey":"tooshort","note":"n1"}`, lis.Id, addr)); st != 400 {
+		t.Errorf("过短 VKey 应被拒，实际 status=%d msg=%s", st, msg)
+	}
+	// 注意：每次读取都用新的结构体变量——xorm 的 Get 复用已带主键的变量时不会刷新值
+	var rejected database.Listener
+	database.Engine.Where("listen_address = ?", addr).Get(&rejected)
+	if rejected.Note != "old" || rejected.VKey != "legacy" {
+		t.Errorf("被拒的更新不应落库: Note=%q VKey=%q", rejected.Note, rejected.VKey)
+	}
+
+	// 2) 密钥留空（沿用旧值，旧值本身过短）→ 仍应允许更新其它字段
+	if st, msg := post(fmt.Sprintf(`{"id":%d,"listenAddress":%q,"type":"tcp","note":"new note"}`, lis.Id, addr)); st != 200 {
+		t.Errorf("密钥留空时应允许更新: status=%d msg=%s", st, msg)
+	}
+	var updated database.Listener
+	database.Engine.Where("listen_address = ?", addr).Get(&updated)
+	if updated.Note != "new note" {
+		t.Errorf("备注未更新: %q", updated.Note)
+	}
+	if updated.VKey != "legacy" {
+		t.Errorf("留空不应改动 VKey: %q", updated.VKey)
 	}
 }

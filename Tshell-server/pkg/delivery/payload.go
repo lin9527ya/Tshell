@@ -103,6 +103,13 @@ func PatchClientBinary(binaryData []byte, opt PatchOptions) ([]byte, error) {
 
 	// keys
 	masterKey, salt := resolveKeys(opt, connectAddress, listenerType)
+	// J4: 默认/空密钥一律拒绝生成。本函数是 WebDelivery / 内存注入 / 会话迁移三条路径的
+	// 共同出口，而这三条原先都没有闸门（只有 /server/gen 自带）：密钥解析落到公开默认值时
+	// 照样出载荷，客户端自身的 fail-closed 只认"占位符未被替换"，认不出"被替换成了默认值"，
+	// 于是载荷带着公开密钥上线——流量可解密、会话可伪造。判定与 server.go 的 J4 同源。
+	if err := encrypt.ValidateListenerKeyConfigForStart(string(masterKey), string(salt)); err != nil {
+		return nil, fmt.Errorf("拒绝生成客户端：%v", err)
+	}
 	masterPh := "LISTENER_MASTER_KEY_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 	saltPh := "LISTENER_SALT_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 	if len(masterKey) > 0 {

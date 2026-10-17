@@ -69,9 +69,11 @@ func AddListener(c *gin.Context) {
 		}
 	}
 
-	// J4 前置：默认/空密钥的监听器 handleOpenPort 必然拒绝启动。原实现先 Insert(Status:1)
-	// 再 go handleOpenPort，被拒绝后库里会留下 Status=1 却没有句柄的记录（前端显示"监听中"）。
-	if err := encrypt.ValidateListenerKeyConfigForStart(listener.VKey, listener.EncryptionSalt); err != nil {
+	// J4 前置 + 长度：默认/空密钥的监听器 handleOpenPort 必然拒绝启动，过短的密钥则会让派生
+	// 密钥尾部零填充。原实现先 Insert(Status:1) 再 go handleOpenPort，被拒绝后库里会留下
+	// Status=1 却没有句柄的记录（前端显示"监听中"）。留空会走到上面的随机生成，故此处校验
+	// 的是最终要落库的值。
+	if err := encrypt.ValidateListenerKeyConfig(listener.VKey, listener.EncryptionSalt); err != nil {
 		c.JSON(http.StatusOK, gin.H{"status": 400, "data": err.Error()})
 		return
 	}
@@ -256,6 +258,18 @@ func UpdateListener(c *gin.Context) {
 		updateData.EncryptionSalt = currentListener.EncryptionSalt
 	}
 
+	// 校验合并后的密钥：必须非空且非公开默认值。长度档只施加于本次显式提交的字段
+	// （ValidateListenerKeyLength 对空串跳过）——否则编辑既有短密钥监听器的备注
+	// 都会因旧密钥不合规而被拒。
+	if err := encrypt.ValidateListenerKeyConfigForStart(updateData.VKey, updateData.EncryptionSalt); err != nil {
+		c.JSON(http.StatusOK, gin.H{"status": 400, "data": err.Error()})
+		return
+	}
+	if err := encrypt.ValidateListenerKeyLength(listener.VKey, listener.EncryptionSalt); err != nil {
+		c.JSON(http.StatusOK, gin.H{"status": 400, "data": err.Error()})
+		return
+	}
+
 	// 使用ID更新记录，而不是listenAddress
 	// 【零值修复】AllCols 显式写入全部字段：请求即完整配置，空字符串也须落库
 	// （默认零值跳过会导致清空 Note/密钥等字段静默失效）
@@ -427,6 +441,10 @@ func handleOpenPort(listenerType string, listenerAddress string, vkey string, sa
 		if err := encrypt.ValidateListenerKeyConfigForStart(vkey, salt); err != nil {
 			markListenerStartFailed(listenerType, listenerAddress, err.Error())
 			return
+		}
+		// 长度档只告警不阻断：短密钥的监听器此前一直能跑，升级后不应直接起不来
+		if err := encrypt.ValidateListenerKeyLength(vkey, salt); err != nil {
+			logx.Warnf("⚠️ [监听器] %s://%s 密钥强度不足（仍将启动）：%v\n", listenerType, listenerAddress, err)
 		}
 	}
 

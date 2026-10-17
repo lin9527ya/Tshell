@@ -1260,25 +1260,51 @@ func GetListenerKeyConfigByAddress(listenAddress string) ([]byte, []byte) {
 	return masterKey, encryptionSalt
 }
 
-// ValidateListenerKeyConfig 验证监听器密钥配置的有效性
-func ValidateListenerKeyConfig(vkey, encryptionSalt string) error {
-	if len(vkey) == 0 {
-		return fmt.Errorf("VKey不能为空")
+// 监听器密钥的长度约定：派生时只取 VKey 前 32 字节作主密钥、加密盐前 16 字节作盐
+// （见 GetListenerKeyConfig / NormalizeListenerKeyConfig 与客户端 app.GetListenerKeyConfig），
+// 多余字节被忽略。故录入要求至少覆盖这 32/16 字节——短于此则派生密钥尾部是零填充，
+// 有效强度低于字面长度所暗示的。
+// 注意：不能反过来限制"不超过 32/16 字节"——后端 GenerateListenerKeyConfig 产出
+// base64(32B)=44 字符、前端"随机"按钮产出 hex(32B)=64 字符，都会被这种上限误杀
+// （曾导致系统自己生成的密钥无法通过 /key-management 的校验）。
+const (
+	ListenerKeyMinVKeyLen = 32
+	ListenerKeyMinSaltLen = 16
+	// 仅用于拦掉误粘贴的超长内容；超出部分本就不参与派生
+	ListenerKeyMaxLen = 128
+)
+
+// ValidateListenerKeyLength 校验显式提交的密钥长度。空串表示"不修改"（更新接口留空
+// 即沿用旧值），跳过对应项——否则编辑既有短密钥监听器的备注都会被旧密钥拖累而被拒。
+func ValidateListenerKeyLength(vkey, encryptionSalt string) error {
+	if vkey != "" && len(vkey) < ListenerKeyMinVKeyLen {
+		return fmt.Errorf("VKey 至少 %d 字节（派生只取前 %d 字节，过短会导致密钥尾部零填充），当前 %d 字节",
+			ListenerKeyMinVKeyLen, ListenerKeyMinVKeyLen, len(vkey))
 	}
-	if len(vkey) > 32 {
-		return fmt.Errorf("VKey长度不能超过32字节")
+	if encryptionSalt != "" && len(encryptionSalt) < ListenerKeyMinSaltLen {
+		return fmt.Errorf("加密盐至少 %d 字节（派生只取前 %d 字节），当前 %d 字节",
+			ListenerKeyMinSaltLen, ListenerKeyMinSaltLen, len(encryptionSalt))
 	}
-	if len(encryptionSalt) == 0 {
-		return fmt.Errorf("加密盐不能为空")
-	}
-	if len(encryptionSalt) > 16 {
-		return fmt.Errorf("加密盐长度不能超过16字节")
+	if len(vkey) > ListenerKeyMaxLen || len(encryptionSalt) > ListenerKeyMaxLen {
+		return fmt.Errorf("VKey/加密盐长度不能超过 %d 字节", ListenerKeyMaxLen)
 	}
 	return nil
 }
 
-// ValidateListenerKeyConfigForStart 启动/入库前的密钥检查：空密钥与公开默认值/占位符一律拒绝。
-// 与 handleOpenPort 的 J4 启动强制、AddListener 的入库前校验共用同一份判定，避免两处漂移。
+// ValidateListenerKeyConfig 监听器密钥配置的完整校验（新建入口使用）：
+// 非空 + 非公开默认值/占位符 + 长度。
+func ValidateListenerKeyConfig(vkey, encryptionSalt string) error {
+	if err := ValidateListenerKeyConfigForStart(vkey, encryptionSalt); err != nil {
+		return err
+	}
+	return ValidateListenerKeyLength(vkey, encryptionSalt)
+}
+
+// ValidateListenerKeyConfigForStart 启动/生成前的密钥检查：空密钥与公开默认值/占位符一律拒绝。
+// 与 handleOpenPort 的 J4 启动强制、AddListener 的入库前校验、PatchClientBinary 的生成闸门
+// 共用同一份判定，避免多处漂移。
+// 这里不含长度要求：长度档（ValidateListenerKeyLength）只施加于录入入口——升级后已存在的
+// 短密钥监听器不该因为新策略直接起不来。
 // 默认密钥（initial_master_key_12345678901 / initial_salt_123 / LISTENER_*_AAAA 占位符）
 // 是公开常量：流量可解密、可伪造客户端劫持会话。
 func ValidateListenerKeyConfigForStart(vkey, salt string) error {

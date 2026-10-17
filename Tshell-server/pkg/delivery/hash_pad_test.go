@@ -33,6 +33,8 @@ func fakeTemplate() []byte {
 func TestHashPadChangesHash(t *testing.T) {
 	tmpl := fakeTemplate()
 	opt := PatchOptions{
+		VKey:           "0123456789abcdef0123456789abcdef",
+		EncryptSalt:    "0123456789abcdef",
 		ListenerConfig: "websocket://127.0.0.1:6666",
 		HashPad:        true,
 		Format:         "exe",
@@ -59,6 +61,8 @@ func TestHashPadChangesHash(t *testing.T) {
 func TestHashPadOffSameHash(t *testing.T) {
 	tmpl := fakeTemplate()
 	opt := PatchOptions{
+		VKey:           "0123456789abcdef0123456789abcdef",
+		EncryptSalt:    "0123456789abcdef",
 		ListenerConfig: "tcp://127.0.0.1:2222",
 		HashPad:        false,
 		Format:         "exe",
@@ -80,6 +84,8 @@ func TestHashPadOffSameHash(t *testing.T) {
 func TestHashPadSkippedForShellcode(t *testing.T) {
 	tmpl := fakeTemplate()
 	opt := PatchOptions{
+		VKey:           "0123456789abcdef0123456789abcdef",
+		EncryptSalt:    "0123456789abcdef",
 		ListenerConfig: "tcp://127.0.0.1:2222",
 		HashPad:        true,
 		Format:         "bin",

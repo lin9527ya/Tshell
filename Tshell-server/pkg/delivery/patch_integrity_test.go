@@ -54,6 +54,8 @@ func TestPatchClientBinaryKeepsSizeAndPEIntegrity(t *testing.T) {
 	tpl := loadTemplateForTest(t)
 
 	patched, err := PatchClientBinary(tpl, PatchOptions{
+		VKey:           "0123456789abcdef0123456789abcdef",
+		EncryptSalt:    "0123456789abcdef",
 		ListenerConfig: "tcp://192.168.10.5:1111",
 		OS:             "windows",
 		Arch:           "amd64",
@@ -74,6 +76,8 @@ func TestPatchClientBinaryKeepsSizeAndPEIntegrity(t *testing.T) {
 func TestPatchClientBinaryAllowsDefaultPostURIFromProfile(t *testing.T) {
 	tpl := loadTemplateForTest(t)
 	patched, err := PatchClientBinary(tpl, PatchOptions{
+		VKey:           "0123456789abcdef0123456789abcdef",
+		EncryptSalt:    "0123456789abcdef",
 		ListenerConfig: "tcp://192.168.10.5:1111",
 		OS:             "windows",
 		Arch:           "amd64",
@@ -94,6 +98,8 @@ func TestPatchClientBinaryAllowsDefaultPostURIFromProfile(t *testing.T) {
 func TestPatchClientBinaryInjectsLongCustomURI(t *testing.T) {
 	tpl := loadTemplateForTest(t)
 	patched, err := PatchClientBinary(tpl, PatchOptions{
+		VKey:           "0123456789abcdef0123456789abcdef",
+		EncryptSalt:    "0123456789abcdef",
 		ListenerConfig: "tcp://192.168.10.5:1111",
 		OS:             "windows",
 		Arch:           "amd64",
@@ -120,6 +126,8 @@ func TestPatchClientBinaryInjectsLongCustomURI(t *testing.T) {
 func TestPatchClientBinaryRejectsOversizeUserValue(t *testing.T) {
 	tpl := loadTemplateForTest(t)
 	_, err := PatchClientBinary(tpl, PatchOptions{
+		VKey:           "0123456789abcdef0123456789abcdef",
+		EncryptSalt:    "0123456789abcdef",
 		ListenerConfig: "tcp://192.168.10.5:1111",
 		OS:             "windows",
 		Arch:           "amd64",
@@ -134,6 +142,8 @@ func TestPatchClientBinaryRejectsOversizeUserValue(t *testing.T) {
 func TestPatchClientBinaryRejectsOversizePass(t *testing.T) {
 	tpl := loadTemplateForTest(t)
 	_, err := PatchClientBinary(tpl, PatchOptions{
+		VKey:           "0123456789abcdef0123456789abcdef",
+		EncryptSalt:    "0123456789abcdef",
 		ListenerConfig: "tcp://192.168.10.5:1111",
 		OS:             "windows",
 		Arch:           "amd64",
@@ -148,6 +158,8 @@ func TestPatchClientBinaryRejectsOversizePass(t *testing.T) {
 func TestPatchClientBinaryOldTemplateShortURI(t *testing.T) {
 	tpl := loadOldTemplateForTest(t)
 	patched, err := PatchClientBinary(tpl, PatchOptions{
+		VKey:           "0123456789abcdef0123456789abcdef",
+		EncryptSalt:    "0123456789abcdef",
 		ListenerConfig: "tcp://192.168.10.5:1111",
 		OS:             "windows",
 		Arch:           "amd64",
@@ -173,6 +185,8 @@ func TestPatchClientBinaryOldTemplateOversizeHandling(t *testing.T) {
 
 	// 自定义超长 -> 报错
 	if _, err := PatchClientBinary(tpl, PatchOptions{
+		VKey:           "0123456789abcdef0123456789abcdef",
+		EncryptSalt:    "0123456789abcdef",
 		ListenerConfig: "tcp://192.168.10.5:1111",
 		OS:             "windows",
 		Arch:           "amd64",
@@ -183,6 +197,8 @@ func TestPatchClientBinaryOldTemplateOversizeHandling(t *testing.T) {
 
 	// 默认值（40 字符）-> 置空回退，不报错、等长、无残留
 	patched, err := PatchClientBinary(tpl, PatchOptions{
+		VKey:           "0123456789abcdef0123456789abcdef",
+		EncryptSalt:    "0123456789abcdef",
 		ListenerConfig: "tcp://192.168.10.5:1111",
 		OS:             "windows",
 		Arch:           "amd64",
