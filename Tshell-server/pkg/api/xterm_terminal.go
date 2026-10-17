@@ -13,6 +13,7 @@ import (
 	"BackendTemplate/pkg/errors"
 	"BackendTemplate/pkg/security"
 	"BackendTemplate/pkg/utils"
+	"BackendTemplate/pkg/utils/logx"
 	"bufio"
 	"encoding/binary"
 	"encoding/json"
@@ -182,12 +183,20 @@ func XTermConnectHandler(c *gin.Context) {
 	}
 
 	// 验证JWT token
-	_, err = security.GlobalJWTManager.ValidateToken(token)
+	claims, err := security.GlobalJWTManager.ValidateToken(token)
 	if err != nil {
 		conn.WriteJSON(XTermMessage{
 			Type:    "error",
 			Content: fmt.Sprintf("认证失败: %v", err),
 		})
+		return
+	}
+	// 【RBAC修复】WS 端点不经过 RequireRole 中间件，需在握手时显式校验角色：
+	// xterm 是给被控端的交互式 shell（与 /api/shell/:uid 同级能力），
+	// auditor（只读）不可使用 —— 原来只验身份不验角色，只读角色可拿到被控端 shell。
+	if claims.Role != security.RoleAdmin && claims.Role != security.RoleOperator {
+		logx.Infof("🚫 [XTERM] 用户 %s 角色 %s 无权接入交互式终端\n", claims.Username, claims.Role)
+		conn.WriteJSON(XTermMessage{Type: "error", Content: "forbidden"})
 		return
 	}
 

@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"regexp"
+	"sort"
 	"strings"
 	"testing"
 
@@ -116,4 +117,139 @@ func TestFileAuditRoutePolicy(t *testing.T) {
 		}
 	}
 	t.Logf("已校验 %d 条文件路由的审计覆盖", len(routes))
+}
+
+// TestRBACPolicy 守卫关键路由的角色口径（前后端 RBAC 一致的落点）。
+// 这些口径是本轮分析里确定的策略，改回去会直接造成"页签能点开但必然 403"
+// 或"只读角色能做写操作"，所以用源码级断言钉住。
+func TestRBACPolicy(t *testing.T) {
+	src, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatalf("读取 main.go 失败: %v", err)
+	}
+	text := string(src)
+
+	// 组变量 → RequireRole 允许的角色集合（无 Use(RequireRole) 的组不在此表内）
+	roleRe := regexp.MustCompile(`(?m)^\s*(\w+)\.Use\(security\.RequireRole\(([^)]*)\)\)`)
+	groupRoles := map[string][]string{}
+	groupParent := map[string]string{}
+	for _, m := range roleRe.FindAllStringSubmatch(text, -1) {
+		var roles []string
+		for _, r := range strings.Split(m[2], ",") {
+			r = strings.TrimSpace(r)
+			r = strings.TrimPrefix(r, "security.")
+			// RoleAdmin → admin（rbac.go 里角色字面量就是小写）
+			r = strings.TrimPrefix(r, "Role")
+			r = strings.ToLower(r)
+			if r != "" {
+				roles = append(roles, r)
+			}
+		}
+		groupRoles[m[1]] = roles
+	}
+
+	// 组前缀链：var := parent.Group("prefix")，迭代到收敛（protected→adminOnly→auditAPI 这种嵌套）
+	groupPrefix := map[string]string{"r": ""}
+	groupRe := regexp.MustCompile(`(?m)^\s*(\w+)\s*:=\s*(\w+)\.Group\("([^"]*)"\)`)
+	groupDefs := groupRe.FindAllStringSubmatch(text, -1)
+	for pass := 0; pass < 4; pass++ {
+		for _, m := range groupDefs {
+			parent, ok := groupPrefix[m[2]]
+			if !ok {
+				continue
+			}
+			groupPrefix[m[1]] = parent + m[3]
+			groupParent[m[1]] = m[2]
+		}
+	}
+
+	// 子组继承父组的 RequireRole（如 connectionWrite := operatorOnly.Group(...)）
+	rolesOf := func(name string) []string {
+		for i := 0; i < 4 && name != ""; i++ {
+			if r, ok := groupRoles[name]; ok {
+				return r
+			}
+			name = groupParent[name]
+		}
+		return nil
+	}
+
+	// 路由注册："METHOD /绝对路径" → 组变量
+	routeRe := regexp.MustCompile(`(?m)^\s*(\w+)\.(GET|POST|PUT|DELETE|PATCH)\("([^"]+)"`)
+	registeredBy := map[string]string{}
+	for _, m := range routeRe.FindAllStringSubmatch(text, -1) {
+		prefix, ok := groupPrefix[m[1]]
+		if !ok {
+			continue
+		}
+		registeredBy[m[2]+" "+prefix+m[3]] = m[1]
+	}
+
+	// 策略表：路由 → 期望组变量 → 期望允许角色
+	cases := []struct {
+		route     string
+		wantGroup string
+		wantRoles []string
+		why       string
+	}{
+		{"GET /api/audit/logs", "auditRead", []string{"admin", "auditor"}, "auditor 的职责就是看审计"},
+		{"GET /api/audit/statistics", "auditRead", []string{"admin", "auditor"}, "同上"},
+		{"GET /api/audit/export", "auditAPI", []string{"admin"}, "导出行外带全量日志，仍限 admin"},
+		{"DELETE /api/audit/cleanup", "auditAPI", []string{"admin"}, "清理是破坏性操作"},
+		{"GET /api/connection/pool/stats", "connectionAPI", nil, "连接状态对全角色可见（无 RequireRole）"},
+		{"DELETE /api/connection/:id", "connectionWrite", []string{"admin", "operator"}, "断开连接是写操作，auditor 不可"},
+		{"PUT /api/connection/pool/config", "connectionWrite", []string{"admin", "operator"}, "改池配置是写操作"},
+		{"PUT /api/connection/worker/resize", "connectionWrite", []string{"admin", "operator"}, "改工作池是写操作"},
+		{"POST /api/shellcode/stage", "shellcodeAPI", []string{"admin", "operator"}, "生成载荷与 /client/GenServer 同口径"},
+		{"POST /api/shellcode/dynamic-stager", "shellcodeAPI", []string{"admin", "operator"}, "同上"},
+		{"POST /api/plugin/upload", "operatorOnly", []string{"admin", "operator"}, "写入攻击载荷仓库"},
+		{"DELETE /api/plugin/delete/:pluginName", "operatorOnly", []string{"admin", "operator"}, "同上"},
+		{"GET /api/plugin/download/:pluginName", "operatorOnly", []string{"admin", "operator"}, "外带可执行载荷"},
+		{"POST /api/bin/execute", "operatorOnly", []string{"admin", "operator"}, "下发载荷到被控端"},
+		{"GET /api/client/session-log", "operatorOnly", []string{"admin", "operator"}, "会话日志含完整交互记录"},
+	}
+
+	for _, tc := range cases {
+		gotGroup, ok := registeredBy[tc.route]
+		if !ok {
+			t.Errorf("main.go 里找不到路由 %s", tc.route)
+			continue
+		}
+		if gotGroup != tc.wantGroup {
+			t.Errorf("%s 挂在 %s，期望 %s（%s）", tc.route, gotGroup, tc.wantGroup, tc.why)
+			continue
+		}
+		gotRoles := rolesOf(gotGroup)
+		if len(gotRoles) != len(tc.wantRoles) {
+			t.Errorf("%s 所在组 %s 的角色为 %v，期望 %v（%s）", tc.route, gotGroup, gotRoles, tc.wantRoles, tc.why)
+			continue
+		}
+		sort.Strings(gotRoles)
+		want := append([]string(nil), tc.wantRoles...)
+		sort.Strings(want)
+		for i := range want {
+			if gotRoles[i] != want[i] {
+				t.Errorf("%s 所在组 %s 的角色为 %v，期望 %v（%s）", tc.route, gotGroup, gotRoles, tc.wantRoles, tc.why)
+				break
+			}
+		}
+	}
+}
+
+// TestWSHandshakeRoleGuards WS 端点不走 RequireRole 中间件，握手里的角色校验是唯一防线。
+// xterm 给的是被控端交互式 shell，必须与 /api/shell/:uid、HVNC 一样限定 admin/operator。
+func TestWSHandshakeRoleGuards(t *testing.T) {
+	for _, f := range []string{
+		"pkg/api/xterm_terminal.go",
+		"pkg/api/hvnc.go",
+		"pkg/api/terminal.go",
+	} {
+		src, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatalf("读取 %s 失败: %v", f, err)
+		}
+		if !strings.Contains(string(src), "security.RoleAdmin") || !strings.Contains(string(src), "security.RoleOperator") {
+			t.Errorf("%s 的 WS 握手缺少 admin/operator 角色校验", f)
+		}
+	}
 }

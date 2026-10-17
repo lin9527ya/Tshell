@@ -709,10 +709,17 @@ func main() {
 	}
 
 	// 审计日志管理API
+	// 读接口开放给 admin + auditor：auditor 的职责就是看审计（前端角色表也给 auditor 授了
+	// 权限码 '14' Audit），原来四个接口全是 adminOnly，导致 auditor 能点开「日志」页签却必然 403。
+	// 导出（外带全量日志）与清理（破坏性）仍限 admin。
+	auditRead := protected.Group("/audit")
+	auditRead.Use(security.RequireRole(security.RoleAdmin, security.RoleAuditor))
+	{
+		auditRead.GET("/logs", audit.GetAuditLogs)
+		auditRead.GET("/statistics", audit.GetAuditStatistics)
+	}
 	auditAPI := adminOnly.Group("/audit")
 	{
-		auditAPI.GET("/logs", audit.GetAuditLogs)
-		auditAPI.GET("/statistics", audit.GetAuditStatistics)
 		auditAPI.GET("/export", audit.ExportAuditLogs)
 		auditAPI.DELETE("/cleanup", audit.CleanupOldLogs)
 	}
@@ -729,17 +736,23 @@ func main() {
 	}
 
 	// 连接管理API
+	// 读接口保持全角色（auditor 可查看连接状态），写操作（断开连接/改池与工作池配置）
+	// 收紧到 admin+operator —— 原来整组 protected，只读角色 auditor 也能关连接、改池配置。
+	// health-check 是非破坏性探测，留在读组。
 	connectionAPI := protected.Group("/connection")
 	{
 		connectionAPI.GET("/pool/stats", connection.GetConnectionPoolStats)
 		connectionAPI.GET("/worker/stats", connection.GetWorkerPoolStats)
 		connectionAPI.GET("/details", connection.GetConnectionDetails)
-		connectionAPI.DELETE("/:id", connection.CloseConnection)
-		connectionAPI.PUT("/pool/config", connection.UpdatePoolConfig)
-		connectionAPI.PUT("/worker/resize", connection.ResizeWorkerPool)
 		connectionAPI.GET("/protocol/:protocol", connection.GetConnectionsByProtocol)
 		connectionAPI.POST("/health-check", connection.PerformHealthCheck)
 		connectionAPI.GET("/uid/:uid", connection.GetConnectionByUID)
+	}
+	connectionWrite := operatorOnly.Group("/connection")
+	{
+		connectionWrite.DELETE("/:id", connection.CloseConnection)
+		connectionWrite.PUT("/pool/config", connection.UpdatePoolConfig)
+		connectionWrite.PUT("/worker/resize", connection.ResizeWorkerPool)
 	}
 
 	// 通知配置API
@@ -835,7 +848,9 @@ func main() {
 	operatorOnly.POST("/cna/eval", api.EvalCnaScript)
 
 	// Shellcode生成API
-	shellcodeAPI := protected.Group("/shellcode")
+	// 与同为载荷生成的 /client/GenServer(operatorOnly) 口径一致：
+	// 原来挂 protected，只读角色 auditor 也能生成 stager/shellcode。
+	shellcodeAPI := operatorOnly.Group("/shellcode")
 	{
 		shellcodeAPI.POST("/dynamic-stager", api.DynamicStageShellCodeGen)
 		shellcodeAPI.POST("/stage", api.StageShellCodeGen)
