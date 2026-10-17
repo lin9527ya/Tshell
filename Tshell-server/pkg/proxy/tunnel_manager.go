@@ -10,17 +10,13 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/gorilla/websocket"
 )
 
 // TunnelManager 隧道代理管理器
 type TunnelManager struct {
-	mu             sync.RWMutex
-	tunnels        map[int64]*TunnelInstance  // key: tunnel ID
-	listeners      map[int]*net.Listener      // key: server port
-	connections    map[string]net.Conn        // key: client UID, value: connection
-	websocketConns map[string]*websocket.Conn // key: client UID, value: websocket connection
+	mu        sync.RWMutex
+	tunnels   map[int64]*TunnelInstance // key: tunnel ID
+	listeners map[int]*net.Listener     // key: server port（含 socks5 的 nil 占位）
 }
 
 // TunnelInstance 隧道实例
@@ -44,10 +40,8 @@ var GlobalTunnelManager *TunnelManager
 // InitTunnelManager 初始化隧道管理器
 func InitTunnelManager() {
 	GlobalTunnelManager = &TunnelManager{
-		tunnels:        make(map[int64]*TunnelInstance),
-		listeners:      make(map[int]*net.Listener),
-		connections:    make(map[string]net.Conn),
-		websocketConns: make(map[string]*websocket.Conn),
+		tunnels:   make(map[int64]*TunnelInstance),
+		listeners: make(map[int]*net.Listener),
 	}
 }
 
@@ -121,9 +115,6 @@ func (tm *TunnelManager) StartTunnel(tunnelID int64) error {
 	case "udp":
 		// 启动UDP转发
 		return tm.startUDPTunnel(tunnel)
-	case "direct_socks5":
-		// 直连SOCKS5代理（当前未实现转发逻辑，拒绝启动而非假装监听）
-		return fmt.Errorf("direct_socks5 协议尚未实现，拒绝启动")
 	default:
 		// 未知协议：显式报错，避免"端口监听但不转发"的假状态
 		return fmt.Errorf("不支持的隧道协议: %s", tunnel.Protocol)
@@ -164,35 +155,6 @@ func (tm *TunnelManager) StopTunnel(tunnelID int64) error {
 		// 未知协议(与 StartTunnel 对称报错;原走 generic 停止逻辑,已随死代码移除)
 		return fmt.Errorf("不支持的隧道协议: %s", tunnel.Protocol)
 	}
-}
-
-func (tm *TunnelManager) RegisterClientConnection(clientUID string, conn net.Conn) {
-	tm.mu.Lock()
-	defer tm.mu.Unlock()
-	tm.connections[clientUID] = conn
-}
-
-// RegisterWebSocketConnection 注册WebSocket客户端连接
-func (tm *TunnelManager) RegisterWebSocketConnection(clientUID string, wsConn *websocket.Conn) {
-	tm.mu.Lock()
-	defer tm.mu.Unlock()
-	tm.websocketConns[clientUID] = wsConn
-}
-
-// UnregisterClientConnection 注销客户端连接
-func (tm *TunnelManager) UnregisterClientConnection(clientUID string) {
-	tm.mu.Lock()
-	defer tm.mu.Unlock()
-	delete(tm.connections, clientUID)
-	delete(tm.websocketConns, clientUID)
-}
-
-// GetClientConnection 获取客户端连接
-func (tm *TunnelManager) GetClientConnection(clientUID string) (net.Conn, bool) {
-	tm.mu.RLock()
-	defer tm.mu.RUnlock()
-	conn, exists := tm.connections[clientUID]
-	return conn, exists
 }
 
 func (tm *TunnelManager) startSocks5Tunnel(tunnel database.TunnelProxy) error {

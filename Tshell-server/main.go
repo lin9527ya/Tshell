@@ -13,7 +13,6 @@ import (
 	"BackendTemplate/pkg/cna"
 	"BackendTemplate/pkg/config"
 	"BackendTemplate/pkg/connection"
-	"BackendTemplate/pkg/connection/tcp"
 	"BackendTemplate/pkg/database"
 	"BackendTemplate/pkg/delivery"
 	"BackendTemplate/pkg/encrypt"
@@ -31,7 +30,6 @@ import (
 	"fmt"
 	"html/template"
 	"io/fs"
-	"net"
 	"os"
 	"os/signal"
 	"strconv"
@@ -250,19 +248,6 @@ func main() {
 			fmt.Printf("   [%s] :%d -> %s\n", t.Protocol, t.ServerPort, t.TargetAddress)
 		}
 	}
-
-	// 设置TCP连接到隧道管理器的回调函数
-	tcp.RegisterTunnelConnection = func(uid string, conn net.Conn) {
-		if proxy.GlobalTunnelManager != nil {
-			proxy.GlobalTunnelManager.RegisterClientConnection(uid, conn)
-		}
-	}
-	tcp.UnregisterTunnelConnection = func(uid string) {
-		if proxy.GlobalTunnelManager != nil {
-			proxy.GlobalTunnelManager.UnregisterClientConnection(uid)
-		}
-	}
-	fmt.Println("✅ TCP隧道连接回调函数已设置")
 
 	// P3-1: 注入密钥轮换下发回调（encrypt 包不依赖 sendcommand，避免循环依赖；
 	// 轮换消息 type=5|nonce 经命令链路按客户端协议加密下发）

