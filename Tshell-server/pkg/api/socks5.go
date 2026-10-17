@@ -90,6 +90,11 @@ func Socks5Start(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "端口号必须在1-65535之间"})
 		return
 	}
+	// 无认证的 SOCKS5 端口等同于公开代理，强制要求凭据（与新隧道接口口径一致）
+	if err := requireTunnelAuth("socks5", socks5Body.Username, socks5Body.Password); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
 
 	log.Printf("[SOCKS5-API] 📋 SOCKS5配置:")
 	log.Printf("[SOCKS5-API]    - 客户端UID: %s", socks5Body.ClientUID)
@@ -243,6 +248,11 @@ func Socks5Open(c *gin.Context) {
 	if !has {
 		log.Printf("[SOCKS5-API] ❌ 代理记录不存在 ID: %d", requestBody.ID)
 		c.JSON(http.StatusNotFound, gin.H{"status": 404, "data": "代理记录不存在"})
+		return
+	}
+	// 历史记录可能没有凭据：重新开启时同样拦住
+	if err := requireTunnelAuth("socks5", socks5Record.UserName, socks5Record.Password); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -530,6 +540,19 @@ func Socks5Update(c *gin.Context) {
 	if !has {
 		log.Printf("[SOCKS5-API] ❌ 代理记录不存在 ID: %d", requestBody.ID)
 		c.JSON(http.StatusNotFound, gin.H{"status": 404, "error": "代理记录不存在"})
+		return
+	}
+
+	// 校验合并后的有效凭据（留空即保留旧值）
+	effUser, effPass := socks5Record.UserName, socks5Record.Password
+	if requestBody.Username != "" {
+		effUser = requestBody.Username
+	}
+	if requestBody.Password != "" {
+		effPass = requestBody.Password
+	}
+	if err := requireTunnelAuth("socks5", effUser, effPass); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 

@@ -3,6 +3,8 @@ package proxy
 import (
 	"bufio"
 	"bytes"
+	"crypto/subtle"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -327,6 +329,38 @@ func httpTunnelProxyServer(instance *HTTPTunnelInstance) {
 }
 
 // handleHTTPTunnelProxyConnection 处理HTTP代理连接（新架构：使用多路复用）
+// checkTunnelProxyAuth 校验 Proxy-Authorization（Basic）。password 为空表示未配置认证。
+func checkTunnelProxyAuth(req *http.Request, username, password string) bool {
+	if password == "" {
+		return true
+	}
+	const prefix = "Basic "
+	h := req.Header.Get("Proxy-Authorization")
+	if len(h) <= len(prefix) || !strings.EqualFold(h[:len(prefix)], prefix) {
+		return false
+	}
+	raw, err := base64.StdEncoding.DecodeString(strings.TrimSpace(h[len(prefix):]))
+	if err != nil {
+		return false
+	}
+	user, pass, ok := strings.Cut(string(raw), ":")
+	if !ok {
+		return false
+	}
+	// 常量时间比较，避免按字节泄露凭据
+	return subtle.ConstantTimeCompare([]byte(user), []byte(username)) == 1 &&
+		subtle.ConstantTimeCompare([]byte(pass), []byte(password)) == 1
+}
+
+// writeProxyAuthRequired 返回 407 并声明 Basic 认证
+func writeProxyAuthRequired(conn net.Conn) {
+	resp := "HTTP/1.1 407 Proxy Authentication Required\r\n" +
+		"Proxy-Authenticate: Basic realm=\"tshell-tunnel\"\r\n" +
+		"Content-Length: 0\r\n" +
+		"Connection: close\r\n\r\n"
+	_, _ = conn.Write([]byte(resp))
+}
+
 func handleHTTPTunnelProxyConnection(clientConn net.Conn, instance *HTTPTunnelInstance) {
 	defer clientConn.Close()
 
@@ -353,6 +387,13 @@ func handleHTTPTunnelProxyConnection(clientConn net.Conn, instance *HTTPTunnelIn
 	log.Printf("[HTTP-TUNNEL]    - 方法: %s", req.Method)
 	log.Printf("[HTTP-TUNNEL]    - URL: %s", req.URL.String())
 	log.Printf("[HTTP-TUNNEL]    - Host: %s", req.Host)
+
+	// 代理认证（配置了密码才校验）：HTTP 侧此前完全没有认证，端口对任何能连上的人开放
+	if !checkTunnelProxyAuth(req, instance.Username, instance.Password) {
+		log.Printf("[HTTP-TUNNEL] ⛔ 代理认证失败: %s", connID)
+		writeProxyAuthRequired(clientConn)
+		return
+	}
 
 	// 处理HTTP CONNECT方法 (用于HTTPS代理)
 	if req.Method == http.MethodConnect {

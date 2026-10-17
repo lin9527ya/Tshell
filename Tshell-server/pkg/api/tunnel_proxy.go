@@ -4,6 +4,7 @@ import (
 	"BackendTemplate/pkg/audit"
 	"BackendTemplate/pkg/database"
 	"BackendTemplate/pkg/proxy"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -14,6 +15,19 @@ import (
 )
 
 // TunnelProxyRequest 隧道代理请求结构
+// requireTunnelAuth socks5/http 隧道的端口是直接对外提供服务的：不设用户名密码时，
+// SOCKS5 侧会降级为 NoAuth、HTTP 侧此前完全没有认证 —— 等同于在服务器上开了一个
+// 公开代理。故这两类协议强制要求认证；tcp/udp 是按目标地址的定向转发，不涉及。
+func requireTunnelAuth(protocol, username, password string) error {
+	switch strings.ToLower(protocol) {
+	case "socks5", "http":
+		if username == "" || password == "" {
+			return fmt.Errorf("%s 隧道必须设置用户名和密码（无认证时等同于公开代理）", protocol)
+		}
+	}
+	return nil
+}
+
 type TunnelProxyRequest struct {
 	ClientUID     string `json:"client_uid" binding:"required"`
 	Protocol      string `json:"protocol" binding:"required,oneof=socks5 http tcp udp"`
@@ -61,6 +75,11 @@ func CreateTunnelProxy(c *gin.Context) {
 			audit.GlobalAuditLogger.LogWithContext(c, audit.LogLevelError, audit.CategoryAPI, "TUNNEL_PROXY_CREATE", "FAILURE", "参数错误: "+err.Error(), nil)
 		}
 		c.JSON(http.StatusBadRequest, gin.H{"error": "参数错误: " + err.Error()})
+		return
+	}
+
+	if err := requireTunnelAuth(req.Protocol, req.Username, req.Password); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -312,6 +331,11 @@ func UpdateTunnelProxy(c *gin.Context) {
 		return
 	}
 
+	if err := requireTunnelAuth(req.Protocol, req.Username, req.Password); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
 	if req.ServerPort != tunnel.ServerPort {
 		var existingTunnel database.TunnelProxy
 		exists, err = database.Engine.Where("server_port = ? AND id != ?", req.ServerPort, id).Get(&existingTunnel)
@@ -484,6 +508,12 @@ func StartTunnelProxy(c *gin.Context) {
 			audit.GlobalAuditLogger.LogWithContext(c, audit.LogLevelError, audit.CategoryAPI, "TUNNEL_PROXY_START", "FAILURE", "客户端离线", nil)
 		}
 		c.JSON(http.StatusBadRequest, gin.H{"error": "客户端离线"})
+		return
+	}
+
+	// 历史记录可能没有凭据：启动时同样拦住（否则等于把无认证代理重新开起来）
+	if err := requireTunnelAuth(tunnel.Protocol, tunnel.Username, tunnel.Password); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
