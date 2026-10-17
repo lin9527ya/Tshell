@@ -67,7 +67,7 @@ cd Tshell-web && npm run build:embed
 | 37 | shell 增量追加(共享 handler) | `grep -c "AppendShellContent(uid" pkg/command/reply_handlers.go` | ≥1 |
 | 38 | 客户端解密回落共享 | `grep -c "func DecryptCommand" core/communication/transport_utils.go`(客户端) | ≥1 |
 | 39 | 客户端心跳/分帧共享 | `grep -c "func FrameResult\|func HeartbeatMsg" core/communication/transport_utils.go`(客户端) | ≥2 |
-| 40 | 前端单一事件 WS | `grep -c "events/ws" src/components/layout/EventCenter.vue src/views/dashboard/DashboardView.vue` | ≤1 |
+| 40 | 前端单一事件 WS | `grep -c "events/ws" src/stores/events.ts`（原检查的 EventCenter.vue/DashboardView.vue 已随 vshell 重构移除） | ≤1 |
 | 41 | 图标按需 | `grep -c "ElementPlusIconsResolver" vite.config.ts`(前端) | ≥1 |
 
 ## C 组（加密体系改造，2026-08 追加）
@@ -244,7 +244,7 @@ cd Tshell-web && npm run build:embed
 |---|-----|------|
 | 118 | 前端依赖升级:vite 4→5.4、vitest 0.34→1.6、TS 5.1→5.5、vue-tsc 3→2.2;移除 vite-plugin-vue-setup-extend(peer 锁 vite4) | type-check 0 错误 |
 | 119 | 修复被转义损坏的 PerformanceMonitor.vue(116 处 `\"` 错误转义 → 418 类型错误归零) | vue-tsc 通过 |
-| 120 | 修复 16 个被 vue-tsc 崩溃掩盖的真实类型错误(EventCenter/TopHeader/PluginsView/DashboardView/ClientScreenshot/formatUtils);删除调试页 ApiTest.vue | vue-tsc 0 错误 |
+| 120 | （历史项，已完成）修复 16 个被 vue-tsc 崩溃掩盖的真实类型错误(EventCenter/TopHeader/PluginsView/DashboardView/ClientScreenshot/formatUtils);删除调试页 ApiTest.vue | vue-tsc 0 错误 |
 | 121 | vitest 配置重写(独立配置,vitest1 不支持 mergeConfig callback)+ 3 个测试文件 9 用例(终端转义 XSS/状态格式化) | 9 passed |
 | 122 | 服务端事件总线单测(订阅/退订/无订阅者) | PASS |
 | 123 | e2e 一键回归脚本 scripts/e2e.sh(构建→监听器→客户端→唯一化+命令) | 一次通过 |

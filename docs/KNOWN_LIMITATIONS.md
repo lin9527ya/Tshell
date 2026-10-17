@@ -39,9 +39,12 @@
 - 状态：✅（禁用）/ ⏳（代码移除）
 
 ## 9. 密钥轮换协议（notifyKeyUpdate）
-- 现状：`notifyKeyUpdate` 仍为 TODO；24h 会话密钥过期后通道降级风险。
-- 计划：完成密钥协商消息类型，或移除轮换 UI 入口避免误导。
-- 状态：⏳
+- 现状：✅ 已实现（2026-10 核对）：服务端 `pkg/encrypt/encrypt.go` 的 `notifyKeyUpdate`
+  经 `KeyRotationSender`（`main.go` 注入）下发 `type=5|nonce`，客户端
+  `core/communication/transport_utils.go` 消费并回 ACK(121)，`ConfirmKeyRotation`
+  完成 Current/Previous/Next 切换（重叠期仍可解旧消息），`derivation_compare_test.go`
+  有对应单测。
+- 状态：✅
 
 ## 10. VKey 密钥口径统一
 - 现状：GenerateListenerKeyConfig 返回 base64(32B)，消费方取字符串前 32/16 字符（熵 192bit）；手动设置 VKey 直接按字符串使用。

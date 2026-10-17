@@ -319,8 +319,6 @@ func main() {
 	// WebDelivery 不再整体置关闭：由 Delivery Hub 按库中 status=1 记录恢复
 	delivery.GlobalHub.SetMainPort(*bindPort)
 
-	// SOCKS5代理功能已删除
-
 	r := gin.New()
 
 	// 添加错误处理中间件
