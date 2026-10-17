@@ -544,7 +544,7 @@ func isForwardListenerType(listenerType string) bool {
 
 // markListenerStartFailed 启动失败时把监听器状态回置为"已停止"。
 // 否则库里会留下 Status=1 却没有句柄的记录：前端显示"监听中"、dashboard 的监听器
-// 计数虚高，而 listenerHandleAlive 探活为 false（只有 RestartListener 会用到探活）。
+// 计数虚高，实际端口没有在听。
 // 各启动失败分支（J4 拒绝、端口绑定失败、证书生成失败、HTTP(S) 服务起不来）统一走这里。
 func markListenerStartFailed(listenerType, listenerAddress, reason string) {
 	if database.Engine != nil {
@@ -672,8 +672,8 @@ func handleOpenPort(listenerType string, listenerAddress string, vkey string, sa
 		// 启动服务器（非阻塞）
 		go func() {
 			if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-				// 端口被占用等启动失败：句柄已在 map 中，必须摘掉，否则 listenerHandleAlive
-				// 会因句柄存在而误判为运行中（websocket 分支原有此清理，http/https 漏了）
+				// 端口被占用等启动失败：句柄已在 map 中，必须摘掉，否则会被当成"运行中"
+				// （websocket 分支原有此清理，http/https 漏了）
 				connection.MuClientListenerType.Lock()
 				delete(connection.HttpServer, listenerAddress)
 				connection.MuClientListenerType.Unlock()
