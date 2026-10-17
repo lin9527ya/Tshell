@@ -13,6 +13,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -23,13 +24,15 @@ import (
 // 限制：TCP转发与HTTP隧道共用客户端的隧道Agent(同一个 http_tunnel_connect 命令 + 全局 agent)，
 // 同一客户端上两者建议不要同时运行；SOCKS5 与 TCP转发 可共存（各自独立 agent）。
 type tcpTunnelInstance struct {
-	tunnelID        int64
-	clientUID       string
-	serverPort      int
-	agentPort       int
-	targetAddress   string
-	psk             string
-	session         *mux.Mux
+	tunnelID      int64
+	clientUID     string
+	serverPort    int
+	agentPort     int
+	targetAddress string
+	psk           string
+	// session 由 Agent 回连 goroutine 写入、转发/停止路径读取，用原子指针保证无竞争
+	// （与 udp_tunnel.go 的 session 同一处理；原为裸字段，go test -race 会报）
+	session         atomic.Pointer[mux.Mux]
 	agentListener   *net.TCPListener
 	forwardListener *net.TCPListener
 }
@@ -132,7 +135,7 @@ func tcpTunnelAgentServer(inst *tcpTunnelInstance) {
 		}
 		conn.SetReadDeadline(time.Time{})
 		session := mux.Client(conn, inst.psk)
-		inst.session = session
+		inst.session.Store(session)
 		log.Printf("[TUNNEL-TCP] ✅ Agent已连接，mux会话已建立，启动转发监听器")
 		go tcpTunnelForwardServer(inst)
 		// agent 断开时关闭转发监听器，使 tcpTunnelForwardServer 退出，避免泄漏
@@ -161,10 +164,11 @@ func tcpTunnelForwardServer(inst *tcpTunnelInstance) {
 // handleTCPForwardClient 处理单个入站连接：开流 -> 发目标 -> 读OK -> 双向转发。
 func handleTCPForwardClient(clientConn net.Conn, inst *tcpTunnelInstance) {
 	defer clientConn.Close()
-	if inst.session == nil {
+	session := inst.session.Load()
+	if session == nil {
 		return
 	}
-	stream, err := inst.session.OpenStream()
+	stream, err := session.OpenStream()
 	if err != nil {
 		log.Printf("[TUNNEL-TCP] ❌ 创建流失败: %v", err)
 		return
@@ -203,8 +207,8 @@ func (tm *TunnelManager) stopTCPTunnel(tunnelID int64) error {
 	if !exists {
 		return fmt.Errorf("TCP隧道不存在或未运行")
 	}
-	if inst.session != nil {
-		inst.session.Close()
+	if s := inst.session.Load(); s != nil {
+		s.Close()
 	}
 	if inst.agentListener != nil {
 		inst.agentListener.Close()

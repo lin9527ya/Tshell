@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"BackendTemplate/pkg/audit"
@@ -41,8 +42,9 @@ type HTTPTunnelInstance struct {
 	AgentListener *net.TCPListener // Agent连接监听器
 	Status        string
 	CreatedAt     time.Time
-	Session       *mux.Mux // 多路复用会话
-	PSK           string   // 预共享密钥
+	// Session 由 Agent 回连 goroutine 写入、代理处理路径读取，用原子指针保证无竞争
+	Session atomic.Pointer[mux.Mux] // 多路复用会话
+	PSK     string                  // 预共享密钥
 }
 
 var (
@@ -193,8 +195,8 @@ func StopHTTPTunnel(tunnel database.TunnelProxy) error {
 	}
 
 	// 关闭多路复用会话
-	if instance.Session != nil {
-		instance.Session.Close()
+	if s := instance.Session.Load(); s != nil {
+		s.Close()
 		log.Printf("[HTTP-TUNNEL] 多路复用会话已关闭")
 	}
 
@@ -274,7 +276,7 @@ func httpTunnelAgentServer(instance *HTTPTunnelInstance) {
 		// 创建多路复用会话
 		log.Printf("[HTTP-TUNNEL] 🔀 创建多路复用会话...")
 		session := mux.Client(conn, instance.PSK)
-		instance.Session = session
+		instance.Session.Store(session)
 		log.Printf("[HTTP-TUNNEL] ✅ 多路复用会话已创建，启动HTTP代理服务器...")
 
 		// 更新状态
@@ -368,7 +370,7 @@ func handleHTTPTunnelProxyConnection(clientConn net.Conn, instance *HTTPTunnelIn
 	log.Printf("[HTTP-TUNNEL] 📥 新HTTP代理连接: %s -> %s (ID: %s)", clientConn.RemoteAddr(), clientConn.LocalAddr(), connID)
 
 	// 检查多路复用会话是否可用
-	if instance.Session == nil {
+	if instance.Session.Load() == nil {
 		log.Printf("[HTTP-TUNNEL] ❌ 多路复用会话不可用，关闭连接: %s", connID)
 		return
 	}
@@ -409,7 +411,12 @@ func handleHTTPTunnelConnect(clientConn net.Conn, req *http.Request, instance *H
 	log.Printf("[HTTP-TUNNEL] 🔗 处理CONNECT请求: %s", req.Host)
 
 	// 通过多路复用与客户端建立流连接
-	stream, err := instance.Session.OpenStream()
+	session := instance.Session.Load()
+	if session == nil {
+		log.Printf("[HTTP-TUNNEL] ❌ 多路复用会话不可用: %s", connID)
+		return
+	}
+	stream, err := session.OpenStream()
 	if err != nil {
 		log.Printf("[HTTP-TUNNEL] 创建多路复用流失败: %v", err)
 		// 发送错误响应
@@ -464,7 +471,12 @@ func handleHTTPTunnelProxy(clientConn net.Conn, req *http.Request, instance *HTT
 	log.Printf("[HTTP-TUNNEL] 🌐 处理HTTP代理请求: %s", req.URL.String())
 
 	// 通过多路复用与客户端建立流连接
-	stream, err := instance.Session.OpenStream()
+	session := instance.Session.Load()
+	if session == nil {
+		log.Printf("[HTTP-TUNNEL] ❌ 多路复用会话不可用: %s", connID)
+		return
+	}
+	stream, err := session.OpenStream()
 	if err != nil {
 		log.Printf("[HTTP-TUNNEL] 创建多路复用流失败: %v", err)
 		// 发送错误响应
@@ -611,7 +623,7 @@ func GetHTTPTunnelStats() map[string]interface{} {
 
 	for key, instance := range globalHTTPTunnelManager.tunnels {
 		sessionStatus := "disconnected"
-		if instance.Session != nil {
+		if instance.Session.Load() != nil {
 			sessionStatus = "connected"
 		}
 
