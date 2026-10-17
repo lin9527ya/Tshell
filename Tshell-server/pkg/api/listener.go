@@ -362,11 +362,28 @@ func UpdateListener(c *gin.Context) {
 	// 记录更新前的状态
 	log.Printf("🔍 [监听器更新] 更新前状态 - ID: %d, 地址: %s -> %s, 状态: %d", listener.Id, currentListener.ListenAddress, listener.ListenAddress, currentListener.Status)
 
+	resolvedListenAddr := resolveListenerAddress(listener.ListenAddress, "listen")
+	// 类型留空视为不修改（与密钥/地址的"留空即保留"语义一致），避免把类型写成空串
+	newType := listener.Type
+	if newType == "" {
+		newType = currentListener.Type
+	}
+
+	// 运行中禁止改监听地址/协议类型：所有句柄都按启动时的地址与类型登记
+	// （connection.TCPServer/HttpServer/KCPServer/StopChan、正向拨号会话、dns/oss 实例表）。
+	// 改 DB 而句柄仍挂在旧地址/旧类型下，按新值关闭或删除会找不到句柄——端口继续监听、
+	// 系统却显示已停止，且之后再也关不掉（僵尸监听器）。
+	if currentListener.Status == 1 &&
+		(resolvedListenAddr != currentListener.ListenAddress || newType != currentListener.Type) {
+		c.JSON(http.StatusOK, gin.H{"status": 400, "data": "监听器运行中，请先停止后再修改监听地址或协议类型"})
+		return
+	}
+
 	// 更新数据库中的监听器记录，保持原有状态
 	// 地址同样先还原脱敏值：否则 oss 监听器一编辑就会把 AK/SK 写成占位符
 	updateData := &database.Listener{
-		Type:              listener.Type,
-		ListenAddress:     resolveListenerAddress(listener.ListenAddress, "listen"), // 允许更新监听地址
+		Type:              newType,
+		ListenAddress:     resolvedListenAddr,
 		ConnectAddress:    resolveListenerAddress(listener.ConnectAddress, "connect"),
 		HeartbeatTimeout:  heartbeatTimeout,
 		HeartbeatInterval: heartbeatInterval,
@@ -751,7 +768,10 @@ func handleOpenPort(listenerType string, listenerAddress string, vkey string, sa
 		// 无缓冲 + 非阻塞发送会丢信号导致 OSS 轮询 goroutine 永久泄漏
 		connection.StopChan[listenerAddress] = make(chan bool, 1)
 		connection.MuClientListenerType.Unlock()
-		go oss.HandleOSSConnection(client, listenerAddress)
+		// 本监听器的会话密钥材料（归一化为 32/16 字节，与客户端 patch 的取法一致）。
+		// 多实例下不能按类型查库——那样只能取到任意一行。
+		ossMK, ossSalt := encrypt.NormalizeListenerKeyConfig([]byte(vkey), []byte(salt))
+		go oss.HandleOSSConnection(client, listenerAddress, ossMK, ossSalt)
 	case "dns":
 		// 该类型的 listen_address 复用为 addr:port[:domain]
 		tmp := strings.Split(listenerAddress, ":")
@@ -771,7 +791,9 @@ func handleOpenPort(listenerType string, listenerAddress string, vkey string, sa
 		}
 		// 同步启动：绑定失败要落回状态（原实现把 ListenAndServe 放在 goroutine 里，
 		// 失败只打日志，库里仍是"运行中"）。每个监听器一个实例，互不共享状态。
-		if _, err := dns_listener.Start(listenerAddress, dnsAddr, domain, prefix); err != nil {
+		// 同上：密钥按实例传入，避免多实例时按类型取到别的监听器的密钥
+		dnsMK, dnsSalt := encrypt.NormalizeListenerKeyConfig([]byte(vkey), []byte(salt))
+		if _, err := dns_listener.Start(listenerAddress, dnsAddr, domain, prefix, dnsMK, dnsSalt); err != nil {
 			markListenerStartFailed(listenerType, listenerAddress, err.Error())
 			return
 		}

