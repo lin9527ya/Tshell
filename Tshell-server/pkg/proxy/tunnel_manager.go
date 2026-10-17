@@ -51,6 +51,29 @@ func InitTunnelManager() {
 	}
 }
 
+// ResetTunnelStatusOnStartup 服务重启时把库中"运行中"的隧道置为已停止，并返回这些记录。
+// 隧道不随服务重启自动恢复（需要客户端在线并重新回连 Agent 端口），但若不清状态，
+// 界面会一直显示"运行中"而实际没有任何监听，点"停止"还会报"不存在或未运行"。
+// 返回被置停的记录供启动日志列出——与监听器同一口径：不自动恢复，但要让人看见。
+func ResetTunnelStatusOnStartup() []database.TunnelProxy {
+	if database.Engine == nil {
+		return nil
+	}
+	var running []database.TunnelProxy
+	if err := database.Engine.Where("status = ?", 1).Find(&running); err != nil {
+		log.Printf("[TUNNEL] 读取重启前隧道状态失败: %v", err)
+		return nil
+	}
+	if len(running) == 0 {
+		return nil
+	}
+	// Status=0 是零值：xorm 的 Update(&struct) 会跳过零值列，必须用 Cols 显式指定
+	if _, err := database.Engine.Cols("status").Update(&database.TunnelProxy{Status: 0}); err != nil {
+		log.Printf("[TUNNEL] 置停隧道状态失败: %v", err)
+	}
+	return running
+}
+
 // StartTunnel 启动隧道代理
 func (tm *TunnelManager) StartTunnel(tunnelID int64) error {
 	tm.mu.Lock()
@@ -216,8 +239,11 @@ func (tm *TunnelManager) startSocks5Tunnel(tunnel database.TunnelProxy) error {
 	// 随机 PSK（服务端与客户端必须一致），替代硬编码 "psk" 防止魔法包握手被预测
 	psk := GenerateRandomPSK()
 
-	// 启动反向SOCKS5服务器
-	go ReverseSocksServer(agentAddress, socksAddress, psk, "", "", tunnel.Username, tunnel.Password)
+	// 同步绑定 Agent 端口：失败要能返回给启动接口（原实现放在 goroutine 里，
+	// 端口被占用时接口仍报"启动成功"、DB 置 1，而实际没有监听）
+	if _, err := ReverseSocksServer(agentAddress, socksAddress, psk, tunnel.Username, tunnel.Password); err != nil {
+		return err
+	}
 
 	// 创建隧道实例
 	instance := &TunnelInstance{

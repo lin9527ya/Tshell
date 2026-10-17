@@ -157,7 +157,12 @@ func Socks5Start(c *gin.Context) {
 
 	log.Printf("[SOCKS5-API] 🔧 启动反向SOCKS服务器...")
 	randomPSK := proxy.GenerateRandomPSK()
-	go proxy.ReverseSocksServer(socks5Record.ConnectAddress, socksAddress, randomPSK, "", "", socks5Record.UserName, socks5Record.Password)
+	if _, err := proxy.ReverseSocksServer(socks5Record.ConnectAddress, socksAddress, randomPSK, socks5Record.UserName, socks5Record.Password); err != nil {
+		// 同步绑定失败：回置状态，避免"显示运行中、实际没监听"
+		database.Engine.ID(socks5Record.ID).Update(&database.Socks5{Status: 0, UpdatedAt: time.Now()})
+		c.JSON(http.StatusInternalServerError, gin.H{"status": 500, "data": err.Error()})
+		return
+	}
 
 	// 🔧 修复：直接使用监听器的外网连接地址
 	log.Printf("[SOCKS5-API] 🔍 查找客户端对应的监听器外网连接地址...")
@@ -301,7 +306,12 @@ func Socks5Open(c *gin.Context) {
 
 	log.Printf("[SOCKS5-API] 🔧 启动反向SOCKS服务器...")
 	randomPSK := proxy.GenerateRandomPSK()
-	go proxy.ReverseSocksServer(socks5Record.ConnectAddress, socksAddress, randomPSK, "", "", socks5Record.UserName, socks5Record.Password)
+	if _, err := proxy.ReverseSocksServer(socks5Record.ConnectAddress, socksAddress, randomPSK, socks5Record.UserName, socks5Record.Password); err != nil {
+		// 同步绑定失败：回置状态，避免"显示运行中、实际没监听"
+		database.Engine.ID(socks5Record.ID).Update(&database.Socks5{Status: 0, UpdatedAt: time.Now()})
+		c.JSON(http.StatusInternalServerError, gin.H{"status": 500, "data": err.Error()})
+		return
+	}
 
 	// 🔧 修复：直接使用监听器的外网连接地址
 	log.Printf("[SOCKS5-API] 🔍 查找客户端对应的监听器外网连接地址...")
@@ -790,7 +800,12 @@ func RestoreSocks5OnStartup() {
 		}
 		socksAddr := "0.0.0.0:" + r.Socks5port
 		psk := proxy.GenerateRandomPSK()
-		go proxy.ReverseSocksServer(r.ConnectAddress, socksAddr, psk, "", "", r.UserName, r.Password)
+		if _, err := proxy.ReverseSocksServer(r.ConnectAddress, socksAddr, psk, r.UserName, r.Password); err != nil {
+			// 恢复失败：回置状态，避免重启后一直显示运行中而实际没监听
+			database.Engine.ID(r.ID).Update(&database.Socks5{Status: 0, UpdatedAt: time.Now()})
+			log.Printf("[SOCKS5-API] ❌ 恢复失败（已置为停止）: 端口 %s, %v", r.Socks5port, err)
+			continue
+		}
 		restored++
 		log.Printf("[SOCKS5-API] 🔄 已恢复 SOCKS5 代理: 端口 %s (agent %s)", r.Socks5port, r.ConnectAddress)
 

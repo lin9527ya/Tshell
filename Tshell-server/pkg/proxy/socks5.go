@@ -2,8 +2,8 @@ package proxy
 
 import (
 	"bytes"
-	"crypto/tls"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"time"
@@ -49,66 +49,15 @@ var (
 	}
 )
 
-func ReverseSocksServer(agentListenAddress, socksListenAddress, psk, certFile, keyFile, username, password string) {
-	log.Printf("[SOCKS5-SERVER] 🚀 启动反向SOCKS服务器")
-	log.Printf("[SOCKS5-SERVER] 📋 配置信息:")
-	log.Printf("[SOCKS5-SERVER]    - Agent监听地址: %s", agentListenAddress)
-	log.Printf("[SOCKS5-SERVER]    - SOCKS监听地址: %s", socksListenAddress)
-	log.Printf("[SOCKS5-SERVER]    - PSK长度: %d", len(psk))
-	log.Printf("[SOCKS5-SERVER]    - 证书文件: %s", certFile)
-	log.Printf("[SOCKS5-SERVER]    - 密钥文件: %s", keyFile)
-	log.Printf("[SOCKS5-SERVER]    - 用户名: %s", username)
-	log.Printf("[SOCKS5-SERVER]    - 密码长度: %d", len(password))
-
-	usingTLS := false
-	var cert tls.Certificate
-	var err error
-
-	if certFile != "" && keyFile != "" {
-		log.Printf("[SOCKS5-SERVER] 🔐 尝试加载TLS证书...")
-		cert, err = tls.LoadX509KeyPair(certFile, keyFile)
-		if err != nil {
-			log.Printf("[SOCKS5-SERVER] ⚠️ 证书加载失败，使用TCP监听: %v", err)
-		} else {
-			usingTLS = true
-			log.Printf("[SOCKS5-SERVER] ✅ TLS证书加载成功")
-		}
-	} else {
-		log.Printf("[SOCKS5-SERVER] 📝 未提供证书文件，使用TCP监听")
-	}
-
-	if len(password) == 0 {
-		log.Printf("[SOCKS5-SERVER] ⚠️ 警告: 未配置密码，任何人都可以连接到SOCKS5服务器")
-	} else {
-		log.Printf("[SOCKS5-SERVER] 🔐 已配置用户名密码认证")
-	}
-
-	log.Printf("[SOCKS5-SERVER] 🔍 开始监听Agent连接: %s", agentListenAddress)
-
-	var ln net.Listener
-	if usingTLS {
-		config := &tls.Config{
-			PreferServerCipherSuites: true,
-			CurvePreferences:         []tls.CurveID{tls.X25519, tls.CurveP256},
-			Certificates:             []tls.Certificate{cert},
-		}
-		ln, err = tls.Listen("tcp", agentListenAddress, config)
-		log.Printf("[SOCKS5-SERVER] 🔐 TLS监听器已创建")
-	} else {
-		ln, err = net.Listen("tcp", agentListenAddress)
-		log.Printf("[SOCKS5-SERVER] 🌐 TCP监听器已创建")
-	}
-
-	// 注册必须在 err 检查之后（避免失败时把 nil 监听器写入 map 导致后续 Close panic）
-	if err != nil {
-		log.Printf("[SOCKS5-SERVER] ❌ 监听器创建失败: %v", err)
-		return
-	}
+// serveReverseSocks 在已绑定的 Agent 监听器上接受回连：校验魔法包后建立 mux 会话，
+// 并在 SOCKS 端口上按连接提供隧道。
+func serveReverseSocks(ln net.Listener, agentListenAddress, socksListenAddress, psk, username, password string) {
+	// 注册必须在绑定成功之后（由 ReverseSocksServer 保证），避免失败时把 nil 监听器写入 map
 	MuSocks5Server.Lock()
 	Socks5Server[agentListenAddress] = ln
 	MuSocks5Server.Unlock()
 
-	log.Printf("[SOCKS5-SERVER] ✅ 监听器创建成功，等待Agent连接...")
+	log.Printf("[SOCKS5-SERVER] ✅ 监听器就绪，等待Agent连接: %s", agentListenAddress)
 
 	for {
 		conn, err := ln.Accept()
@@ -155,6 +104,19 @@ func ReverseSocksServer(agentListenAddress, socksListenAddress, psk, certFile, k
 			session.Close()
 		}()
 	}
+}
+
+// ReverseSocksServer 绑定 Agent 监听器并启动反向 SOCKS5 服务，返回绑定好的监听器。
+// 绑定是同步的：端口被占用等失败会作为错误返回给启动接口，而不是像原实现那样
+// 在 goroutine 内绑定、失败只打日志却仍然报"启动成功"。
+// 原 certFile/keyFile 参数从未被任何调用方使用（恒为空），一并移除。
+func ReverseSocksServer(agentListenAddress, socksListenAddress, psk, username, password string) (net.Listener, error) {
+	ln, err := net.Listen("tcp", agentListenAddress)
+	if err != nil {
+		return nil, fmt.Errorf("Agent 端口绑定失败: %w", err)
+	}
+	go serveReverseSocks(ln, agentListenAddress, socksListenAddress, psk, username, password)
+	return ln, nil
 }
 
 // Accepts connections and tunnels the traffic to the SOCKS server running on the client.

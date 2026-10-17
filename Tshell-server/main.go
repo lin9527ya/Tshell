@@ -241,6 +241,16 @@ func main() {
 	proxy.InitTunnelManager()
 	fmt.Println("✅ 隧道管理器初始化成功")
 
+	// 隧道不随重启自动恢复（需要客户端在线并重新回连 Agent 端口），但必须把库里的
+	// 状态置停：否则界面显示"运行中"而实际没有监听，点停止还会报"不存在或未运行"。
+	// 置停前把原记录列出来，避免操作员不知道重启前有哪些在跑。
+	if stopped := proxy.ResetTunnelStatusOnStartup(); len(stopped) > 0 {
+		fmt.Printf("⚠️ 已置停 %d 个隧道代理（不自动恢复，需手动启动）：\n", len(stopped))
+		for _, t := range stopped {
+			fmt.Printf("   [%s] :%d -> %s\n", t.Protocol, t.ServerPort, t.TargetAddress)
+		}
+	}
+
 	// 设置TCP连接到隧道管理器的回调函数
 	tcp.RegisterTunnelConnection = func(uid string, conn net.Conn) {
 		if proxy.GlobalTunnelManager != nil {
