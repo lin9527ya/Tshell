@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 
@@ -30,6 +31,14 @@ func isSkippablePath(path string) bool {
 // 【安全修复】大响应（文件下载 MB 级、投递载荷）不做全量缓冲，
 // 防止公开端点被利用放大内存 DoS。
 const maxBufferedResponseSize = 256 * 1024 // 256KB（仅缓冲敏感 API 响应体）
+
+// 文件操作审计的请求体预读上限：
+// 不超过 maxFileAuditBodyBytes 的整包读（JSON 请求体远小于此）；
+// 超过的只预读 fileAuditPeekBytes 前缀，避免大文件上传被整包缓冲进内存。
+const (
+	maxFileAuditBodyBytes = 256 * 1024
+	fileAuditPeekBytes    = 64 * 1024
+)
 
 // responseBodyWriter 包装gin的ResponseWriter以捕获响应体（限长）
 type responseBodyWriter struct {
@@ -175,6 +184,28 @@ func LoginAuditMiddleware() gin.HandlerFunc {
 	}
 }
 
+// readFileAuditBody 读取用于提取目标路径的请求体，返回读到的字节，
+// 并把请求体原样还原给 handler（大请求体只预读前缀，必须用 MultiReader 拼回去）。
+//
+// 必须限量：文件上传的请求体可达数百 MB，无上限 ReadAll 会让每个请求先整包驻留内存
+// ——放宽上传上限之后，这里就是一个内存放大器。
+func readFileAuditBody(c *gin.Context) []byte {
+	if c.Request.Body == nil {
+		return nil
+	}
+	if c.Request.ContentLength >= 0 && c.Request.ContentLength <= maxFileAuditBodyBytes {
+		body, _ := io.ReadAll(c.Request.Body)
+		c.Request.Body = io.NopCloser(bytes.NewBuffer(body))
+		return body
+	}
+	// 大请求体 / 分块传输：只预读前缀（够覆盖 multipart 头与 JSON 前几个字段）
+	peek := make([]byte, fileAuditPeekBytes)
+	n, _ := io.ReadFull(c.Request.Body, peek)
+	body := peek[:n]
+	c.Request.Body = io.NopCloser(io.MultiReader(bytes.NewReader(body), c.Request.Body))
+	return body
+}
+
 // FileOperationAuditMiddleware 文件操作审计中间件
 func FileOperationAuditMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -187,12 +218,7 @@ func FileOperationAuditMiddleware() gin.HandlerFunc {
 		}
 		c.Writer = bodyWriter
 
-		// 读取请求体
-		var requestBody []byte
-		if c.Request.Body != nil {
-			requestBody, _ = io.ReadAll(c.Request.Body)
-			c.Request.Body = io.NopCloser(bytes.NewBuffer(requestBody))
-		}
+		requestBody := readFileAuditBody(c)
 
 		// 处理请求
 		c.Next()
@@ -339,68 +365,174 @@ func extractUsernameFromRequest(body []byte) string {
 	return ""
 }
 
+// fileOperationRoute 一条需要记录文件操作审计的路由。
+//
+// 按精确路径登记，而不是像原来那样猜前缀：中间件挂在 fileAPI/operatorFile 上，
+// 挂上去的每条路由都必须在这里有对应项，否则该路由不会产生任何文件操作审计。
+// 原实现只匹配 /api/upload、/api/file 这类前缀，而实际挂载的全是 /api/client/file/*，
+// 于是一条日志都没产生过；请求体字段名也全对不上（找的是 path/file/filename，
+// 实际用的是 filePath/dirPath/oldPath/uploadPath）。route_policy_test 会校验对应关系。
+type fileOperationRoute struct {
+	path      string   // 精确请求路径；以 "/" 结尾表示前缀匹配（路径参数在末段）
+	operation string   // 审计里记录的操作名
+	pathKeys  []string // 从请求体提取目标路径的字段名，按优先级取第一个非空
+	joinPaths bool     // 多个字段都要记（rename/copy 的新旧路径）时拼成 "旧 → 新"
+	fromURI   bool     // 路径取自 URI 末段（文件名在路径里，不在请求体里）
+}
+
+var fileOperationRoutes = []fileOperationRoute{
+	// 浏览 / 读取
+	{path: "/api/client/file/tree", operation: "BROWSE", pathKeys: []string{"dirPath"}},
+	{path: "/api/client/file/search", operation: "SEARCH", pathKeys: []string{"dirPath", "keyword", "pattern"}},
+	{path: "/api/client/file/drives", operation: "LIST_DRIVES"},
+	{path: "/api/client/file/edit/read", operation: "READ", pathKeys: []string{"filePath"}},
+	{path: "/api/client/downloads/info", operation: "LIST_DOWNLOADS"},
+	// 变更
+	{path: "/api/client/file/create", operation: "CREATE_FILE", pathKeys: []string{"filePath"}},
+	{path: "/api/client/file/mkdir", operation: "CREATE_DIR", pathKeys: []string{"dirPath"}},
+	{path: "/api/client/file/edit/write", operation: "WRITE", pathKeys: []string{"filePath"}},
+	{path: "/api/client/file/delete", operation: "DELETE", pathKeys: []string{"filePath"}},
+	{path: "/api/client/file/rename", operation: "MOVE", pathKeys: []string{"oldPath", "newPath"}, joinPaths: true},
+	{path: "/api/client/file/copy", operation: "COPY", pathKeys: []string{"oldPath", "newPath"}, joinPaths: true},
+	{path: "/api/client/file/modifytime", operation: "MODIFY_TIME", pathKeys: []string{"filePath"}},
+	{path: "/api/client/file/hide", operation: "HIDE", pathKeys: []string{"filePath"}},
+	{path: "/api/client/file/unhide", operation: "UNHIDE", pathKeys: []string{"filePath"}},
+	// 上传 / 下载
+	{path: "/api/client/file/upload", operation: "UPLOAD", pathKeys: []string{"filename", "uploadPath"}},
+	{path: "/api/client/file/download", operation: "DOWNLOAD", pathKeys: []string{"filePath"}},
+	{path: "/api/client/downloads/downloaded_file", operation: "DOWNLOAD", pathKeys: []string{"filePath"}},
+	{path: "/api/client/downloads/delete", operation: "DELETE", pathKeys: []string{"filePath"}},
+	// 插件仓库：当前挂在 operatorOnly 上，handler 内已单独记 LogFileOperation；
+	// 这里登记是为了万一改挂本中间件时同样生效
+	{path: "/api/plugin/upload", operation: "UPLOAD", pathKeys: []string{"filename"}},
+	{path: "/api/plugin/download/", operation: "DOWNLOAD", fromURI: true},
+	{path: "/api/plugin/delete/", operation: "DELETE", fromURI: true},
+}
+
+// CoversFileOperation 报告该路径是否会记文件操作审计。
+// 供路由策略测试守卫"挂在审计组上的路由必须被登记"这一不变式。
+func CoversFileOperation(path string) bool {
+	_, ok := matchFileOperationRoute(path)
+	return ok
+}
+
+// matchFileOperationRoute 按请求路径匹配路由（忽略查询串），先精确后前缀
+func matchFileOperationRoute(uri string) (fileOperationRoute, bool) {
+	path := uri
+	if i := strings.IndexByte(path, '?'); i >= 0 {
+		path = path[:i]
+	}
+	for _, r := range fileOperationRoutes {
+		if r.path == path {
+			return r, true
+		}
+	}
+	for _, r := range fileOperationRoutes {
+		if strings.HasSuffix(r.path, "/") && strings.HasPrefix(path, r.path) {
+			return r, true
+		}
+	}
+	return fileOperationRoute{}, false
+}
+
 // 从URI和请求体中提取文件操作信息
 func extractFileOperationInfo(uri string, body []byte) (operation, filePath string) {
-	// 根据URI判断操作类型
-	if len(uri) >= 12 && uri[:12] == "/api/upload" {
-		operation = "UPLOAD"
-	} else if len(uri) >= 14 && uri[:14] == "/api/download" {
-		operation = "DOWNLOAD"
-	} else if len(uri) >= 12 && uri[:12] == "/api/delete" {
-		operation = "DELETE"
-	} else if len(uri) >= 11 && uri[:11] == "/api/mkdir" {
-		operation = "CREATE_DIR"
-	} else if len(uri) >= 9 && uri[:9] == "/api/move" {
-		operation = "MOVE"
-	} else if len(uri) >= 9 && uri[:9] == "/api/copy" {
-		operation = "COPY"
-	} else if len(uri) >= 9 && uri[:9] == "/api/file" {
-		operation = "READ"
-	} else if strings.HasPrefix(uri, "/api/plugin/upload") {
-		operation = "UPLOAD"
-	} else if strings.HasPrefix(uri, "/api/plugin/download/") {
-		operation = "DOWNLOAD"
-	} else if strings.HasPrefix(uri, "/api/plugin/delete/") {
-		operation = "DELETE"
-	} else {
+	route, ok := matchFileOperationRoute(uri)
+	if !ok {
 		return "", ""
 	}
-
-	// 插件下载/删除的文件名在 URI 末段（不在请求体里）
-	if filePath == "" {
-		for _, prefix := range []string{"/api/plugin/download/", "/api/plugin/delete/"} {
-			if !strings.HasPrefix(uri, prefix) {
-				continue
-			}
-			name := uri[len(prefix):]
-			if i := strings.IndexByte(name, '?'); i >= 0 {
-				name = name[:i]
-			}
-			if unescaped, err := url.PathUnescape(name); err == nil {
-				filePath = unescaped
-			} else {
-				filePath = name
-			}
-			break
-		}
+	if route.fromURI {
+		return route.operation, pathFromURI(uri, route.path)
 	}
-
-	// 尝试从请求体中提取文件路径
-	if len(body) > 0 {
-		var data map[string]interface{}
-		if err := json.Unmarshal(body, &data); err == nil {
-			if path, ok := data["path"]; ok {
-				filePath = path.(string)
-			} else if file, ok := data["file"]; ok {
-				filePath = file.(string)
-			} else if filename, ok := data["filename"]; ok {
-				filePath = filename.(string)
-			}
-		}
-	}
-
-	return operation, filePath
+	return route.operation, extractFilePath(route, body)
 }
+
+// pathFromURI 取 URI 末段的文件名（下载/删除类把文件名放在路径里）
+func pathFromURI(uri, prefix string) string {
+	if i := strings.IndexByte(uri, '?'); i >= 0 {
+		uri = uri[:i]
+	}
+	name := strings.TrimPrefix(uri, prefix)
+	if unescaped, err := url.PathUnescape(name); err == nil {
+		return unescaped
+	}
+	return name
+}
+
+// extractFilePath 按字段名从请求体提取目标路径。
+// 三种情况都要覆盖：正常 JSON、被截断的 JSON（大请求体只预读前缀）、multipart 表单。
+func extractFilePath(route fileOperationRoute, body []byte) string {
+	if len(body) == 0 {
+		return ""
+	}
+	if vals := jsonPathValues(route.pathKeys, body); len(vals) > 0 {
+		return joinPathValues(vals, route.joinPaths)
+	}
+	// 截断的 JSON / multipart：json.Unmarshal 会失败，但字段名与值仍在前缀里
+	vals := regexPathValues(route.pathKeys, body)
+	if len(vals) == 0 {
+		// multipart：文件名字段在 part 头里，普通字段在空行之后
+		vals = multipartValues(route.pathKeys, body)
+	}
+	return joinPathValues(vals, route.joinPaths)
+}
+
+func joinPathValues(vals []string, join bool) string {
+	if len(vals) == 0 {
+		return ""
+	}
+	if join {
+		return strings.Join(vals, " → ")
+	}
+	return vals[0]
+}
+
+// jsonPathValues 解析完整 JSON 体并按键顺序取非空字符串值
+func jsonPathValues(keys []string, body []byte) []string {
+	var data map[string]interface{}
+	if err := json.Unmarshal(body, &data); err != nil {
+		return nil
+	}
+	var out []string
+	for _, k := range keys {
+		if v, ok := data[k].(string); ok && v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+// regexPathValues 从（可能被截断的）请求体里按 `"key":"value"` 抓值
+func regexPathValues(keys []string, body []byte) []string {
+	var out []string
+	for _, k := range keys {
+		re := regexp.MustCompile(`"` + regexp.QuoteMeta(k) + `"\s*:\s*"((?:[^"\\]|\\.)*)"`)
+		if m := re.FindSubmatch(body); m != nil && len(m[1]) > 0 {
+			out = append(out, string(m[1]))
+		}
+	}
+	return out
+}
+
+// multipartValues 从 multipart 体里取字段值：filename="..." 或 name="k" 空行后的值
+func multipartValues(keys []string, body []byte) []string {
+	var out []string
+	for _, k := range keys {
+		if k == "filename" {
+			if m := multipartFilenameRe.FindSubmatch(body); m != nil && len(m[1]) > 0 {
+				out = append(out, string(m[1]))
+			}
+			continue
+		}
+		re := regexp.MustCompile(`name="` + regexp.QuoteMeta(k) + `"\r?\n\r?\n([^\r\n]*)`)
+		if m := re.FindSubmatch(body); m != nil && len(m[1]) > 0 {
+			out = append(out, string(m[1]))
+		}
+	}
+	return out
+}
+
+var multipartFilenameRe = regexp.MustCompile(`filename="([^"]*)"`)
 
 // 根据HTTP状态码获取结果
 func getResultFromStatus(statusCode int) string {

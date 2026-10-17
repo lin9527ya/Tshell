@@ -5,6 +5,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"BackendTemplate/pkg/audit"
 )
 
 // TestPluginRoutePolicy 守卫插件仓库的路由分组：
@@ -87,4 +89,31 @@ func TestBodyLimitPolicy(t *testing.T) {
 			t.Errorf("上传接口 %s 未登记请求体上限（会卡在全局 10MB）", p)
 		}
 	}
+}
+
+// TestFileAuditRoutePolicy 守卫"挂在文件操作审计组上的路由必须被登记"这一不变式。
+// FileOperationAuditMiddleware 只对登记过的路径产生日志，而它原来一条都没登记
+// （前缀表认的是 /api/upload、/api/file，实际挂载的全是 /api/client/file/*），
+// 于是这些路由从来没有产生过文件级审计。新增路由时漏登记会在这里失败。
+func TestFileAuditRoutePolicy(t *testing.T) {
+	src, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatalf("读取 main.go 失败: %v", err)
+	}
+
+	re := regexp.MustCompile(`(?m)^\s*(fileAPI|operatorFile)\.(?:GET|POST|DELETE|PUT)\("(/[^"]*)"`)
+	routes := re.FindAllStringSubmatch(string(src), -1)
+	if len(routes) == 0 {
+		t.Fatal("没有解析到任何挂载在 fileAPI/operatorFile 上的路由（中间件是否已被移除？）")
+	}
+
+	for _, m := range routes {
+		// main.go 里注册的是组内相对路径（fileAPI/operatorFile 都挂在 /api 下）
+		fullPath := "/api" + m[2]
+		if !audit.CoversFileOperation(fullPath) {
+			t.Errorf("%s.%s 挂在文件操作审计组上，但未在 pkg/audit 的 fileOperationRoutes 里登记（该路由不会产生任何文件操作审计）",
+				m[1], fullPath)
+		}
+	}
+	t.Logf("已校验 %d 条文件路由的审计覆盖", len(routes))
 }
