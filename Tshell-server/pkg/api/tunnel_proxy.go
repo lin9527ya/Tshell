@@ -15,6 +15,18 @@ import (
 )
 
 // TunnelProxyRequest 隧道代理请求结构
+// tunnelPasswordMask 隧道密码的固定掩码：不回显任何字符，也不泄露长度。
+// 含 maskedMarker（****），后端据此识别"这是掩码，不是真实值"。
+const tunnelPasswordMask = "******"
+
+// maskTunnelPassword 密码脱敏；空密码保持空（前端据此显示 "-"）
+func maskTunnelPassword(p string) string {
+	if p == "" {
+		return ""
+	}
+	return tunnelPasswordMask
+}
+
 // checkTunnelPortAvailable 校验业务端口及其 Agent 端口（= 端口 + 1000）在服务端范围内可用。
 // 两张表都要查：新表 TunnelProxy 与旧版 Socks5 各管一套隧道，不交叉校验的话同一端口可以在
 // 两张表里各建一条，直到 bind 时才撞车；同时 Agent 端口也参与占用判定 —— 端口 5000 的隧道
@@ -130,6 +142,11 @@ func CreateTunnelProxy(c *gin.Context) {
 		return
 	}
 
+	// 列表回给前端的是掩码：粘贴过来的掩码会被当成真实密码，直接拒绝
+	if isMaskedValue(req.Password) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "检测到脱敏掩码，请填写真实密码"})
+		return
+	}
 	if err := requireTunnelAuth(req.Protocol, req.Username, req.Password); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -214,7 +231,7 @@ func CreateTunnelProxy(c *gin.Context) {
 			TargetAddress: tunnel.TargetAddress,
 			Note:          tunnel.Note,
 			Username:      tunnel.Username,
-			Password:      tunnel.Password,
+			Password:      maskTunnelPassword(tunnel.Password),
 			Status:        tunnel.Status,
 			CreatedAt:     tunnel.CreatedAt,
 			UpdatedAt:     tunnel.UpdatedAt,
@@ -300,10 +317,7 @@ func GetTunnelProxyList(c *gin.Context) {
 
 	var responseList []TunnelProxyResponse
 	for _, tunnel := range tunnels {
-		hasPass := ""
-		if tunnel.Password != "" {
-			hasPass = "******"
-		}
+		hasPass := maskTunnelPassword(tunnel.Password)
 		response := TunnelProxyResponse{
 			ID:            tunnel.ID,
 			ClientUID:     tunnel.ClientUID,
@@ -387,6 +401,13 @@ func UpdateTunnelProxy(c *gin.Context) {
 		}
 		c.JSON(http.StatusNotFound, gin.H{"error": "隧道代理不存在"})
 		return
+	}
+
+	// 列表回给前端的是固定掩码，编辑框会原样回传：视为"不修改"，否则改个备注就会把
+	// 密码写成掩码，socks5/http 认证随即失效。必须放在凭据校验之前——这样"记录本无密码
+	// 却回传掩码"会归一成空密码并被校验拦下。
+	if isMaskedValue(req.Password) {
+		req.Password = tunnel.Password
 	}
 
 	if err := requireTunnelAuth(req.Protocol, req.Username, req.Password); err != nil {

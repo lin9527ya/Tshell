@@ -550,6 +550,11 @@ func Socks5Update(c *gin.Context) {
 		return
 	}
 
+	// 列表回给前端的是掩码，原样回传视为"不修改"（与留空同义）
+	if isMaskedValue(requestBody.Password) {
+		requestBody.Password = ""
+	}
+
 	log.Printf("[SOCKS5-API] 🔍 更新代理记录 ID: %d", requestBody.ID)
 
 	// 查找代理记录

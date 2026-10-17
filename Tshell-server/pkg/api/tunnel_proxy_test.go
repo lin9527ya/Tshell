@@ -142,3 +142,56 @@ func TestCheckTunnelPortAvailable(t *testing.T) {
 		t.Errorf("旧表更新排除自身后应通过，实际 %v", err)
 	}
 }
+
+// TestUpdateTunnelProxyKeepsMaskedPassword 列表接口回给前端的是固定掩码 "******"，前端编辑
+// 对话框会把它原样回传。若不识别，改个备注就会把密码写成掩码——socks5/http 的认证随即失效。
+func TestUpdateTunnelProxyKeepsMaskedPassword(t *testing.T) {
+	setupMaskTestDB(t)
+
+	tun := database.TunnelProxy{
+		ClientUID: "uid-x", Protocol: "socks5", ServerPort: 19601,
+		Username: "op", Password: "real-secret", Status: 0,
+	}
+	database.Engine.Insert(&tun)
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.PUT("/tunnel-proxy/:id", UpdateTunnelProxy)
+
+	// 模拟前端：密码字段是列表里的掩码，只改备注
+	body := fmt.Sprintf(`{"client_uid":"uid-x","protocol":"socks5","server_port":19601,"username":"op","password":"******","note":"edited"}`)
+	req := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/tunnel-proxy/%d", tun.ID), strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("更新应成功，实际 %d: %s", w.Code, w.Body.String())
+	}
+
+	var got database.TunnelProxy
+	database.Engine.ID(tun.ID).Get(&got)
+	if got.Password != "real-secret" {
+		t.Errorf("掩码应视为不修改，密码被改成了 %q", got.Password)
+	}
+	if got.Note != "edited" {
+		t.Errorf("备注应已更新，实际 %q", got.Note)
+	}
+}
+
+// TestCreateTunnelProxyRejectsMaskedPassword 创建时粘贴掩码应当拒绝（那张掩码会被当成真实密码）
+func TestCreateTunnelProxyRejectsMaskedPassword(t *testing.T) {
+	setupMaskTestDB(t)
+	database.Engine.Insert(&database.Clients{Uid: "uid-tunnel", Online: "1", Listener: "tcp"})
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.POST("/tunnel-proxy/", CreateTunnelProxy)
+	body := `{"client_uid":"uid-tunnel","protocol":"tcp","server_port":19602,"password":"******"}`
+	req := httptest.NewRequest(http.MethodPost, "/tunnel-proxy/", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("创建时提交掩码应被拒，实际 %d: %s", w.Code, w.Body.String())
+	}
+}
