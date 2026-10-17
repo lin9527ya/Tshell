@@ -278,3 +278,30 @@ func TestLootIngestWiring(t *testing.T) {
 		t.Error("main.go 没有把 api.IngestLootFromOutput 注入到 command.LootIngestFunc")
 	}
 }
+
+// TestSecureCookiePerRequest 登录/续期 Cookie 的 Secure 属性必须按请求判定。
+// 原实现用全局 secureCookie（SetSecureCookieEnabled 全仓零调用）→ 永远 false。
+func TestSecureCookiePerRequest(t *testing.T) {
+	src, err := os.ReadFile("pkg/api/users.go")
+	if err != nil {
+		t.Fatalf("读取 users.go 失败: %v", err)
+	}
+	text := string(src)
+	if strings.Contains(text, "var secureCookie") || strings.Contains(text, "Secure: secureCookie") {
+		t.Error("仍在用全局 secureCookie 开关（应由 isSecureRequest 按请求判定）")
+	}
+	if n := strings.Count(text, "Secure: isSecureRequest(c)"); n != 4 {
+		t.Errorf("按请求判定 Secure 的 SetCookie 站点数为 %d，期望 4（登录 2 + 续期 2）", n)
+	}
+}
+
+// TestIOCReportLoginFailuresWiring IOC 报告的登录失败字段原来恒为空，必须真的从审计日志取。
+func TestIOCReportLoginFailuresWiring(t *testing.T) {
+	src, err := os.ReadFile("pkg/api/report.go")
+	if err != nil {
+		t.Fatalf("读取 report.go 失败: %v", err)
+	}
+	if !strings.Contains(string(src), "audit.QueryLoginFailures") {
+		t.Error("IOC 报告没有填充 LoginFailures（该字段会恒为空）")
+	}
+}

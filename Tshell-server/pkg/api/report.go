@@ -1,6 +1,7 @@
 package api
 
 import (
+	"BackendTemplate/pkg/audit"
 	"BackendTemplate/pkg/database"
 	"BackendTemplate/pkg/security"
 	"fmt"
@@ -179,7 +180,12 @@ func GetIOCReport(c *gin.Context) {
 			}
 		}
 	}
-	// 审计:登录失败源 IP + 封禁 IP
+	// 审计:登录失败（最近 7 天，最多 50 条；从落盘审计日志取，与 /api/audit/logs 同源）
+	// 原实现把 LoginFailures 初始化为空数组后再也没填充过，报告里这个字段恒为空。
+	if fails := audit.QueryLoginFailures(time.Now().Add(-7*24*time.Hour), 50); len(fails) > 0 {
+		rep.LoginFailures = fails
+	}
+	// 封禁 IP
 	if security.GlobalRateLimiter != nil {
 		for _, b := range security.GlobalRateLimiter.GetBlockedIPs() {
 			if ip, ok := b["ip"].(string); ok {

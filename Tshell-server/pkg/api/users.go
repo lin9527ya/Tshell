@@ -17,12 +17,18 @@ import (
 	"BackendTemplate/pkg/utils/logx"
 )
 
-// secureCookie 登录 Cookie 是否启用 Secure 属性（HTTPS 部署时应为 true；由 main 初始化）
-var secureCookie = false
-
-// SetSecureCookieEnabled 设置登录 Cookie 的 Secure 属性（main 启动时根据 TLS/配置调用）
-func SetSecureCookieEnabled(enabled bool) {
-	secureCookie = enabled
+// isSecureRequest 判断当前请求是否经 HTTPS：直连 TLS（r.TLS != nil）或反向代理标记
+// （X-Forwarded-Proto: https）。
+//
+// 登录 Cookie 的 Secure 属性按**请求**判定，而不是全局开关：HTTP 部署下强制 Secure
+// 会让浏览器拒绝保存 Cookie（登录后立刻掉线），HTTPS 部署下不设置则明文请求会泄露会话。
+// 原实现用一个从未被赋值的全局 secureCookie（SetSecureCookieEnabled 全仓零调用），
+// 等于永远不设置 Secure；这里改为按请求判定，并去掉那个空开关。
+func isSecureRequest(c *gin.Context) bool {
+	if c.Request.TLS != nil {
+		return true
+	}
+	return strings.EqualFold(c.GetHeader("X-Forwarded-Proto"), "https")
 }
 
 // DeviceFingerprint 设备指纹
@@ -84,11 +90,11 @@ func RefreshTokenHandler(c *gin.Context) {
 	// D43: 响应携带新 refresh token（旧 token 已吊销），并续期 HttpOnly Cookie
 	http.SetCookie(c.Writer, &http.Cookie{
 		Name: "access_token", Value: accessToken, Path: "/", MaxAge: 15 * 60,
-		Secure: secureCookie, HttpOnly: true, SameSite: http.SameSiteLaxMode,
+		Secure: isSecureRequest(c), HttpOnly: true, SameSite: http.SameSiteLaxMode,
 	})
 	http.SetCookie(c.Writer, &http.Cookie{
 		Name: "refresh_token", Value: newRefreshToken, Path: "/", MaxAge: 7 * 24 * 3600,
-		Secure: secureCookie, HttpOnly: true, SameSite: http.SameSiteLaxMode,
+		Secure: isSecureRequest(c), HttpOnly: true, SameSite: http.SameSiteLaxMode,
 	})
 
 	c.JSON(http.StatusOK, gin.H{"code": 200, "data": gin.H{
@@ -217,13 +223,13 @@ func LoginHandler(c *gin.Context) {
 	// 避免手动 Get/Set 折叠丢失 refresh_token）。均 HttpOnly + SameSite=Lax（防 XSS 窃取 / CSRF 跨站携带）
 	http.SetCookie(c.Writer, &http.Cookie{
 		Name: "access_token", Value: accessToken, Path: "/", MaxAge: 15 * 60,
-		Secure: secureCookie, HttpOnly: true, SameSite: http.SameSiteLaxMode,
+		Secure: isSecureRequest(c), HttpOnly: true, SameSite: http.SameSiteLaxMode,
 	})
 	// refresh token 持久化 HttpOnly Cookie（有效期与 jwt.refresh_token_ttl 一致，默认 7 天）：
 	// 页面刷新后仍可凭 Cookie 续期，避免"过段时间自动退出登录"
 	http.SetCookie(c.Writer, &http.Cookie{
 		Name: "refresh_token", Value: refreshToken, Path: "/", MaxAge: 7 * 24 * 3600,
-		Secure: secureCookie, HttpOnly: true, SameSite: http.SameSiteLaxMode,
+		Secure: isSecureRequest(c), HttpOnly: true, SameSite: http.SameSiteLaxMode,
 	})
 
 	errors.RespondWithSuccess(c, responseData)

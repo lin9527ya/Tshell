@@ -300,6 +300,29 @@ func queryLogs(params LogQueryParams) ([]AuditLog, int, error) {
 	return allLogs[start:end], total, nil
 }
 
+// QueryLoginFailures 读取落盘审计日志，返回 since 之后的登录失败记录（时间倒序，最多 limit 条）。
+// 与 /api/audit/logs 同源，供 IOC 报告等聚合使用；失败时返回 nil（调用方保持空数组）。
+func QueryLoginFailures(since time.Time, limit int) []string {
+	if GlobalAuditLogger == nil || limit <= 0 {
+		return nil
+	}
+	logs, _, err := queryLogs(LogQueryParams{
+		StartTime: &since,
+		Category:  CategoryAuth,
+		Result:    "FAILURE",
+		Page:      1,
+		PageSize:  limit,
+	})
+	if err != nil {
+		return nil
+	}
+	out := make([]string, 0, len(logs))
+	for _, l := range logs {
+		out = append(out, fmt.Sprintf("%s %s@%s", l.Timestamp.Format("2006-01-02 15:04:05"), l.Username, l.ClientIP))
+	}
+	return out
+}
+
 // readLogFile 读取单个日志文件
 func readLogFile(filename string, params LogQueryParams) ([]AuditLog, error) {
 	file, err := os.Open(filename)
