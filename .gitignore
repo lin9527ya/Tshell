@@ -22,3 +22,7 @@ verify_*.exe
 
 # Claude Code 本地工作区
 .claude/
+
+# 历史开发阶段的报告（docs/archive/ 下为未纳入版本控制的本地留存文件，
+# 描述已归档的 Reacon_* 多客户端布局/旧前端路径；需要纳管时 git add -f）
+docs/archive/
