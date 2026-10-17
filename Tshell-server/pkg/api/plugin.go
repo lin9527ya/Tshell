@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -18,6 +19,111 @@ import (
 	"BackendTemplate/pkg/errors"
 	"BackendTemplate/pkg/utils/logx"
 )
+
+// pluginKindFromName 按扩展名给出插件"种类"（列表/详情展示用）。
+// 注意别与 database.Plugin.Type 混用：那一列的语义是执行模式
+// （execute-assembly / inline-bin / ...），由调用方提供；插件文件本身
+// 能推断出来的只有扩展名。
+func pluginKindFromName(name string) string {
+	switch strings.ToLower(filepath.Ext(name)) {
+	case ".exe":
+		return "exe"
+	case ".dll":
+		return "dll"
+	case ".net":
+		return "net"
+	case ".so":
+		return "so"
+	case ".dylib":
+		return "dylib"
+	case ".elf":
+		return "elf"
+	case ".bin":
+		return "bin"
+	case ".sh":
+		return "sh"
+	case ".py":
+		return "py"
+	case ".ps1":
+		return "ps1"
+	case ".o", ".obj", ".coff":
+		return "bof"
+	}
+	return "unknown"
+}
+
+// pluginOSFromName 按扩展名推断目标平台（口径同 database.Plugin.Os：windows/linux/darwin）
+func pluginOSFromName(name string) string {
+	switch strings.ToLower(filepath.Ext(name)) {
+	case ".exe", ".dll", ".net", ".ps1", ".o", ".obj", ".coff":
+		return "windows"
+	case ".so", ".elf", ".sh":
+		return "linux"
+	case ".dylib":
+		return "darwin"
+	}
+	return "" // .bin/.py 等无法判定
+}
+
+// displayOS 展示用平台：优先 DB 值，缺失时按扩展名推断
+func displayOS(name, dbOS string) string {
+	if dbOS != "" {
+		return dbOS
+	}
+	if inferred := pluginOSFromName(name); inferred != "" {
+		return inferred
+	}
+	return "unknown"
+}
+
+// shortHash 哈希前 12 位（列表/详情展示用）
+func shortHash(h string) string {
+	if h == "" {
+		return "-"
+	}
+	if len(h) > 12 {
+		return h[:12]
+	}
+	return h
+}
+
+// fileSHA256 计算文件 SHA256
+func fileSHA256(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	hasher := sha256.New()
+	if _, err := io.Copy(hasher, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(hasher.Sum(nil)), nil
+}
+
+// backfillPluginMeta 为未入库的插件文件补录元数据（哈希 + 平台推断）并写库。
+// 每个文件只在第一次列表时算一次 SHA256，之后走 DB。
+func backfillPluginMeta(pluginDir, name string, info os.FileInfo) database.Plugin {
+	row := database.Plugin{
+		Name:       name,
+		Os:         pluginOSFromName(name),
+		FileName:   name,
+		FileSize:   info.Size(),
+		UploadTime: info.ModTime(),
+	}
+	hash, err := fileSHA256(filepath.Join(pluginDir, name))
+	if err != nil {
+		logx.Warnf("[PLUGIN-API] ⚠️ 补录元数据失败（无法计算哈希）: %s: %v\n", name, err)
+		return row
+	}
+	row.FileHash = hash
+	if _, err := database.Engine.Insert(&row); err != nil {
+		logx.Warnf("[PLUGIN-API] ⚠️ 补录元数据写库失败: %s: %v\n", name, err)
+		return row
+	}
+	logx.Infof("[PLUGIN-API] 📝 已补录插件元数据（历史文件）: %s hash=%s\n", name, shortHash(hash))
+	return row
+}
 
 // auditPluginOp 记录插件仓库的文件操作审计（上传/下载/删除）。
 // 插件路由不挂 audit.FileOperationAuditMiddleware —— 该中间件对请求体做无上限
@@ -59,35 +165,24 @@ func GetPlugins(c *gin.Context) {
 		os.MkdirAll(plugginDir, os.ModePerm)
 	}
 
-	// 优先从 DB 查询（有元数据：Os/Type/Hash）
-	var dbPlugins []database.Plugin
-	_ = database.Engine.Find(&dbPlugins)
-	if len(dbPlugins) > 0 {
-		var plugins []PluginInfo
-		for _, p := range dbPlugins {
-			hash := p.FileHash
-			if len(hash) > 12 {
-				hash = hash[:12]
-			}
-			plugins = append(plugins, PluginInfo{
-				Name:         p.FileName,
-				Size:         p.FileSize,
-				LastModified: p.UploadTime,
-				Type:         p.Type,
-				Description:  fmt.Sprintf("OS:%s Hash:%s", p.Os, hash),
-			})
-		}
-		c.JSON(http.StatusOK, gin.H{"status": 200, "message": "success", "data": plugins})
-		return
-	}
-
-	// DB 为空时回退到文件系统扫描（兼容已有文件）
+	// 文件系统是事实来源：插件文件可以被手工拷入/删除，DB 只用来补元数据。
+	// 原实现是"DB 非空就完全不看目录"（文件被删仍显示幽灵条目）、"DB 空才扫目录"
+	// （元数据全丢、类型退化成扩展名）——两套口径来回切。
 	files, err := os.ReadDir(plugginDir)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"status": 500, "message": "无法读取插件目录: " + err.Error()})
 		return
 	}
-	var plugins []PluginInfo
+
+	var dbPlugins []database.Plugin
+	_ = database.Engine.Find(&dbPlugins)
+	byName := make(map[string]database.Plugin, len(dbPlugins))
+	for _, p := range dbPlugins {
+		byName[p.Name] = p
+	}
+
+	plugins := make([]PluginInfo, 0, len(files))
+	seen := make(map[string]bool, len(files))
 	for _, file := range files {
 		if file.IsDir() {
 			continue
@@ -96,27 +191,30 @@ func GetPlugins(c *gin.Context) {
 		if err != nil {
 			continue
 		}
-		ext := filepath.Ext(file.Name())
-		fileType := "unknown"
-		switch ext {
-		case ".exe":
-			fileType = "exe"
-		case ".dll":
-			fileType = "dll"
-		case ".so":
-			fileType = "so"
-		case ".bin":
-			fileType = "bin"
-		case ".sh":
-			fileType = "sh"
+		name := file.Name()
+		seen[name] = true
+
+		row, ok := byName[name]
+		if !ok {
+			// 未入库（历史文件 / 手工拷入）：补录哈希与平台，之后走 DB
+			row = backfillPluginMeta(plugginDir, name, fileInfo)
 		}
 		plugins = append(plugins, PluginInfo{
-			Name:         file.Name(),
+			Name:         name,
 			Size:         fileInfo.Size(),
 			LastModified: fileInfo.ModTime(),
-			Type:         fileType,
+			Type:         pluginKindFromName(name),
+			Description:  fmt.Sprintf("OS:%s Hash:%s", displayOS(name, row.Os), shortHash(row.FileHash)),
 		})
 	}
+
+	// DB 有行但文件已不在：不再显示幽灵条目，仅告警
+	for name := range byName {
+		if !seen[name] {
+			logx.Warnf("[PLUGIN-API] ⚠️ 插件元数据无对应文件，已从列表隐藏: %s\n", name)
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{"status": 200, "message": "success", "data": plugins})
 }
 
@@ -150,29 +248,19 @@ func GetPluginDetails(c *gin.Context) {
 		return
 	}
 
-	// 获取文件类型
-	fileType := "unknown"
-	ext := filepath.Ext(pluginName)
-
-	switch ext {
-	case ".exe":
-		fileType = "exe"
-	case ".dll":
-		fileType = "dll"
-	case ".so":
-		fileType = "so"
-	case ".py":
-		fileType = "py"
-	case ".sh":
-		fileType = "sh"
-	}
-
-	// 构建插件信息
+	// 构建插件信息（类型推断与 /plugin/list 共用一套，避免两处口径漂移）
 	pluginInfo := PluginInfo{
 		Name:         pluginName,
 		Size:         fileInfo.Size(),
 		LastModified: fileInfo.ModTime(),
-		Type:         fileType,
+		Type:         pluginKindFromName(pluginName),
+	}
+
+	// 与 /plugin/list 同口径：补上 DB 里的平台与哈希
+	var dbPlugin database.Plugin
+	if has, _ := database.Engine.Where("name = ?", pluginName).Get(&dbPlugin); has {
+		pluginInfo.Description = fmt.Sprintf("OS:%s Hash:%s",
+			displayOS(pluginName, dbPlugin.Os), shortHash(dbPlugin.FileHash))
 	}
 
 	c.JSON(http.StatusOK, gin.H{"status": 200, "message": "success", "data": pluginInfo})
