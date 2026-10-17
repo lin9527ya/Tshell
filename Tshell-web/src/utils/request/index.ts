@@ -211,7 +211,16 @@ service.interceptors.response.use(
           // 【修复】限流是临时状态，不再强制登出；轮询触限只提示并短暂放慢
           ElMessage.error(error.response.data?.msg || '请求过于频繁，请稍后再试');
         } else {
-          ElMessage.error('服务器异常');
+          // 优先展示后端文案：400/403/413 这类业务错误都带 message/error/data，
+          // 原来一律显示"服务器异常"，把"文件过大""不支持的插件类型"这类
+          // 能定位问题的信息丢掉了（blob 响应取不到字段，自然回退到通用提示）
+          const respData = error.response.data;
+          const errorMsg =
+            respData?.message ||
+            respData?.error ||
+            (typeof respData?.data === 'string' ? respData.data : '') ||
+            '服务器异常';
+          ElMessage.error(errorMsg);
         }
       } else if (error.request) {
         // 网络错误或服务器无响应

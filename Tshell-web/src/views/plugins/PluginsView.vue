@@ -858,23 +858,14 @@ Display mode: latest ${executionMode.value} run only
 
 Downloading plugin file...`;
 
-    // 从服务端下载插件文件
-    const downloadUrl = `/api/plugin/download/${pluginName}`;
-    
     pluginOutput.value += isZh.value ? '\n正在准备执行文件...' : '\nPreparing execution file...';
-    
-    // 获取插件文件内容
-    const pluginFileResponse = await fetch(downloadUrl, {
-      headers: {
-        'Authorization2': 'Bearer ' + userStore.getToken()
-      }
-    });
-    
-    if (!pluginFileResponse.ok) {
-      throw new Error(isZh.value ? `无法下载插件文件: HTTP ${pluginFileResponse.status}` : `Failed to download plugin file: HTTP ${pluginFileResponse.status}`);
-    }
-    
-    const pluginBlob = await pluginFileResponse.blob();
+
+    // 走统一封装：内部对文件名做 encodeURIComponent（原裸 fetch 直接拼路径，
+    // 文件名含空格/括号时会拼出非法 URL），并复用统一的错误处理
+    const pluginDownloadRes = await pluginApi.download_plugin(pluginName);
+    const pluginBlob = pluginDownloadRes.data instanceof Blob
+      ? pluginDownloadRes.data
+      : new Blob([pluginDownloadRes.data], { type: 'application/octet-stream' });
     const pluginFile = new File([pluginBlob], pluginName);
     
     pluginOutput.value += isZh.value ? '\n正在发送命令到客户端...' : '\nSending command to client...';
@@ -1419,12 +1410,14 @@ Check the network connection and client state`;
 // 文件上传前的处理
 const beforeUpload = (file: File) => {
   const validTypes = ['application/x-msdownload', 'application/x-executable', 'application/x-sharedlib', 'application/x-so', 'application/x-python', 'text/x-python', 'application/octet-stream'];
-  const validExtensions = ['.exe', '.net', '.elf', '.dll', '.so', '.dylib'];
+  // 与服务端 errors.ValidatePluginExtension 的白名单对齐（.bin 是插件目录里
+  // fscan.bin/god.bin 这类载荷的实际扩展名，.o/.obj/.coff 用于 BOF）
+  const validExtensions = ['.exe', '.net', '.elf', '.dll', '.so', '.dylib', '.bin', '.sh', '.py', '.ps1', '.o', '.obj', '.coff'];
   const fileName = file.name.toLowerCase();
   const hasValidExtension = validExtensions.some(ext => fileName.endsWith(ext));
   
   if (!validTypes.includes(file.type) && !hasValidExtension) {
-    ElMessage.warning(isZh.value ? '只能上传插件文件(如exe/net/elf/dll/so/dylib)' : 'Only plugin files allowed (exe/net/elf/dll/so/dylib)');
+    ElMessage.warning(isZh.value ? '只能上传插件文件(可执行载荷或脚本，如 exe/dll/so/bin/sh)' : 'Only plugin files allowed (executable payloads or scripts, e.g. exe/dll/so/bin/sh)');
     return false;
   }
   
@@ -1443,45 +1436,52 @@ const submitUpload = async () => {
     return;
   }
   
-  try {
-    for (const file of fileList.value) {
+  let okCount = 0;
+  for (const file of fileList.value) {
+    // 单个文件失败不应中断其余文件的上传（原实现一个 4xx 就跳出整个循环）
+    try {
       const response = await pluginApi.upload_plugin(file)
       if (response.data?.status === 200) {
+        okCount++;
         ElMessage.success(isZh.value ? `${file.name} 上传成功` : `${file.name} uploaded`);
       } else {
         ElMessage.error(response.data?.message || (isZh.value ? `${file.name} 上传失败` : `${file.name} upload failed`));
       }
+    } catch (error: any) {
+      // 请求层已按后端 message 弹过提示，这里只补上文件名
+      console.error(`[PLUGIN] 上传失败: ${file.name}`, error);
+      if (!error?.response) {
+        ElMessage.error(isZh.value ? `${file.name} 上传失败: ${error?.message || '未知错误'}` : `${file.name} upload failed: ${error?.message || 'unknown error'}`);
+      }
     }
-    
-    refreshPlugins();
-    // 移除自动清空文件列表和关闭对话框，由用户手动关闭
-  } catch (error) {
-    ElMessage.error(isZh.value ? '上传过程中发生错误' : 'Upload failed');
   }
+  if (okCount > 0) {
+    refreshPlugins();
+  }
+  // 移除自动清空文件列表和关闭对话框，由用户手动关闭
 };
 
-// 文件上传成功处理
-const handleUploadSuccess = (response: any, file: File) => {
-  ElMessage.success(isZh.value ? `${file.name} 上传成功` : `${file.name} uploaded`);
-  refreshPlugins();
-  // 移除自动关闭对话框逻辑，由用户手动关闭
-};
-
-// 文件上传失败处理
-const handleUploadError = (error: Error, file: File) => {
-  ElMessage.error(isZh.value ? `${file.name} 上传失败: ${error.message}` : `${file.name} upload failed: ${error.message}`);
-};
+// 上传对话框 banner 承诺"最多只能同时上传 6 个文件"，这里把它兑现
+const MAX_UPLOAD_FILES = 6;
 
 // 处理文件选择——上传到插件目录
 const handleFileSelect = (event: Event) => {
   const target = event.target as HTMLInputElement;
   if (target.files) {
     const newFiles = Array.from(target.files);
+    const accepted: File[] = [];
     for (const file of newFiles) {
       if (beforeUpload(file)) {
-        fileList.value.push(file);
+        accepted.push(file);
       }
     }
+    const room = Math.max(MAX_UPLOAD_FILES - fileList.value.length, 0);
+    if (accepted.length > room) {
+      ElMessage.warning(isZh.value
+        ? `最多只能同时上传 ${MAX_UPLOAD_FILES} 个文件`
+        : `Up to ${MAX_UPLOAD_FILES} files at a time`);
+    }
+    fileList.value.push(...accepted.slice(0, room));
   }
   target.value = ''; // 清空输入
 };
