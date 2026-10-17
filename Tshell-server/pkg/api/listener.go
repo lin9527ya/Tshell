@@ -15,6 +15,7 @@ import (
 	"BackendTemplate/pkg/connection/websocket"
 	"BackendTemplate/pkg/database"
 	"BackendTemplate/pkg/encrypt"
+	"BackendTemplate/pkg/sendcommand"
 	"fmt"
 	"log"
 	"net"
@@ -169,6 +170,21 @@ func maskListenerForResponse(l database.Listener) listenerResponse {
 		VKey:              maskSecretPreview(l.VKey),
 		EncryptionSalt:    maskSecretPreview(l.EncryptionSalt),
 	}
+}
+
+// listenerForClient 取客户端实际所属的监听器记录。
+// 优先按该客户端的连接地址精确匹配（connect_address 或 listen_address）——同类型
+// 多实例时按类型查只能取到任意一行，迁移/注入会因此拿错地址与密钥；
+// 匹配不到再按类型兜底（取最新一条，与既有行为一致）。
+func listenerForClient(uid, listenerType string) (database.Listener, bool) {
+	var lis database.Listener
+	if addr, ok := sendcommand.GetListenerAddr(uid); ok && addr != "" {
+		if has, _ := database.Engine.Where("connect_address = ? OR listen_address = ?", addr, addr).Get(&lis); has {
+			return lis, true
+		}
+	}
+	has, _ := database.Engine.Where("type = ?", listenerType).Desc("id").Get(&lis)
+	return lis, has
 }
 
 // resolveListenerAddress 把可能带脱敏标记的地址还原为库中真实地址。
@@ -429,7 +445,16 @@ func UpdateListener(c *gin.Context) {
 	// 记录更新后的状态
 	log.Printf("✅ [监听器更新] 更新成功 - ID: %d, 新地址: %s, 影响行数: %d, 状态: %d", listener.Id, listener.ListenAddress, affected, currentListener.Status)
 
-	c.JSON(http.StatusOK, gin.H{"status": 200, "data": "监听器更新成功"})
+	// 运行中的监听器在启动时就捕获了密钥（各协议都按启动参数派生会话密钥），改库不会影响它；
+	// 之后新生成的客户端用新密钥、已启动的监听器仍用旧密钥，连上即解密失败。
+	msg := "监听器更新成功"
+	if currentListener.Status == 1 &&
+		(updateData.VKey != currentListener.VKey || updateData.EncryptionSalt != currentListener.EncryptionSalt) {
+		msg += "（密钥变更需重启监听器后生效）"
+		logx.Warnf("⚠️ [监听器更新] %s 运行中修改了密钥，需重启监听器后生效\n", listener.ListenAddress)
+	}
+
+	c.JSON(http.StatusOK, gin.H{"status": 200, "data": msg})
 }
 
 // BatchDeleteListeners 批量删除监听器

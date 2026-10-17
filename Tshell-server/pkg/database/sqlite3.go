@@ -807,6 +807,39 @@ func GetListenerHeartbeatConfig(listenAddress string) (heartbeatTimeout string, 
 	return heartbeatTimeout, heartbeatInterval
 }
 
+// GetListenerHeartbeatConfigByAddr 按地址定位监听器后取心跳配置，供多实例场景使用。
+// 同类型存在多个监听器时，GetListenerHeartbeatConfigByType 只能取到任意一行，
+// 入站处理与客户端生成都可能用到另一个监听器的配置。
+// 依次尝试：connect_address 精确 → listen_address 精确 → 同类型下按端口匹配
+// （监听地址常绑通配地址，而连接的 LocalAddr 是具体 IP，只能按端口对）。
+// 定位不到或 addr 为空时回退按类型，保持既有行为。
+func GetListenerHeartbeatConfigByAddr(addr, listenerType string) (heartbeatTimeout string, heartbeatInterval string) {
+	if addr == "" || Engine == nil {
+		return GetListenerHeartbeatConfigByType(listenerType)
+	}
+	var listener Listener
+	has, err := Engine.Where("connect_address = ? OR listen_address = ?", addr, addr).Get(&listener)
+	if err == nil && !has {
+		// 端口兜底：取最后一个 ':' 之后的部分（IPv6 字面量也适用）
+		if i := strings.LastIndex(addr, ":"); i >= 0 && i < len(addr)-1 {
+			port := addr[i+1:]
+			has, _ = Engine.Where("type = ? AND listen_address LIKE ?", listenerType, "%:"+port).Get(&listener)
+		}
+	}
+	if err != nil || !has {
+		return GetListenerHeartbeatConfigByType(listenerType)
+	}
+	heartbeatTimeout = listener.HeartbeatTimeout
+	heartbeatInterval = listener.HeartbeatInterval
+	if heartbeatTimeout == "" {
+		heartbeatTimeout = "30"
+	}
+	if heartbeatInterval == "" {
+		heartbeatInterval = defaultHeartbeatInterval()
+	}
+	return heartbeatTimeout, heartbeatInterval
+}
+
 // GetListenerHeartbeatConfigByType 根据监听器类型获取活跃监听器的心跳配置
 func GetListenerHeartbeatConfigByType(listenerType string) (heartbeatTimeout string, heartbeatInterval string) {
 	var listener Listener

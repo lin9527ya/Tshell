@@ -152,7 +152,7 @@ func GenServer(c *gin.Context) {
 	var masterKey, encryptionSalt []byte
 
 	// 获取监听器的心跳配置
-	heartbeatTimeout, heartbeatInterval := database.GetListenerHeartbeatConfigByType(listenerType)
+	heartbeatTimeout, heartbeatInterval := database.GetListenerHeartbeatConfigByAddr(connectAddress, listenerType)
 	logx.Debugf("🔍 [SERVER-GEN] 获取监听器心跳配置 - 超时次数: %s, 间隔: %s秒\n", heartbeatTimeout, heartbeatInterval)
 
 	if serverBody.Vkey != "" && serverBody.EncryptSalt != "" {

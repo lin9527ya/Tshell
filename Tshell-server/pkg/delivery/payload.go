@@ -129,7 +129,7 @@ func PatchClientBinary(binaryData []byte, opt PatchOptions) ([]byte, error) {
 	// 默认链：opt.SleepSeconds(显式) > opt.HeartbeatMs 换算(profile 毫秒) > 监听器配置 > 默认 5
 	hbInterval := "10"
 	if database.Engine != nil {
-		_, hbInterval = database.GetListenerHeartbeatConfigByType(listenerType)
+		_, hbInterval = database.GetListenerHeartbeatConfigByAddr(connectAddress, listenerType)
 	}
 	sleepSeconds := hbInterval
 	if opt.SleepSeconds != "" && opt.SleepSeconds != "0" {

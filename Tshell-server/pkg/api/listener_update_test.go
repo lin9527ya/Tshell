@@ -1,8 +1,10 @@
 package api
 
 import (
+	"BackendTemplate/pkg/connection"
 	"BackendTemplate/pkg/database"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -69,5 +71,67 @@ func TestUpdateListenerGuardsRunningAddressAndType(t *testing.T) {
 	database.Engine.ID(lis.Id).Get(&moved)
 	if moved.ListenAddress != newAddr {
 		t.Errorf("地址应已更新为 %q，实际 %q", newAddr, moved.ListenAddress)
+	}
+}
+
+// TestListenerForClientPrefersPerClientAddress 迁移/注入取监听器记录时，优先用该客户端
+// 实际连接的监听器，而不是按类型取最新一条——否则同类型多实例时会拿错地址与密钥。
+func TestListenerForClientPrefersPerClientAddress(t *testing.T) {
+	setupMaskTestDB(t)
+
+	database.Engine.Insert(&database.Listener{
+		Type: "tcp", ListenAddress: "0.0.0.0:18085", ConnectAddress: "a.example.com:18085",
+		Status: 1, VKey: testVKey, EncryptionSalt: testSalt,
+	})
+	database.Engine.Insert(&database.Listener{
+		Type: "tcp", ListenAddress: "0.0.0.0:18084", ConnectAddress: "b.example.com:18084",
+		Status: 1, VKey: testVKey, EncryptionSalt: testSalt,
+	})
+
+	// 客户端实际连的是 A（id 较小，按类型 Desc(id) 会取到 B）
+	connection.MuClientListenerType.Lock()
+	connection.ClientListenerAddr["uid-on-a"] = "a.example.com:18085"
+	connection.MuClientListenerType.Unlock()
+	defer func() {
+		connection.MuClientListenerType.Lock()
+		delete(connection.ClientListenerAddr, "uid-on-a")
+		connection.MuClientListenerType.Unlock()
+	}()
+
+	lis, has := listenerForClient("uid-on-a", "tcp")
+	if !has || lis.ListenAddress != "0.0.0.0:18085" {
+		t.Errorf("应按客户端实际连接的监听器定位，实际 %q (has=%v)", lis.ListenAddress, has)
+	}
+
+	// 无逐客户端地址 → 按类型兜底（取最新一条）
+	lis, has = listenerForClient("uid-unknown", "tcp")
+	if !has || lis.ListenAddress != "0.0.0.0:18084" {
+		t.Errorf("无逐客户端地址时应按类型兜底取最新一条，实际 %q (has=%v)", lis.ListenAddress, has)
+	}
+}
+
+// TestUpdateListenerKeyChangeHint 运行中改密钥时，响应应提示需要重启监听器——
+// 运行中的监听器用启动时捕获的密钥，改库不会影响它；新生成的客户端会连不上。
+func TestUpdateListenerKeyChangeHint(t *testing.T) {
+	setupMaskTestDB(t)
+
+	const addr = "0.0.0.0:18083"
+	database.Engine.Insert(&database.Listener{
+		Type: "tcp", ListenAddress: addr, ConnectAddress: "c2.example.com:18083",
+		Status: 1, VKey: testVKey, EncryptionSalt: testSalt,
+	})
+	var lis database.Listener
+	database.Engine.Where("listen_address = ?", addr).Get(&lis)
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.POST("/listener/update", UpdateListener)
+	body := `{"id":` + fmt.Sprintf("%d", lis.Id) + `,"listenAddress":"` + addr + `","type":"tcp","vkey":"NewVKeyForRotation0123456789abcde"}`
+	_, st, msg := postJSON(t, router, "/listener/update", body)
+	if st != 200 {
+		t.Fatalf("改密钥应允许，实际 status=%d msg=%s", st, msg)
+	}
+	if !strings.Contains(msg, "重启监听器") {
+		t.Errorf("响应应提示需要重启监听器，实际 %q", msg)
 	}
 }

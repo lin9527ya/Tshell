@@ -266,7 +266,7 @@ func process_server(c *Client, stopKey, name string, masterKey, salt []byte) {
 
 		// 注册到统一离线检测器（统一心跳：优先采用客户端上报的 beacon sleep，回退监听器配置）
 		if connection.GlobalOfflineDetector != nil {
-			_, hbInterval := database.GetListenerHeartbeatConfigByType("oss")
+			_, hbInterval := database.GetListenerHeartbeatConfigByAddr(stopKey, "oss")
 			ossMeta := strings.Split(string(metainfo[9:]), "\t")
 			sleepSec := connection.ResolveSleepSeconds(ossMeta, hbInterval)
 			connection.GlobalOfflineDetector.Register(uid, "oss", sleepSec)

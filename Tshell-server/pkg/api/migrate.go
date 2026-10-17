@@ -79,9 +79,10 @@ func Migrate(c *gin.Context) {
 	}
 
 	// 2. 监听器连接地址与密钥(重建 beacon 必须与原会话同源)
-	var listener database.Listener
-	lHas, _ := database.Engine.Where("type = ? AND status = 1", listenerType).Get(&listener)
-	if !lHas {
+	// 优先按该客户端实际连接的监听器定位：同类型多实例时按类型查只能取到任意一行，
+	// 迁移出的 beacon 会带着另一个监听器的地址与密钥
+	listener, lHas := listenerForClient(client.Uid, listenerType)
+	if !lHas || listener.Status != 1 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "监听器不存在或未启用: " + listenerType})
 		return
 	}
@@ -89,9 +90,10 @@ func Migrate(c *gin.Context) {
 	if connectAddress == "" {
 		connectAddress = listener.ListenAddress
 	}
-	vkey, salt := encrypt.GetListenerKeyConfig(listenerType)
-	if encrypt.IsDefaultListenerKey(vkey, salt) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "监听器使用公开默认密钥,拒绝迁移(J4)"})
+	// 密钥取该记录自身的（与连接侧派生、客户端 patch 同源）
+	vkey, salt := encrypt.NormalizeListenerKeyConfig([]byte(listener.VKey), []byte(listener.EncryptionSalt))
+	if err := encrypt.ValidateListenerKeyConfigForStart(listener.VKey, listener.EncryptionSalt); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "监听器密钥不可用，拒绝迁移(J4): " + err.Error()})
 		return
 	}
 

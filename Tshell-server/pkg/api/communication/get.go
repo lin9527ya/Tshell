@@ -1,6 +1,8 @@
 package communication
 
 import (
+	"net"
+
 	"BackendTemplate/pkg/command"
 	"BackendTemplate/pkg/c2profile"
 	"BackendTemplate/pkg/config"
@@ -15,7 +17,6 @@ import (
 	mrand "math/rand"
 	"encoding/binary"
 	"encoding/json"
-	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -81,6 +82,16 @@ func listenerKeys(vkey, salt []byte, listenerType string) ([]byte, []byte) {
 }
 
 // GetHttp HTTP 轮询入口（未显式提供监听器密钥时按类型兜底，保持旧行为）。
+// requestListenAddr 取本次请求到达的服务端本端地址（该监听器实际绑定的地址）。
+// 多实例同类型时按类型查心跳配置只能取到任意一行，故优先按本端地址定位；
+// 取不到时返回空串，调用方回退按类型（保持原行为）。
+func requestListenAddr(r *http.Request) string {
+	if a, ok := r.Context().Value(http.LocalAddrContextKey).(net.Addr); ok && a != nil {
+		return a.String()
+	}
+	return ""
+}
+
 func GetHttp(w http.ResponseWriter, r *http.Request) {
 	GetHttpWithKeys(w, r, nil, nil)
 }
@@ -218,7 +229,7 @@ func GetHttpWithKeys(w http.ResponseWriter, r *http.Request, vkey, salt []byte) 
 		}
 
 		// 从监听器配置中获取心跳参数
-		heartbeatTimeout, heartbeatInterval := database.GetListenerHeartbeatConfigByType(listenerType)
+		heartbeatTimeout, heartbeatInterval := database.GetListenerHeartbeatConfigByAddr(requestListenAddr(r), listenerType)
 
 		database.Engine.Insert(&database.Clients{Uid: uid, FirstStart: formattedTime, ExternalIP: externalIp, InternalIP: localIP, Username: UserName, Computer: hostName, Process: processName, Pid: strconv.Itoa(int(processID)), Address: address, Arch: arch, Note: "", Sleep: strconv.Itoa(connection.ResolveSleepSeconds(osArray, heartbeatInterval)), Online: "1", Color: "", Listener: listenerType, Os: clientOs, HeartbeatTimeout: heartbeatTimeout, HeartbeatInterval: heartbeatInterval})
 		database.Engine.Insert(&database.Shell{Uid: uid, ShellContent: ""})
@@ -299,7 +310,7 @@ func GetHttpWithKeys(w http.ResponseWriter, r *http.Request, vkey, salt []byte) 
 		MuClientManager.Unlock()
 		// 统一离线检测器注册（替代 per-client checkHeartbeats goroutine）
 		if connection.GlobalOfflineDetector != nil {
-			_, hbInterval := database.GetListenerHeartbeatConfigByType(listenerType)
+			_, hbInterval := database.GetListenerHeartbeatConfigByAddr(requestListenAddr(r), listenerType)
 			// 统一心跳：优先采用客户端上报的真实 sleep，回退监听器配置
 			sleepSec := connection.ResolveSleepSeconds(osArray, hbInterval)
 			connection.GlobalOfflineDetector.Register(uid, listenerType, sleepSec, func() {
@@ -329,7 +340,7 @@ func GetHttpWithKeys(w http.ResponseWriter, r *http.Request, vkey, salt []byte) 
 			command.MarkBatchCapable(uid, command.ParseBatchCapability(strings.Split(string(metainfo[9:]), "\t")))
 			// 重连恢复：重新注册离线检测器并恢复连接类型映射（否则该客户端永不被离线检测、命令静默丢失）
 			if connection.GlobalOfflineDetector != nil {
-				_, hbInterval := database.GetListenerHeartbeatConfigByType(listenerType)
+				_, hbInterval := database.GetListenerHeartbeatConfigByAddr(requestListenAddr(r), listenerType)
 				// 统一心跳：重连恢复时重新采用客户端上报的 sleep
 				metaArr := strings.Split(string(metainfo[9:]), "\t")
 				sleepSec := connection.ResolveSleepSeconds(metaArr, hbInterval)

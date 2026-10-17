@@ -42,6 +42,7 @@ import (
 type Listener struct {
 	// addr 实际绑定的 UDP 地址；key 为登记用的监听器地址（listen_address）
 	addr        string
+	key         string
 	packetConn  net.PacketConn
 	dnsListener *dns.Server
 
@@ -148,6 +149,7 @@ func (l *Listener) stripLabelPrefix(tag string) string {
 func Start(key, addr, domain, labelPrefix string, masterKey, salt []byte) (*Listener, error) {
 	l := &Listener{
 		addr:            addr,
+		key:             key,
 		listenerDomain:  domain,
 		dnsLabelPrefix:  labelPrefix,
 		masterKey:       masterKey,
@@ -364,7 +366,7 @@ func (l *Listener) registerClient(metainfo []byte, clientIP string) string {
 
 	// 注册到统一离线检测器
 	if connection.GlobalOfflineDetector != nil {
-		_, hbInterval := database.GetListenerHeartbeatConfigByType("dns")
+		_, hbInterval := database.GetListenerHeartbeatConfigByAddr(l.key, "dns")
 		// 统一心跳：优先采用客户端上报的真实 sleep（MetaInfo 第5字段），回退监听器配置
 		dnsMeta := strings.Split(string(metainfo[9:]), "\t")
 		sleepSec := connection.ResolveSleepSeconds(dnsMeta, hbInterval)
@@ -430,7 +432,7 @@ func (l *Listener) registerClient(metainfo []byte, clientIP string) string {
 			arch = "x64"
 		}
 
-		heartbeatTimeout, heartbeatInterval := database.GetListenerHeartbeatConfigByType("dns")
+		heartbeatTimeout, heartbeatInterval := database.GetListenerHeartbeatConfigByAddr(l.key, "dns")
 		_, insertErr := database.Engine.Insert(&database.Clients{
 			Uid: uid, FirstStart: time.Now().Format("2006-01-02 15:04:05"),
 			ExternalIP: clientIP, InternalIP: localIP,

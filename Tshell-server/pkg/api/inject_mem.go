@@ -182,18 +182,11 @@ func dispatchInjectInner(uid string, pid int, tech string) error {
 		return fmt.Errorf("客户端连接类型未知")
 	}
 
-	// 监听器密钥/连接地址：优先按客户端实际连接的监听器地址精确匹配，避免同类型多监听器时取错
-	var lis database.Listener
-	if addr, ok := sendcommand.GetListenerAddr(uid); ok && addr != "" {
-		if has, _ := database.Engine.Where("listen_address = ?", addr).Get(&lis); has && lis.ListenAddress != "" {
-			// 精确匹配成功
-		} else if has, _ := database.Engine.Where("type = ?", listenerType).Desc("id").Get(&lis); !has || lis.ListenAddress == "" {
-			return fmt.Errorf("未找到 %s 监听器记录", listenerType)
-		}
-	} else {
-		if has, _ := database.Engine.Where("type = ?", listenerType).Desc("id").Get(&lis); !has || lis.ListenAddress == "" {
-			return fmt.Errorf("未找到 %s 监听器记录", listenerType)
-		}
+	// 监听器密钥/连接地址：优先按客户端实际连接的监听器定位，避免同类型多监听器时取错。
+	// （原先按 listen_address 查一个 connect_address 值，地址不同时会静默退回按类型）
+	lis, has := listenerForClient(uid, listenerType)
+	if !has || lis.ListenAddress == "" {
+		return fmt.Errorf("未找到 %s 监听器记录", listenerType)
 	}
 	connectAddress := resolveClientConnectAddress(lis)
 

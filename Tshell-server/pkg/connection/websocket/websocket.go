@@ -221,7 +221,7 @@ func handleWSConn(ws *websocket.Conn, vkey, salt []byte) {
 			}
 
 			// 监听器心跳配置(客户端二进制 patch 的同一值;离线检测器阈值用客户端上报 sleep)
-			heartbeatTimeout, heartbeatInterval := database.GetListenerHeartbeatConfigByType("websocket")
+			heartbeatTimeout, heartbeatInterval := database.GetListenerHeartbeatConfigByAddr(ws.LocalAddr().String(), "websocket")
 
 			var client database.Clients
 			exsists, _ := database.Engine.Where("uid = ?", uid).Get(&client)
