@@ -24,9 +24,6 @@ export default {
     forceKeyRotation(data: { client_id: string; force?: boolean }) {
         return request({ url: '/key-management/rotate', method: 'POST', data })
     },
-    sendKeyHealthCheck(clientId: string) {
-        return request({ url: `/key-management/health-check/${encodeURIComponent(clientId)}`, method: 'POST' })
-    },
     getKeyMetrics() {
         return request({ url: '/key-management/metrics', method: 'GET' })
     },

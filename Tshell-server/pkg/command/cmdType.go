@@ -95,7 +95,6 @@ const (
 	KEY_UPDATE_REQUEST = 91 // 密钥更新请求
 	KEY_UPDATE_CONFIRM = 92 // 密钥更新确认
 	KEY_SWITCH_READY   = 93 // 密钥切换准备就绪
-	KEY_HEALTH_CHECK   = 94 // 密钥健康检查
 
 	// 心跳命令
 	HEARTBEAT = 95 // 心跳包

@@ -42,7 +42,9 @@ async function mountSettings(permKeys: string[], initialPath = '/setting/config'
 }
 
 describe('SettingsView 页签按角色过滤', () => {
-  beforeEach(() => setActivePinia(createPinia()))
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
 
   it('admin 可见全部 8 个页签', async () => {
     const { wrapper } = await mountSettings(ADMIN)

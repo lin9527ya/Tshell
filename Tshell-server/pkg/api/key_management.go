@@ -1,11 +1,8 @@
 package api
 
 import (
-	"BackendTemplate/pkg/command"
 	"BackendTemplate/pkg/database"
 	"BackendTemplate/pkg/encrypt"
-	"BackendTemplate/pkg/sendcommand"
-	"encoding/binary"
 	"net/http"
 	"time"
 
@@ -105,34 +102,6 @@ func ForceKeyRotation(c *gin.Context) {
 		Data: map[string]interface{}{
 			"client_id": req.ClientID,
 			"timestamp": "密钥轮换已启动",
-		},
-	})
-}
-
-// SendKeyHealthCheck 发送密钥健康检查命令
-func SendKeyHealthCheck(c *gin.Context) {
-	clientID := c.Param("client_id")
-	if clientID == "" {
-		c.JSON(http.StatusBadRequest, KeyStatusResponse{
-			Status:  400,
-			Message: "客户端ID不能为空",
-		})
-		return
-	}
-
-	// 构造密钥健康检查命令
-	cmdTypeBytes := make([]byte, 4)
-	binary.BigEndian.PutUint32(cmdTypeBytes, uint32(command.KEY_HEALTH_CHECK))
-	
-	// 发送命令
-	sendcommand.SendCommand(clientID, string(cmdTypeBytes))
-
-	c.JSON(http.StatusOK, KeyStatusResponse{
-		Status:  200,
-		Message: "密钥健康检查命令发送成功",
-		Data: map[string]interface{}{
-			"client_id": clientID,
-			"command":   "KEY_HEALTH_CHECK",
 		},
 	})
 }

@@ -316,9 +316,6 @@
                     <button class="cs-btn cs-btn-xs" :disabled="!row.exists" @click="handleForceRotate(row)">
                       {{ isZh ? '强制轮换' : 'Rotate' }}
                     </button>
-                    <button class="cs-btn cs-btn-xs" style="margin-left: 4px" @click="handleKeyHealthCheck(row)">
-                      {{ isZh ? '健康检查' : 'Health Check' }}
-                    </button>
                   </template>
                 </el-table-column>
               </el-table>
@@ -509,21 +506,6 @@ async function handleForceRotate(row: any) {
       ElMessage.error(e?.message || (isZh.value ? '密钥轮换失败' : 'Key rotation failed'))
     }
   }).catch(() => {})
-}
-
-async function handleKeyHealthCheck(row: any) {
-  if (!row?.client_id) return
-  try {
-    const res = await KeyManagementAPI.sendKeyHealthCheck(row.client_id)
-    if (res?.data?.status === 200) {
-      ElMessage.success(isZh.value ? `健康检查命令已下发至 ${row.client_id}` : `Health check dispatched to ${row.client_id}`)
-      refreshKeyRow(row.client_id)
-    } else {
-      ElMessage.error(res?.data?.message || (isZh.value ? '健康检查下发失败' : 'Health check dispatch failed'))
-    }
-  } catch (e: any) {
-    ElMessage.error(e?.message || (isZh.value ? '健康检查下发失败' : 'Health check dispatch failed'))
-  }
 }
 
 async function handleSaveRotationConfig() {

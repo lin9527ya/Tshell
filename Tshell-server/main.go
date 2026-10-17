@@ -653,7 +653,6 @@ func main() {
 		keyManagement.GET("/key-status", api.GetAllKeyStatus)
 		keyManagement.GET("/key-status/:client_id", api.GetKeyStatus)
 		keyManagement.POST("/rotate", api.ForceKeyRotation)
-		keyManagement.POST("/health-check/:client_id", api.SendKeyHealthCheck)
 		keyManagement.GET("/metrics", api.GetKeyMetrics)
 		keyManagement.PUT("/rotation-config", api.ConfigureKeyRotation)
 	}
