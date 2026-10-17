@@ -419,6 +419,30 @@ func SanitizeInput(input string) string {
 	return strings.TrimSpace(input)
 }
 
+// pluginAllowedExts 插件文件允许的扩展名。与前端上传对话框的 accept 属性
+// （.exe,.net,.elf,.dll,.so,.dylib）对齐，并覆盖插件目录里实际存在的类型
+// （.bin 的 fscan.bin/god.bin/payload.bin）与 BOF 的 COFF 目标文件。
+//
+// 注意：扩展名不是安全边界——把 payload.exe 改名成 payload.bin 就能绕过。
+// 它挡的是"明显放错的文件"（图片、压缩包、无扩展名），不是攻击者。
+var pluginAllowedExts = map[string]bool{
+	".exe": true, ".dll": true, ".net": true, ".so": true, ".dylib": true,
+	".elf": true, ".bin": true, ".sh": true, ".py": true, ".ps1": true,
+	".o": true, ".obj": true, ".coff": true,
+}
+
+// ValidatePluginExtension 校验插件扩展名是否在允许集内
+func ValidatePluginExtension(name string) error {
+	ext := strings.ToLower(filepath.Ext(name))
+	if ext == "" {
+		return NewValidationError("插件文件缺少扩展名")
+	}
+	if !pluginAllowedExts[ext] {
+		return NewValidationError("不支持的插件类型 " + ext + "（允许：.exe/.dll/.net/.so/.dylib/.elf/.bin/.sh/.py/.ps1/.o/.obj/.coff）")
+	}
+	return nil
+}
+
 // ValidatePluginName 校验插件文件名：仅允许普通文件名（禁止路径分隔符、..、空字节与绝对路径）
 func ValidatePluginName(name string) error {
 	if name == "" {

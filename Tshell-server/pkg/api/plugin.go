@@ -281,26 +281,46 @@ func DownloadPlugin(c *gin.Context) {
 
 	// 获取文件路径
 	filePath := filepath.Join(plugginDir, plugginName)
-	_, err := os.Stat(filePath)
+	fileInfo, err := os.Stat(filePath)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"status": 404, "message": "插件不存在"})
 		return
 	}
 
+	// 打开一次，校验与发送共用同一个句柄：原实现先 os.Open 校验、再 c.File 二次打开，
+	// 两次打开之间存在被替换的窗口；且 os.Open 失败时 `if err == nil` 会让校验被静默跳过。
+	f, err := os.Open(filePath)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"status": 500, "message": "打开插件文件失败: " + err.Error()})
+		return
+	}
+	defer f.Close()
+	fileSize := fileInfo.Size() // 用磁盘真实大小：DB 无行时 FileSize 为 0，会发出空 body
+
 	// P5: 下载前校验文件完整性（与 DB 存储的 SHA256 比对，防篡改）
 	var dbPlugin database.Plugin
-	has, _ := database.Engine.Where("name = ?", plugginName).Get(&dbPlugin)
-	if has && dbPlugin.FileHash != "" {
-		f, err := os.Open(filePath)
-		if err == nil {
-			hasher := sha256.New()
-			io.Copy(hasher, f)
-			f.Close()
-			actualHash := hex.EncodeToString(hasher.Sum(nil))
-			if actualHash != dbPlugin.FileHash {
-				c.JSON(http.StatusForbidden, gin.H{"status": 403, "message": "插件文件完整性校验失败(可能被篡改)，拒绝下载"})
-				return
-			}
+	has, dbErr := database.Engine.Where("name = ?", plugginName).Get(&dbPlugin)
+	if dbErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"status": 500, "message": "读取插件元数据失败: " + dbErr.Error()})
+		return
+	}
+	if !has || dbPlugin.FileHash == "" {
+		// 未走过 /plugin/list 的历史文件：没有基准哈希可比，放行但留痕
+		logx.Warnf("[PLUGIN-DOWNLOAD] ⚠️ 插件缺少完整性元数据，跳过校验: %s\n", plugginName)
+	} else {
+		hasher := sha256.New()
+		if _, err := io.Copy(hasher, f); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"status": 500, "message": "计算哈希失败: " + err.Error()})
+			return
+		}
+		if hex.EncodeToString(hasher.Sum(nil)) != dbPlugin.FileHash {
+			logx.Warnf("[PLUGIN-DOWNLOAD] ⚠️ 完整性校验失败（疑似被篡改）: %s\n", plugginName)
+			c.JSON(http.StatusForbidden, gin.H{"status": 403, "message": "插件文件完整性校验失败(可能被篡改)，拒绝下载"})
+			return
+		}
+		if _, err := f.Seek(0, io.SeekStart); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"status": 500, "message": "读取插件文件失败: " + err.Error()})
+			return
 		}
 	}
 
@@ -317,9 +337,9 @@ func DownloadPlugin(c *gin.Context) {
 	c.Header("Content-Disposition", "attachment; filename="+plugginName)
 	c.Header("Content-Type", "application/octet-stream")
 
-	// 返回文件
+	// 返回文件（复用已校验的句柄，避免二次打开）
 	logx.Infof("[PLUGIN-DOWNLOAD] ✅ 插件下载成功: %s\n", plugginName)
-	c.File(filePath)
+	c.DataFromReader(http.StatusOK, fileSize, "application/octet-stream", f, nil)
 }
 
 // UploadPlugin 上传插件
@@ -352,6 +372,10 @@ func UploadPlugin(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"status": 400, "message": "文件名非法: " + err.Error()})
 		return
 	}
+	if err := errors.ValidatePluginExtension(filename); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"status": 400, "message": err.Error()})
+		return
+	}
 	pluginDir := config.GetPluginDir()
 	dst := filepath.Join(pluginDir, filename)
 	if err := c.SaveUploadedFile(file, dst); err != nil {
@@ -359,23 +383,21 @@ func UploadPlugin(c *gin.Context) {
 		return
 	}
 
-	// P5: 计算 SHA256 完整性校验
-	f, err := os.Open(dst)
+	// P5: 计算 SHA256 完整性校验（下载时以此为基准比对）
+	fileHash, err := fileSHA256(dst)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"status": 500, "message": "打开文件失败: " + err.Error()})
-		return
-	}
-	defer f.Close()
-	hasher := sha256.New()
-	if _, err := io.Copy(hasher, f); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"status": 500, "message": "计算哈希失败: " + err.Error()})
 		return
 	}
-	fileHash := hex.EncodeToString(hasher.Sum(nil))
 	fileSize := file.Size
 
-	// 获取可选的 Os/Type 参数（前端可传，默认空）
+	// Os/Type 由调用方提供时以调用方为准；前端目前不传，Os 按扩展名推断
+	// （database.Plugin.Os 的口径就是 windows/linux/darwin）。
+	// Type 列是执行模式（execute-assembly/inline-bin/...），推断不出来就不猜。
 	osType := c.PostForm("os")
+	if osType == "" {
+		osType = pluginOSFromName(filename)
+	}
 	pluginType := c.PostForm("type")
 
 	// P1: 写入 DB（如已存在同名则更新）
