@@ -358,8 +358,11 @@ func BatchDeleteListeners(c *gin.Context) {
 // handleOpenPort 启动监听器。vkey/salt 为该监听器自身的密钥配置，
 // 传递给连接处理器用于会话密钥派生，避免同类型多监听器时按 type 查库取错密钥。
 
-// registerHTTPRoutes 按 C2 Profile 注册 http/https 监听器路由（默认 profile 路径兼容）
-func registerHTTPRoutes(mux *http.ServeMux) {
+// registerHTTPRoutes 按 C2 Profile 注册 http/https 监听器路由（默认 profile 路径兼容）。
+// vkey/salt 为该监听器自身的密钥配置，经闭包透传给轮询处理器：http/https 可多实例且
+// 各持独立密钥，处理器内按类型查库在同类型多监听器时只能取到任意一行（与 websocket
+// 分支同一处理方式）。
+func registerHTTPRoutes(mux *http.ServeMux, vkey, salt string) {
 	p := c2profile.GetDefault()
 	getURI, postURI := "/tencent/mcp/pc/pcsearch", "/tencent/sensearch/collection/item/check"
 	if p != nil {
@@ -370,8 +373,12 @@ func registerHTTPRoutes(mux *http.ServeMux) {
 			postURI = p.HTTP.Post.URI
 		}
 	}
-	mux.HandleFunc(getURI, communication.GetHttp)
-	mux.HandleFunc(postURI, communication.PostHttp)
+	mux.HandleFunc(getURI, func(w http.ResponseWriter, r *http.Request) {
+		communication.GetHttpWithKeys(w, r, []byte(vkey), []byte(salt))
+	})
+	mux.HandleFunc(postURI, func(w http.ResponseWriter, r *http.Request) {
+		communication.PostHttpWithKeys(w, r, []byte(vkey), []byte(salt))
+	})
 }
 
 func handleOpenPort(listenerType string, listenerAddress string, vkey string, salt string) {
@@ -467,7 +474,7 @@ func handleOpenPort(listenerType string, listenerAddress string, vkey string, sa
 		}
 	case "http":
 		mux := http.NewServeMux()
-		registerHTTPRoutes(mux)
+		registerHTTPRoutes(mux, vkey, salt)
 
 		server := &http.Server{
 			Addr:              listenerAddress,
@@ -515,7 +522,7 @@ func handleOpenPort(listenerType string, listenerAddress string, vkey string, sa
 		}
 
 		mux := http.NewServeMux()
-		registerHTTPRoutes(mux)
+		registerHTTPRoutes(mux, vkey, salt)
 
 		server := &http.Server{
 			Addr:              listenerAddress,

