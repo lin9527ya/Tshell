@@ -17,34 +17,32 @@ type Client struct {
 	BucketName      string
 }
 
-var Service *Client
-
-// var c *oss.Bucket
-
-func InitClient(endPoint, accessKeyId, accessKeySecret, bucketName string) error {
+// 原为包级 var Service *Client：多个 OSS 监听器会互相覆盖——后启动的 InitClient
+// 直接改写全局，先启动的轮询循环随后就在轮第二个桶，命令也会写错桶。
+// SDK 各函数本就按 *Client 参数化，故改为由调用方持有并逐层传递。
+func InitClient(endPoint, accessKeyId, accessKeySecret, bucketName string) (*Client, error) {
 	var ossClient *oss.Client
 	var err error
 
 	ossClient, err = oss.New(endPoint, accessKeyId, accessKeySecret)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	var ossBucket *oss.Bucket
 	ossBucket, err = ossClient.Bucket(bucketName)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	Service = &Client{
+	return &Client{
 		Cli:             ossClient,
 		Bucket:          ossBucket,
 		Endpoint:        endPoint,
 		AccessKeyId:     accessKeyId,
 		AccessKeySecret: accessKeySecret,
 		BucketName:      bucketName,
-	}
-	return nil
+	}, nil
 }
 func List(c *Client) []oss.ObjectProperties {
 	// 【饥饿 bug 修复】原 MaxKeys(3) 只列字典序前 3 个对象:桶内对象多于 3 时

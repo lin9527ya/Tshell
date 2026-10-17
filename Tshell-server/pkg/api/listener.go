@@ -732,13 +732,26 @@ func handleOpenPort(listenerType string, listenerAddress string, vkey string, sa
 			}
 		}()
 	case "oss":
+		// 该类型的 listen_address 复用为凭证载体：endpoint:accessKeyID:accessKeySecret:bucket
 		tmp := strings.Split(listenerAddress, ":")
+		if len(tmp) < 4 {
+			markListenerStartFailed(listenerType, listenerAddress, "oss 监听地址格式应为 endpoint:accessKeyID:accessKeySecret:bucket")
+			return
+		}
+		// 同步初始化：失败必须能落回状态。原实现把 InitClient 放在轮询 goroutine 里且忽略错误，
+		// 失败后 DB 停在"运行中"、停止通道无人消费，且循环里的 List(nil) 会 panic。
+		// 每个监听器一份 client，多个 OSS 监听器互不覆盖。
+		client, err := oss.InitClient(tmp[0], tmp[1], tmp[2], tmp[3])
+		if err != nil {
+			markListenerStartFailed(listenerType, listenerAddress, "初始化 OSS 客户端失败: "+err.Error())
+			return
+		}
 		connection.MuClientListenerType.Lock()
 		// I6: 有缓冲(1)停止通道——OSS 循环可能在 List/process_server 中（无 select），
 		// 无缓冲 + 非阻塞发送会丢信号导致 OSS 轮询 goroutine 永久泄漏
 		connection.StopChan[listenerAddress] = make(chan bool, 1)
 		connection.MuClientListenerType.Unlock()
-		go oss.HandleOSSConnection(tmp[0], tmp[1], tmp[2], tmp[3])
+		go oss.HandleOSSConnection(client, listenerAddress)
 	case "dns":
 		tmp := strings.Split(listenerAddress, ":")
 		dnsAddr := tmp[0] + ":" + tmp[1]
@@ -861,6 +874,8 @@ func handleClosePort(listenerType string, listenerAddress string) error {
 		connection.MuClientListenerType.Lock()
 		delete(connection.StopChan, listenerAddress)
 		connection.MuClientListenerType.Unlock()
+		// 清掉本监听器名下的客户端登记，避免命令继续被写进已停监听器的桶
+		oss.UnregisterListener(listenerAddress)
 		logx.Infof("✅ [监听器管理] OSS监听器已关闭: %s\n", listenerAddress)
 	case "tcp_forward", "kcp_forward", "ws_forward", "http_forward", "https_forward":
 		// 先断会话再发停止信号：拨号循环的 run 阻塞在协议读循环里，只发信号不会让它返回
