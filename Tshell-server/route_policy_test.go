@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"regexp"
+	"strings"
 	"testing"
 )
 
@@ -44,6 +45,46 @@ func TestPluginRoutePolicy(t *testing.T) {
 		}
 		if g != group {
 			t.Errorf("插件路由 %s 挂在 %s，期望 %s", route, g, group)
+		}
+	}
+}
+
+// TestBodyLimitPolicy 守卫 main.go 里的按路径请求体上限。
+// 全局默认是 10MB，任何声明了更大上限的上传接口都必须在这里登记，
+// 否则 handler 里的大小检查永远走不到（这正是修复前插件上传 50MB 失效的原因）。
+// 下列路径是当前代码里全部使用 c.FormFile 的接口。
+func TestBodyLimitPolicy(t *testing.T) {
+	src, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatalf("读取 main.go 失败: %v", err)
+	}
+	text := string(src)
+
+	idx := strings.Index(text, "MaxBodyBytesMiddlewareWithLimits(")
+	if idx < 0 {
+		t.Fatal("main.go 未使用按路径配置的请求体上限中间件")
+	}
+	block := text[idx:]
+	if end := strings.Index(block, "}))"); end > 0 {
+		block = block[:end]
+	}
+
+	wantPaths := []string{
+		"/api/plugin/upload",
+		"/api/bin/execute",
+		"/api/client/file/upload",
+		"/api/webdelivery/host-file",
+		"/api/client/inject-mem",
+		"/api/cna/upload",
+	}
+	re := regexp.MustCompile(`"(/api/[^"]+)"\s*:`)
+	found := map[string]bool{}
+	for _, m := range re.FindAllStringSubmatch(block, -1) {
+		found[m[1]] = true
+	}
+	for _, p := range wantPaths {
+		if !found[p] {
+			t.Errorf("上传接口 %s 未登记请求体上限（会卡在全局 10MB）", p)
 		}
 	}
 }

@@ -101,6 +101,9 @@ func TakeScreenshot(c *gin.Context) {
 	}
 }
 
+// MaxExecuteBinBytes 内存执行载荷大小上限（main.go 的按路径请求体上限引用同一个值）
+const MaxExecuteBinBytes = 100 << 20
+
 // executeBinModes 支持的载荷执行模式（与前端 PluginsView 的 7 个模式一一对应）
 var executeBinModes = map[string]bool{
 	"execute-assembly": true,
@@ -149,10 +152,11 @@ func ExecuteBin(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"status": 400, "data": msg})
 		return
 	}
-	// 大小上限（100MB）：防止一次性读入内存导致 OOM
-	const maxExecuteBinSize = 100 * 1024 * 1024
-	if file.Size > maxExecuteBinSize {
-		c.JSON(http.StatusBadRequest, gin.H{"status": 400, "data": fmt.Sprintf("文件过大: %d bytes（上限 %d bytes）", file.Size, maxExecuteBinSize)})
+	// 大小上限（100MB）：防止一次性读入内存导致 OOM。
+	// 注意这高于客户端自身的接收上限（execute-assembly 程序集 10MB、
+	// websocket 读 64MB），超限时会在客户端被拒——这里只保证服务端不 OOM。
+	if file.Size > MaxExecuteBinBytes {
+		c.JSON(http.StatusBadRequest, gin.H{"status": 400, "data": fmt.Sprintf("文件过大: %d bytes（上限 %d bytes）", file.Size, MaxExecuteBinBytes)})
 		return
 	}
 	// 打开上传的文件

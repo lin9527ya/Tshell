@@ -272,10 +272,29 @@ func ParseIntQuery(c *gin.Context, query string, defaultValue int) int {
 // MaxBodyBytesMiddleware 全局请求体大小限制（J9: 防止认证用户提交超大 JSON 造成内存 DoS）
 // 所有请求体超过 limit 直接 413 拒绝。
 func MaxBodyBytesMiddleware(limit int64) gin.HandlerFunc {
+	return MaxBodyBytesMiddlewareWithLimits(limit, nil)
+}
+
+// MaxBodyBytesMiddlewareWithLimits 带按路径覆盖的请求体上限。
+//
+// 上传类接口的上限必须在这里放宽，**不能**在 handler 里重新包一层 MaxBytesReader：
+// 嵌套时生效的是内层（更小）的上限——外层读到内层返回的 MaxBytesError 后原样透传，
+// 所以 handler 里包一个更大的上限是无效的（client_files.go 原来那种写法就是这个问题）。
+//
+// pathLimits 的键是精确请求路径（c.Request.URL.Path）。
+func MaxBodyBytesMiddlewareWithLimits(limit int64, pathLimits map[string]int64) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if c.Request.Body != nil && c.Request.ContentLength > 0 {
-			c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, limit)
+		if c.Request.Body == nil {
+			c.Next()
+			return
 		}
+		effective := limit
+		if override, ok := pathLimits[c.Request.URL.Path]; ok {
+			effective = override
+		}
+		// 不再要求 ContentLength > 0：分块传输（chunked）时 ContentLength 为 -1，
+		// 原条件会让这类请求完全不受限，全局 DoS 防护被整体绕过。
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, effective)
 		c.Next()
 	}
 }

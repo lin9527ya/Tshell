@@ -327,7 +327,16 @@ func main() {
 	r.Use(errors.TimestampMiddleware())
 	r.Use(errors.ErrorHandlerMiddleware())
 	// J9: 全局请求体大小限制（10MB，防超大 JSON 内存 DoS）
-	r.Use(errors.MaxBodyBytesMiddleware(10 * 1024 * 1024))
+	// 默认 10MB；上传类接口按各自 handler 声明的上限放宽（+1MB 作为 multipart 边界余量），
+	// 让 handler 里的"文件过大"检查成为真正生效的那道闸并给出准确文案。
+	r.Use(errors.MaxBodyBytesMiddlewareWithLimits(10*1024*1024, map[string]int64{
+		"/api/plugin/upload":         api.MaxPluginUploadBytes + 1<<20,
+		"/api/bin/execute":           api.MaxExecuteBinBytes + 1<<20,
+		"/api/client/file/upload":    500<<20 + 1<<20,
+		"/api/webdelivery/host-file": 50<<20 + 1<<20,
+		"/api/client/inject-mem":     32<<20 + 1<<20,
+		"/api/cna/upload":            5<<20 + 1<<20,
+	}))
 
 	// 添加审计日志中间件
 	r.Use(audit.AuditMiddleware())

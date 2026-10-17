@@ -351,6 +351,10 @@ type UploadPluginResponse struct {
 	} `json:"data,omitempty"`
 }
 
+// MaxPluginUploadBytes 插件上传大小上限（main.go 的按路径请求体上限引用同一个值，
+// 避免两处各写一份数字后漂移）
+const MaxPluginUploadBytes = 50 << 20
+
 func UploadPlugin(c *gin.Context) {
 	// 审计用的文件名：解析 multipart 之前还不知道，defer 读的是最终值
 	auditName := ""
@@ -360,10 +364,9 @@ func UploadPlugin(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"status": 400, "message": "获取上传文件失败: " + err.Error()})
 		return
 	}
-	// P5: 文件大小限制 (50MB)
-	const maxFileSize = 50 * 1024 * 1024
-	if file.Size > maxFileSize {
-		c.JSON(http.StatusBadRequest, gin.H{"status": 400, "message": fmt.Sprintf("文件过大: %d bytes (限制 %d bytes)", file.Size, maxFileSize)})
+	// P5: 文件大小限制（50MB；请求体上限在 main.go 按路径放宽到本值 +1MB）
+	if file.Size > MaxPluginUploadBytes {
+		c.JSON(http.StatusBadRequest, gin.H{"status": 400, "message": fmt.Sprintf("文件过大: %d bytes (限制 %d bytes)", file.Size, MaxPluginUploadBytes)})
 		return
 	}
 	filename := file.Filename

@@ -227,10 +227,9 @@ func MakeDir(c *gin.Context) {
 }
 
 func FileUpload(c *gin.Context) {
-	// 【限制不一致修复】全局 MaxBodyBytesMiddleware 上限 10MB 会拦截大文件上传
-	// （原 500MB 限制形同虚设）。此处以更大上限重新包裹 body：
-	// MaxBytesReader 在读取时才生效，multipart 在 FormFile 时才解析，覆盖生效
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 500*1024*1024+1024)
+	// 请求体上限在 main.go 的 MaxBodyBytesMiddlewareWithLimits 里按路径放宽到 500MB+1MB。
+	// 这里原本以更大上限重新包一层 MaxBytesReader 并注释"覆盖生效"——那是错的：
+	// 嵌套时生效的是内层较小的上限，外层只会把内层的 MaxBytesError 原样透传。
 	file, _ := c.FormFile("file")
 	if file == nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "No file uploaded"})
