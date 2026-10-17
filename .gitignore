@@ -5,7 +5,8 @@
 Thumbs.db
 
 # ===== 根目录运行时产物 =====
-logs/
+# 注意: 必须锚定根目录——非锚定的 logs/ 会连带忽略 Tshell-web/src/views/logs/ 源码目录
+/logs/
 node_modules/
 *.log
 
