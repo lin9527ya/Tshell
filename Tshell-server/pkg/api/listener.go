@@ -824,7 +824,10 @@ func handleOpenPort(listenerType string, listenerAddress string, vkey string, sa
 		// 本监听器的会话密钥材料（归一化为 32/16 字节，与客户端 patch 的取法一致）。
 		// 多实例下不能按类型查库——那样只能取到任意一行。
 		ossMK, ossSalt := encrypt.NormalizeListenerKeyConfig([]byte(vkey), []byte(salt))
-		go oss.HandleOSSConnection(client, listenerAddress, ossMK, ossSalt)
+		// 异常退出（循环 panic）时回置状态；正常停止不触发
+		go oss.HandleOSSConnection(client, listenerAddress, ossMK, ossSalt, func(reason string) {
+			markListenerStartFailed(listenerType, listenerAddress, reason)
+		})
 	case "dns":
 		// 该类型的 listen_address 复用为 addr:port[:domain]
 		tmp := strings.Split(listenerAddress, ":")
@@ -846,7 +849,10 @@ func handleOpenPort(listenerType string, listenerAddress string, vkey string, sa
 		// 失败只打日志，库里仍是"运行中"）。每个监听器一个实例，互不共享状态。
 		// 同上：密钥按实例传入，避免多实例时按类型取到别的监听器的密钥
 		dnsMK, dnsSalt := encrypt.NormalizeListenerKeyConfig([]byte(vkey), []byte(salt))
-		if _, err := dns_listener.Start(listenerAddress, dnsAddr, domain, prefix, dnsMK, dnsSalt); err != nil {
+		// 异常退出（服务循环自行结束）时回置状态；正常停止不触发
+		if _, err := dns_listener.Start(listenerAddress, dnsAddr, domain, prefix, dnsMK, dnsSalt, func(reason string) {
+			markListenerStartFailed(listenerType, listenerAddress, reason)
+		}); err != nil {
 			markListenerStartFailed(listenerType, listenerAddress, err.Error())
 			return
 		}

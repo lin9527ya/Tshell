@@ -1,6 +1,12 @@
 package oss
 
-import "testing"
+import (
+	"BackendTemplate/pkg/connection"
+	"bytes"
+	"strings"
+	"testing"
+	"time"
+)
 
 // TestInitClientReturnsPerListenerClient 每个监听器拿到自己的 client。
 // 原实现把结果写进包级 var Service：第二个 OSS 监听器一启动就覆盖第一个，
@@ -79,5 +85,76 @@ func TestRegisterClientIgnoresInvalid(t *testing.T) {
 	}
 	if got := ClientForUID("uid-nil"); got != nil {
 		t.Errorf("nil client 不应被登记，实际 %v", got)
+	}
+}
+
+// TestAbnormalExitNotifiesAndCleans 轮询循环 panic（被 recover）后必须摘客户端登记、
+// 删停止通道并回调上报，否则界面显示"监听中"、实际已不再轮询桶。
+// 正常停止不得触发回调。
+func TestAbnormalExitNotifiesAndCleans(t *testing.T) {
+	const stopKey = "ep.example.com:ak:sk:bucket-x"
+
+	connection.MuClientListenerType.Lock()
+	connection.StopChan[stopKey] = make(chan bool, 1)
+	connection.MuClientListenerType.Unlock()
+	RegisterClient("uid-oss", stopKey, &Client{BucketName: "bucket-x"})
+
+	exited := make(chan string, 1)
+	// 空 Client（Bucket 为 nil）：轮询到 List 时触发 panic，被 recover 后走异常退出收尾
+	go HandleOSSConnection(&Client{}, stopKey, bytes.Repeat([]byte{0xA1}, 32), bytes.Repeat([]byte{0xA2}, 16),
+		func(reason string) { exited <- reason })
+
+	select {
+	case reason := <-exited:
+		if !strings.Contains(reason, "panic") {
+			t.Errorf("原因应说明 panic，实际 %q", reason)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("异常退出应触发回调")
+	}
+
+	connection.MuClientListenerType.Lock()
+	_, hasStop := connection.StopChan[stopKey]
+	connection.MuClientListenerType.Unlock()
+	if hasStop {
+		t.Error("异常退出后应删除停止通道")
+	}
+	if got := ClientForUID("uid-oss"); got != nil {
+		t.Error("异常退出后应清除该监听器名下的客户端登记")
+	}
+}
+
+// TestNormalStopDoesNotNotifyOSS 正常停止（停止通道）不应触发异常退出回调
+func TestNormalStopDoesNotNotifyOSS(t *testing.T) {
+	const stopKey = "ep.example.com:ak:sk:bucket-y"
+	stopCh := make(chan bool, 1)
+	connection.MuClientListenerType.Lock()
+	connection.StopChan[stopKey] = stopCh
+	connection.MuClientListenerType.Unlock()
+
+	notified := make(chan string, 1)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		HandleOSSConnection(&Client{}, stopKey, bytes.Repeat([]byte{0xA1}, 32), bytes.Repeat([]byte{0xA2}, 16),
+			func(reason string) { notified <- reason })
+	}()
+
+	// 循环每次先判停止通道再 sleep，这里立即发停止信号
+	stopCh <- true
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("停止信号应让轮询循环退出")
+	}
+	connection.MuClientListenerType.Lock()
+	delete(connection.StopChan, stopKey)
+	connection.MuClientListenerType.Unlock()
+
+	select {
+	case reason := <-notified:
+		t.Errorf("正常停止不应触发异常退出回调，实际: %s", reason)
+	default:
 	}
 }

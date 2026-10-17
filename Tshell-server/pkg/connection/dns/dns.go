@@ -146,7 +146,9 @@ func (l *Listener) stripLabelPrefix(tag string) string {
 // Start 启动一个 DNS C2 监听器实例。
 // key 用于登记/注销（即该监听器的 listen_address）；addr 是实际绑定的 UDP 地址；
 // domain / labelPrefix 来自该监听器配置与 C2 Profile（客户端生成时 patch 同一前缀，两端必须一致）。
-func Start(key, addr, domain, labelPrefix string, masterKey, salt []byte) (*Listener, error) {
+// onAbnormalExit 在服务循环非正常结束时回调（正常 Stop 不触发），由 api 层注入以回置
+// 监听器状态——dns 包不反向依赖 api。
+func Start(key, addr, domain, labelPrefix string, masterKey, salt []byte, onAbnormalExit func(reason string)) (*Listener, error) {
 	l := &Listener{
 		addr:            addr,
 		key:             key,
@@ -190,8 +192,24 @@ func Start(key, addr, domain, labelPrefix string, masterKey, salt []byte) (*List
 	logx.Infof("🌐 [DNS监听器] 启动 DNS C2 隧道: %s, 域名: %s\n", addr, l.listenerDomain)
 	go func() {
 		err := l.dnsListener.ActivateAndServe()
-		if err != nil && !l.stopped.Load() {
-			logx.Errorf("❌ [DNS监听器] %s 异常退出: %v\n", l.addr, err)
+		if l.stopped.Load() {
+			return // 正常 Stop
+		}
+		// 服务循环自行退出（socket 故障等）：注销实例并回调回置状态，
+		// 否则界面显示"监听中"、实际已不再应答查询
+		reason := "DNS 服务循环异常退出"
+		if err != nil {
+			reason += ": " + err.Error()
+		}
+		listenersMu.Lock()
+		if listeners[l.key] == l {
+			delete(listeners, l.key)
+		}
+		listenersMu.Unlock()
+		l.Stop() // 幂等：清理清理 goroutine 等资源
+		logx.Errorf("❌ [DNS监听器] %s %s\n", l.key, reason)
+		if onAbnormalExit != nil {
+			onAbnormalExit(reason)
 		}
 	}()
 	return l, nil

@@ -69,11 +69,27 @@ func UnregisterListener(stopKey string) {
 // 用于读取停止通道与登记客户端归属（原实现由四段地址拼回，属脆弱重建）。
 // masterKey/salt 为该监听器的会话密钥材料（已归一化为 32/16 字节）：
 // 多实例下不能按类型查库（只能取到任意一行）。
-func HandleOSSConnection(client *Client, stopKey string, masterKey, salt []byte) {
+// onAbnormalExit 在轮询循环非正常结束时回调（正常停止不触发），由 api 层注入以回置
+// 监听器状态——oss 包不反向依赖 api。
+func HandleOSSConnection(client *Client, stopKey string, masterKey, salt []byte, onAbnormalExit func(reason string)) {
 	// 崩溃防护：OSS 处理循环任何 panic 都不能杀死整个进程
+	abnormal := ""
 	defer func() {
 		if r := recover(); r != nil {
-			logx.Errorf("❌ [OSS-RECOVER] 处理循环panic已捕获: %v\n", r)
+			abnormal = fmt.Sprintf("轮询循环 panic: %v", r)
+		}
+		if abnormal == "" {
+			return // 正常停止（handleClosePort 已清理停止通道与客户端登记）
+		}
+		// 异常退出：摘客户端登记、删停止通道并回调回置状态，
+		// 否则界面显示"监听中"、实际已不再轮询桶
+		UnregisterListener(stopKey)
+		connection.MuClientListenerType.Lock()
+		delete(connection.StopChan, stopKey)
+		connection.MuClientListenerType.Unlock()
+		logx.Errorf("❌ [OSS] 监听器 %s %s\n", stopKey, abnormal)
+		if onAbnormalExit != nil {
+			onAbnormalExit(abnormal)
 		}
 	}()
 

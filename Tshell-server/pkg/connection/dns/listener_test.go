@@ -20,12 +20,12 @@ var (
 // TestStartTwoInstancesAreIndependent 两个 DNS 监听器各自持有域名/前缀/端口/客户端表，
 // 互不覆盖。原实现全是包级状态：后启动的域名直接覆盖先启动的，两者还会共享客户端表。
 func TestStartTwoInstancesAreIndependent(t *testing.T) {
-	a, err := Start("key-a", "127.0.0.1:0", "a.example.", "pa", keyA, saltA)
+	a, err := Start("key-a", "127.0.0.1:0", "a.example.", "pa", keyA, saltA, nil)
 	if err != nil {
 		t.Fatalf("启动 A 失败: %v", err)
 	}
 	defer StopListener("key-a")
-	b, err := Start("key-b", "127.0.0.1:0", "b.example", "pb", keyB, saltB)
+	b, err := Start("key-b", "127.0.0.1:0", "b.example", "pb", keyB, saltB, nil)
 	if err != nil {
 		t.Fatalf("启动 B 失败: %v", err)
 	}
@@ -67,7 +67,7 @@ func TestStartBindFailureReturnsError(t *testing.T) {
 	defer blocker.Close()
 	addr := blocker.LocalAddr().String()
 
-	l, err := Start("key-dup", addr, "dup.example.", "", keyA, saltA)
+	l, err := Start("key-dup", addr, "dup.example.", "", keyA, saltA, nil)
 	if err == nil {
 		StopListener("key-dup")
 		t.Fatalf("端口被占用时应返回错误，实际拿到实例 %v", l)
@@ -82,10 +82,10 @@ func TestStartBindFailureReturnsError(t *testing.T) {
 
 // TestStopListenerIsolatesAndIsIdempotent 按地址停止只影响对应实例，重复停止不 panic。
 func TestStopListenerIsolatesAndIsIdempotent(t *testing.T) {
-	if _, err := Start("key-x", "127.0.0.1:0", "x.example.", "", keyA, saltA); err != nil {
+	if _, err := Start("key-x", "127.0.0.1:0", "x.example.", "", keyA, saltA, nil); err != nil {
 		t.Fatalf("启动 X 失败: %v", err)
 	}
-	b, err := Start("key-y", "127.0.0.1:0", "y.example.", "", keyB, saltB)
+	b, err := Start("key-y", "127.0.0.1:0", "y.example.", "", keyB, saltB, nil)
 	if err != nil {
 		t.Fatalf("启动 Y 失败: %v", err)
 	}
@@ -113,12 +113,12 @@ func TestStopListenerIsolatesAndIsIdempotent(t *testing.T) {
 // 每个实例只应答自己域名的查询。原实现域名是包级的，后启动的实例会覆盖前一个的域名，
 // 两个监听器会对同一批查询都给出应答（或都不应答）。
 func TestHandleRequestRoutedToCorrectInstance(t *testing.T) {
-	a, err := Start("key-a", "127.0.0.1:0", "a.example.", "", keyA, saltA)
+	a, err := Start("key-a", "127.0.0.1:0", "a.example.", "", keyA, saltA, nil)
 	if err != nil {
 		t.Fatalf("启动 A 失败: %v", err)
 	}
 	defer StopListener("key-a")
-	b, err := Start("key-b", "127.0.0.1:0", "b.example.", "", keyB, saltB)
+	b, err := Start("key-b", "127.0.0.1:0", "b.example.", "", keyB, saltB, nil)
 	if err != nil {
 		t.Fatalf("启动 B 失败: %v", err)
 	}
@@ -167,5 +167,54 @@ func TestHandleRequestRoutedToCorrectInstance(t *testing.T) {
 	}
 	if got := query(addrB, uid+".hb.0.a.example."); got != "" {
 		t.Errorf("B 不应应答 A 的域名，实际 TXT=%q", got)
+	}
+}
+
+// TestAbnormalExitNotifiesAndUnregisters 服务循环自行退出（socket 故障等）时必须注销实例
+// 并回调上报，否则界面显示"监听中"、实际已不再应答查询。正常 Stop 不得触发回调。
+func TestAbnormalExitNotifiesAndUnregisters(t *testing.T) {
+	exited := make(chan string, 1)
+	l, err := Start("key-abnormal", "127.0.0.1:0", "ab.example.", "", keyA, saltA, func(reason string) {
+		exited <- reason
+	})
+	if err != nil {
+		t.Fatalf("启动失败: %v", err)
+	}
+
+	// 绕过 Stop 直接关掉底层 socket：ActivateAndServe 返回错误而 stopped 仍为 false
+	_ = l.packetConn.Close()
+
+	select {
+	case reason := <-exited:
+		if reason == "" {
+			t.Error("回调应带上原因")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("异常退出应触发回调")
+	}
+	listenersMu.Lock()
+	_, registered := listeners["key-abnormal"]
+	listenersMu.Unlock()
+	if registered {
+		t.Error("异常退出后应从 listeners 注销")
+	}
+	if !l.stopped.Load() {
+		t.Error("异常退出后实例应被标记为已停止（资源已清理）")
+	}
+}
+
+// TestNormalStopDoesNotNotify 正常 Stop 不应触发异常退出回调
+func TestNormalStopDoesNotNotify(t *testing.T) {
+	notified := make(chan string, 1)
+	if _, err := Start("key-normal", "127.0.0.1:0", "nm.example.", "", keyA, saltA, func(reason string) {
+		notified <- reason
+	}); err != nil {
+		t.Fatalf("启动失败: %v", err)
+	}
+	StopListener("key-normal")
+	select {
+	case reason := <-notified:
+		t.Errorf("正常停止不应触发异常退出回调，实际: %s", reason)
+	case <-time.After(300 * time.Millisecond):
 	}
 }
