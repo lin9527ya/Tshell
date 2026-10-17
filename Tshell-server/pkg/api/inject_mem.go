@@ -146,9 +146,10 @@ func SendInjectMem(uid string, data []byte, pid int, tech string) (int64, uint32
 			payload = utils.BytesCombine(head(seq, 0, nil, 0, nil), data[:n])
 		}
 		byteToSend := utils.BytesCombine(u32(command.INJECT_MEM), payload)
-		// 检查命令队列是否已满（避免静默丢包导致客户端 seq 乱序）
-		if ok := sendcommand.SendFileUploadCommandWithResult(uid, byteToSend); !ok {
-			return sent, seq, fmt.Errorf("命令队列已满，注入分块 %d/%d 发送失败", seq+1, total)
+		// 逐块投递并确认真的发出去了。客户端按 seq 顺序组装（乱序直接报错丢弃），
+		// 所以中途任何一块没发出去都必须立刻中止，不能继续往后发。
+		if err := sendcommand.SendFileUploadCommandChecked(uid, byteToSend); err != nil {
+			return sent, seq, fmt.Errorf("注入分块 %d/%d 下发失败: %w", seq+1, total, err)
 		}
 		sent += int64(n)
 		seq++
