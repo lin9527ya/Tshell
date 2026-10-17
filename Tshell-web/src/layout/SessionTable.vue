@@ -17,6 +17,10 @@
         {{ filteredClients.length }}/{{ clientsStore.clientsList.length }}
       </span>
 
+      <!-- 凭据/战利品库入口：/loot 在路由表里是 menu:false，此前全仓没有任何跳转入口，
+           只能手输 URL 打开（命令产出自动入库的 WiFi 密码也在这里查看） -->
+      <button class="cs-btn cs-btn-xs" @click="openLoot">{{ isZh ? '凭据库' : 'Credentials' }}</button>
+
       <!-- 批量态（vshell：勾选后操作出现在页头工具条，不再用浮动条） -->
       <template v-if="batchUids.length">
         <span class="batch-count">{{ isZh ? `已选 ${batchUids.length} 个会话` : `${batchUids.length} selected` }}</span>
@@ -665,6 +669,10 @@ async function batchSetGroup() {
 
 function openBatchTasks() {
   router.push('/tasks')
+}
+
+function openLoot() {
+  router.push('/loot')
 }
 
 const tableRef = ref<any>(null)

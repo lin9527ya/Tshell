@@ -253,3 +253,28 @@ func TestWSHandshakeRoleGuards(t *testing.T) {
 		}
 	}
 }
+
+// TestLootIngestWiring 守卫战利品自动入库的接线。
+// AddLootIfNotEmpty 此前全仓零调用（注释却写着"供回包识别调用"），识别链路是断的；
+// 现在经 pkg/command 的回调在命令回包处调用，并由 main 注入实现。
+func TestLootIngestWiring(t *testing.T) {
+	replySrc, err := os.ReadFile("pkg/command/reply_handlers.go")
+	if err != nil {
+		t.Fatalf("读取 reply_handlers.go 失败: %v", err)
+	}
+	if !strings.Contains(string(replySrc), "var LootIngestFunc") {
+		t.Error("pkg/command 缺少 LootIngestFunc 回调声明")
+	}
+	if !strings.Contains(string(replySrc), "LootIngestFunc(uid") {
+		t.Error("回包处理里没有调用 LootIngestFunc —— 命令产出不会自动入库")
+	}
+
+	mainSrc, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatalf("读取 main.go 失败: %v", err)
+	}
+	if !strings.Contains(string(mainSrc), "command.LootIngestFunc =") ||
+		!strings.Contains(string(mainSrc), "api.IngestLootFromOutput") {
+		t.Error("main.go 没有把 api.IngestLootFromOutput 注入到 command.LootIngestFunc")
+	}
+}

