@@ -203,10 +203,11 @@ func GetListenerKeyConfig(c *gin.Context) {
 	listenerType := c.Query("type")
 	listenAddress := c.Query("address")
 
-	// 根据监听器类型或地址获取密钥配置
+	// 根据监听器类型或地址获取密钥配置。地址可能来自前端回传的脱敏值，查库前先还原；
+	// 响应里回显的仍是调用方传入的值（不反向泄露真实地址）。
 	var masterKey, encryptionSalt []byte
 	if listenAddress != "" {
-		masterKey, encryptionSalt = encrypt.GetListenerKeyConfigByAddress(listenAddress)
+		masterKey, encryptionSalt = encrypt.GetListenerKeyConfigByAddress(resolveListenerAddress(listenAddress, "connect"))
 	} else {
 		masterKey, encryptionSalt = encrypt.GetListenerKeyConfig(listenerType)
 	}
@@ -236,6 +237,17 @@ func GetAllListenerKeyConfigs(c *gin.Context) {
 		return
 	}
 
+	// 地址脱敏：oss 的 listen_address 承载 endpoint:AK:SK:bucket，
+	// 不脱敏的话本接口会把云凭证送回浏览器（列表/详情接口已脱敏，这里原先漏了）
+	for _, cfg := range configs {
+		addr, ok := cfg["listen_address"].(string)
+		if !ok {
+			continue
+		}
+		typ, _ := cfg["type"].(string)
+		cfg["listen_address"] = maskListenerAddress(typ, addr)
+	}
+
 	c.JSON(http.StatusOK, KeyStatusResponse{
 		Status:  200,
 		Message: "获取所有监听器密钥配置成功",
@@ -259,6 +271,9 @@ func UpdateListenerKeyConfig(c *gin.Context) {
 		})
 		return
 	}
+
+	// 地址可能来自前端回传的脱敏值，查库前先还原
+	req.ListenAddress = resolveListenerAddress(req.ListenAddress, "listen")
 
 	// 【修复】支持只更新单字段：VKey 与 Salt 可单独更新（原实现要求同时非空）
 	// 先查出旧值，未提交的字段保留原值
@@ -348,6 +363,9 @@ func ResetListenerKeyConfig(c *gin.Context) {
 		})
 		return
 	}
+
+	// 地址可能来自前端回传的脱敏值，查库前先还原
+	listenAddress = resolveListenerAddress(listenAddress, "listen")
 
 	// 更新数据库中的监听器配置为默认值
 	if database.Engine == nil {
