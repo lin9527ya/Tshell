@@ -177,7 +177,31 @@ go test -race ./Tshell-server/...     # 见 §4 回归基线（注意用外层�
        丢条目等于丢证据。已改为保留条目并标注**哪个字段**没解出来
   - 26 项密码学单测 + 9 项 Firefox 集成测试；13 种传输标签交叉编译通过
   - 另有 `TSHELL_FIREFOX_PROFILE=<dir>` 环境变量入口，指向真实 profile 可跑全链路
-- **剩余**：Kerberos / BloodHound（需 Windows / 域环境）；
+- **Kerberos 票据**：list/purge/ptt 需 Windows API（`LsaCallAuthenticationPackage`
+  等）与域环境，**这部分确实做不了**。但**票据文件（制品）侧是可验证的**，
+  已找到夹具，留给后续实现：
+  - 夹具：`fortra/impacket` 的 `tests/data/` 下有 **四个格式版本**
+    （`ccache-v1` … `ccache-v4`）外加两份 **kirbi 对照**
+    （`ccache-v3-kirbi` / `ccache-v4-kirbi`）。这是覆盖 MIT ccache 格式演进的
+    真实票据文件，不是自造数据
+  - 下载方式（已验证可用，本机需走代理）：
+    `https://raw.githubusercontent.com/fortra/impacket/master/tests/data/<name>`
+  - 实测头部字节（`05 <版本>` 起，各版本字节序不同，不能一套解析打通）：
+    ```
+    v1: 05 01 02 00 00 00 10 00 00 00 "INNOVA…"
+    v2: 05 02 01 00 00 00 01 00 00 00 10 00 00 00 "IN…"
+    v3: 05 03 00 00 00 01 00 00 00 01 00 00 00 10 "IN…"
+    v4: 05 04 00 0c 00 01 00 08 00 00 00 00 00 00 00 00 …
+    ```
+    v4 头部明显是**大端**，v1/v2 是**小端** —— 这正是"必须按版本分支解析"的证据
+  - 参考实现：`impacket/krb5/ccache.py`（权威，且与上述夹具同源）
+  - 与项目设计的对应：`docs/CREDENTIAL_ACCESS.md` §"票据文件即制品" ——
+    采集到的票据要能列出/导出/复用，就必须先能解析这些文件
+  - **未实现的原因**：ccache v1–v4 + kirbi 是一个完整模块（按版本分支的二进制解析、
+    计数字符串、地址编码、可选 config 段），本轮上下文预算不足以在**写完并验证**的
+    前提下完成。宁可留下夹具坐标与实测字节，也不留一个"编译过、没验证"的解析器
+- **剩余**：BloodHound 采集器（需域环境）；Kerberos 的 list/purge/ptt（需 Windows）；
+  上述 Kerberos 制品侧解析（夹具已定位，可直接开工）；
   Windows 实机验证（见 `docs/CREDENTIAL_ACCESS.md` §9）
 
 #### 3.2 提权模块（getsystem / UAC bypass）— **M**
