@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -130,6 +131,9 @@ func TestGenerateRejectsBadInput(t *testing.T) {
 	}
 }
 
+// nginxListenPortRe 匹配 `listen <port>`（含 `listen 443 ssl http2;` 这类带参数的写法）
+var nginxListenPortRe = regexp.MustCompile(`listen\s+(\d+)`)
+
 // TestNginxAcceptsGeneratedConfig 用真实 nginx 校验语法
 func TestNginxAcceptsGeneratedConfig(t *testing.T) {
 	bin, err := exec.LookPath("nginx")
@@ -157,6 +161,11 @@ func TestNginxAcceptsGeneratedConfig(t *testing.T) {
 	out = strings.ReplaceAll(out, "/var/log/nginx/tshell-redirector-error.log", filepath.Join(dir, "logs", "error.log"))
 	out = strings.ReplaceAll(out, "/var/log/nginx/tshell-redirector-access.log", filepath.Join(dir, "logs", "access.log"))
 	out = strings.ReplaceAll(out, "/run/nginx-tshell.pid", filepath.Join(dir, "logs", "nginx.pid"))
+	// 端口挪到非特权区间：部分 nginx 版本（CI 的 1.24）在 `-t` 时会真的 bind 监听端口，
+	// 非 root 下 listen 80/443 直接 EACCES —— "syntax is ok" 之后紧跟
+	// "bind() to 0.0.0.0:80 failed (13: Permission denied)"，语法检查变成了权限检查。
+	// 这里只校验"配置能否被 nginx 解析"，端口号与语法无关，故整体前缀 1（80→180、443→1443）。
+	out = nginxListenPortRe.ReplaceAllString(out, "listen 1$1")
 	cfg := filepath.Join(dir, "nginx.conf")
 	if err := os.WriteFile(cfg, []byte(out), 0o600); err != nil {
 		t.Fatal(err)

@@ -160,26 +160,26 @@ const techOptions = computed(() => {
 
 const techHint = computed(() => {
   if (form.kind === 'dpapi') {
-    return isZh
+    return isZh.value
       ? '逐个解密 Protect 目录下的主密钥文件（跳过 Preferred 与 BK-* 备份）。解密在主进程内完成，失败的主密钥会在制品的 errors 字段里说明，不会静默丢弃。'
       : 'Decrypts each master key file under Protect (skips Preferred and BK-* backups). Failures are reported in the artifact errors field, never silently dropped.'
   }
   if (form.kind === 'browser') {
-    return isZh
+    return isZh.value
       ? '先用 Local State 里的 DPAPI 保护密钥解出浏览器主密钥，再读 Login Data / Cookies 并逐条 AES-GCM 解密。库被浏览器独占时会先复制副本再读；解不开的条目会跳过并计入 errors。'
       : 'Unwraps the browser master key from Local State via DPAPI, then reads Login Data / Cookies and decrypts each entry with AES-GCM. Locked DBs are copied first; undecryptable entries are skipped and counted in errors.'
   }
   switch (form.tech) {
     case 'comsvcs':
-      return isZh
+      return isZh.value
         ? '借签名进程 rundll32 调用 comsvcs.dll!MiniDump：对受 PPL 保护的 LSASS 同样有效，但会拉起子进程并落盘，行为链较长、EDR 覆盖好。'
         : 'Signed process (rundll32) calls comsvcs.dll!MiniDump: works against PPL-protected LSASS, but spawns a child process and writes to disk — a long behavior chain.'
     case 'dbgcore':
-      return isZh
+      return isZh.value
         ? '在植入体进程内调用签名库 dbgcore.dll!MiniDumpWriteDump：不留子进程、行为链短；但 PPL 开启时会因调用方未签名被拒（返回 ACCESS_DENIED）。'
         : 'In-process call to the signed dbgcore.dll!MiniDumpWriteDump: no child process, short chain; rejected when PPL is on (ACCESS_DENIED).'
     default:
-      return isZh
+      return isZh.value
         ? '先走 comsvcs（成功率高），失败后自动回退 dbgcore（痕迹更小）。'
         : 'Tries comsvcs first (higher success rate), falls back to dbgcore (smaller footprint).'
   }
