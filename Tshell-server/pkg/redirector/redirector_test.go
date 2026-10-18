@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -164,8 +165,17 @@ func TestNginxAcceptsGeneratedConfig(t *testing.T) {
 	// 端口挪到非特权区间：部分 nginx 版本（CI 的 1.24）在 `-t` 时会真的 bind 监听端口，
 	// 非 root 下 listen 80/443 直接 EACCES —— "syntax is ok" 之后紧跟
 	// "bind() to 0.0.0.0:80 failed (13: Permission denied)"，语法检查变成了权限检查。
-	// 这里只校验"配置能否被 nginx 解析"，端口号与语法无关，故整体前缀 1（80→180、443→1443）。
-	out = nginxListenPortRe.ReplaceAllString(out, "listen 1$1")
+	// 这里只校验"配置能否被 nginx 解析"，端口号与语法无关。
+	// 注意必须落到 ≥1024：早期写法用"前缀 1"把 80 变成 180，仍属特权端口，
+	// CI 上照样 EACCES —— 所以统一 +10000（80→10080、443→10443）。
+	out = nginxListenPortRe.ReplaceAllStringFunc(out, func(m string) string {
+		sub := nginxListenPortRe.FindStringSubmatch(m)
+		port, err := strconv.Atoi(sub[1])
+		if err != nil {
+			return m
+		}
+		return "listen " + strconv.Itoa(port+10000)
+	})
 	cfg := filepath.Join(dir, "nginx.conf")
 	if err := os.WriteFile(cfg, []byte(out), 0o600); err != nil {
 		t.Fatal(err)
