@@ -26,3 +26,29 @@ verify_*.exe
 # 历史开发阶段的报告（docs/archive/ 下为未纳入版本控制的本地留存文件，
 # 描述已归档的 Reacon_* 多客户端布局/旧前端路径；需要纳管时 git add -f）
 docs/archive/
+
+# ===== 根目录本地敏感文件与工作区产物（2026-10 卫生收敛）=====
+# 私钥/证书/数据库：一次 git add -A 就会把私钥与战利品库推上远端
+/*.pem
+/*.key
+/*.db
+/token.txt
+
+# 本地工具与历史脚本归档（未纳入版本控制）
+.playwright-mcp/
+.gotmp/
+scripts/archive/
+
+# 根目录残留的空工程文件（真正的模块在 Tshell-server/ 与 Tshell-web/ 下）
+/go.mod
+/go.sum
+/package.json
+/package-lock.json
+
+# 服务端构建产物（二进制）
+Tshell-server/tshell
+
+# 根目录的安装包/压缩包（本地构建环境，31MB 级，勿入库）
+/*.zip
+/*.msi
+/*.exe
