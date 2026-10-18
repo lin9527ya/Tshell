@@ -21,9 +21,11 @@ Plugins/
 temp
 
 # ===== 本地构建产物(不入库)=====
-# 预编译客户端模板(515MB,go:embed 依赖):克隆后先跑 Tshell-client/implant/build_templates.sh
-# 重建到本目录,再编译服务端(见根目录 DEPLOYMENT.md 构建顺序)
-pkg/api/server/
+# 注意：pkg/api/server/（预编译客户端模板，go:embed 依赖）**已纳入版本控制**，
+# 这样克隆后可以直接编译服务端；仅在需要更新模板时才重跑
+# Tshell-client/implant/build_templates.sh（见根目录 DEPLOYMENT.md 构建顺序）。
+# 单文件最大 ~4.7MB、共 ~587MB，请勿在此重新加忽略规则——CI 的 server/reproducible
+# 两个 job 会因 //go:embed server/* 找不到文件而失败。
 /tshell-server
 /tshell-server
 /tshell-server.exe

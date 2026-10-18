@@ -10,7 +10,9 @@
 ### 构建步骤
 
 ```bash
-# 1. 客户端模板(166 EXE + 24 DLL,输出到 Tshell-server/pkg/api/server/{proto}/)
+# 1. 客户端模板(输出到 Tshell-server/pkg/api/server/{proto}/)
+#    **模板已随仓库提供**(206 个文件,约 587MB),克隆后可直接编译,无需这一步。
+#    仅当 implant 源码改动、需要更新模板时才重跑:
 cd Tshell-client/implant
 bash build_templates.sh
 

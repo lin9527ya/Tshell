@@ -21,17 +21,23 @@ jobs:
           # 跟随 go.mod，避免版本 pin 漂移（原固定 1.21，而 go.mod 要求 1.24）
           go-version-file: Tshell-server/go.mod
           cache: true
-      - name: Prepare client templates (subset, for go:embed)
-        # pkg/api/server/ 是 .gitignore 的构建产物（515MB，由 implant 源码构建）→ 新检出里
-        # 不存在，`//go:embed server/*` 直接编译失败：server 与 reproducible 两个 job
-        # 因此长期恒红（构建步先挂，后面的 vet/test/coverage/staticcheck 从未跑到）。
-        # 门禁只需模板树"存在"即可编译/静态检查/跑单测，故只构建 linux/amd64 一个架构
-        # 并跳过 DLL；本地发布仍按 build.sh 跑全矩阵。
+      - name: Prepare client templates (only if missing)
+        # 模板已随仓库提供（Tshell-server/pkg/api/server/，206 个文件），正常情况下这里
+        # 直接跳过。若因故缺失（例如有人把该目录重新加回 .gitignore），就地构建
+        # linux/amd64 子集兜底 —— 否则 `//go:embed server/*` 会让构建步直接失败，
+        # 后面的 vet/staticcheck/单测/覆盖率全都跑不到（历史上 server 与 reproducible
+        # 两个 job 就是这样长期恒红）。
         working-directory: Tshell-client/implant
         env:
           TSHELL_TEMPLATE_ARCHES: "linux amd64"
           TSHELL_SKIP_DLL: "1"
-        run: bash build_templates.sh
+        run: |
+          if [ -n "$(ls -A ../Tshell-server/pkg/api/server 2>/dev/null)" ]; then
+            echo "模板已随仓库提供，跳过构建"
+          else
+            echo "模板缺失，构建 linux/amd64 子集兜底"
+            bash build_templates.sh
+          fi
       - name: Build (version injected)
         run: |
           VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo dev)
@@ -69,17 +75,23 @@ jobs:
           cache: true
       - name: Install C toolchain (server needs cgo for SQLite)
         run: sudo apt-get update -qq && sudo apt-get install -y -qq gcc
-      - name: Prepare client templates (subset, for go:embed)
-        # pkg/api/server/ 是 .gitignore 的构建产物（515MB，由 implant 源码构建）→ 新检出里
-        # 不存在，`//go:embed server/*` 直接编译失败：server 与 reproducible 两个 job
-        # 因此长期恒红（构建步先挂，后面的 vet/test/coverage/staticcheck 从未跑到）。
-        # 门禁只需模板树"存在"即可编译/静态检查/跑单测，故只构建 linux/amd64 一个架构
-        # 并跳过 DLL；本地发布仍按 build.sh 跑全矩阵。
+      - name: Prepare client templates (only if missing)
+        # 模板已随仓库提供（Tshell-server/pkg/api/server/，206 个文件），正常情况下这里
+        # 直接跳过。若因故缺失（例如有人把该目录重新加回 .gitignore），就地构建
+        # linux/amd64 子集兜底 —— 否则 `//go:embed server/*` 会让构建步直接失败，
+        # 后面的 vet/staticcheck/单测/覆盖率全都跑不到（历史上 server 与 reproducible
+        # 两个 job 就是这样长期恒红）。
         working-directory: Tshell-client/implant
         env:
           TSHELL_TEMPLATE_ARCHES: "linux amd64"
           TSHELL_SKIP_DLL: "1"
-        run: bash build_templates.sh
+        run: |
+          if [ -n "$(ls -A ../Tshell-server/pkg/api/server 2>/dev/null)" ]; then
+            echo "模板已随仓库提供，跳过构建"
+          else
+            echo "模板缺失，构建 linux/amd64 子集兜底"
+            bash build_templates.sh
+          fi
       - name: Build twice and compare
         # 同一源码 + 同一工具链 + 同一参数必须产出逐字节相同的二进制。
         # 构建时间取提交时间（SOURCE_DATE_EPOCH），不用"现在"。
