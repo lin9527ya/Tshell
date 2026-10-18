@@ -92,6 +92,26 @@ jobs:
         # ./... 含 cmd/single 的传输接线守卫（pollTransport 必须实现 PollInterval）
         run: go test -race ./... -count=1
 
+  relay:
+    name: Relay (Go, stdlib only)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Tshell-relay
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: Tshell-relay/go.mod
+          cache: true
+      - name: Build
+        run: go build -trimpath -ldflags "-s -w" -o /dev/null .
+      - name: Vet
+        run: go vet ./...
+      - name: Test (race)
+        # 覆盖双向转发、两级级联、连接/空闲上限、TLS 终止、UDP 流表、健康检查
+        run: go test -race ./... -count=1
+
   web:
     name: Web (Vue3 + TS)
     runs-on: ubuntu-latest

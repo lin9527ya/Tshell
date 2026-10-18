@@ -62,6 +62,7 @@ Tshell/
 - **端口扫描**(阶段三):控制台命令 `scan <目标> <端口> [超时ms]`,TCP connect 跨平台扫描,支持 CIDR/主机名/端口范围/`top`,总量与并发有上限,结果按主机聚合回显。
 - **macOS 能力**(阶段三):launchd 持久化(LaunchAgent/LaunchDaemon,plist 由平台无关的生成器产出并单测校验)、`chflags` 文件隐藏、`screencapture` 截图与拉取式屏幕监控;PTY 交互终端待做。
 - **内存 OPSEC**(阶段三):sleep mask 就地遮蔽**真实**密钥材料(会话密钥/上一把/主密钥/盐 + 清空 AEAD 缓存),按片遮蔽(默认 2s)+ 在途判定,覆盖全部传输且不打断活跃隧道;syscall trampoline 走 W^X(RW→RX)与绝对跳转;详见 docs/MEMORY_OPSEC.md。
+- **多级中继**(阶段三):`Tshell-relay/`(纯标准库)传输层中继,TCP/UDP 双向转发、可级联、可选 TLS 终止、连接/流上限与健康检查;中继不解析协议、不持有密钥(端到端加密);详见 docs/RELAY.md。
 - **重定向器**(阶段三):配置由**当前画像**生成(`pkg/redirector`,`./tshell -gen-redirector nginx|apache` 或 `GET /api/redirector/template`),只转发画像声明的路径、其余跳诱饵站点、隐藏版本与后端特征;nginx 产完整配置、apache 产 vhost 片段(模块集按发行版而异);生成器自带真实 `nginx -t`/`apache2 -t` 语法校验。详见 docs/REDIRECTOR.md。
 - **可复现构建**(阶段三):`scripts/repro-build.sh` 构建两遍比对哈希(`-trimpath -buildvcs=false`,构建时间取提交时间而非"现在"),产出 `build-manifest.json` 与 SBOM;CI 有 `reproducible` job。详见 docs/REPRODUCIBLE_BUILDS.md。
 - **凭据获取**(阶段三):`POST /api/cred/dump` → 客户端内存转储(comsvcs/dbgcore/auto,应对 PPL)→ **经下载通道回传** → 服务端按文件名匹配请求、校验 minidump、登记为 `loot(type=dump)`;服务端**不解析**转储(本地 pypykatz/mimikatz),只保证归属/真实性/可审计;详见 docs/CREDENTIAL_ACCESS.md。

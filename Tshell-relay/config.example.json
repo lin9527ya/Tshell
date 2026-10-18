@@ -1,0 +1,19 @@
+{
+  "listen": "0.0.0.0:443",
+  "upstream": "10.10.0.5:8089",
+
+  "udp_listen": "0.0.0.0:443",
+  "udp_upstream": "10.10.0.5:8089",
+
+  "health_listen": "127.0.0.1:8081",
+
+  "tls_cert": "",
+  "tls_key": "",
+
+  "max_conns": 4096,
+  "max_conns_per_ip": 256,
+  "dial_timeout": "10s",
+  "idle_timeout": "1h",
+  "max_udp_flows": 2048,
+  "udp_idle_timeout": "60s"
+}

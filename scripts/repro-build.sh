@@ -53,6 +53,8 @@ mkdir -p "$OUT_DIR/a" "$OUT_DIR/b"
 SERVER_LDFLAGS="-s -w -X main.Version=${VERSION} -X main.GitCommit=${COMMIT} -X main.BuildTime=${BUILD_TIME}"
 # implant 的 ldflags 与 build_templates.sh 一致（无时间戳）
 IMPLANT_LDFLAGS="-s -w"
+# relay 版本信息（无时间戳）
+RELAY_LDFLAGS="-s -w -X main.Version=${VERSION}"
 
 build_once() { # $1=目录 $2=目标
   local dir="$1" tgt="$2"
@@ -66,6 +68,11 @@ build_once() { # $1=目录 $2=目标
         CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build $GOFLAGS_FIXED \
           -tags "transport_tcp" -ldflags "$IMPLANT_LDFLAGS" -o "$dir/implant-tcp-linux-amd64" ./cmd/single )
       ;;
+    relay)
+      ( cd "$REPO_ROOT/Tshell-relay" && \
+        CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build $GOFLAGS_FIXED \
+          -ldflags "$RELAY_LDFLAGS" -o "$dir/tshell-relay" . )
+      ;;
   esac
 }
 
@@ -73,8 +80,8 @@ build_once() { # $1=目录 $2=目标
 ARTIFACTS=()
 TARGETS=()
 case "$TARGET" in
-  all) TARGETS=(implant server) ;;   # implant 先跑：纯 Go，不受 cgo 影响
-  server|implant) TARGETS=("$TARGET") ;;
+  all) TARGETS=(implant relay server) ;;   # 纯 Go 的先跑，不受 cgo 影响
+  server|implant|relay) TARGETS=("$TARGET") ;;
   *) echo "未知目标: $TARGET" >&2; exit 1 ;;
 esac
 
