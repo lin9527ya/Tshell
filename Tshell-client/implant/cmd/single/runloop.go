@@ -78,8 +78,8 @@ func runLoop() {
 			continue
 		}
 
-		// 空闲休眠：轮询型按 PollInterval（sleep 基准 + jitter，SLEEP 动态生效；
-		// B9 sleep mask 保护会话密钥）；持久型按 WaitTime 抖动休眠
+		// 空闲休眠：轮询型按 PollInterval，持久型按 WaitTime；**两者都走 sleep mask**
+		// （原实现持久型走无遮蔽的 SleepWithJitter，而长连接的密钥驻留时间最长）
 		if pt, ok := client.(pollTransport); ok {
 			interval := pt.PollInterval()
 			if interval < 1000*time.Millisecond {
@@ -87,7 +87,7 @@ func runLoop() {
 			}
 			app.SleepMask(app.Jittered(interval))
 		} else {
-			app.SleepWithJitter(r)
+			app.SleepMaskedWithJitter(r)
 		}
 	}
 }

