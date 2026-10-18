@@ -159,7 +159,7 @@ func TestUpdateTunnelProxyKeepsMaskedPassword(t *testing.T) {
 	router.PUT("/tunnel-proxy/:id", UpdateTunnelProxy)
 
 	// 模拟前端：密码字段是列表里的掩码，只改备注
-	body := fmt.Sprintf(`{"client_uid":"uid-x","protocol":"socks5","server_port":19601,"username":"op","password":"******","note":"edited"}`)
+	body := `{"client_uid":"uid-x","protocol":"socks5","server_port":19601,"username":"op","password":"******","note":"edited"}`
 	req := httptest.NewRequest(http.MethodPut, fmt.Sprintf("/tunnel-proxy/%d", tun.ID), strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()

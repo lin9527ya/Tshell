@@ -47,7 +47,7 @@ type responseBodyWriter struct {
 	exceed bool
 }
 
-func (w responseBodyWriter) Write(b []byte) (int, error) {
+func (w *responseBodyWriter) Write(b []byte) (int, error) {
 	if !w.exceed && w.body.Len()+len(b) <= maxBufferedResponseSize {
 		w.body.Write(b)
 	} else {

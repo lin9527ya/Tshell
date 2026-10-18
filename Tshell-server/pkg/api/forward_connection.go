@@ -331,6 +331,7 @@ func dialForwardSession(listenerType, address string, masterKey, salt []byte) (*
 		sess.SetWindowSize(1024, 1024)
 		sess.SetNoDelay(1, 20, 2, 1)
 		sess.SetMtu(1400)
+		//lint:ignore SA1019 kcp-go 未提供替代 API；该方法按 enable 置位流模式标志（非切换），语义即"启用"
 		sess.SetStreamMode(true)
 		run := func() {
 			if withKeys {

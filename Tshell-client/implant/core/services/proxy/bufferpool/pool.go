@@ -36,5 +36,6 @@ func (sf *pool) Put(b []byte) {
 	if cap(b) != sf.size {
 		panic("invalid buffer size that's put into leaky buffer")
 	}
-	sf.pool.Put(b[:0]) //nolint: staticcheck
+	//lint:ignore SA6002 复用同一底层数组是缓冲池的本意，避免每次 Put 重新分配
+	sf.pool.Put(b[:0])
 }

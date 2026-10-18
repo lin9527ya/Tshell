@@ -43,10 +43,7 @@ func GetOSVersion() (string, error) {
 }
 
 func IsHighPriv() bool {
-	if os.Getuid() == 0 {
-		return true
-	}
-	return false
+	return os.Getuid() == 0
 }
 
 func IsOSX64() (bool, error) {

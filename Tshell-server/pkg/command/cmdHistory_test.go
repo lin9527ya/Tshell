@@ -15,7 +15,7 @@ func TestCmdHistoryHook(t *testing.T) {
 	if !CommandQueues.AddCommand(uid, []byte("ps")) {
 		t.Fatal("AddCommand 2 failed")
 	}
-	recs, lastPull, _ := GlobalCmdHistory.Snapshot(uid)
+	recs, _, _ := GlobalCmdHistory.Snapshot(uid)
 	if len(recs) != 2 {
 		t.Fatalf("期望 2 条记录, 实际 %d", len(recs))
 	}
@@ -26,7 +26,7 @@ func TestCmdHistoryHook(t *testing.T) {
 	if _, ok := CommandQueues.GetCommand(uid); !ok {
 		t.Fatal("GetCommand failed")
 	}
-	recs, lastPull, _ = GlobalCmdHistory.Snapshot(uid)
+	recs, lastPull, _ := GlobalCmdHistory.Snapshot(uid)
 	foundRemoved := false
 	for _, r := range recs {
 		if r.Status == "removed" {

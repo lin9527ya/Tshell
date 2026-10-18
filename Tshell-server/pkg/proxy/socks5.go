@@ -113,7 +113,7 @@ func serveReverseSocks(ln net.Listener, agentListenAddress, socksListenAddress, 
 func ReverseSocksServer(agentListenAddress, socksListenAddress, psk, username, password string) (net.Listener, error) {
 	ln, err := net.Listen("tcp", agentListenAddress)
 	if err != nil {
-		return nil, fmt.Errorf("Agent 端口绑定失败: %w", err)
+		return nil, fmt.Errorf("agent 端口绑定失败: %w", err)
 	}
 	go serveReverseSocks(ln, agentListenAddress, socksListenAddress, psk, username, password)
 	return ln, nil

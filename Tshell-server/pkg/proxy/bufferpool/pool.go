@@ -36,5 +36,6 @@ func (sf *pool) Put(b []byte) {
 	if cap(b) != sf.size {
 		panic("invalid buffer size that's put into leaky buffer")
 	}
-	sf.pool.Put(b[:0]) //nolint: staticcheck
+	//lint:ignore SA6002 接口签名由 BufPool 约定（[]byte），装箱开销换来零拷贝复用
+	sf.pool.Put(b[:0])
 }

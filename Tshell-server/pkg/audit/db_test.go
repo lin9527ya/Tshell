@@ -52,9 +52,6 @@ func TestAuditDBPersistAndQuery(t *testing.T) {
 	if logs[0].ID != "a3" || logs[2].ID != "a1" {
 		t.Fatalf("排序应为时间倒序: %v", []string{logs[0].ID, logs[1].ID, logs[2].ID})
 	}
-	if logs[2].Duration != 1500*time.Millisecond {
-		// a3 是第一条（倒序），这里校验 Duration 往返用 a3
-	}
 	if logs[0].Duration != 1500*time.Millisecond {
 		t.Fatalf("Duration 往返不符: %v", logs[0].Duration)
 	}

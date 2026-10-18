@@ -251,6 +251,7 @@ func (mo *MemoryOptimizer) PutBuffer(buf []byte) {
 
 	if pool != nil {
 		// 【修复】保留完整切片长度入池（不清 len），GetBuffer 按 cap 判定可命中
+		//lint:ignore SA6002 缓冲区池的取舍：装箱一次换取大缓冲复用
 		pool.Put(buf)
 	}
 }

@@ -80,7 +80,7 @@ func (f *FormatTemplate) ToCSharp() []byte {
 }
 
 func (f *FormatTemplate) ToGolang() []byte {
-	buffer := bytes.NewBufferString(fmt.Sprintf("buf :=  []byte{"))
+	buffer := bytes.NewBufferString("buf :=  []byte{")
 	rows := Convert1d2d(f.Data, 12)
 	for _, row := range rows {
 		buffer.WriteString("\n")

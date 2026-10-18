@@ -11,8 +11,8 @@ type TokenType int
 const (
 	TEOF TokenType = iota
 	TNewline
-	TIdent    // 标识符 / 关键字（sub/if/on 等）
-	TVar      // $x / @arr / %dict
+	TIdent // 标识符 / 关键字（sub/if/on 等）
+	TVar   // $x / @arr / %dict
 	TNumber
 	TString // 已插值的字符串
 	TOp     // 运算符或符号
@@ -86,32 +86,28 @@ func (l *Lexer) skipInlineSpace() {
 
 // Next 取下一个 token（自动跳过注释与空白，遇到换行产生 TNewline）
 func (l *Lexer) Next() Token {
-	for {
-		l.skipInlineSpace()
+	l.skipInlineSpace()
+	if l.pos >= len(l.src) {
+		return Token{Type: TEOF, Line: l.line, Col: l.col}
+	}
+	c := l.peek()
+	if c == '#' {
+		// 行注释：跳至行尾（含换行，即注释行不产生 NEWLINE？产生，便于语句分隔）
+		for l.pos < len(l.src) && l.peek() != '\n' {
+			l.advance()
+		}
 		if l.pos >= len(l.src) {
 			return Token{Type: TEOF, Line: l.line, Col: l.col}
 		}
-		c := l.peek()
-		if c == '#' {
-			// 行注释：跳至行尾（含换行，即注释行不产生 NEWLINE？产生，便于语句分隔）
-			for l.pos < len(l.src) && l.peek() != '\n' {
-				l.advance()
-			}
-			if l.pos >= len(l.src) {
-				return Token{Type: TEOF, Line: l.line, Col: l.col}
-			}
-			l.advance() // 吃掉 \n
-			return Token{Type: TNewline, Text: "\n", Line: l.line, Col: l.col}
-		}
-		if c == '\n' {
-			l.advance()
-			return Token{Type: TNewline, Text: "\n", Line: l.line, Col: l.col}
-		}
-		break
+		l.advance() // 吃掉 \n
+		return Token{Type: TNewline, Text: "\n", Line: l.line, Col: l.col}
+	}
+	if c == '\n' {
+		l.advance()
+		return Token{Type: TNewline, Text: "\n", Line: l.line, Col: l.col}
 	}
 
 	startLine, startCol := l.line, l.col
-	c := l.peek()
 
 	// 变量：$name @name %name ^name
 	if c == '$' || c == '@' || c == '%' || c == '^' {

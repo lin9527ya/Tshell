@@ -123,9 +123,7 @@ func TestTaskRowsFilter(t *testing.T) {
 	setupTaskTest(t)
 	createTaskRows([]string{"uid-1"}, "alice", "console", "cmd1")
 	createTaskRows([]string{"uid-2"}, "alice", "console", "cmd2")
-	rows := []*database.Task{}
 	_, r2 := createTaskRows([]string{"uid-1"}, "alice", "batch", "cmd3")
-	rows = append(rows, r2...)
 	finishTask(r2[0].Id, taskStatusCompleted, "ok", "")
 	_ = time.Now()
 

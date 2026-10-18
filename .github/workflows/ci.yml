@@ -34,6 +34,10 @@ jobs:
       - name: Vet
         # 含根目录 package main（route_policy_test 所在包）
         run: go vet ./...
+      - name: Staticcheck
+        # 只跑缺陷类检查：ST*（命名/注释风格，遗留代码 500+ 条）与 U1000（未使用符号，
+        # 多为刻意保留的公共 API）不计入门禁；SA/S/QF 全开。
+        run: go run honnef.co/go/tools/cmd/staticcheck@2025.1.1 -checks=all,-ST*,-U1000 ./...
       - name: Test (race + coverage)
         # 必须跑 ./... 而非 ./pkg/...：根目录的安全策略断言（RBAC/WS 握手/请求体上限）在 package main
         run: go test -race ./... -count=1 -coverprofile=coverage.out
@@ -91,6 +95,10 @@ jobs:
       - name: Test (race)
         # ./... 含 cmd/single 的传输接线守卫（pollTransport 必须实现 PollInterval）
         run: go test -race ./... -count=1
+      - name: Staticcheck
+        # 只跑缺陷类检查：ST*（命名/注释风格，遗留代码 500+ 条）与 U1000（未使用符号，
+        # 多为刻意保留的公共 API）不计入门禁；SA/S/QF 全开。
+        run: go run honnef.co/go/tools/cmd/staticcheck@2025.1.1 -checks=all,-ST*,-U1000 ./...
 
   postgres:
     name: PostgreSQL Backend
@@ -139,6 +147,10 @@ jobs:
         run: go build -trimpath -ldflags "-s -w" -o /dev/null .
       - name: Vet
         run: go vet ./...
+      - name: Staticcheck
+        # 只跑缺陷类检查：ST*（命名/注释风格，遗留代码 500+ 条）与 U1000（未使用符号，
+        # 多为刻意保留的公共 API）不计入门禁；SA/S/QF 全开。
+        run: go run honnef.co/go/tools/cmd/staticcheck@2025.1.1 -checks=all,-ST*,-U1000 ./...
       - name: Test (race)
         # 覆盖双向转发、两级级联、连接/空闲上限、TLS 终止、UDP 流表、健康检查
         run: go test -race ./... -count=1

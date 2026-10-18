@@ -1,16 +1,12 @@
 package delivery
 
 import (
-	"bytes"
 	"strings"
 	"testing"
 )
 
 // TestPatchOPSECPlaceholders 验证 OPSEC 编译期配置占位符替换
 func TestPatchOPSECPlaceholders(t *testing.T) {
-	// 构造一个包含全部新占位符的假模板
-	fake := []byte(strings.Repeat("X", 4096))
-	fake = bytes.ReplaceAll(fake, []byte("X"), []byte(" "))
 	placeholders := []string{
 		"LISTENER_MASTER_KEY_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
 		"LISTENER_SALT_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",

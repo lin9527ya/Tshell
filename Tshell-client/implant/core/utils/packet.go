@@ -7,7 +7,7 @@ import (
 	"implant/core/config"
 	"implant/core/encrypt"
 	"implant/core/sysinfo"
-	"io/ioutil"
+	"io"
 	"runtime"
 	"unicode/utf8"
 
@@ -91,11 +91,11 @@ func CodepageToUTF8(b []byte) ([]byte, error) {
 	// 只有当数据不是有效UTF-8时，才尝试从GBK转换
 	// 这通常是CMD命令输出的情况
 	reader := transform.NewReader(bytes.NewReader(b), simplifiedchinese.GBK.NewDecoder())
-	utf8Data, err := ioutil.ReadAll(reader)
+	utf8Data, err := io.ReadAll(reader)
 	if err != nil {
 		// 如果GBK转换失败，尝试GB18030
 		reader = transform.NewReader(bytes.NewReader(b), simplifiedchinese.GB18030.NewDecoder())
-		if utf8Data2, err2 := ioutil.ReadAll(reader); err2 == nil && utf8.Valid(utf8Data2) {
+		if utf8Data2, err2 := io.ReadAll(reader); err2 == nil && utf8.Valid(utf8Data2) {
 			return utf8Data2, nil
 		}
 		// 所有转换失败，返回原始数据

