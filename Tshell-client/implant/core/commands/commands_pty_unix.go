@@ -46,6 +46,16 @@ type XTermPTY struct {
 	buffer      *bytes.Buffer  // 输出缓冲区
 	bufferMutex sync.Mutex     // 缓冲区锁
 	signalChan  chan os.Signal // 信号处理通道
+	// cleanupOnce 保证 cleanup 只执行一次（Stop / 信号 / 进程退出三条路径都可能触发）
+	cleanupOnce  sync.Once
+	closeSigOnce sync.Once
+}
+
+// active 线程安全地读取会话活跃状态（isActive 由 cleanup/monitor 在锁内写）
+func (pty *XTermPTY) active() bool {
+	pty.mutex.RLock()
+	defer pty.mutex.RUnlock()
+	return pty.isActive
 }
 
 var (
@@ -166,10 +176,10 @@ func StopInteractiveShell() ([]byte, error) {
 // handlePTYOutput 处理PTY输出（类似xterm.js的数据处理）
 func (pty *XTermPTY) handlePTYOutput() {
 	buf := make([]byte, 4096) // 增大缓冲区以支持复杂的ANSI序列
-	for pty.isActive {
+	for pty.active() {
 		n, err := pty.ptyFile.Read(buf)
 		if err != nil {
-			if err != io.EOF && pty.isActive {
+			if err != io.EOF && pty.active() {
 				debuglog.Printf("❌ [XTerm PTY] 读取PTY输出失败: %v\n", err)
 			}
 			break
@@ -205,7 +215,7 @@ func (pty *XTermPTY) monitorProcess() {
 		communication.DataProcess(0, []byte("\r\n[✓] XTerm PTY terminal session completed\r\n"))
 	}
 
-	// 自动清理资源
+	// 自动清理资源（cleanup 幂等；Stop/信号路径可能已经清过）
 	go func() {
 		time.Sleep(1 * time.Second)
 		ptyMutex.Lock()
@@ -222,7 +232,7 @@ func (pty *XTermPTY) handleSignals() {
 	signal.Notify(pty.signalChan, syscall.SIGWINCH, syscall.SIGTERM, syscall.SIGINT)
 
 	for sig := range pty.signalChan {
-		if !pty.isActive {
+		if !pty.active() {
 			break
 		}
 
@@ -304,30 +314,34 @@ func (pty *XTermPTY) processSpecialKeys(input []byte) []byte {
 }
 
 // cleanup 清理PTY资源（使用github.com/creack/pty）
+// cleanup 关闭会话。幂等：StopInteractiveShell / 信号处理 / 进程自然退出后
+// monitorProcess 的延迟清理三条路径都会调用它。
+//
+// 约束：**cmd.Wait() 只能由 monitorProcess 调用一次**。原实现在这里另起
+// goroutine 再 Wait 一次，与 monitorProcess 的 Wait 竞争 exec.Cmd 内部状态
+// （-race 实测报 data race，且第二次 Wait 返回 "Wait was already called"）。
+// 这里只 Kill，让 monitorProcess 的 Wait 正常返回。
 func (ptyTerm *XTermPTY) cleanup() {
-	ptyTerm.mutex.Lock()
-	defer ptyTerm.mutex.Unlock()
+	ptyTerm.cleanupOnce.Do(func() {
+		ptyTerm.mutex.Lock()
+		ptyTerm.isActive = false
+		ptyTerm.mutex.Unlock()
 
-	ptyTerm.isActive = false
+		// 停止信号处理；通道只关一次（handleSignals 的 range 会随之退出）
+		signal.Stop(ptyTerm.signalChan)
+		ptyTerm.closeSigOnce.Do(func() { close(ptyTerm.signalChan) })
 
-	// 停止信号处理
-	signal.Stop(ptyTerm.signalChan)
-	close(ptyTerm.signalChan)
+		// 关闭 PTY 文件：阻塞中的 handlePTYOutput 读取会立即返回错误并退出
+		if ptyTerm.ptyFile != nil {
+			_ = ptyTerm.ptyFile.Close()
+			ptyTerm.ptyFile = nil
+		}
 
-	// 关闭PTY文件
-	if ptyTerm.ptyFile != nil {
-		ptyTerm.ptyFile.Close()
-		ptyTerm.ptyFile = nil
-	}
-
-	// 终止shell进程
-	if ptyTerm.cmd != nil && ptyTerm.cmd.Process != nil {
-		ptyTerm.cmd.Process.Kill()
-		// 等待进程结束
-		go func() {
-			ptyTerm.cmd.Wait()
-		}()
-	}
+		// 终止 shell 进程；Wait 由 monitorProcess 负责
+		if ptyTerm.cmd != nil && ptyTerm.cmd.Process != nil {
+			_ = ptyTerm.cmd.Process.Kill()
+		}
+	})
 }
 
 // ================ 屏幕监控功能 ================
