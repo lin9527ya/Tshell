@@ -517,6 +517,19 @@
 </template>
 
 <script setup lang="ts">
+// 纯格式化/解析逻辑已抽到 files/format.ts（可单测，见其 .test.ts）。
+// 这里保留同名函数（直接 re-export），模板无需改动 —— 拆分的目的是让
+// 逻辑有测试覆盖，不是顺手改调用点。
+import {
+  formatDateTime,
+  formatFileSize,
+  formatPermissions,
+  formatUploadFileSize,
+  getFileIconClass,
+  getFileNameClass,
+  parseFileSize,
+  parseToDate,
+} from '@/views/client/files/format'
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -752,86 +765,10 @@ function parseRowToTs(row: any): number {
   return d ? d.getTime() : 0
 }
 
-function parseToDate(t: any): Date | null {
-  if (!t || t === '-' || t === 'undefined') return null
-  if (typeof t === 'number') {
-    return new Date(t > 1e11 ? t : t * 1000)
-  }
-  const s = String(t).trim()
-  if (/^\d+$/.test(s)) {
-    const n = parseInt(s, 10)
-    return new Date(n > 1e11 ? n : n * 1000)
-  }
-  // Check DD/MM/YYYY or DD-MM-YYYY (e.g. 17/08/2026 14:32:00)
-  const ddmmyyyy = s.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/)
-  if (ddmmyyyy) {
-    const day = parseInt(ddmmyyyy[1], 10)
-    const month = parseInt(ddmmyyyy[2], 10) - 1
-    const year = parseInt(ddmmyyyy[3], 10)
-    const hour = parseInt(ddmmyyyy[4] || '0', 10)
-    const minute = parseInt(ddmmyyyy[5] || '0', 10)
-    const second = parseInt(ddmmyyyy[6] || '0', 10)
-    return new Date(year, month, day, hour, minute, second)
-  }
-  // Check YYYY/MM/DD or YYYY-MM-DD (e.g. 2026-08-17 14:32:00)
-  const yyyymmdd = s.match(/^(\d{4})[/-](\d{1,2})[/-](\d{1,2})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/)
-  if (yyyymmdd) {
-    const year = parseInt(yyyymmdd[1], 10)
-    const month = parseInt(yyyymmdd[2], 10) - 1
-    const day = parseInt(yyyymmdd[3], 10)
-    const hour = parseInt(yyyymmdd[4] || '0', 10)
-    const minute = parseInt(yyyymmdd[5] || '0', 10)
-    const second = parseInt(yyyymmdd[6] || '0', 10)
-    return new Date(year, month, day, hour, minute, second)
-  }
-  const d = new Date(s)
-  return isNaN(d.getTime()) ? null : d
-}
 
-function formatDateTime(rowOrTime: any): string {
-  const t = typeof rowOrTime === 'object' && rowOrTime !== null
-    ? (rowOrTime.modifiedTime ?? rowOrTime.modified_time ?? rowOrTime.time ?? rowOrTime.Time ?? rowOrTime.mtime ?? rowOrTime.ModifiedTime)
-    : rowOrTime
-  if (!t || t === '-' || t === 'undefined') return '-'
-  const d = parseToDate(t)
-  if (!d || isNaN(d.getTime())) {
-    return String(t).replace(/-/g, '/')
-  }
-  const yy = d.getFullYear()
-  const mm = String(d.getMonth() + 1).padStart(2, '0')
-  const dd = String(d.getDate()).padStart(2, '0')
-  const hh = String(d.getHours()).padStart(2, '0')
-  const min = String(d.getMinutes()).padStart(2, '0')
-  const ss = String(d.getSeconds()).padStart(2, '0')
-  return `${yy}/${mm}/${dd} ${hh}:${min}:${ss}`
-}
 
-function parseFileSize(sizeStr: any): number {
-  if (!sizeStr || sizeStr === '-' || sizeStr === '<DIR>') return 0
-  const match = String(sizeStr).match(/^([\d.]+)\s*(B|KB|MB|GB|TB)$/i)
-  if (!match) return 0
-  const val = parseFloat(match[1])
-  const unit = match[2].toUpperCase()
-  const map: Record<string, number> = { B: 1, KB: 1024, MB: 1024 ** 2, GB: 1024 ** 3, TB: 1024 ** 4 }
-  return val * (map[unit] || 1)
-}
 
-function getFileIconClass(row: any) {
-  if (row.type === 'D') return 'icon-folder'
-  const ext = (row.name || '').split('.').pop()?.toLowerCase()
-  if (['exe', 'bin', 'dll', 'so', 'elf', 'dylib'].includes(ext)) return 'icon-binary'
-  if (['sh', 'ps1', 'bat', 'cmd', 'py', 'vbs', 'cna'].includes(ext)) return 'icon-script'
-  if (['zip', 'tar', 'gz', '7z', 'rar'].includes(ext)) return 'icon-zip'
-  return 'icon-doc'
-}
 
-function getFileNameClass(row: any) {
-  if (row.type === 'D') return 'name-folder'
-  const ext = (row.name || '').split('.').pop()?.toLowerCase()
-  if (['exe', 'bin', 'dll', 'so', 'elf'].includes(ext)) return 'name-binary'
-  if (['sh', 'ps1', 'bat', 'cmd', 'py', 'cna'].includes(ext)) return 'name-script'
-  return 'name-doc'
-}
 
 function filterNode(value: string, data: any) {
   if (!value) return true
@@ -1639,30 +1576,8 @@ async function executeWget() {
   }
 }
 
-function formatFileSize(size: any) {
-  if (typeof size === 'string' && size !== '0' && size !== '') {
-    if (/^\d+(\.\d+)?(B|KB|MB|GB)$/.test(size)) return size.replace(/(\d+(?:\.\d+)?)(B|KB|MB|GB)$/, '$1 $2')
-    return size
-  }
-  const n = parseInt(size, 10)
-  if (isNaN(n) || n === 0) return '0 B'
-  if (n < 1024) return `${n} B`
-  if (n < 1024 ** 2) return `${(n / 1024).toFixed(1)} KB`
-  if (n < 1024 ** 3) return `${(n / 1024 ** 2).toFixed(1)} MB`
-  return `${(n / 1024 ** 3).toFixed(2)} GB`
-}
 
-function formatUploadFileSize(size: number) {
-  if (!size) return '0 B'
-  if (size < 1024) return `${size} B`
-  if (size < 1024 ** 2) return `${(size / 1024).toFixed(1)} KB`
-  return `${(size / 1024 ** 2).toFixed(1)} MB`
-}
 
-function formatPermissions(perm: any) {
-  if (!perm || perm === '-' || perm === 'undefined') return '-'
-  return String(perm)
-}
 
 function handleHelp() {
   helpDialogVisible.value = true
