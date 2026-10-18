@@ -130,9 +130,18 @@
   - **单实例约束写进文档**：`DEPLOYMENT.md` 明确说明为什么必须单副本
     （连接池/在线状态/会话锁/事件流/命令队列均在进程内存，数据库是单文件 SQLite），
     并给出当前架构下唯一诚实的 HA 方案（定时备份 + 冷备）。
+- 现状（本次实现）：
+  - **PostgreSQL 后端**：`config.database.type: postgres` + `dsn` 即可切换；方言差异
+    （占位符、序列重置、列内省、shell 追加截断、大小写匹配、DDL 时间类型、SQLite 调优/
+    旧库修复）收敛在 `pkg/database/dialect.go`，业务代码通过 `ExecSQL`/`QueryStringSQL`
+    与 xorm 构建器访问数据库。详见 docs/STORAGE.md。
+  - PostgreSQL 集成测试（Docker/CI service）覆盖建表 → 迁移 → CRUD → 原生 SQL →
+    序列重置 → 列内省；并借此修掉一个真实的 schema 缺陷（listener 迁移检查的是
+    `vkey` 而模型列名是 `v_key`，导致多建一列）。
+  - 内置备份在 PostgreSQL 下不启用（503），改用 pg_dump（见 docs/STORAGE.md）。
 - 遗留：
-  - 存储抽象（repository 层）与 Postgres 支持未做：当前所有 SQL 直接写在 `pkg/api`/`pkg/database`，
-    且含 SQLite 专有语法（PRAGMA、`UPDATE ...` 的 SQLite 方言等）；
+  - repository 层尚未抽出：`pkg/api` 中的 xorm 调用仍直接使用全局 `database.Engine`；
+  - SQLite → PostgreSQL 无内置数据迁移工具（需 pgloader/脚本搬运）；
   - 共享状态外置（会话/队列/锁）与 leader 选举未做 —— 这两项完成后才能真正多副本。
 - 工作区里的 `k8s-deployment.yaml` 是旧草稿（replicas:2 + 两个 HPA），与代码能力不符，
   且未被 Git 跟踪；不要直接套用。

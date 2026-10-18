@@ -66,11 +66,16 @@ func runMigrationList(list []Migration) error {
 	if Engine == nil {
 		return fmt.Errorf("数据库引擎未初始化")
 	}
-	if _, err := Engine.Exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
+	// DATETIME 是 SQLite 的类型名，PostgreSQL 用 TIMESTAMP
+	tsType := "DATETIME"
+	if IsPostgres() {
+		tsType = "TIMESTAMP"
+	}
+	if _, err := Engine.Exec(fmt.Sprintf(`CREATE TABLE IF NOT EXISTS schema_migrations (
 		version INTEGER PRIMARY KEY,
 		name TEXT NOT NULL,
-		applied_at DATETIME NOT NULL
-	)`); err != nil {
+		applied_at %s NOT NULL
+	)`, tsType)); err != nil {
 		return fmt.Errorf("创建 schema_migrations 失败: %v", err)
 	}
 
@@ -96,7 +101,7 @@ func runMigrationList(list []Migration) error {
 			// 不记录版本：下次启动会重试该迁移（要求迁移本身幂等）
 			return fmt.Errorf("迁移 %d(%s) 失败: %v", m.Version, m.Name, err)
 		}
-		if _, err := Engine.Exec(
+		if _, err := ExecSQL(
 			"INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)",
 			m.Version, m.Name, time.Now()); err != nil {
 			return fmt.Errorf("记录迁移 %d 失败: %v", m.Version, err)

@@ -10,6 +10,7 @@ package backup
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -30,8 +31,14 @@ const (
 	partialSuffix = ".partial"
 )
 
+// ErrNotSQLite 备份子系统基于 SQLite 在线快照（VACUUM INTO + 文件替换），
+// 不适用于 PostgreSQL。PostgreSQL 部署请使用 pg_dump / pg_basebackup。
+var ErrNotSQLite = errors.New("备份子系统仅支持 SQLite；PostgreSQL 部署请使用 pg_dump")
+
 // Options 备份配置（来自 config.backup.*）
 type Options struct {
+	// Driver 数据库类型（"sqlite3" 默认 / "postgres"）。PostgreSQL 下备份接口返回不可用。
+	Driver   string
 	DBPath   string        // 数据库文件路径（实际使用中的那个，非配置里的期望值）
 	Dir      string        // 备份目录
 	Keep     int           // 保留份数（按时间倒序保留最新的 Keep 份）
@@ -76,6 +83,9 @@ func (m *Manager) Options() Options { return m.opts }
 
 // Create 生成一份备份并校验，然后按保留份数清理旧备份。
 func (m *Manager) Create(note string) (Info, error) {
+	if strings.EqualFold(m.opts.Driver, "postgres") {
+		return Info{}, ErrNotSQLite
+	}
 	if m.opts.DBPath == "" {
 		return Info{}, fmt.Errorf("数据库路径为空")
 	}

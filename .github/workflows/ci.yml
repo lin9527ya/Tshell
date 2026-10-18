@@ -92,6 +92,37 @@ jobs:
         # ./... 含 cmd/single 的传输接线守卫（pollTransport 必须实现 PollInterval）
         run: go test -race ./... -count=1
 
+  postgres:
+    name: PostgreSQL Backend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Tshell-server
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: tshell
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: Tshell-server/go.mod
+          cache: true
+      - name: PostgreSQL integration test
+        # 覆盖建表/版本化迁移/xorm CRUD/原生 SQL 占位符/序列重置/列内省
+        env:
+          TSHELL_TEST_PG_DSN: "host=127.0.0.1 port=5432 user=postgres password=test dbname=tshell sslmode=disable"
+        run: go test ./pkg/database/ -run TestPostgresBackend -v -count=1
+
   relay:
     name: Relay (Go, stdlib only)
     runs-on: ubuntu-latest

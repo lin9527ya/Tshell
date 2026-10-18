@@ -76,7 +76,7 @@ UPDATE downloads
 SET file_size = ?, downloaded_size = ?
 WHERE uid = ? AND file_path = ?;
 `
-		database.Engine.QueryString(sql, 0, 0, fileBody.Uid, fileBody.FilePath)
+		database.QueryStringSQL(sql, 0, 0, fileBody.Uid, fileBody.FilePath)
 	}
 	// 任务一等对象：下载此前不落任务，任务中心看不到"谁在拖哪个文件"，
 	// 前端只能靠轮询字节数猜完成（超时就报错）。这里建任务，终态由

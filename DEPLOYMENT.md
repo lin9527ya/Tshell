@@ -72,6 +72,12 @@ GOMEMLIMIT=3GiB go build -ldflags "-s -w" -trimpath -o tshell-server.exe .\main.
 - Nginx 参考配置见 `Tshell-web/nginx.conf`(已含收紧的 CSP)。
 - 建议 Nginx 层启用 HTTPS 并代理 `/api/`(含 WebSocket Upgrade 头)。
 
+### 存储后端
+
+默认 SQLite（单文件、零依赖）。要切 PostgreSQL，在 `config.yaml` 设置
+`database.type: postgres` 与 `database.dsn`，服务端启动时自动建表与迁移；
+内置备份在 PostgreSQL 下不启用（请用 pg_dump）。详见 **docs/STORAGE.md**。
+
 ### 单实例限制（重要）
 
 **必须单副本部署，不支持水平扩展。** 这不是"还没做"，而是当前架构的硬约束：

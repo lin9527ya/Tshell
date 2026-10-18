@@ -406,7 +406,9 @@ func GetUserListHandler(c *gin.Context) {
 	defer session.Close()
 
 	if query.Search != "" {
-		session = session.Where("username LIKE ? COLLATE NOCASE", "%"+query.Search+"%")
+		// 跨方言大小写不敏感匹配：SQLite 用 COLLATE NOCASE，PostgreSQL 用 ILIKE；
+		// LOWER(...) LIKE LOWER(?) 两边都成立（用户名是 ASCII）
+		session = session.Where("LOWER(username) LIKE LOWER(?)", "%"+query.Search+"%")
 	}
 
 	total, err := session.Count(new(database.Users))

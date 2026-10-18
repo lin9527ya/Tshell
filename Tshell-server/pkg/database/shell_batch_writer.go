@@ -53,7 +53,7 @@ func shellFlusher() {
 		stmts := make([]batchStmt, 0, len(pending))
 		for uid, content := range pending {
 			stmts = append(stmts, batchStmt{
-				sql:  "UPDATE `shell` SET `shell_content` = substr(`shell_content` || ?, -? ) WHERE `uid` = ?",
+				sql:  shellAppendSQL(),
 				args: []interface{}{content, maxShellContentSize, uid},
 			})
 		}
@@ -76,4 +76,13 @@ func shellFlusher() {
 			flush()
 		}
 	}
+}
+
+// shellAppendSQL 返回"追加并按上限截断"的 SQL（列名不加引号，两种方言都合法）。
+// SQLite 的 substr(x, -n) 取末尾 n 个字符；PostgreSQL 没有负长度语义，用 right(x, n)。
+func shellAppendSQL() string {
+	if IsPostgres() {
+		return "UPDATE shell SET shell_content = right(shell_content || ?, ? ) WHERE uid = ?"
+	}
+	return "UPDATE shell SET shell_content = substr(shell_content || ?, -? ) WHERE uid = ?"
 }

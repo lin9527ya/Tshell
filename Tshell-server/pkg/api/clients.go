@@ -280,19 +280,14 @@ func GetShellContent(c *gin.Context) {
 	// 长会话内容仅处理尾部（避免 5MB 级全量读+多轮转码的 CPU/IO 放大）
 	const maxShellTail = 512 * 1024 // 512KB
 
-	// 【性能优化】SQL 侧截断：只读尾部 512KB，避免轮询接口每次全量加载整行
-	// 5MB blob（SQLite substr 负起始值自动钳位，短内容返回全文）
-	var shell database.Shell
-	_, err := database.Engine.SQL(
-		"SELECT substr(shell_content, -?, ?) AS shell_content FROM shell WHERE uid = ?",
-		maxShellTail, maxShellTail, uid).Get(&shell)
+	// 【性能优化】SQL 侧截断：只读尾部 512KB，避免轮询接口每次全量加载整行。
+	// 跨方言：SQLite substr(x,-n) / PostgreSQL right(x,n)，见 database.LoadShellTail。
+	content, err := database.LoadShellTail(uid, maxShellTail)
 	if err != nil {
 		logx.Warnf("⚠️ 读取Shell内容失败: uid=%s, err=%v\n", uid, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"status": 500, "error": "读取Shell内容失败"})
 		return
 	}
-
-	content := shell.ShellContent
 
 	// 对Shell内容进行编码处理，确保中文正确显示
 	processedContent := processShellContent(content)
@@ -569,15 +564,8 @@ func ResetClientId(c *gin.Context) {
 	var maxID int64
 	database.Engine.SQL("SELECT COALESCE(MAX(id), 0) FROM clients").Get(&maxID)
 
-	// SQLite 自增序列：确保 sqlite_sequence 存在对应行并设为 maxID，下一个ID从 maxID+1 开始
-	_, err := database.Engine.Exec("DELETE FROM sqlite_sequence WHERE name = 'clients'")
-	if err != nil {
-		log.Printf("[CLIENT-API] ❌ 重置ID失败(清理序列): %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"status": 500, "data": "重置ID失败"})
-		return
-	}
-	_, err = database.Engine.Exec("INSERT INTO sqlite_sequence (name, seq) VALUES ('clients', ?)", maxID)
-	if err != nil {
+	// 自增序列重置：SQLite 走 sqlite_sequence，PostgreSQL 走 setval（见 database.ResetAutoIncrement）
+	if err := database.ResetAutoIncrement("clients", maxID); err != nil {
 		log.Printf("[CLIENT-API] ❌ 重置ID失败(写入序列): %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"status": 500, "data": "重置ID失败"})
 		return

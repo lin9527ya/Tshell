@@ -101,7 +101,7 @@ func HandleClientReply(listenerType, uid string, replyType uint32, data []byte,
 		downloadReqID := binary.BigEndian.Uint32(data[8:12])
 		filePath := string(data[12:])
 		sql := `UPDATE downloads SET file_size = ?, downloaded_size = ? WHERE uid = ? AND file_path = ?;`
-		database.Engine.QueryString(sql, fileLen, 0, uid, filePath)
+		database.QueryStringSQL(sql, fileLen, 0, uid, filePath)
 		// v2：按 requestId 管理文件句柄（并发下载互不污染 + 断点续传）
 		if err := VarDownloadFiles.Start(uid, downloadReqID, filePath, fileLen); err != nil {
 			logx.Errorf("❌ 下载文件打开失败 - UID: %s, 路径: %s, 错误: %v", uid, filePath, err)

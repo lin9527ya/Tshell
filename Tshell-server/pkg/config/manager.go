@@ -99,8 +99,11 @@ type ServerConfig struct {
 
 // DatabaseConfig 数据库配置
 type DatabaseConfig struct {
-	Type         string        `json:"type" yaml:"type" env:"TYPE" default:"sqlite3"`
+	Type         string        `json:"type" yaml:"type" env:"TYPE" default:"sqlite3"` // sqlite3 | postgres
 	Path         string        `json:"path" yaml:"path" env:"PATH" default:"./database.db"`
+	// DSN PostgreSQL 连接串（type=postgres 时必填），如
+	// host=127.0.0.1 port=5432 user=tshell password=*** dbname=tshell sslmode=disable
+	DSN string `json:"dsn" yaml:"dsn" env:"DSN" default:""`
 	MaxOpenConns int           `json:"max_open_conns" yaml:"max_open_conns" env:"MAX_OPEN_CONNS" default:"25"`
 	MaxIdleConns int           `json:"max_idle_conns" yaml:"max_idle_conns" env:"MAX_IDLE_CONNS" default:"5"`
 	MaxLifetime  time.Duration `json:"max_lifetime" yaml:"max_lifetime" env:"MAX_LIFETIME" default:"5m"`

@@ -2,6 +2,7 @@ package backup
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -292,6 +293,14 @@ func TestDeleteAndOpenRejectPathTraversal(t *testing.T) {
 	// 源库仍在
 	if _, err := os.Stat(dbPath); err != nil {
 		t.Fatalf("源库被误删: %v", err)
+	}
+}
+
+// TestPostgresBackendUnsupported PostgreSQL 后端不使用内置备份（VACUUM INTO 是 SQLite 语义）
+func TestPostgresBackendUnsupported(t *testing.T) {
+	m := New(Options{DBPath: "/tmp/nonexistent.db", Dir: t.TempDir(), Driver: "postgres"})
+	if _, err := m.Create("pg"); !errors.Is(err, ErrNotSQLite) {
+		t.Fatalf("PostgreSQL 下 Create 应返回 ErrNotSQLite，实际: %v", err)
 	}
 }
 

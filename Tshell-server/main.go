@@ -263,15 +263,31 @@ func main() {
 	// P1-2B: 仪表盘后台预采（10s 周期，连接数 30s）
 	api.InitDashboardCollector()
 
+	// 存储后端选择（config.database.type/dsn）：sqlite3（默认）或 postgres
+	database.DBType = strings.ToLower(strings.TrimSpace(appConfig.Database.Type))
+	database.PGDSN = strings.TrimSpace(appConfig.Database.DSN)
+	if database.DBType == "postgres" || database.DBType == "postgresql" {
+		database.DBType = "postgres"
+		if database.PGDSN == "" {
+			logx.Errorf("❌ [数据库] database.type=postgres 但 database.dsn 为空\n")
+			os.Exit(1)
+		}
+		logx.Infof("🗄️ [数据库] 使用 PostgreSQL 后端\n")
+	}
 	database.ConnectDateBase()
 	defer database.Engine.Close()
 	// 连接池参数（config.database.* 此前是死配置：ConnectDateBase 硬编码 10/5/5m）
 	database.ConfigurePool(appConfig.Database.MaxOpenConns, appConfig.Database.MaxIdleConns, appConfig.Database.MaxLifetime)
 
 	// ===== 数据库备份 =====
-	if appConfig.Backup.Enabled {
+	if appConfig.Backup.Enabled && database.IsPostgres() {
+		// 备份子系统是 SQLite 语义（VACUUM INTO + 文件替换），PostgreSQL 下不启用；
+		// 保留 /api/backup/* 的 503 语义，避免操作员以为备份在工作。
+		logx.Warnf("⚠️ [备份] PostgreSQL 后端不使用内置备份（VACUUM INTO 仅适用于 SQLite），请用 pg_dump / pg_basebackup\n")
+	} else if appConfig.Backup.Enabled {
 		backupMgr := backup.New(backup.Options{
 			DBPath:   database.DatabaseName,
+			Driver:   appConfig.Database.Type,
 			Dir:      appConfig.Backup.Dir,
 			Keep:     appConfig.Backup.Keep,
 			Interval: appConfig.Backup.Interval,

@@ -466,39 +466,14 @@ func migrateClientsTable() error {
 	lastActiveColumnName := "last_active"
 	idColumnName := "id"
 
-	// 查询表结构信息
-	rows, err := Engine.QueryString("PRAGMA table_info(" + tableName + ")")
-	if err != nil {
-		return fmt.Errorf("查询表结构失败: %v", err)
-	}
-
-	// 检查是否已经存在所有字段
-	hasListenerColumn := false
-	hasHeartbeatTimeoutColumn := false
-	hasHeartbeatIntervalColumn := false
-	hasLastActiveColumn := false
-	hasIdColumn := false
-	hasOsColumn := false
-	for _, row := range rows {
-		if row["name"] == "os" {
-			hasOsColumn = true
-		}
-		if row["name"] == listenerColumnName {
-			hasListenerColumn = true
-		}
-		if row["name"] == heartbeatTimeoutColumnName {
-			hasHeartbeatTimeoutColumn = true
-		}
-		if row["name"] == heartbeatIntervalColumnName {
-			hasHeartbeatIntervalColumn = true
-		}
-		if row["name"] == lastActiveColumnName {
-			hasLastActiveColumn = true
-		}
-		if row["name"] == idColumnName {
-			hasIdColumn = true
-		}
-	}
+	// 查询表结构信息（跨方言：SQLite PRAGMA / PostgreSQL information_schema）
+	cols := tableColumns(tableName)
+	hasListenerColumn := cols[listenerColumnName]
+	hasHeartbeatTimeoutColumn := cols[heartbeatTimeoutColumnName]
+	hasHeartbeatIntervalColumn := cols[heartbeatIntervalColumnName]
+	hasLastActiveColumn := cols[lastActiveColumnName]
+	hasIdColumn := cols[idColumnName]
+	hasOsColumn := cols["os"]
 
 	// 如果不存在os字段，则添加
 	if !hasOsColumn {
@@ -566,6 +541,11 @@ func migrateClientsTable() error {
 
 	// 如果不存在id字段，则添加（需要重建表）
 	if !hasIdColumn {
+		if IsPostgres() {
+			// PostgreSQL 无法像 SQLite 那样靠重建表"补主键"；新库由 Sync2 建出正确结构，
+			// 走到这里说明表结构与预期严重不符，直接报错让人工介入。
+			return fmt.Errorf("PostgreSQL 下 clients 表缺少 id 列，请人工修复或重建数据库")
+		}
 		log.Printf("正在为Clients表添加ID字段...")
 		// SQLite需要重建表来添加主键
 		err = migrateClientsTableWithId()
@@ -582,42 +562,21 @@ func migrateClientsTable() error {
 
 // migrateListenerTable 迁移Listener表，添加心跳配置字段和新增字段
 func migrateListenerTable() error {
+	var err error
 	tableName := "listener"
 	heartbeatTimeoutColumnName := "heartbeat_timeout"
 	heartbeatIntervalColumnName := "heartbeat_interval"
 	noteColumnName := "note"
-	vkeyColumnName := "vkey"
+	vkeyColumnName := "v_key" // 与 Listener.VKey 的 xorm tag 一致（曾误写成 vkey，导致每次多建一列）
 	encryptionSaltColumnName := "encryption_salt"
 
-	// 查询表结构信息
-	rows, err := Engine.QueryString("PRAGMA table_info(" + tableName + ")")
-	if err != nil {
-		return fmt.Errorf("查询Listener表结构失败: %v", err)
-	}
-
-	// 检查是否已经存在所有字段
-	hasHeartbeatTimeoutColumn := false
-	hasHeartbeatIntervalColumn := false
-	hasNoteColumn := false
-	hasVKeyColumn := false
-	hasEncryptionSaltColumn := false
-	for _, row := range rows {
-		if row["name"] == heartbeatTimeoutColumnName {
-			hasHeartbeatTimeoutColumn = true
-		}
-		if row["name"] == heartbeatIntervalColumnName {
-			hasHeartbeatIntervalColumn = true
-		}
-		if row["name"] == noteColumnName {
-			hasNoteColumn = true
-		}
-		if row["name"] == vkeyColumnName {
-			hasVKeyColumn = true
-		}
-		if row["name"] == encryptionSaltColumnName {
-			hasEncryptionSaltColumn = true
-		}
-	}
+	// 查询表结构信息（跨方言）
+	cols := tableColumns(tableName)
+	hasHeartbeatTimeoutColumn := cols[heartbeatTimeoutColumnName]
+	hasHeartbeatIntervalColumn := cols[heartbeatIntervalColumnName]
+	hasNoteColumn := cols[noteColumnName]
+	hasVKeyColumn := cols[vkeyColumnName]
+	hasEncryptionSaltColumn := cols[encryptionSaltColumnName]
 
 	// 如果不存在heartbeat_timeout字段，则添加
 	if !hasHeartbeatTimeoutColumn {
@@ -1149,15 +1108,20 @@ func currentEngine() *xorm.Engine {
 
 func ConnectDateBase() {
 	var err error
-	dsn := DatabaseName
-	if !strings.Contains(dsn, "?") {
+	driver, dsn := "sqlite3", DatabaseName
+	if IsPostgres() {
+		if PGDSN == "" {
+			log.Fatalf("database.type=postgres 但 database.dsn 为空")
+		}
+		driver, dsn = "postgres", PGDSN
+	} else if !strings.Contains(dsn, "?") {
 		dsn += "?_journal_mode=WAL&_busy_timeout=10000&_synchronous=NORMAL"
 	}
 	engineMu.Lock()
-	Engine, err = xorm.NewEngine("sqlite3", dsn)
+	Engine, err = xorm.NewEngine(driver, dsn)
 	engineMu.Unlock()
 	if err != nil {
-		log.Fatalf("连接sqlite3数据库失败: %v", err)
+		log.Fatalf("连接%s数据库失败: %v", driver, err)
 	}
 
 	// 优化 SQLite 连接池配置，提升并发吞吐
@@ -1165,33 +1129,39 @@ func ConnectDateBase() {
 	Engine.SetMaxOpenConns(10)
 	Engine.SetMaxIdleConns(5)
 	Engine.SetConnMaxLifetime(5 * time.Minute)
-_, _ = Engine.Exec("PRAGMA foreign_keys=ON")  
-_, _ = Engine.Exec("PRAGMA temp_store=MEMORY")  
-_, _ = Engine.Exec("PRAGMA cache_size=-64000")  
-_, _ = Engine.Exec("PRAGMA mmap_size=268435456")  
-	// P0-1B: WAL 调优——限制 WAL 文件上限 64M，autocheckpoint 1000 页
-	_, _ = Engine.Exec("PRAGMA journal_size_limit=67108864")
-	_, _ = Engine.Exec("PRAGMA wal_autocheckpoint=1000")
-	// 后台 5m 增量 checkpoint(TRUNCATE)，失败跳过（仅 idle 时有效）
-	go func() {
-		t := time.NewTicker(5 * time.Minute)
-		defer t.Stop()
-		for range t.C {
-			if e := currentEngine(); e != nil {
-				_, _ = e.Exec("PRAGMA wal_checkpoint(TRUNCATE)")
+	// SQLite 专有调优：PostgreSQL 下这些语句无效（会报语法错误），必须跳过
+	if !IsPostgres() {
+	_, _ = Engine.Exec("PRAGMA foreign_keys=ON")  
+	_, _ = Engine.Exec("PRAGMA temp_store=MEMORY")  
+	_, _ = Engine.Exec("PRAGMA cache_size=-64000")  
+	_, _ = Engine.Exec("PRAGMA mmap_size=268435456")  
+		// P0-1B: WAL 调优——限制 WAL 文件上限 64M，autocheckpoint 1000 页
+		_, _ = Engine.Exec("PRAGMA journal_size_limit=67108864")
+		_, _ = Engine.Exec("PRAGMA wal_autocheckpoint=1000")
+		// 后台 5m 增量 checkpoint(TRUNCATE)，失败跳过（仅 idle 时有效）
+		go func() {
+			t := time.NewTicker(5 * time.Minute)
+			defer t.Stop()
+			for range t.C {
+				if e := currentEngine(); e != nil {
+					_, _ = e.Exec("PRAGMA wal_checkpoint(TRUNCATE)")
+				}
 			}
-		}
-	}()
-
-	// 先迁移旧 web_delivery（无主键），再 Sync2 / 连接池管理器
-	if err = ensureWebDeliverySchema(Engine); err != nil {
-		log.Fatalf("迁移 web_delivery 表失败: %v", err)
+		}()
 	}
 
-	// 【列名修复】早期 xorm 驼峰拆分产生错误列名（i_d / client_u_i_d / delivery_i_d），
-	// 必须在 Sync2 之前重命名——否则 Sync2 依新 tag 尝试 ADD COLUMN 主键会失败
-	if err = ensureColumnNameMigrations(Engine); err != nil {
-		log.Fatalf("列名迁移失败: %v", err)
+	// 旧版 SQLite 表结构修复（无主键 web_delivery / 驼峰拆列名）：只对历史 SQLite 库
+	// 有意义。PostgreSQL 是新部署，Sync2 直接建出正确结构，不能跑这些迁移
+	// （它们用 PRAGMA 与反引号标识符，PG 不支持）。
+	if !IsPostgres() {
+		if err = ensureWebDeliverySchema(Engine); err != nil {
+			log.Fatalf("迁移 web_delivery 表失败: %v", err)
+		}
+		// 【列名修复】早期 xorm 驼峰拆分产生错误列名（i_d / client_u_i_d / delivery_i_d），
+		// 必须在 Sync2 之前重命名——否则 Sync2 依新 tag 尝试 ADD COLUMN 主键会失败
+		if err = ensureColumnNameMigrations(Engine); err != nil {
+			log.Fatalf("列名迁移失败: %v", err)
+		}
 	}
 
 

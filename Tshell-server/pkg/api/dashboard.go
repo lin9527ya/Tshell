@@ -76,7 +76,7 @@ func GetDashboardStats(c *gin.Context) {
 	}
 	var agg clientAgg
 	_, aggErr := database.Engine.SQL(
-		"SELECT COUNT(*) AS total, COALESCE(SUM(CASE WHEN `online`='1' THEN 1 ELSE 0 END),0) AS online FROM `clients`",
+		"SELECT COUNT(*) AS total, COALESCE(SUM(CASE WHEN online='1' THEN 1 ELSE 0 END),0) AS online FROM clients",
 	).Get(&agg)
 	if aggErr != nil {
 		logx.Infof("聚合查询 clients 失败，回退分步 Count: %v", aggErr)
