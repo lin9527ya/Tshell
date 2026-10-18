@@ -140,6 +140,28 @@ func TestCredRoutePolicy(t *testing.T) {
 	}
 }
 
+// TestRedirectorRoutePolicy 重定向器配置接口限 admin+operator：
+// 生成的内容含服务端后端地址与画像路径，属部署情报。
+func TestRedirectorRoutePolicy(t *testing.T) {
+	src, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatalf("读取 main.go 失败: %v", err)
+	}
+	re := regexp.MustCompile(`(?m)^\s*(\w+)\.(?:GET|POST|DELETE|PUT)\("(/redirector/[^"]*)"`)
+	got := map[string]string{}
+	for _, m := range re.FindAllStringSubmatch(string(src), -1) {
+		got[m[2]] = m[1]
+	}
+	if len(got) == 0 {
+		t.Fatal("main.go 中找不到重定向器路由（/redirector/...）")
+	}
+	for route, group := range got {
+		if group != "operatorOnly" {
+			t.Errorf("重定向器路由 %s 挂在 %s，期望 operatorOnly", route, group)
+		}
+	}
+}
+
 // TestBodyLimitPolicy 守卫 main.go 里的按路径请求体上限。
 // 全局默认是 10MB，任何声明了更大上限的上传接口都必须在这里登记，
 // 否则 handler 里的大小检查永远走不到（这正是修复前插件上传 50MB 失效的原因）。
