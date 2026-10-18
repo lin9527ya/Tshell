@@ -42,6 +42,15 @@ logging:
     max_retain_days: 30        # 审计日志保留天数
     enable_console: true       # 是否启用控制台输出
 
+backup:
+    # 数据库备份：VACUUM INTO 在线一致性快照（含 WAL），恢复走 CLI（./tshell -restore）
+    # 详见 docs/BACKUP_RESTORE.md
+    enabled: true
+    dir: ./backups              # 建议指向另一块盘/远端挂载点（与数据库同盘等于没备份）
+    interval: 24h               # 自动备份间隔（duration 写法）；0s = 只保留手动与 CLI 备份
+    keep: 7                     # 保留份数（按时间倒序自动清理）
+    on_startup: false           # 启动时先备一份（改配置/升级前建议开启）
+
 metrics:
     # Prometheus 指标端点 /metrics（在线 beacon 数、连接、命令队列积压、任务吞吐、API 延迟）
     enabled: true              # 关闭后 /metrics 返回 404

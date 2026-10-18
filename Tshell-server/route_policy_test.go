@@ -87,6 +87,37 @@ func TestCollabRoutePolicy(t *testing.T) {
 	}
 }
 
+// TestBackupRoutePolicy 备份接口全部限 admin：备份文件含全部凭据、战利品与会话历史，
+// 且"下载备份"等于把整库拖走 —— 这是平台里权限最高的数据面之一。
+// 恢复不提供 HTTP 接口（SQLite 无法热替换），走 CLI，见 docs/BACKUP_RESTORE.md。
+func TestBackupRoutePolicy(t *testing.T) {
+	src, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatalf("读取 main.go 失败: %v", err)
+	}
+
+	re := regexp.MustCompile(`(?m)^\s*(\w+)\.(?:GET|POST|DELETE|PUT)\("(/backup/[^"]*)"`)
+	got := map[string]string{}
+	for _, m := range re.FindAllStringSubmatch(string(src), -1) {
+		got[m[2]] = m[1]
+	}
+	if len(got) == 0 {
+		t.Fatal("main.go 中找不到备份路由（/backup/...）")
+	}
+	for route, group := range got {
+		if group != "adminOnly" {
+			t.Errorf("备份路由 %s 挂在 %s，期望 adminOnly", route, group)
+		}
+	}
+	// 恢复必须是 CLI，不能是 HTTP 接口
+	if regexp.MustCompile(`(?m)^\s*\w+\.(?:GET|POST)\("/backup/restore"`).MatchString(string(src)) {
+		t.Error("恢复不应暴露 HTTP 接口：SQLite 数据库无法在服务端运行时热替换")
+	}
+	if !strings.Contains(string(src), `flag.String("restore"`) {
+		t.Error("main.go 中找不到 -restore CLI 入口")
+	}
+}
+
 // TestBodyLimitPolicy 守卫 main.go 里的按路径请求体上限。
 // 全局默认是 10MB，任何声明了更大上限的上传接口都必须在这里登记，
 // 否则 handler 里的大小检查永远走不到（这正是修复前插件上传 50MB 失效的原因）。

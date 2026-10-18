@@ -46,12 +46,13 @@ describe('SettingsView 页签按角色过滤', () => {
     setActivePinia(createPinia())
   })
 
-  it('admin 可见全部 8 个页签', async () => {
+  it('admin 可见全部 9 个页签', async () => {
     const { wrapper } = await mountSettings(ADMIN)
     const labels = wrapper.findAll('.st-tab').map((t) => t.text())
-    expect(labels).toHaveLength(8)
+    expect(labels).toHaveLength(9)
     expect(labels).toContain('服务配置')
     expect(labels).toContain('用户管理')
+    expect(labels).toContain('备份') // 备份接口仅 admin（备份含全部凭据）
     expect(labels).toContain('日志')
   })
 

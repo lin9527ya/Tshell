@@ -57,6 +57,7 @@ Tshell/
   - 接口:`GET /api/tasks`(过滤+分页)、`GET /api/tasks/:id`、`POST /api/tasks/:id/cancel`。
   - 前端任务中心(`/tasks`)按真实状态展示与取消;插件页与文件下载对话框按 `task_id` 轮询终态,
     不再靠"输出稳定 N 次"或"百分比到 100"猜完成。
+- **备份与恢复**:`VACUUM INTO` 在线一致性快照(含 WAL,`pkg/backup`),定时+手动+CLI,保留 N 份并校验(`PRAGMA integrity_check` + 必需表,结果记 `.ok`);接口仅 admin;**恢复只能停服务后用 `./tshell -restore`**(SQLite 无法热替换,替换前自动留 `.pre-restore-<时间>` 快照);详见 docs/BACKUP_RESTORE.md。
 - **可观测性**:Prometheus 指标端点 `/metrics`(`pkg/metrics`,独立注册表;在线 beacon/连接/队列积压/任务吞吐/HTTP 延迟;标签用路由模板与传输类型,基数受控),访问默认限本机或需 `metrics.token`;请求耗时与慢请求日志中间件;详见 docs/OBSERVABILITY.md。
 - **协作**(多操作员):在线状态(任一已认证请求与事件流连接续期,5 分钟无活动视为离线)、会话锁(占用某台主机后其他操作员对其下发命令返回 409,30 分钟自动过期)、操作广播(`operator_action` 事件经事件总线推送)、团队频道(事件流 WebSocket 上行 `chat`,服务端广播给所有操作员)。锁是**软**的:无人持锁时行为与单操作员完全一致。
 

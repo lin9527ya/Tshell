@@ -6,6 +6,7 @@ package main
 import (
 	"BackendTemplate/pkg/api"
 	"BackendTemplate/pkg/audit"
+	"BackendTemplate/pkg/backup"
 	"BackendTemplate/pkg/c2profile"
 	"BackendTemplate/pkg/cna"
 	"BackendTemplate/pkg/command"
@@ -85,6 +86,12 @@ func main() {
 	// 初始化配置管理系统
 	var configFile = flag.String("config", "config.yaml", "配置文件路径")
 	var bindPort = flag.Int("p", 8089, "Specify alternate port")
+	// 备份/恢复 CLI：恢复必须在服务端未运行时进行，因此这几个开关处理完即退出，
+	// 不进入正常的服务端启动流程
+	var backupNow = flag.Bool("backup", false, "立即创建一份数据库备份并退出")
+	var restoreFrom = flag.String("restore", "", "用指定备份恢复数据库并退出（需先停止服务端）")
+	var restoreForce = flag.Bool("force", false, "恢复时跳过“数据库可能正在使用”检查")
+	var listBackups = flag.Bool("list-backups", false, "列出备份并退出")
 	flag.Parse()
 
 	// 加载配置
@@ -93,8 +100,26 @@ func main() {
 		os.Exit(1)
 	}
 
-	// 日志级别：debug|info|warn|error（服务端输出内容开关）
 	appConfig := config.GetGlobalConfig()
+
+	// ===== 备份/恢复 CLI（处理完即退出）=====
+	cliBackupMgr := backup.New(backup.Options{
+		DBPath: database.DatabaseName,
+		Dir:    appConfig.Backup.Dir,
+		Keep:   appConfig.Backup.Keep,
+		Prefix: "tshell-backup",
+	})
+	if *listBackups {
+		os.Exit(runListBackups(cliBackupMgr))
+	}
+	if *backupNow {
+		os.Exit(runBackupNow(cliBackupMgr))
+	}
+	if *restoreFrom != "" {
+		os.Exit(runRestore(cliBackupMgr, *restoreFrom, database.DatabaseName, *restoreForce))
+	}
+
+	// 日志级别：debug|info|warn|error（服务端输出内容开关）
 	logx.SetLevel(logx.ParseLevel(appConfig.Logging.Level))
 	// 日志格式与输出（config.logging.format/output 此前是死配置：logx 恒为 text+stdout）
 	logx.SetFormat(appConfig.Logging.Format)
@@ -220,6 +245,28 @@ func main() {
 	defer database.Engine.Close()
 	// 连接池参数（config.database.* 此前是死配置：ConnectDateBase 硬编码 10/5/5m）
 	database.ConfigurePool(appConfig.Database.MaxOpenConns, appConfig.Database.MaxIdleConns, appConfig.Database.MaxLifetime)
+
+	// ===== 数据库备份 =====
+	if appConfig.Backup.Enabled {
+		backupMgr := backup.New(backup.Options{
+			DBPath:   database.DatabaseName,
+			Dir:      appConfig.Backup.Dir,
+			Keep:     appConfig.Backup.Keep,
+			Interval: appConfig.Backup.Interval,
+		})
+		api.SetBackupManager(backupMgr)
+		if appConfig.Backup.OnStartup {
+			if info, err := backupMgr.Create("startup"); err != nil {
+				logx.Errorf("❌ [备份] 启动备份失败: %v\n", err)
+			} else {
+				logx.Infof("🗄️ [备份] 启动备份完成 %s (%.1f MB)\n", info.Name, float64(info.Size)/1024/1024)
+			}
+		}
+		stopBackup := backupMgr.StartScheduler()
+		defer stopBackup()
+		logx.Infof("🗄️ [备份] 已启用: 目录=%s 间隔=%v 保留=%d 份（恢复需停服务后用 -restore，见 docs/BACKUP_RESTORE.md）\n",
+			appConfig.Backup.Dir, appConfig.Backup.Interval, appConfig.Backup.Keep)
+	}
 
 	// 初始化统一离线检测器（B13: 替代各协议 duplicated 的 checkHeartbeats）
 	connection.InitOfflineDetector()
@@ -463,6 +510,7 @@ func main() {
 		"/api/webdelivery/host-file": 50<<20 + 1<<20,
 		"/api/client/inject-mem":     32<<20 + 1<<20,
 		"/api/cna/upload":            5<<20 + 1<<20,
+		"/api/backup/import":         api.MaxBackupImportBytes + 1<<20,
 	}))
 
 	// 添加审计日志中间件
@@ -634,6 +682,13 @@ func main() {
 	protected.POST("/users/user_setting/ChangePassword", api.ChangePasswordHandler)
 
 	// 用户管理（仅 admin；用户列表/创建/删除/重置密码 —— 权限分离）
+	// 数据库备份：仅 admin（备份含全部凭据与战利品；恢复走 CLI，不提供热恢复）
+	adminOnly.GET("/backup/list", api.ListBackups)
+	adminOnly.POST("/backup/create", api.CreateBackup)
+	adminOnly.GET("/backup/download/:name", api.DownloadBackup)
+	adminOnly.DELETE("/backup/:name", api.DeleteBackup)
+	adminOnly.POST("/backup/import", api.ImportBackup)
+
 	adminOnly.POST("/users/user_setting/get_user_list", api.GetUserListHandler)
 	adminOnly.POST("/users/user_setting/create_user", api.CreateUserHandler)
 	adminOnly.POST("/users/user_setting/delete_user", api.DeleteUserHandler)

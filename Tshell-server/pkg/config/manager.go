@@ -44,6 +44,9 @@ type Config struct {
 	// 可观测性：Prometheus 指标端点
 	Metrics MetricsConfig `json:"metrics" yaml:"metrics" env:"METRICS"`
 
+	// 数据库备份
+	Backup BackupConfig `json:"backup" yaml:"backup" env:"BACKUP"`
+
 	// 连接池配置
 	ConnectionPool ConnectionPoolConfig `json:"connection_pool" yaml:"connection_pool" env:"CONNECTION_POOL"`
 
@@ -136,6 +139,17 @@ type SecurityConfig struct {
 	// SessionKeyInfo 会话密钥派生盐上下文(客户端生成时 patch 进二进制;修改后需重新生成客户端;
 	// 默认中性随机串,不带 c2/key/session 等明显特征)
 	SessionKeyInfo string `json:"session_key_info" yaml:"session_key_info" env:"SESSION_KEY_INFO" default:"8d2c91f4a6"`
+}
+
+// BackupConfig 数据库备份配置。
+// 备份用 SQLite 的 VACUUM INTO 做在线一致性快照（含 WAL 内容），不需要停服务；
+// 恢复只能停服务后用 CLI 进行，见 docs/BACKUP_RESTORE.md。
+type BackupConfig struct {
+	Enabled   bool          `json:"enabled" yaml:"enabled" env:"BACKUP_ENABLED" default:"true"`
+	Dir       string        `json:"dir" yaml:"dir" env:"BACKUP_DIR" default:"./backups"`
+	Interval  time.Duration `json:"interval" yaml:"interval" env:"BACKUP_INTERVAL" default:"24h"`
+	Keep      int           `json:"keep" yaml:"keep" env:"BACKUP_KEEP" default:"7"`
+	OnStartup bool          `json:"on_startup" yaml:"on_startup" env:"BACKUP_ON_STARTUP" default:"false"`
 }
 
 // MetricsConfig Prometheus 指标端点配置。

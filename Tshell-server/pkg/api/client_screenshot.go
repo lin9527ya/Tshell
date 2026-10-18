@@ -104,6 +104,9 @@ func TakeScreenshot(c *gin.Context) {
 // MaxExecuteBinBytes 内存执行载荷大小上限（main.go 的按路径请求体上限引用同一个值）
 const MaxExecuteBinBytes = 100 << 20
 
+// MaxBackupImportBytes 备份导入上限（1GB）：备份是整库，比载荷大得多
+const MaxBackupImportBytes = 1 << 30
+
 // maxAssemblyBytes execute-assembly 的程序集上限：客户端 execute-assembly_windows.go
 // 的 maxAssemblySize 是 10MB，超过会被客户端拒收。服务端提前拦下并说明原因，
 // 否则表现是"命令已发送"然后一直等不到结果。

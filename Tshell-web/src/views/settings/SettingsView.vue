@@ -56,6 +56,7 @@ const TABS: { key: SettingTab; zh: string; en: string; permiss: string }[] = [
   { key: 'keys', zh: '密钥管理', en: 'Keys', permiss: Perm.AdminOnly },
   { key: 'security', zh: '安全中心', en: 'Security', permiss: Perm.AdminOnly },
   { key: 'hidden', zh: '隐蔽访问', en: 'Hidden Access', permiss: Perm.AdminOnly },
+  { key: 'backup', zh: '备份', en: 'Backup', permiss: Perm.AdminOnly },
   { key: 'logs', zh: '日志', en: 'Logs', permiss: Perm.Audit },
   { key: 'pool', zh: '连接池', en: 'Connections', permiss: Perm.SystemView },
 ]
@@ -80,6 +81,7 @@ const LOADERS: Record<SettingTab, () => Promise<{ default: Component }>> = {
   keys: () => import('@/views/config/KeyManagementView.vue'),
   security: () => import('@/views/security/SecurityCenterView.vue'),
   hidden: () => import('@/views/security/HiddenAccessView.vue'),
+  backup: () => import('@/views/config/BackupView.vue'),
   logs: () => import('@/views/logs/LogsView.vue'),
   pool: () => import('@/views/connection/ConnectionPoolView.vue'),
 }
