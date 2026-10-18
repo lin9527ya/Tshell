@@ -112,6 +112,22 @@ func main() {
 	if alg := appConfig.JWT.Algorithm; alg != "" && !strings.EqualFold(alg, "RS256") {
 		logx.Warnf("⚠️ [配置] jwt.algorithm=%s 不受支持（实现固定 RS256），已忽略\n", alg)
 	}
+
+	// 启动安全自检：敏感文件权限（含密钥/战利品明文）与默认弱口令
+	for _, p := range insecurePermPaths(
+		*configFile,
+		appConfig.Database.Path,
+		appConfig.JWT.SecretKeyFile,
+		"jwt_private.pem",
+	) {
+		if st, err := os.Stat(p); err == nil {
+			logx.Warnf("⚠️ [安全] %s 权限为 %#o（建议 0600）：该文件含密钥/凭据明文，请执行 chmod 600 %s\n",
+				p, st.Mode().Perm(), p)
+		}
+	}
+	if strings.EqualFold(appConfig.Auth.DefaultPassword, "admin") || len(appConfig.Auth.DefaultPassword) < 8 {
+		logx.Warnf("⚠️ [安全] auth.default_password 为弱口令（长度<8 或为 admin），请修改配置\n")
+	}
 	// 【安全修复】白名单由配置驱动：私网段不再默认全量豁免（防内网爆破），
 	// 仅回环 + security.whitelist_ips 显式声明条目豁免限流；强制模式同步配置
 	security.GlobalRateLimiter.RebuildWhitelist(appConfig.Security.WhitelistIPs)
@@ -1017,4 +1033,25 @@ func SafeAuthHeaderGuard() gin.HandlerFunc {
 		}
 		c.Next()
 	}
+}
+
+// insecurePermPaths 返回权限过宽（组/其他用户可访问）的敏感文件路径。
+// 数据库与配置里存着监听器 VKey/Salt、战利品明文口令与平台密钥——
+// 评估发现默认部署下它们常是 644/664，同机任意用户可读。
+// 只报告，不自动 chmod：部署可能有意让备份账号读取，改权限应由运维决定。
+func insecurePermPaths(paths ...string) []string {
+	var bad []string
+	for _, p := range paths {
+		if p == "" {
+			continue
+		}
+		st, err := os.Stat(p)
+		if err != nil {
+			continue
+		}
+		if st.Mode().Perm()&0o077 != 0 {
+			bad = append(bad, p)
+		}
+	}
+	return bad
 }
