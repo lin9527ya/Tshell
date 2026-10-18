@@ -234,61 +234,8 @@
     </el-form>
     </div>
     
-    <!-- 上传文件模态框 -->
-    <el-dialog v-model="showUploadDialog" :title="i18nStore.tl('上传插件', 'Upload Plugin')" width="700px" :close-on-click-modal="false">
-      <div class="upload-dialog-content">
-        <div class="upload-info-banner">
-          <el-icon class="info-icon"><InfoFilled /></el-icon>
-          {{ i18nStore.tl('支持exe,net,elf,dll,so,dylib格式，单个文件不超过50MB，最多只能同时上传6个文件', 'Supports exe, net, elf, dll, so, dylib. Max 50MB per file, up to 6 files at once.') }}
-          <el-button type="primary" class="select-file-btn" @click="selectFiles">{{ i18nStore.tl('选择文件', 'Select Files') }}</el-button>
-        </div>
-
-        <!-- 文件列表区域 -->
-        <div class="file-list-area">
-          <div class="file-list-header">
-            <div class="header-col thumbnail">{{ i18nStore.tl('缩略图', 'Preview') }}</div>
-            <div class="header-col filename">{{ i18nStore.tl('文件名', 'File Name') }}</div>
-            <div class="header-col filesize">{{ i18nStore.tl('文件大小', 'Size') }}</div>
-            <div class="header-col status">{{ i18nStore.tl('状态', 'Status') }}</div>
-            <div class="header-col operation">{{ i18nStore.tl('操作', 'Actions') }}</div>
-          </div>
-
-          <div class="file-list-body">
-            <div v-if="fileList.length === 0" class="empty-file-list">
-              {{ i18nStore.tl('暂无文件', 'No files') }}
-            </div>
-            <div v-for="(file, index) in fileList" :key="index" class="file-item">
-              <div class="file-col thumbnail">
-                <div class="file-icon">📄</div>
-              </div>
-              <div class="file-col filename">{{ file.name }}</div>
-              <div class="file-col filesize">{{ formatFileSize(file.size) }}</div>
-              <div class="file-col status">{{ i18nStore.tl('待上传', 'Pending') }}</div>
-              <div class="file-col operation">
-                <el-button type="text" @click="removeFile(index)">{{ i18nStore.tl('删除', 'Remove') }}</el-button>
-              </div>
-            </div>
-          </div>
-        </div>
-        
-        <!-- 隐藏的文件输入 -->
-        <input
-          ref="fileInput"
-          type="file"
-          multiple
-          accept=".exe,.net,.elf,.dll,.so,.dylib"
-          style="display: none"
-          @change="handleFileSelect"
-        />
-      </div>
-      
-      <template #footer>
-        <div class="upload-dialog-footer">
-          <el-button @click="closeUploadDialog">{{ i18nStore.tl('关闭', 'Close') }}</el-button>
-          <el-button type="primary" @click="submitUpload">{{ i18nStore.tl('开始上传', 'Start Upload') }}</el-button>
-        </div>
-      </template>
-    </el-dialog>
+    <!-- 上传文件模态框（已拆为独立组件，自带文件列表状态与样式） -->
+    <PluginUploadDialog v-model:visible="showUploadDialog" @uploaded="refreshPlugins" />
   </template>
   <ScriptManagerPanel v-else />
   </div>
@@ -305,6 +252,9 @@ import {
   type FilterOptions,
 } from '@/views/plugins/output-filter'
 import { usePanelResize } from '@/views/plugins/usePanelResize'
+import PluginUploadDialog from '@/views/plugins/PluginUploadDialog.vue'
+// 详情条与上传对话框共用同一个格式化实现（原先是父组件里的一份被两处用）
+import { formatPluginFileSize as formatFileSize } from '@/views/plugins/formatSize'
 import { ref, onMounted, computed, onUnmounted, defineAsyncComponent } from 'vue';
 const ScriptManagerPanel = defineAsyncComponent(() => import('@/layout/ScriptManagerPanel.vue'));
 import { useI18nStore } from '@/stores/i18n';
@@ -374,10 +324,8 @@ const outputTextarea = ref<HTMLTextAreaElement>();
 
 // 拖拽调整大小相关
 
-// 上传对话框相关
+// 上传对话框的开关。文件列表等状态已随对话框移到 PluginUploadDialog 内部。
 const showUploadDialog = ref(false);
-const fileList = ref<File[]>([]);
-const fileInput = ref();
 
 // 在组件挂载时加载数据
 onMounted(async () => {
@@ -1137,108 +1085,6 @@ Note: polling transports fetch commands on their next check-in.`;
 };
 
 // 文件上传前的处理
-const beforeUpload = (file: File) => {
-  const validTypes = ['application/x-msdownload', 'application/x-executable', 'application/x-sharedlib', 'application/x-so', 'application/x-python', 'text/x-python', 'application/octet-stream'];
-  // 与服务端 errors.ValidatePluginExtension 的白名单对齐（.bin 是插件目录里
-  // fscan.bin/god.bin 这类载荷的实际扩展名，.o/.obj/.coff 用于 BOF）
-  const validExtensions = ['.exe', '.net', '.elf', '.dll', '.so', '.dylib', '.bin', '.sh', '.py', '.ps1', '.o', '.obj', '.coff'];
-  const fileName = file.name.toLowerCase();
-  const hasValidExtension = validExtensions.some(ext => fileName.endsWith(ext));
-  
-  if (!validTypes.includes(file.type) && !hasValidExtension) {
-    ElMessage.warning(isZh.value ? '只能上传插件文件(可执行载荷或脚本，如 exe/dll/so/bin/sh)' : 'Only plugin files allowed (executable payloads or scripts, e.g. exe/dll/so/bin/sh)');
-    return false;
-  }
-  
-  if (file.size > 50 * 1024 * 1024) {
-    ElMessage.warning(isZh.value ? '文件大小不能超过50MB' : 'File size cannot exceed 50MB');
-    return false;
-  }
-  
-  return true;
-};
-
-// 提交上传
-const submitUpload = async () => {
-  if (fileList.value.length === 0) {
-    ElMessage.warning(isZh.value ? '请选择要上传的文件' : 'Select files to upload');
-    return;
-  }
-  
-  let okCount = 0;
-  for (const file of fileList.value) {
-    // 单个文件失败不应中断其余文件的上传（原实现一个 4xx 就跳出整个循环）
-    try {
-      const response = await pluginApi.upload_plugin(file)
-      if (response.data?.status === 200) {
-        okCount++;
-        ElMessage.success(isZh.value ? `${file.name} 上传成功` : `${file.name} uploaded`);
-      } else {
-        ElMessage.error(response.data?.message || (isZh.value ? `${file.name} 上传失败` : `${file.name} upload failed`));
-      }
-    } catch (error: any) {
-      // 请求层已按后端 message 弹过提示，这里只补上文件名
-      console.error(`[PLUGIN] 上传失败: ${file.name}`, error);
-      if (!error?.response) {
-        ElMessage.error(isZh.value ? `${file.name} 上传失败: ${error?.message || '未知错误'}` : `${file.name} upload failed: ${error?.message || 'unknown error'}`);
-      }
-    }
-  }
-  if (okCount > 0) {
-    refreshPlugins();
-  }
-  // 移除自动清空文件列表和关闭对话框，由用户手动关闭
-};
-
-// 上传对话框 banner 承诺"最多只能同时上传 6 个文件"，这里把它兑现
-const MAX_UPLOAD_FILES = 6;
-
-// 处理文件选择——上传到插件目录
-const handleFileSelect = (event: Event) => {
-  const target = event.target as HTMLInputElement;
-  if (target.files) {
-    const newFiles = Array.from(target.files);
-    const accepted: File[] = [];
-    for (const file of newFiles) {
-      if (beforeUpload(file)) {
-        accepted.push(file);
-      }
-    }
-    const room = Math.max(MAX_UPLOAD_FILES - fileList.value.length, 0);
-    if (accepted.length > room) {
-      ElMessage.warning(isZh.value
-        ? `最多只能同时上传 ${MAX_UPLOAD_FILES} 个文件`
-        : `Up to ${MAX_UPLOAD_FILES} files at a time`);
-    }
-    fileList.value.push(...accepted.slice(0, room));
-  }
-  target.value = ''; // 清空输入
-};
-
-// 移除文件
-const removeFile = (index: number) => {
-  fileList.value.splice(index, 1);
-};
-
-// 格式化文件大小
-const formatFileSize = (bytes: number) => {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-};
-
-// 点击选择文件按钮
-const selectFiles = () => {
-  fileInput.value?.click();
-};
-
-// 关闭上传对话框
-const closeUploadDialog = () => {
-  showUploadDialog.value = false;
-  fileList.value = []; // 关闭时清空文件列表
-};
 </script>
 
 <style scoped>
@@ -1639,131 +1485,4 @@ const closeUploadDialog = () => {
   }
 }
 
-/* 上传对话框样式 */
-.upload-dialog-content {
-  padding: 0;
-}
-
-.upload-info-banner {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 16px;
-  background: var(--cs-bg);
-  border: 1px solid var(--cs-card-border);
-  border-radius: 8px;
-  margin-bottom: 16px;
-  color: var(--cs-text);
-  font-size: 14px;
-  line-height: 1.6;
-}
-
-.upload-info-banner .info-icon {
-  font-size: 16px;
-  color: var(--cs-active);
-}
-
-.select-file-btn {
-  margin-left: auto;
-  font-size: 14px;
-  flex-shrink: 0;
-}
-
-/* 文件列表区域 */
-.file-list-area {
-  background: var(--cs-panel);
-  border: 1px solid var(--cs-card-border);
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-.file-list-header {
-  display: flex;
-  background: var(--cs-table-head);
-  border-bottom: 1px solid var(--cs-card-border);
-  font-weight: 600;
-  color: var(--cs-text);
-  font-size: 14px;
-}
-
-.file-list-body {
-  min-height: 200px;
-  max-height: 300px;
-  overflow-y: auto;
-}
-
-.header-col,
-.file-col {
-  height: 48px;
-  padding: 0 16px;
-  display: flex;
-  align-items: center;
-}
-
-.header-col.thumbnail,
-.file-col.thumbnail {
-  width: 80px;
-  justify-content: center;
-}
-
-.header-col.filename,
-.file-col.filename {
-  flex: 1;
-  min-width: 200px;
-}
-
-.header-col.filesize,
-.file-col.filesize {
-  width: 120px;
-}
-
-.header-col.status,
-.file-col.status {
-  width: 100px;
-}
-
-.header-col.operation,
-.file-col.operation {
-  width: 80px;
-  justify-content: center;
-}
-
-.file-item {
-  display: flex;
-  border-bottom: 1px solid var(--cs-card-border);
-  transition: background-color 0.3s ease;
-}
-
-.file-item:hover {
-  background-color: var(--cs-hover);
-}
-
-.file-item:last-child {
-  border-bottom: none;
-}
-
-.file-icon {
-  font-size: 20px;
-  color: var(--cs-active);
-}
-
-.empty-file-list {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 200px;
-  color: var(--cs-text-dim);
-  font-size: 14px;
-}
-
-.upload-dialog-footer {
-  text-align: right;
-  padding-top: 16px;
-  border-top: 1px solid var(--cs-card-border);
-  margin-top: 20px;
-}
-
-.upload-dialog-footer .el-button {
-  margin-left: 12px;
-}
 </style>
