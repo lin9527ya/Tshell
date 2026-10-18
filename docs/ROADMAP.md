@@ -197,11 +197,24 @@ go test -race ./Tshell-server/...     # 见 §4 回归基线（注意用外层�
   - 参考实现：`impacket/krb5/ccache.py`（权威，且与上述夹具同源）
   - 与项目设计的对应：`docs/CREDENTIAL_ACCESS.md` §"票据文件即制品" ——
     采集到的票据要能列出/导出/复用，就必须先能解析这些文件
-  - **未实现的原因**：ccache v1–v4 + kirbi 是一个完整模块（按版本分支的二进制解析、
-    计数字符串、地址编码、可选 config 段），本轮上下文预算不足以在**写完并验证**的
-    前提下完成。宁可留下夹具坐标与实测字节，也不留一个"编译过、没验证"的解析器
+  - ✅ **制品侧解析已实现**（2026-10-19）：`pkg/cred/ccache.go` + 8 项测试
+    - v3 / v4 完整实现；**v1/v2 明确拒绝**（返回 `errCCacheLegacyVersion`）。
+      拒绝而非"猜着解"是刻意的：v1 的 principal **没有组件计数字段**，
+      结构上无法与后续字节无歧义切分，猜错会让操作员以为拿到了一张有效票据
+    - 用**真实票据文件**验证（`pkg/cred/testdata/`，取自 Impacket 的 Apache-2.0 夹具）：
+      v3 与 v4 解出**同一组**期望值 —— `user01@INNOVATION.ROCKS` 持有一张
+      `krbtgt/INNOVATION.ROCKS@INNOVATION.ROCKS` 的 TGT，aes256(keytype=18)，
+      会话密钥 32 字节，票据以 DER `0x61`(APPLICATION 1 = Kerberos Ticket) 开头。
+      两版同时对上才说明版本分支写对了（头部结构与密钥块字段数都不同）
+    - 健壮性：所有长度字段先与实际剩余长度比对再切片（票据可能来自不可信来源，
+      越界会 panic）；另有逐段截断与恶意长度（4GB realm 长度 / 4G 组件数）的测试
+    - 实现时踩到一个"症状离原因很远"的坑并记在代码注释里：
+      **密钥块的长度是 2 字节**（`!H`），不是计数字符串的 4 字节长度。
+      用错会多读 2 字节，后续字段整体错位，最终以"数据被截断"报错
+  - **仍未做**：kirbi（`KRB_CRED`）解析与 kirbi↔ccache 互转 —— 夹具也已定位
+    （`ccache-v3-kirbi` / `ccache-v4-kirbi`），可直接开工
 - **剩余**：BloodHound 采集器（需域环境）；Kerberos 的 list/purge/ptt（需 Windows）；
-  上述 Kerberos 制品侧解析（夹具已定位，可直接开工）；
+  kirbi 解析与互转（夹具已定位）；
   Windows 实机验证（见 `docs/CREDENTIAL_ACCESS.md` §9）
 
 #### 3.2 提权模块（getsystem / UAC bypass）— **M**
