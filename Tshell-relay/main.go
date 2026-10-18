@@ -63,9 +63,22 @@ func main() {
 		}()
 	}
 
+	var dnsR *dnsRelay
+	if cfg.DNSListen != "" {
+		dnsR, err = newDNSRelay(cfg)
+		if err != nil {
+			log.Fatalf("❌ DNS 中继初始化失败: %v", err)
+		}
+		go func() {
+			if err := dnsR.Serve(); err != nil {
+				log.Printf("❌ DNS 中继退出: %v", err)
+			}
+		}()
+	}
+
 	var healthSrv *http.Server
 	if cfg.HealthListen != "" {
-		h := &healthServer{tcp: tcpR, udp: udpR, started: time.Now(), version: Version}
+		h := &healthServer{tcp: tcpR, udp: udpR, dns: dnsR, started: time.Now(), version: Version}
 		ln, err := net.Listen("tcp", cfg.HealthListen)
 		if err != nil {
 			log.Fatalf("❌ 健康检查监听失败: %v", err)
@@ -85,6 +98,9 @@ func main() {
 		}
 		if udpR != nil {
 			_ = udpR.Close()
+		}
+		if dnsR != nil {
+			_ = dnsR.Close()
 		}
 		// TCP 监听在 Serve 的 defer 关闭；这里退出进程即可
 		os.Exit(0)

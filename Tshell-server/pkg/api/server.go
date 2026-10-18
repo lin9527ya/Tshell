@@ -19,8 +19,8 @@ import (
 	"strings"
 	"unicode/utf16"
 
-	"github.com/gin-gonic/gin"
 	"BackendTemplate/pkg/utils/logx"
+	"github.com/gin-gonic/gin"
 )
 
 //go:embed server/*
@@ -230,13 +230,13 @@ func GenServer(c *gin.Context) {
 			for i := len(serverBody.Vkey); i < 32; i++ {
 				masterKey[i] = 0
 			}
-			
+
 			encryptionSalt = make([]byte, 16)
 			copy(encryptionSalt, []byte(serverBody.EncryptSalt))
 			for i := len(serverBody.EncryptSalt); i < 16; i++ {
 				encryptionSalt[i] = 0
 			}
-			
+
 			logx.Infof("🔑 [SERVER-GEN] 使用前端传递的默认密钥配置生成%s客户端\n", listenerType)
 		} else if listenerType == "tcp_forward" || listenerType == "kcp_forward" || listenerType == "ws_forward" || listenerType == "http_forward" || listenerType == "https_forward" {
 			// 只有在前端没有传递任何密钥时，才使用正向监听器的特殊默认配置
@@ -304,11 +304,13 @@ func GenServer(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "C2 Profile 不存在: " + serverBody.ProfileName})
 		return
 	}
-	// 一致性校验：监听器的 HTTP 路由/WS 路径/DNS 前缀/padding 都只按 default 画像注册
-	// （listener.go 的 registerHTTPRoutes 用 GetDefault()，WS 路径硬编码 /ws），
-	// 选一个与 default 不同的画像生成载荷，客户端会被 patch 成另一套特征 —— 必然连不上。
-	// per-listener 画像尚未实现，这里明确拒绝而不是生成一个静默失败的载荷。
-	if msg := profileListenerMismatch(prof, c2profile.GetDefault()); msg != "" {
+	// 一致性校验：载荷的画像必须与该监听器**实际注册**的画像一致。
+	//
+	// 原来是拿所有监听器共用的 default 画像当基准，于是"换个画像就必然连不上"
+	// （监听器只按 default 注册路由）。现在每个监听器绑自己的画像（listener.Profile），
+	// 基准随之变成**该监听器的画像**：用画像 A 的监听器生成画像 B 的载荷仍会被拒绝，
+	// 但用画像 A 生成画像 A 的载荷可以通过。
+	if msg := profileListenerMismatch(prof, listenerProfileForPayload(serverBody.Listener)); msg != "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": msg})
 		return
 	}
@@ -619,7 +621,6 @@ func ShowListenerDetails(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": 200, "data": result})
 }
 
-
 // sanitizeMasquerade 伪装修饰名前缀合法性校验：仅保留字母数字（长度≤16），
 // 避免注入路径分隔符/特殊字符破坏生成的持久化对象名/管道名/文件名。
 func sanitizeMasquerade(s string) string {
@@ -675,37 +676,71 @@ func boolToOnOff(b bool) string {
 	return "0"
 }
 
-// profileListenerMismatch 检查画像与监听器实际注册的流量特征是否一致（一致返回空串）。
+// listenerProfileForPayload 取该监听器实际注册流量特征所用的画像（生成载荷时的校验基准）。
 //
-// 监听器侧目前只认 default 画像：HTTP get/post 路由与 DNS 前缀在监听器启动时取自
-// GetDefault()，WebSocket 路径硬编码 "/ws"，padding 也读 GetDefault()。
-// 只有纯客户端侧字段（UA/JA3/心跳/metadata_channel）允许与 default 不同。
-func profileListenerMismatch(p, def *c2profile.Profile) string {
-	if p == nil || def == nil {
+// 入参是前端传来的 "protocol://address"。查不到监听器（比如地址填的是重定向器/域前置，
+// 库里没有这条记录）时回落 default —— 与升级前的行为一致，且不会因此拒绝生成载荷。
+func listenerProfileForPayload(listenerSpec string) *c2profile.Profile {
+	addr := listenerSpec
+	if i := strings.Index(addr, "://"); i >= 0 {
+		addr = addr[i+3:]
+	}
+	if addr == "" {
+		return c2profile.GetDefault()
+	}
+	var lis database.Listener
+	has, err := database.DB().Where("listen_address = ? OR connect_address = ?", addr, addr).Get(&lis)
+	if err != nil || !has {
+		return c2profile.GetDefault()
+	}
+	_, p := resolveListenerProfile(lis.Profile)
+	if p == nil {
+		return c2profile.GetDefault()
+	}
+	return p
+}
+
+// profileListenerMismatch 检查画像与**该监听器实际注册**的流量特征是否一致（一致返回空串）。
+//
+// 监听器侧特征：HTTP get/post 路由、WS 路径、DNS 前缀、padding —— 这些在监听器启动时
+// 按它绑定的画像注册，所以载荷必须用同一个画像。
+// 只有纯客户端侧字段（UA/JA3/心跳/metadata_channel）允许与监听器画像不同。
+func profileListenerMismatch(p, listenerProfile *c2profile.Profile) string {
+	if p == nil || listenerProfile == nil {
 		return ""
 	}
+	// 不按 Name 走捷径：逐字段比较才是真正的契约。
+	//
+	// 曾经在这里写过 `if p.Name == listenerProfile.Name { return "" }` ——
+	// 结果是**单测被短路成空转**（测试里两个画像的 Name 都是 "default"，
+	// 改字段再也测不出问题）。而且同名不同内容（文件被改过）才是真正要抓的情况。
+	def := listenerProfile
 	var diffs []string
 	if p.HTTP.Get.URI != def.HTTP.Get.URI {
-		diffs = append(diffs, fmt.Sprintf("http.get.uri %q ≠ default %q", p.HTTP.Get.URI, def.HTTP.Get.URI))
+		diffs = append(diffs, fmt.Sprintf("http.get.uri %q ≠ 监听器 %q", p.HTTP.Get.URI, def.HTTP.Get.URI))
 	}
 	if p.HTTP.Post.URI != def.HTTP.Post.URI {
-		diffs = append(diffs, fmt.Sprintf("http.post.uri %q ≠ default %q", p.HTTP.Post.URI, def.HTTP.Post.URI))
+		diffs = append(diffs, fmt.Sprintf("http.post.uri %q ≠ 监听器 %q", p.HTTP.Post.URI, def.HTTP.Post.URI))
 	}
-	if p.WS.Path != "/ws" {
-		diffs = append(diffs, fmt.Sprintf("ws.path %q ≠ 监听器固定路径 %q", p.WS.Path, "/ws"))
+	if p.WS.Path != def.WS.Path {
+		diffs = append(diffs, fmt.Sprintf("ws.path %q ≠ 监听器 %q", p.WS.Path, def.WS.Path))
 	}
 	if p.DNS.BeaconPrefix != def.DNS.BeaconPrefix {
-		diffs = append(diffs, fmt.Sprintf("dns.beacon_prefix %q ≠ default %q", p.DNS.BeaconPrefix, def.DNS.BeaconPrefix))
+		diffs = append(diffs, fmt.Sprintf("dns.beacon_prefix %q ≠ 监听器 %q", p.DNS.BeaconPrefix, def.DNS.BeaconPrefix))
 	}
 	if p.HTTP.Get.Padding != def.HTTP.Get.Padding {
-		diffs = append(diffs, fmt.Sprintf("http.get.padding %v ≠ default %v", p.HTTP.Get.Padding, def.HTTP.Get.Padding))
+		diffs = append(diffs, fmt.Sprintf("http.get.padding %v ≠ 监听器 %v", p.HTTP.Get.Padding, def.HTTP.Get.Padding))
 	}
 	if len(diffs) == 0 {
 		return ""
 	}
-	return "该画像的监听器侧特征与 default 不一致，生成后会连不上：" +
+	who := listenerProfile.Name
+	if who == "" {
+		who = c2profile.DefaultProfileName
+	}
+	return "该画像的监听器侧特征与目标监听器绑定的画像（" + who + "）不一致，生成后会连不上：" +
 		strings.Join(diffs, "；") +
-		"。监听器目前只按 default 画像注册（per-listener 画像尚未实现），请修改 default.yaml 并重启监听器，或使用与 default 一致的画像。"
+		"。请改用该监听器绑定的画像，或先把监听器改成这个画像再重启。"
 }
 
 // validateMultiEndpoints 校验并归一化多传输端点列表。

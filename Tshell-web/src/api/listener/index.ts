@@ -1,14 +1,14 @@
 import request from '@/utils/request'
 
 export default {
-    addListener(data:{type:string,listenAddress:string,connectAddress:string,retries?:string,interval?:string,note?:string,vkey?:string,encryptionSalt?:string}){
+    addListener(data:{type:string,listenAddress:string,connectAddress:string,retries?:string,interval?:string,note?:string,vkey?:string,encryptionSalt?:string,profile?:string}){
         return request({
             url:"/listener/add",
             method:"POST",
             data:data
         })
     },
-    updateListener(data:{id:number,type:string,listenAddress:string,connectAddress:string,retries?:string,interval?:string,note?:string,vkey?:string,encryptionSalt?:string}){
+    updateListener(data:{id:number,type:string,listenAddress:string,connectAddress:string,retries?:string,interval?:string,note?:string,vkey?:string,encryptionSalt?:string,profile?:string}){
         return request({
             url:"/listener/update",
             method:"POST",

@@ -42,7 +42,7 @@ func TestOSSListenerInitFailureMarksStopped(t *testing.T) {
 		Status: 1, VKey: testVKey, EncryptionSalt: testSalt,
 	})
 
-	handleOpenPort("oss", addr, testVKey, testSalt)
+	handleOpenPort("oss", addr, testVKey, testSalt, "")
 
 	if got := listenerStatus(t, addr); got != 2 {
 		t.Errorf("初始化失败后状态应回置为 2（已停止），实际 %d", got)
@@ -66,7 +66,7 @@ func TestOSSListenerAddressTooFewParts(t *testing.T) {
 		Status: 1, VKey: testVKey, EncryptionSalt: testSalt,
 	})
 
-	handleOpenPort("oss", addr, testVKey, testSalt) // 不应 panic
+	handleOpenPort("oss", addr, testVKey, testSalt, "") // 不应 panic
 
 	if got := listenerStatus(t, addr); got != 2 {
 		t.Errorf("地址格式非法时状态应回置为 2（已停止），实际 %d", got)

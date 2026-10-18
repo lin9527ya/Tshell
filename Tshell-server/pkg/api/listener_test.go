@@ -31,6 +31,7 @@ func (s stubAddrs) RemoteAddr() net.Addr { return s.remote }
 // 地址不含端口（oss/dns 复用 listen_address 字段）或取不到地址时无法判定，
 // 须回退为 true（保持原有按类型清理的语义）。
 func TestConnOnListener(t *testing.T) {
+	ensureTestProfiles(t)
 	loopback := &net.TCPAddr{IP: net.IPv4(192, 168, 1, 5), Port: 54321}
 
 	tests := []struct {
@@ -130,6 +131,7 @@ func (s *stubNetConn) SetWriteDeadline(time.Time) error { return nil }
 // 8082 上的客户端必须原样保留（连接不关、映射不删、DB 不标离线）。
 // 修复前按类型枚举，8082 的客户端会被一并断掉并标记离线。
 func TestCleanupClientsForListenerScopedByAddress(t *testing.T) {
+	ensureTestProfiles(t)
 	tmpDir := t.TempDir()
 	old := database.DatabaseName
 	database.DatabaseName = filepath.Join(tmpDir, "test.db")
@@ -202,6 +204,7 @@ func TestCleanupClientsForListenerScopedByAddress(t *testing.T) {
 // TestHandleOpenPortRejectsDefaultKeyMarksStopped 启动失败必须把状态回置为已停止：
 // 原实现只在日志里拒绝，库里仍留着 Status=1，前端显示"监听中"、dashboard 计数虚高。
 func TestHandleOpenPortRejectsDefaultKeyMarksStopped(t *testing.T) {
+	ensureTestProfiles(t)
 	tmpDir := t.TempDir()
 	old := database.DatabaseName
 	database.DatabaseName = filepath.Join(tmpDir, "test.db")
@@ -216,7 +219,7 @@ func TestHandleOpenPortRejectsDefaultKeyMarksStopped(t *testing.T) {
 		Status: 1, VKey: defaultVKey, EncryptionSalt: defaultSalt,
 	})
 
-	handleOpenPort("tcp", addr, defaultVKey, defaultSalt)
+	handleOpenPort("tcp", addr, defaultVKey, defaultSalt, "")
 
 	var lis database.Listener
 	if has, _ := database.Engine.Where("listen_address = ?", addr).Get(&lis); !has {
@@ -236,6 +239,7 @@ func TestHandleOpenPortRejectsDefaultKeyMarksStopped(t *testing.T) {
 // TestAddListenerRejectsDefaultKeyBeforeInsert 默认/占位符密钥必须在入库前就被拒：
 // 原实现先 Insert(Status:1) 再异步启动，被 J4 拒绝后库里会留下永远起不来的记录。
 func TestAddListenerRejectsDefaultKeyBeforeInsert(t *testing.T) {
+	ensureTestProfiles(t)
 	tmpDir := t.TempDir()
 	old := database.DatabaseName
 	database.DatabaseName = filepath.Join(tmpDir, "test.db")
@@ -279,6 +283,7 @@ func TestAddListenerRejectsDefaultKeyBeforeInsert(t *testing.T) {
 // 原实现只在 goroutine 里打一行日志：句柄留在 map 中会被当成「运行中」
 // （"显示监听中、实际没在听"），且 DB 状态永远停在 1。
 func TestHTTPBindFailureClearsHandleAndStatus(t *testing.T) {
+	ensureTestProfiles(t)
 	tmpDir := t.TempDir()
 	old := database.DatabaseName
 	database.DatabaseName = filepath.Join(tmpDir, "test.db")
@@ -300,7 +305,7 @@ func TestHTTPBindFailureClearsHandleAndStatus(t *testing.T) {
 		Status: 1, VKey: vkey, EncryptionSalt: salt,
 	})
 
-	handleOpenPort("http", addr, vkey, salt)
+	handleOpenPort("http", addr, vkey, salt, "")
 
 	// ListenAndServe 在 goroutine 中失败，轮询等待状态收敛
 	deadline := time.Now().Add(3 * time.Second)
@@ -330,6 +335,7 @@ func TestHTTPBindFailureClearsHandleAndStatus(t *testing.T) {
 // TestAddListenerRejectsShortKey 新建入口的长度档：过短的密钥会让派生密钥尾部零填充，
 // 有效强度低于字面长度，必须拒绝（原实现只拦空值与公开默认值，1 字节的 VKey 也能建成功）。
 func TestAddListenerRejectsShortKey(t *testing.T) {
+	ensureTestProfiles(t)
 	tmpDir := t.TempDir()
 	old := database.DatabaseName
 	database.DatabaseName = filepath.Join(tmpDir, "test.db")
@@ -371,6 +377,7 @@ func TestAddListenerRejectsShortKey(t *testing.T) {
 // 显式提交的短密钥必须拒绝；密钥留空（沿用旧值）时不得因旧值不合规而拒绝整个更新
 // ——否则编辑既有短密钥监听器的备注都会被拖累。
 func TestUpdateListenerKeyValidation(t *testing.T) {
+	ensureTestProfiles(t)
 	tmpDir := t.TempDir()
 	old := database.DatabaseName
 	database.DatabaseName = filepath.Join(tmpDir, "test.db")

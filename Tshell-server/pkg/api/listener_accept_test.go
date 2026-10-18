@@ -23,7 +23,7 @@ func TestAcceptLoopAbnormalExitClearsHandleAndStatus(t *testing.T) {
 	})
 
 	// tcp 的 handleOpenPort 内部是 Accept 循环（阻塞），生产代码以 go 调用
-	go handleOpenPort("tcp", addr, testVKey, testSalt)
+	go handleOpenPort("tcp", addr, testVKey, testSalt, "")
 
 	var lis net.Listener
 	for i := 0; i < 300; i++ {
@@ -78,7 +78,7 @@ func TestAcceptLoopNormalCloseDoesNotRollback(t *testing.T) {
 		Status: 1, VKey: testVKey, EncryptionSalt: testSalt,
 	})
 
-	go handleOpenPort("tcp", addr, testVKey, testSalt)
+	go handleOpenPort("tcp", addr, testVKey, testSalt, "")
 	for i := 0; i < 300; i++ {
 		connection.MuClientListenerType.Lock()
 		_, ok := connection.TCPServer[addr]

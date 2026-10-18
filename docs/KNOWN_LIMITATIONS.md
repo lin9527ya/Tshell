@@ -128,8 +128,58 @@
   4. 数万条 Cookie 的采集与回传耗时。
 - 状态：✅（实现 + 单测）/ ⏳（实机验证）
 
-## 12d. 内存 OPSEC（阶段三 · 第 14 项）
-- 现状：✅ sleep mask 修复并扩展到**全部传输**（原来只有轮询型走 mask，且遮蔽的是
+## 12j. 提权（阶段三 · getsystem）
+- 现状：✅ 已实现 `getsystem [auto|token|uac|uac_cleanup]`，三条技术路径：
+  - `already`：已是 SYSTEM/高完整性时只报告（幂等，可反复执行）；
+  - `token`：从已提权进程（winlogon/lsass/services/wininit/smss/explorer）复制
+    SYSTEM/高完整性令牌 → `CreateProcessAsUserW` 派生**新会话**；
+  - `uac`：`fodhelper.exe`/`computerdefaults.exe` 注册表劫持 → 高完整性新会话 →
+    **立即还原注册表**（删不掉时退化为清空劫持值，绝不留下可用劫持）。
+  设计上**只派生新进程、不动当前会话的令牌模拟状态**：成功失败都不影响已有 beacon；
+  新会话按 `os.Args[1]` 透传启动口令（否则新进程会因校验失败立刻退出，
+  表现为"提权成功但没上线"）。
+- 单测：参数校验、权限启用语义（含 `ERROR_NOT_ALL_ASSIGNED` 检查）、注册表还原/退化、
+  `RegDeleteKeyW` 不递归这条 Windows quirk、进程枚举过滤 —— 见 docs/PRIVILEGE_ESCALATION.md §6。
+- 遗留：
+  - **未在授权 Windows 目标上验证真实成功率**（开发环境的受限令牌连
+    `LookupPrivilegeValueW` 都拒绝，`token` 路径端到端跑不到）；
+  - `uac` 路径依赖 `fodhelper`/`computerdefaults` 仍读取 `HKCU\...\ms-settings\shell\open\command`，
+    较新 Windows 版本可能已收紧，需现场确认；
+  - 除 UAC 之外的本地提权（服务配置错误、AlwaysInstallElevated、令牌特权滥用等）未做。
+- 详见 docs/PRIVILEGE_ESCALATION.md（含 VM 验证清单）。
+- 状态：✅（实现 + 单测）/ ⏳（实机验证 + 更多提权链）
+
+## 12k. MFA/TOTP 的防重放状态与救援路径（阶段三 §3.5）
+- 现状：✅ 两步登录（口令 + 动态码/恢复码）、自助绑定/关闭、管理员重置全部实现并有
+  13 项集成测试；TOTP 密钥 AES-256-GCM 密文落库（密钥由 JWT 私钥 HKDF 派生）。
+- 已知限制：
+  1. **防重放状态在进程内存里**（`pkg/api/mfa.go` 的 `mfaLastSteps`）。单实例正确；
+     多副本部署下同一个 30 秒窗口内的码可能在另一个副本上被接受 —— 与 `pkg/collab`
+     会话锁同类问题，属 §3.4 水平扩展范畴。进程重启会清空该表（30s 窗口内重启才可能被重放）。
+  2. **未做 WebAuthn / "记住此设备"**：每次登录都必须输动态码。
+  3. **JWT 私钥变更会让既有 TOTP 密钥解不开**：表现为登录报"动态码校验暂不可用"。
+     救援路径是管理员 `POST /users/mfa/reset`。**不静默降级为单因子** ——
+     解不开就当"没开启"等于悄悄关掉第二因子（有测试守住这条区分）。
+  4. 恢复码用完不自动补发：仍可用动态码登录；重走 `start`+`confirm` 会换一批
+     （同时换新密钥与重放记录）。
+- 详见 `docs/AUTH_MFA.md`。
+- 状态：✅（实现 + 单测 + 集成测试）/ ⏳（多副本下的防重放外置，属 §3.4）
+
+## 12l. per-listener C2 画像（阶段三 §3.6）
+- 现状：✅ 已实现。`listener.profile` 列（迁移 v4）+ 路由与 WS 路径按该监听器绑定的画像注册
+  + 生成载荷的一致性基准改为该监听器的画像。同机可并存多套特征
+  （`TestTwoListenersDifferentProfilesCoexist`）。
+- 已知边界：
+  1. **运行中不能改画像**：句柄按启动时的路径注册，改库会让"关不掉 + 显示不对"变成
+     僵尸监听器。与改地址/协议类型同一规则（`UpdateListener` 返回明确提示）。
+  2. **改画像不会通知已上线的载荷**：它们连的是自己的老路径，继续可用；
+     但**新生成的载荷必须用新画像**，否则服务端会拒绝生成（这是刻意的 fail-fast）。
+  3. 画像文件缺失时**静态回落 default 并告警**，而不是拒绝启动 —— 升级路径上
+     不能因为 profiles/ 里少一个文件就让监听器起不来。
+  4. 迁移只加列、默认空串（=default），老库升级后行为与升级前完全一致。
+- 状态：✅（实现 + 测试）
+
+## 12d. 内存 OPSEC（阶段三 · 第 14 项）- 现状：✅ sleep mask 修复并扩展到**全部传输**（原来只有轮询型走 mask，且遮蔽的是
   `GetSessionKey()` 返回的拷贝 —— 真身一直明文驻留，等于没保护）；遮蔽范围含会话密钥/
   上一把/主密钥/盐 + 清空 AEAD 缓存；按片遮蔽 + 在途判定，不打断活跃会话。
   ✅ syscall trampoline：RWX → W^X（RW 写入后 VirtualProtect 为 RX），

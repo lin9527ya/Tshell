@@ -97,10 +97,78 @@ connect_address 应填**中继的地址**，监听地址仍是服务端自己的
 # 3) 用该监听器生成 TCP 客户端并运行 → 服务端会话列表出现该 beacon
 ```
 
-## 6. 已知限制
+## 6. DNS 中继（阶段三 §3.9）
 
-- **UDP 中继只覆盖 KCP**；DNS 传输基于 UDP 且需要按域名转发，未纳入中继。
-- 中继不做**负载均衡/多上游**：一个中继只指向一个上游（多级链路本身提供了冗余方案）。
+DNS 传输的流量是"查询/响应"配对的报文，**不能像 KCP 那样裸搬 UDP 字节**。
+中继在 DNS 上多做三件事，代价是它必须看懂报文头（只看头部 12 字节，不解析问题段/记录段）：
+
+| 动作 | 为什么必须做 |
+|---|---|
+| 逐查询**改写事务 ID** | 中继同时服务多个 beacon，ID 会撞车（两个客户端都用 0x1234 时，响应会投递给错的一方，表现为"DNS 通道时好时坏"）。中继换成随机 ID 送上游，回程再改回客户端原本的 ID |
+| UDP 响应带 **TC 位时改走 TCP** | DNS 标准要求：响应超长时置 TC 位，客户端改用 TCP 重问。中继直接替客户端做了，并清掉 TC 位 |
+| 同端口 **UDP + TCP 都监听** | 只做 UDP 会在长 TXT 响应上失败（C2 的 DNS 通道常用 TXT 回传数据） |
+
+配置：
+
+```json
+{
+  "dns_listen": "0.0.0.0:53",
+  "dns_upstream": "10.10.0.5:53",
+  "dns_upstreams": ["10.10.0.5:53", "10.10.0.6:53"]
+}
+```
+
+- `dns_listen` 与 `listen` **互相独立**：只配 `dns_listen` 就是一台纯 DNS 中继，
+  不需要 `upstream`。
+- `dns_upstream` 留空时会回落到 TCP 的 `upstream`（常见部署是同一个服务端地址，
+  让运维少写一遍）。
+- 中继不解析问题段内容，因此对 C2 侧用什么域名、TXT 还是 A 记录**完全透明**。
+
+## 7. 多上游与故障转移（阶段三 §3.9）
+
+单上游的中继本身就是单点 —— 而中继多半部署在没人盯着的 VPS 上，上游挂一个整条链路就断。
+把上游写成数组即可启用轮询 + 故障转移：
+
+```json
+{
+  "listen": "0.0.0.0:443",
+  "upstreams": ["10.10.0.5:8089", "10.10.0.6:8089", "relay2.example:443"]
+}
+```
+
+- `upstreams` 非空时**取代** `upstream`（列表优先；两者都写不报错，但只认列表）。
+- 选择策略是**轮询 + 跳过不健康**，不做加权/最少连接：中继是哑的，看不到会话归属，
+  按连接粒度分散已经够用，更复杂的调度只增加出错面。
+- 健康判定是**被动 + 主动**：
+  - 被动：拨号/交换失败**连续** 3 次即标记不健康（一次抖动不会打掉一个上游）；
+  - 主动：后台每 `upstream_health_interval`（默认 30s）探一次**不健康**的上游，
+    成功即恢复。健康上游由真实流量证明，不做额外探测；
+  - 全部上游都被标记不健康时仍会轮转着试 —— 否则永远无法被动恢复。
+- `/healthz` 返回 `upstreams` / `upstreams_healthy` / `upstreams_picked` /
+  `upstreams_skipped`，运维可一眼看出"几个上游还活着"。
+
+## 8. 验证
+
+DNS 中继与多上游都有单测（`dns_test.go`，10 项）：
+
+```
+TestDNSRelayForwardsAndRestoresID         # 转发 + 事务 ID 改回客户端原值
+TestDNSRelayAvoidsIDCollision             # 4 个客户端同一 ID 不串台（核心动机）
+TestDNSRelayFallsBackToTCPOnTruncation    # TC 位 → 自动改走 TCP 并清 TC
+TestDNSRelayFailsOverToSecondUpstream     # 首个上游不可用 → 自动转移
+TestDNSRelayFailsWhenAllUpstreamsDown     # 全部不可用 → 明确超时（不挂死）
+TestUpstreamPoolRotatesAndSkipsUnhealthy  # 轮询覆盖全部 + 跳过不健康 + 恢复
+TestUpstreamPoolFailureThreshold          # 未达阈值不移除（抗抖动）
+TestUpstreamPoolNeverReturnsEmpty         # 全不健康仍返回候选（保证被动恢复）
+TestUpstreamListMergesAndDedups           # 列表优先 + 去重去空白 + DNS 回落
+TestConfigValidationDNSOnly               # 纯 DNS 中继配置合法
+```
+
+## 9. 已知限制
+
+- **UDP 中继只覆盖 KCP**：DNS 走独立的、懂协议的那条路径（见 §6），不复用裸转发。
 - 中继不记录 beacon 的真实 IP 到服务端（MetaInfo 里有，但那是 beacon 自报的）。
+- 多上游是**连接级**轮询，不保证同一 beacon 的多次连接落在同一上游；
+  C2 的会话是无状态的逐包轮询，因此这不影响正确性。
 - 与 `docs/BACKUP_RESTORE.md` 同级别的运维要求：中继是**一次性**基础设施，
   被标记后直接弃用重建，不要在上面留任何持久状态。

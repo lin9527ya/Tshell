@@ -52,6 +52,22 @@ type Claims struct {
 	jwt.RegisteredClaims
 }
 
+// 令牌受众（aud）。用 aud 把"两步登录的中间态"与真正的访问令牌彻底分开：
+//
+//	MFA 第一步（口令通过、还差动态码）签发的 pending token 带 AudienceMFAPending；
+//
+// 如果 ValidateToken 不检查 aud，这个 pending token 就是一个**不需要第二因子
+// 就能进后台的后门** —— 这是整个 MFA 设计里最要紧的一条约束，
+// 两侧（拒绝 pending 当访问令牌 / 第二步只认 pending）都必须有测试钉住。
+const (
+	AudienceAccess     = "tshell-access"
+	AudienceMFAPending = "tshell-mfa-pending"
+)
+
+// mfaPendingTTL 两步登录中间态的有效期。
+// 短：它代表"口令已验证但第二因子未过"的半开状态；5 分钟足够用户掏出手机。
+const mfaPendingTTL = 5 * time.Minute
+
 // GlobalJWTManager 全局JWT管理器
 var GlobalJWTManager *JWTManager
 
@@ -267,6 +283,7 @@ func (jm *JWTManager) GenerateTokenPair(userID, username, deviceID string) (stri
 			NotBefore: jwt.NewNumericDate(now),
 			Issuer:    "Tshell-Server",
 			Subject:   userID,
+			Audience:  jwt.ClaimStrings{AudienceAccess},
 		},
 	}
 
@@ -333,6 +350,14 @@ func (jm *JWTManager) ValidateToken(tokenString string) (*Claims, error) {
 		return nil, fmt.Errorf("令牌密钥ID不匹配")
 	}
 
+	// 拒绝两步登录的中间态令牌。
+	// 少了这一条，MFA 第一步返回的 pending token 就能直接当访问令牌用 ——
+	// 等于第二因子形同虚设。（aud 只在这里与 ValidatePendingToken 里判断，
+	// 两侧都必须检查；只查一边就等于没查。）
+	if hasAudience(claims, AudienceMFAPending) {
+		return nil, fmt.Errorf("该令牌仅用于 MFA 第二步，不能作为访问令牌")
+	}
+
 	// 检查用户级别黑名单
 	if expiry, exists := jm.userBlacklist[claims.Username]; exists {
 		if time.Now().Before(expiry) && claims.IssuedAt.Time.Before(expiry) {
@@ -344,6 +369,84 @@ func (jm *JWTManager) ValidateToken(tokenString string) (*Claims, error) {
 		}
 	}
 
+	return claims, nil
+}
+
+// hasAudience 令牌受众里是否包含指定的值
+func hasAudience(claims *Claims, want string) bool {
+	for _, a := range claims.Audience {
+		if a == want {
+			return true
+		}
+	}
+	return false
+}
+
+// PrivateKey 暴露私钥只读引用，供 MFA 密钥派生使用（InitMFASecretCipher）。
+// 不提供导出/序列化接口：调用方拿到的是内存里的 *rsa.PrivateKey。
+func (jm *JWTManager) PrivateKey() *rsa.PrivateKey {
+	jm.mu.RLock()
+	defer jm.mu.RUnlock()
+	return jm.privateKey
+}
+
+// GeneratePendingToken 签发"口令已过、待第二因子"的中间态令牌（MFA 第一步）。
+// 它带上了 deviceID：第二步要沿用同一个设备指纹，否则两步算出来的指纹不一致
+// （generateDeviceID 依附请求上下文，第二步是一个新请求）。
+func (jm *JWTManager) GeneratePendingToken(username, deviceID string) (string, error) {
+	jm.mu.RLock()
+	defer jm.mu.RUnlock()
+
+	now := time.Now()
+	claims := &Claims{
+		UserID:   username,
+		Username: username,
+		DeviceID: deviceID,
+		KeyID:    jm.keyID,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(now.Add(mfaPendingTTL)),
+			IssuedAt:  jwt.NewNumericDate(now),
+			NotBefore: jwt.NewNumericDate(now),
+			Issuer:    "Tshell-Server",
+			Subject:   username,
+			Audience:  jwt.ClaimStrings{AudienceMFAPending},
+		},
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+	return token.SignedString(jm.privateKey)
+}
+
+// ValidatePendingToken 校验两步登录的中间态令牌。
+//
+// 要求 aud **恰好**是 MFA pending：拿访问令牌来打第二步必须被拒
+// （否则"已登录的人"可以绕过动态码重新走一遍 MFA 流程去换新令牌，
+// 虽然影响有限，但语义上就是错的）。
+func (jm *JWTManager) ValidatePendingToken(tokenString string) (*Claims, error) {
+	jm.mu.RLock()
+	defer jm.mu.RUnlock()
+
+	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
+			return nil, fmt.Errorf("意外的签名方法: %v", token.Header["alg"])
+		}
+		if kid, _ := token.Header["kid"].(string); kid != "" && kid == jm.prevKeyID && jm.prevPublicKey != nil {
+			return jm.prevPublicKey, nil
+		}
+		return jm.publicKey, nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("解析中间态令牌失败: %v", err)
+	}
+	claims, ok := token.Claims.(*Claims)
+	if !ok || !token.Valid {
+		return nil, fmt.Errorf("无效的中间态令牌")
+	}
+	if claims.KeyID != jm.keyID && claims.KeyID != jm.prevKeyID {
+		return nil, fmt.Errorf("令牌密钥ID不匹配")
+	}
+	if !hasAudience(claims, AudienceMFAPending) {
+		return nil, fmt.Errorf("不是 MFA 中间态令牌")
+	}
 	return claims, nil
 }
 

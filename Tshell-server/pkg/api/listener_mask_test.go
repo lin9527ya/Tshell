@@ -37,6 +37,7 @@ func setupMaskTestDB(t *testing.T) {
 // TestMaskSecretPreview 预览格式与前端 maskSecret 规则一致，且对其幂等——
 // 前端拿到预览后再掩码一次结果不变，故无需同步改前端。
 func TestMaskSecretPreview(t *testing.T) {
+	ensureTestProfiles(t)
 	tests := []struct{ in, want string }{
 		{"", ""},
 		{"abc", maskedMarker},
@@ -61,6 +62,7 @@ func TestMaskSecretPreview(t *testing.T) {
 
 // TestMaskListenerAddress 仅 oss 的地址承载凭证；其余类型（含 dns 的 addr:port:domain）不动
 func TestMaskListenerAddress(t *testing.T) {
+	ensureTestProfiles(t)
 	if got := maskListenerAddress("oss", testOSS); got != testOSSMasked {
 		t.Errorf("oss 地址脱敏错误: %q", got)
 	}
@@ -90,6 +92,7 @@ func TestMaskListenerAddress(t *testing.T) {
 // TestListListenerMasksSecrets 列表接口是唯一把监听器配置送回浏览器的入口，
 // 不得再返回明文 VKey/加密盐，也不得返回 oss 地址里的 AK/SK。
 func TestListListenerMasksSecrets(t *testing.T) {
+	ensureTestProfiles(t)
 	setupMaskTestDB(t)
 
 	database.Engine.Insert(&database.Listener{
@@ -124,6 +127,7 @@ func TestListListenerMasksSecrets(t *testing.T) {
 // TestUpdateListenerKeepsMaskedSecrets 掩码即未修改：前端把列表里的脱敏值原样回传时，
 // 密钥与地址必须保持原值——否则 oss 监听器一编辑就会把 AK/SK 写成占位符、密钥写成掩码。
 func TestUpdateListenerKeepsMaskedSecrets(t *testing.T) {
+	ensureTestProfiles(t)
 	setupMaskTestDB(t)
 
 	database.Engine.Insert(&database.Listener{
@@ -172,6 +176,7 @@ func TestUpdateListenerKeepsMaskedSecrets(t *testing.T) {
 // TestResolveListenerAddress 掩码地址还原为库中真实地址；非掩码走快路径原样返回；
 // 匹配不到时原样返回（由调用方按原逻辑报"监听器不存在"）。
 func TestResolveListenerAddress(t *testing.T) {
+	ensureTestProfiles(t)
 	setupMaskTestDB(t)
 	database.Engine.Insert(&database.Listener{
 		Type: "oss", ListenAddress: testOSS, ConnectAddress: testOSS, Status: 1,
@@ -195,6 +200,7 @@ func TestResolveListenerAddress(t *testing.T) {
 // TestAddListenerRejectsMaskedValues 脱敏预览不是真实配置：从列表复制粘贴过来新建
 // 会把占位符存成真实值（地址查不到、密钥是掩码），必须拒绝。
 func TestAddListenerRejectsMaskedValues(t *testing.T) {
+	ensureTestProfiles(t)
 	setupMaskTestDB(t)
 
 	const addr = "0.0.0.0:18094"
@@ -227,6 +233,7 @@ func TestAddListenerRejectsMaskedValues(t *testing.T) {
 // TestPadForwardKeysIgnoresMasked 正向「连接」按钮携带的是列表里的脱敏密钥，必须视为未提供，
 // 交给连接路径按监听器配置取真实密钥；否则会拿掩码当密钥去派生会话密钥。
 func TestPadForwardKeysIgnoresMasked(t *testing.T) {
+	ensureTestProfiles(t)
 	if mk, sl := padForwardKeys(maskSecretPreview(testVKey), maskSecretPreview(testSalt)); mk != nil || sl != nil {
 		t.Errorf("脱敏密钥应视为未提供，实际 mk=%v sl=%v", mk, sl)
 	}

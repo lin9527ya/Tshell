@@ -31,7 +31,7 @@ jwt:
     access_token_ttl: 15m0s    # 访问令牌有效期（15 分钟；前端过段时间退避，可调长，如 60m）
     refresh_token_ttl: 168h0m0s # 刷新令牌有效期（默认 7 天；刷新令牌在 HttpOnly Cookie，页面刷新后仍可续期）
     max_refresh_count: 100     # 刷新令牌最大续期次数（防滥用；超出需重新登录）
-    algorithm: HS256           # JWT 签名算法
+    algorithm: RS256           # JWT 签名算法（目前只支持 RS256；其他取值会拒绝启动）
 
 logging:
     level: error               # 日志级别：debug / info / warn / error（error 最隐蔽，CNA 脚本输出直接 stdout 不受此限制）
@@ -70,6 +70,7 @@ security:
     block_duration: 15m0s      # 触发限流后的封禁时长
     sliding_window: 1m0s       # 限流滑动窗口
     max_login_attempts: 5      # 登录失败锁定阈值（达到后锁定账户）
+    force_hsts: false          # 强制下发 HSTS（默认只在 HTTPS 请求上下发；反代不传 X-Forwarded-Proto 时才需要开启）
     enable_ip_whitelist: false # 是否启用 IP 白名单（true 时仅白名单 IP 可访问）
     whitelist_ips: []          # 白名单 IP 列表（如 ["127.0.0.1","192.168.1.0/24"]）
 

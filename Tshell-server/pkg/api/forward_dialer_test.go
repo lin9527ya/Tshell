@@ -183,7 +183,7 @@ func TestForwardListenerOpenCloseLifecycle(t *testing.T) {
 		Status: 2, HeartbeatTimeout: "3", HeartbeatInterval: "10",
 	})
 
-	handleOpenPort("tcp_forward", addr, "", "")
+	handleOpenPort("tcp_forward", addr, "", "", "")
 
 	connection.MuClientListenerType.Lock()
 	_, hasStop := connection.StopChan[addr]

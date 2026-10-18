@@ -32,6 +32,8 @@ func migrations() []Migration {
 	return []Migration{
 		{1, "clients 表补齐 listener/os/心跳等字段", migrateClientsTable},
 		{2, "listener 表补齐字段", migrateListenerTable},
+		{3, "users 表补齐 MFA/TOTP 字段", migrateUsersMFATable},
+		{4, "listener 表补齐 profile 字段", migrateListenerProfileColumn},
 	}
 }
 

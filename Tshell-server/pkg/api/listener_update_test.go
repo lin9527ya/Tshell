@@ -14,6 +14,7 @@ import (
 // 所有句柄都按启动时的地址与类型登记，改了 DB 而句柄仍在旧值下，按新值关闭/删除
 // 会找不到句柄：端口继续监听、系统显示已停止，且之后再也关不掉（僵尸监听器）。
 func TestUpdateListenerGuardsRunningAddressAndType(t *testing.T) {
+	ensureTestProfiles(t)
 	setupMaskTestDB(t)
 
 	const (
@@ -77,6 +78,7 @@ func TestUpdateListenerGuardsRunningAddressAndType(t *testing.T) {
 // TestListenerForClientPrefersPerClientAddress 迁移/注入取监听器记录时，优先用该客户端
 // 实际连接的监听器，而不是按类型取最新一条——否则同类型多实例时会拿错地址与密钥。
 func TestListenerForClientPrefersPerClientAddress(t *testing.T) {
+	ensureTestProfiles(t)
 	setupMaskTestDB(t)
 
 	database.Engine.Insert(&database.Listener{
@@ -113,6 +115,7 @@ func TestListenerForClientPrefersPerClientAddress(t *testing.T) {
 // TestUpdateListenerKeyChangeHint 运行中改密钥时，响应应提示需要重启监听器——
 // 运行中的监听器用启动时捕获的密钥，改库不会影响它；新生成的客户端会连不上。
 func TestUpdateListenerKeyChangeHint(t *testing.T) {
+	ensureTestProfiles(t)
 	setupMaskTestDB(t)
 
 	const addr = "0.0.0.0:18083"

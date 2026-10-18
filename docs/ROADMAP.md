@@ -38,7 +38,7 @@ go test -race ./Tshell-server/...     # 见 §4 回归基线（注意用外层�
 | 加密 | AES-256-GCM 全链路、监听器主密钥 + HKDF 会话密钥、per-session nonce 唯一化、24h 轮换、sleep mask（全传输） |
 | 服务端 | 任务一等对象、审计落库、多操作员协作、Prometheus 指标、备份恢复、存储抽象（SQLite/PostgreSQL + 版本化迁移）、RBAC/限流/隐藏访问 |
 | 前端 | 会话表 / Beacon 控制台 / 任务中心 / 事件日志 / 凭据库 / Payload 与 Attacks 对话框族 / 密钥管理 / 审计 |
-| 后渗透 | LSASS 转储、**DPAPI 主密钥集**、**浏览器口令与 Cookie**（内存解密）、端口扫描、令牌操作链、横向移动、持久化族 |
+| 后渗透 | LSASS 转储、**DPAPI 主密钥集**、**浏览器口令与 Cookie**（内存解密）、**提权（getsystem + UAC 绕过）**、端口扫描、令牌操作链、横向移动、持久化族 |
 | 工程 | CI 六 job（vet / staticcheck / race / 覆盖率 20% / PG 集成 / 可复现构建）、可复现构建 + SBOM、redirector 模板、模板随仓库提供 |
 
 **一句话**：单机单操作员的完成度高；**团队化/规模化的完成度仍偏低**（多副本、MFA），
@@ -92,7 +92,14 @@ go test -race ./Tshell-server/...     # 见 §4 回归基线（注意用外层�
   见 `Tshell-client/implant/core/sqlite/`；已知限制见 KNOWN_LIMITATIONS §12h
 - 详见 `docs/CREDENTIAL_ACCESS.md` §7/§9
 
-### 2.6 工程与供应链
+### 2.6 提权（阶段三，2026-10-18）
+- `getsystem [auto|token|uac|uac_cleanup]`：令牌窃取（`CreateProcessAsUserW` 派生新会话）
+  与 UAC 劫持（`fodhelper`/`computerdefaults`）两条路径，按痕迹从小到大自动尝试
+- 只派生新进程，不动当前会话的令牌模拟状态：失败不炸会话，注册表劫持**必须还原**
+  （删不掉时退化为清空值）
+- 详见 `docs/PRIVILEGE_ESCALATION.md`（含 VM 验证清单与失败排查表）
+
+### 2.7 工程与供应链
 - CI 六 job：server（build / file-mode build / vet / **staticcheck** / race + 覆盖率 20%）、
   implant（13 传输交叉编译 + multi 标签用例 + staticcheck）、relay、postgres（service container）、
   reproducible（双次构建比对 + manifest + SBOM）、web（lint / type-check / vitest / build）
@@ -134,12 +141,26 @@ go test -race ./Tshell-server/...     # 见 §4 回归基线（注意用外层�
   （见 `docs/CREDENTIAL_ACCESS.md` §9）
 
 #### 3.2 提权模块（getsystem / UAC bypass）— **M**
-- **目标**：至少 getsystem（命名管道 + 令牌复制）+ 一种 UAC bypass（fodhelper 或
+- **目标**：至少 getsystem（命名空间 + 令牌复制）+ 一种 UAC bypass（fodhelper 或
   computerdefaults）
-- **现状**：**完全没有**（全仓无 getsystem / uac_bypass 实现）
-- **入口**：`implant/core/commands/`（新增 `privesc_windows.go`）+ `core/app/dispatch.go`
-  命令表 + 前端 Beacon 控制台命令提示
-- **验收**：失败不炸会话（可回滚）、成功后新会话/令牌可用、有单测覆盖参数校验
+- **现状（2026-10-18 更新）**：✅ 已实现 `getsystem [auto|token|uac|uac_cleanup]`
+  - `token`：从已提权进程（winlogon/lsass/services/wininit/smss/explorer）复制
+    SYSTEM/高完整性令牌 → `CreateProcessAsUserW` 派生**新会话**（痕迹最小，
+    不动注册表）；`explorer.exe` 在候选里是因为"已提权过一次"的机器上它常持有
+    高完整性令牌
+  - `uac`：`fodhelper.exe`/`computerdefaults.exe` 注册表劫持 → 高完整性新会话 →
+    **立即还原注册表**；删不掉时退化为清空劫持值（绝不留下可用劫持）
+  - 只派生新进程、**不动当前会话的令牌模拟状态**：成功失败都不影响已有 beacon；
+    新会话透传 `os.Args[1]` 启动口令（否则会因校验失败立刻退出）
+  - 入口：`Tshell-client/implant/core/commands/privesc_windows.go`（编排 + 令牌/进程）、
+    `privesc_uac_windows.go`（UAC 劫持 + 注册表）、`privesc_stub.go`（非 Windows）、
+    `core/app/dispatch.go`（cmdType 132，跳过节流）
+  - 协议：`Tshell-server/pkg/command/cmdType.go`、`pkg/sendcommand/sendCommand.go`；
+    TTP 报告映射 `report.go`；控制台帮助 `BeaconConsole.vue`
+- **验收**：失败不炸会话（可回滚）✅、成功后新会话/令牌可用 ✅（设计上）、
+  有单测覆盖参数校验 ✅ —— 见 docs/PRIVILEGE_ESCALATION.md §6
+- **剩余**：**Windows 实机验证**（VM 清单见该文档 §7）；`uac` 路径在较新 Windows 上
+  是否仍可用需现场确认；UAC 之外的提权链（服务配置错误/AlwaysInstallElevated 等）未做
 
 #### 3.3 内存 OPSEC 升级（Ekko 级）— **L**
 - **目标**：(a) Ekko/Foliage 式 sleep mask（睡眠期加密**自身内存镜像**，用 ROP/定时器
@@ -167,21 +188,40 @@ go test -race ./Tshell-server/...     # 见 §4 回归基线（注意用外层�
 - **替代方案（推荐先做）**：单副本 + 定时备份 + 冷备，已在 `DEPLOYMENT.md` 写明
 
 #### 3.5 平台自身安全补强 — **M**
-- **MFA/TOTP**：完全没有（登录只有口令 + 限流）
-  - 入口：`pkg/api/users.go`（登录流程）、`pkg/security/`、前端登录页
-- **HSTS**：未设置（CSP 已有，见 `pkg/security/middleware.go:152`）
-- **`jwt.algorithm` 是死配置**：默认写 HS256，实际实现是 RS256
-  （`pkg/config/manager.go:117`）→ 要么接线成真实约束，要么删除
-- **IP 白名单默认关闭**：`config.example.yaml` 的 `security.enable_ip_whitelist: false`（开启后 `whitelist_ips` 才生效）
+- **MFA/TOTP**：✅ 已实现（2026-10-18）两步登录 + 自助绑定/关闭 + 管理员重置
+  - 零新依赖自实现 RFC 6238（HMAC-SHA1/30s/6 位/±1 窗口）+ 自实现 otpauth 二维码
+    （`pkg/security/otp`，含 RFC 官方向量与编解码往返测试）
+  - TOTP 密钥 **AES-256-GCM 密文落库**，密钥由 JWT 私钥 HKDF 派生（`pkg/security/mfa.go`）
+  - 两步登录用 `aud` 严格隔离：中间态令牌**不能**当访问令牌
+    （`TestMFAPendingTokenAudienceIsolation` + `TestPendingTokenCannotAccessProtectedRoutes`）
+  - 恢复码 10 个、bcrypt 存哈希、一次性、输入宽容（手抄场景）
+  - 动态码**防重放**（同一时间步只能用一次）；动码输错**不计入**锁号
+  - 入口：`pkg/api/mfa.go`、`pkg/api/users.go`、`pkg/security/{otp,mfa,jwt_manager}.go`、
+    前端 `views/login/LoginView.vue` + `views/settings/MFAView.vue`（`account` 页签）
+  - 详见 `docs/AUTH_MFA.md`（含 13 项集成测试清单与已知限制）
+- **HSTS**：✅ 已设置（仅 HTTPS 请求下发；`security.force_hsts` 供反代场景显式开启）
+- **`jwt.algorithm`**：✅ 从死配置变成真约束 —— 非 `RS256`/空值**拒绝启动**，
+  默认值由 `HS256` 修正为 `RS256`（`pkg/config/manager.go` 的 `ValidateJWTAlgorithm`）
+- **剩余**：IP 白名单默认关闭属部署选择（不改默认值）；
+  防重放状态在内存里（多副本需外置，属 §3.4）
 
 #### 3.6 per-listener C2 画像 — **M**
 - **目标**：每个监听器可绑定独立画像（URI / WS 路径 / DNS 前缀 / padding）
-- **现状**：监听器**只按 default 注册**（`pkg/api/listener.go:560` 用 `GetDefault()`，
-  WS 路径硬编码 `/ws`）；生成载荷时 `profileListenerMismatch` 会**拒绝**与 default 不一致的
-  画像（`pkg/api/server.go:683`）—— 这是 fail-fast，不是支持
-- **入口**：监听器表加 `profile_name`；`registerHTTPRoutes` 按画像注册；WS 路径去硬编码；
-  `pkg/c2profile/`
-- **验收**：用非 default 画像生成载荷能连上（e2e）；`docs/KNOWN_LIMITATIONS.md` 相应条目可勾掉
+- **现状（2026-10-19 更新）**：✅ 已实现
+  - `listener` 表新增 `profile` 列（迁移 v4，默认空串 = default，**老库行为不变**）
+  - `registerHTTPRoutes` / WS 路径按**该监听器绑定的画像**注册（原来用 `GetDefault()`，
+    WS 路径硬编码 `/ws`）
+  - 生成载荷的一致性基准改为**该监听器的画像**：用画像 A 的监听器生成画像 B 的载荷
+    仍会被拒绝（避免生成必然连不上的载荷），但用画像 A 生成画像 A 的载荷可以通过
+  - 同机可并存多套特征：两个监听器各绑不同画像，各自的 mux 互不干扰
+    （`TestTwoListenersDifferentProfilesCoexist`）
+  - 画像缺失时**回落 default 并告警**，而不是拒绝启动（升级路径不能因为少个文件就挂）
+  - 入口：`pkg/api/listener.go`（`registerHTTPRoutes`/`resolveWSRoute`/`resolveListenerProfile`）、
+    `pkg/api/server.go`（`listenerProfileForPayload`/`profileListenerMismatch`）、
+    `pkg/c2profile/manager.go`（`DefaultProfileName`/`Default*` 常量）、
+    前端 `EditListenerDialog.vue` 的画像下拉
+- **验收**：用非 default 画像生成载荷能连上 ✅（路由注册与校验基准的测试）；
+  `docs/KNOWN_LIMITATIONS.md` 相应条目已勾掉
 
 #### 3.7 领域 repository（把 SQL 收口）— **M**
 - **目标**：`pkg/api` 里不再有裸 SQL / xorm 链式查询，改成 `pkg/database` 的领域方法
@@ -198,7 +238,15 @@ go test -race ./Tshell-server/...     # 见 §4 回归基线（注意用外层�
 - 入口：见 `KNOWN_LIMITATIONS.md` §12e；建议先跑一遍"上线 → 命令往返 → 文件 → 终端 → 截屏"
 
 #### 3.9 中继能力补齐 — **S~M**
-- DNS 中继、多上游（当前只有 TCP/UDP + 级联）：`Tshell-relay/`（`tcp.go`/`udp.go`/`config.go`）
+- **DNS 中继**：✅ 已实现（2026-10-19）。中继看懂 DNS 报文头（只读 12 字节，不解析记录段）：
+  逐查询**改写事务 ID**（多 beacon 共用中继时 ID 撞车会让响应串台）、
+  UDP 响应带 **TC 位时自动改走 TCP** 并清 TC、同端口 **UDP+TCP 双监听**
+  （只做 UDP 会在长 TXT 回传上失败）。入口 `Tshell-relay/dns.go`。
+- **多上游**：✅ 已实现。`upstreams` 数组启用轮询 + 故障转移；
+  健康判定**被动（连续 3 次失败移出）+ 主动（后台探测不健康的上游，成功即恢复）**；
+  全部不健康时仍轮转尝试（否则永远无法被动恢复）；`/healthz` 暴露上游健康度。
+- 验收：10 项单测覆盖 ID 改写/撞车/TC 回退/故障转移/阈值抗抖动/配置回落，
+  见 `docs/RELAY.md` §6–§8
 
 #### 3.10 供应链 — **M**
 - 代码签名（Windows 载荷）、LOLBin 侧载（`rundll32`/`mshta` 之外的组合）

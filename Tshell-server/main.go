@@ -201,12 +201,32 @@ func main() {
 	fmt.Println("✅ 流量混淆器初始化成功")
 
 	// 初始化JWT管理器
+	//
+	// jwt.algorithm 从"死配置"变成真约束：配置与实际实现不符时拒绝启动。
+	// 它曾经默认写 HS256 而实现走 RS256 —— 一个"配了但没用上"的算法配置比没有
+	// 更危险，因为运维会以为已经换了算法。
+	if g := config.GetGlobalConfig(); g != nil {
+		if err := config.ValidateJWTAlgorithm(g.JWT.Algorithm); err != nil {
+			fmt.Printf("JWT 配置错误: %v\n", err)
+			os.Exit(1)
+		}
+		// HSTS 开关（security.force_hsts）注入安全头中间件
+		security.InitSecurityHeaders(g.Security.ForceHSTS)
+	}
 	err = security.InitJWTManager(2048, 24*time.Hour) // 2048位RSA密钥，24小时轮换
 	if err != nil {
 		fmt.Printf("JWT管理器初始化失败: %v\n", err)
 		os.Exit(1)
 	}
 	fmt.Println("✅ JWT管理器初始化成功")
+
+	// 初始化 MFA 密钥加密器（阶段三 §3.5）：由 JWT 私钥经 HKDF 派生，
+	// 供 TOTP 密钥加密落库使用。必须在 InitJWTManager 之后 —— 它依赖私钥。
+	if err := security.InitMFASecretCipher(security.GlobalJWTManager.PrivateKey()); err != nil {
+		fmt.Printf("MFA 密钥加密器初始化失败: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Println("✅ MFA 密钥加密器初始化成功")
 
 	// 初始化安全密钥管理器
 	err = encrypt.InitSecureKeyManager()
@@ -670,6 +690,9 @@ func main() {
 	{
 		// 登录
 		a.POST("/users/login", api.LoginHandler)
+		// MFA 第二步（阶段三 §3.5）：口令已过、待动态码。
+		// **必须挂在同一组**：动态码只有 6 位，缺了登录限流与暴破防护就等于开了在线暴破的门。
+		a.POST("/users/login/mfa", api.MFALoginHandler)
 	}
 	// 【修复】refresh 走独立分组：合法客户端 1 分钟内刷新 >5 次会被登录限流误封 15 分钟，
 	// refresh 令牌轮换请求属于正常高频操作，不应计入登录尝试
@@ -722,6 +745,14 @@ func main() {
 	// 修改密码（任意登录用户改自己的密码）
 	protected.POST("/users/user_setting/ChangePassword", api.ChangePasswordHandler)
 
+	// ===== MFA/TOTP（阶段三 §3.5）：自助管理，任意登录用户可管自己的账号 =====
+	protected.GET("/users/mfa", api.MFAMeHandler)
+	protected.POST("/users/mfa/start", api.MFAStartHandler)
+	protected.POST("/users/mfa/confirm", api.MFAConfirmHandler)
+	protected.POST("/users/mfa/disable", api.MFADisableHandler)
+	// 二维码渲染限定 otpauth:// 前缀（见 MFAQRHandler：否则会变成任意文本的二维码生成器）
+	protected.GET("/users/mfa/qr", api.MFAQRHandler)
+
 	// 用户管理（仅 admin；用户列表/创建/删除/重置密码 —— 权限分离）
 	// 数据库备份：仅 admin（备份含全部凭据与战利品；恢复走 CLI，不提供热恢复）
 	adminOnly.GET("/backup/list", api.ListBackups)
@@ -734,6 +765,8 @@ func main() {
 	adminOnly.POST("/users/user_setting/create_user", api.CreateUserHandler)
 	adminOnly.POST("/users/user_setting/delete_user", api.DeleteUserHandler)
 	adminOnly.POST("/users/user_setting/admin_reset_password", api.AdminResetPasswordHandler)
+	// 重置他人的 MFA（丢手机的救援路径）：仅 admin，且要求带上管理员自己的口令
+	adminOnly.POST("/users/mfa/reset", api.MFAResetHandler)
 
 	// J8: 操作员路由组（admin + operator）——auditor(只读)不可执行任何客户端操作
 	operatorOnly := protected.Group("")
@@ -854,7 +887,7 @@ func main() {
 	operatorOnly.POST("/listener/open", api.OpenListener)
 	operatorOnly.POST("/listener/close", api.CloseListener)
 	operatorOnly.POST("/listener/restart", api.RestartListener) // 断链修复:前端原有调用,后端补路由
-	operatorOnly.POST("/listener/update", api.UpdateListener) // 添加更新监听器API
+	operatorOnly.POST("/listener/update", api.UpdateListener)   // 添加更新监听器API
 	operatorOnly.POST("/listener/delete", api.DeleteListener)
 	operatorOnly.POST("/listener/batch-delete", api.BatchDeleteListeners)
 
@@ -1124,7 +1157,7 @@ func main() {
 		ReadTimeout:    30 * time.Second,
 		WriteTimeout:   30 * time.Second,
 		IdleTimeout:    90 * time.Second,
-		MaxHeaderBytes: 1 << 20,           // 1MB
+		MaxHeaderBytes: 1 << 20, // 1MB
 	}
 
 	// 恢复 status=1 的 WebDelivery 到 Delivery Hub（shared/dedicated）

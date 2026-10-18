@@ -141,4 +141,9 @@ const (
 	// 端口扫描（阶段三，须与服务端 pkg/command/cmdType.go 一致）：
 	// cmdBuf = "<targets> <ports> [timeoutMs]"（如 "10.0.0.0/24 top 500"）
 	PORT_SCAN = 131
+
+	// 提权（阶段三，须与服务端 pkg/command/cmdType.go 一致）：
+	// cmdBuf = "" | "auto" | "token" | "uac" | "uac_cleanup"。
+	// 只派生**新会话**（不改当前进程的令牌模拟状态）：成功与否都不影响已有会话。
+	GETSYSTEM = 132
 )

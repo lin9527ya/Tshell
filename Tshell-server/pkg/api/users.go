@@ -14,8 +14,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"BackendTemplate/pkg/utils/logx"
+	"github.com/gin-gonic/gin"
 )
 
 // isSecureRequest 判断当前请求是否经 HTTPS：直连 TLS（r.TLS != nil）或反向代理标记
@@ -127,6 +127,9 @@ func LoginHandler(c *gin.Context) {
 	var loginData struct {
 		Username string `json:"username" binding:"required"`
 		Password string `json:"password" binding:"required"`
+		// TOTPCode 可选：只有开启 MFA 的账号需要。不带它时返回 pending token，
+		// 由前端进入第二步（**不签发任何凭据**）。
+		TOTPCode string `json:"totp_code"`
 	}
 
 	// 验证请求参数
@@ -201,9 +204,49 @@ func LoginHandler(c *gin.Context) {
 		logx.Infof("警告：更新用户登录信息失败: %v\n", err)
 	}
 
-	// 生成令牌对（包含设备指纹）
+	// ===== MFA 第二步分流（阶段三 §3.5）=====
+	//
+	// 注意顺序：**先判定 MFA**，再决定签不签凭据。若把签发放在前面，
+	// 就变成"口令过了就先给令牌"，第二因子形同虚设。
 	deviceID := generateDeviceID(c)
-	accessToken, refreshToken, err := security.GlobalJWTManager.GenerateTokenPair(loginData.Username, loginData.Username, deviceID)
+	if users.MFAEnabled {
+		code := strings.TrimSpace(loginData.TOTPCode)
+		if code == "" {
+			// 只回中间态：不签发 access/refresh，也不设任何 Cookie
+			pending, err := security.GlobalJWTManager.GeneratePendingToken(loginData.Username, deviceID)
+			if err != nil {
+				errors.AbortWithError(c, errors.NewInternalError("生成登录中间态失败").WithInternalError(err))
+				return
+			}
+			// 用 200 而不是 401：这不是失败，是"还差一步"。
+			// 前端据 mfa_required 进入第二步。
+			errors.RespondWithSuccess(c, gin.H{
+				"mfa_required":  true,
+				"pending_token": pending,
+				"expires_in":    300, // 与 mfaPendingTTL 一致
+				"token_type":    "MFA-Pending",
+			})
+			return
+		}
+		// 带码：与第二步走**同一段**校验（含防重放），失败即拒绝
+		if err := verifyUserTOTPOrRecovery(&users, code, c); err != nil {
+			// 动态码错误**不计入** LoginAttempts：那是口令失败的惩罚机制，
+			// 用在动态码上会因为手滑把账号锁掉（锁了连恢复码都用不了）。
+			// 暴破由 /api 组的限流 + BruteForceProtection 中间件挡。
+			errors.AbortWithError(c, errors.NewError(errors.ErrCodeInvalidPassword, err.Error()))
+			return
+		}
+	}
+
+	issueSession(c, loginData.Username, deviceID, users.Role)
+}
+
+// issueSession 签发访问/刷新令牌、设置 Cookie、返回统一响应体。
+//
+// 抽出来是为了**两步登录的成功响应逐字段一致**：如果第一步（未开 MFA）与第二步
+// （MFA 通过后）各写一份，两份迟早会漂移，前端就得写两套分支。
+func issueSession(c *gin.Context, username, deviceID, role string) {
+	accessToken, refreshToken, err := security.GlobalJWTManager.GenerateTokenPair(username, username, deviceID)
 	if err != nil {
 		errors.AbortWithError(c, errors.NewInternalError("生成令牌失败").WithInternalError(err))
 		return
@@ -216,8 +259,8 @@ func LoginHandler(c *gin.Context) {
 		"expires_in":    15 * 60, // 15分钟
 		"token_type":    "Bearer",
 		"permissions":   1, // 兼容旧前端
-		"username":      loginData.Username,
-		"role":          defaultRole(users.Role), // C13: admin | operator | auditor
+		"username":      username,
+		"role":          defaultRole(role), // C13: admin | operator | auditor
 	}
 
 	// 设置 JWT Cookie（http.SetCookie：Add 语义保留多个 Cookie，且原生支持 SameSite，
@@ -369,15 +412,16 @@ func ChangePasswordHandler(c *gin.Context) {
 	}
 
 }
+
 // ================= 用户管理（仅 admin，RequireRole(RoleAdmin) 强制） =================
 
 // UserListItem 用户列表项（不含任何密码/盐字段）
 type UserListItem struct {
-	Username   string `json:"username"`
-	Role       string `json:"role"`
-	Locked     bool   `json:"locked"`
-	CreatedAt  string `json:"created_at"`
-	LastLogin  string `json:"last_login"`
+	Username  string `json:"username"`
+	Role      string `json:"role"`
+	Locked    bool   `json:"locked"`
+	CreatedAt string `json:"created_at"`
+	LastLogin string `json:"last_login"`
 }
 
 // GetUserListHandler 获取用户列表（分页 + 模糊搜索）

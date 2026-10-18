@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -24,6 +25,8 @@ type tcpRelay struct {
 	cfg     Config
 	limiter *connLimiter
 	tlsConf *tls.Config
+	// pool 上游池：多上游轮询 + 失败转移（单上游时就是一个固定目标）
+	pool *upstreamPool
 
 	// 统计（健康检查用）
 	accepted atomic.Uint64
@@ -32,7 +35,11 @@ type tcpRelay struct {
 }
 
 func newTCPRelay(cfg Config, limiter *connLimiter) (*tcpRelay, error) {
-	r := &tcpRelay{cfg: cfg, limiter: limiter}
+	r := &tcpRelay{
+		cfg:     cfg,
+		limiter: limiter,
+		pool:    newUpstreamPool(cfg.UpstreamList(), cfg.HealthInterval()),
+	}
 	if cfg.TLSCertFile != "" {
 		cert, err := tls.LoadX509KeyPair(cfg.TLSCertFile, cfg.TLSKeyFile)
 		if err != nil {
@@ -59,9 +66,9 @@ func (r *tcpRelay) Serve() error {
 func (r *tcpRelay) ServeListener(ln net.Listener) error {
 	if r.tlsConf != nil {
 		ln = tls.NewListener(ln, r.tlsConf)
-		log.Printf("🔀 TCP 中继监听 %s (TLS) → %s", r.cfg.Listen, r.cfg.Upstream)
+		log.Printf("🔀 TCP 中继监听 %s (TLS) → %v", r.cfg.Listen, r.pool.targets)
 	} else {
-		log.Printf("🔀 TCP 中继监听 %s → %s", r.cfg.Listen, r.cfg.Upstream)
+		log.Printf("🔀 TCP 中继监听 %s → %v", r.cfg.Listen, r.pool.targets)
 	}
 	defer ln.Close()
 
@@ -102,7 +109,9 @@ func (r *tcpRelay) handle(client net.Conn) {
 		client.SetDeadline(time.Time{})
 	}
 
-	upstream, err := net.DialTimeout("tcp", r.cfg.Upstream, r.cfg.DialTimeout.Or(10*time.Second))
+	// 多上游：拨号失败就换下一个再试。attempts 取"上游数量"与 2 的较大者、
+	// 上限 3 —— 每次都要重新握手，试太多次只会让客户端多等。
+	upstream, err := r.dialUpstream()
 	if err != nil {
 		_ = client.Close()
 		return
@@ -119,6 +128,33 @@ func (r *tcpRelay) handle(client net.Conn) {
 	<-done
 	_ = client.Close()
 	_ = upstream.Close()
+}
+
+// dialUpstream 按上游池顺序尝试拨号，成功即记录健康、失败累计并换下一个
+func (r *tcpRelay) dialUpstream() (net.Conn, error) {
+	timeout := r.cfg.DialTimeout.Or(10 * time.Second)
+	attempts := r.pool.Len()
+	if attempts < 1 {
+		attempts = 1
+	}
+	if attempts > 3 {
+		attempts = 3
+	}
+	var lastErr error
+	for i := 0; i < attempts; i++ {
+		target := r.pool.pick()
+		conn, err := net.DialTimeout("tcp", target, timeout)
+		if err == nil {
+			r.pool.markOK(target)
+			return conn, nil
+		}
+		lastErr = err
+		r.pool.markFail(target, err)
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("没有可用的上游")
+	}
+	return nil, lastErr
 }
 
 // idleReader 每次读之前重置读超时：空闲超过 idle 的持久连接会被关闭。

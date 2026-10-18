@@ -39,7 +39,7 @@ func TestDNSListenerBindFailureMarksStopped(t *testing.T) {
 		Status: 1, VKey: testVKey, EncryptionSalt: testSalt,
 	})
 
-	handleOpenPort("dns", addr, testVKey, testSalt)
+	handleOpenPort("dns", addr, testVKey, testSalt, "")
 
 	if got := listenerStatus(t, addr); got != 2 {
 		t.Errorf("绑定失败后状态应回置为 2（已停止），实际 %d", got)
@@ -57,7 +57,7 @@ func TestDNSListenerAddressTooFewParts(t *testing.T) {
 		Status: 1, VKey: testVKey, EncryptionSalt: testSalt,
 	})
 
-	handleOpenPort("dns", addr, testVKey, testSalt) // 不应 panic
+	handleOpenPort("dns", addr, testVKey, testSalt, "") // 不应 panic
 
 	if got := listenerStatus(t, addr); got != 2 {
 		t.Errorf("地址格式非法时状态应回置为 2（已停止），实际 %d", got)

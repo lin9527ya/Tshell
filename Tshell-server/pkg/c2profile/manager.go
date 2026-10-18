@@ -147,8 +147,22 @@ func Get(name string) *Profile {
 
 // GetDefault 默认 profile
 func GetDefault() *Profile {
-	return Get("default")
+	return Get(DefaultProfileName)
 }
+
+// DefaultProfileName 默认画像名。
+// 被多处用于"空串=default"的回落判定，集中成常量避免各处硬编码字符串漂移。
+const DefaultProfileName = "default"
+
+// DefaultGetURI / DefaultPostURI / DefaultWSPath 画像缺失或字段为空时的兜底特征。
+//
+// 这三个值必须与 default.yaml 里的取值一致 —— 它们是"画像文件被人删了/写坏了"
+// 时的最后一道防线：监听器仍然起得来，且与升级前的行为完全相同。
+const (
+	DefaultGetURI  = "/tencent/mcp/pc/pcsearch"
+	DefaultPostURI = "/tencent/sensearch/collection/item/check"
+	DefaultWSPath  = "/ws"
+)
 
 // Raw 读取指定 profile 文件原文（预览/编辑用）
 func Raw(name string) (string, error) {

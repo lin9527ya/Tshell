@@ -302,3 +302,112 @@ cd Tshell-web && npm run build:embed
   x/net v0.48.0 / x/sync v0.19.0 / x/time v0.14.0 / x/mod v0.31.0 / x/tools v0.40.0`。
 - 前端 `npm run lint` 在本机不可用：`eslint` 不在 `package.json` 依赖里（只有 `eslint-config-*`），
   `npm ci` 不会装它 —— 属既有问题，需要单独补依赖或在 CI 里显式安装。
+
+## O 组（凭据模块族第三批：提权，2026-10 追加）
+
+> 用法同前：改动涉及提权或命令面时逐条 grep，期望值 ≥1（0 = 被回滚）。
+
+| # | 优化 | 验证命令 | 期望 |
+|---|------|----------|------|
+| 142 | 提权命令类型（两侧一致） | `grep -c "GETSYSTEM = 132" Tshell-server/pkg/command/cmdType.go Tshell-client/implant/core/services/types.go` | ≥2 |
+| 143 | 前缀表 + 无参精确表 | `grep -c "getsystem" Tshell-server/pkg/sendcommand/sendCommand.go` | ≥2 |
+| 144 | dispatch 分支 + 节流豁免 | `grep -c "services.GETSYSTEM" Tshell-client/implant/core/app/dispatch.go` | ≥2 |
+| 145 | 非 Windows 显式报错 | `grep -c "仅支持 Windows" Tshell-client/implant/core/commands/privesc_stub.go` | ≥1 |
+| 146 | 只派生新进程（不动模拟状态） | `grep -c "CreateProcessAsUserW\|CreateProcessWithTokenW" Tshell-client/implant/core/commands/privesc_windows.go` | ≥2 |
+| 147 | 新会话透传启动口令 | `grep -c "os.Args\[1\]" Tshell-client/implant/core/commands/privesc_windows.go` | ≥1 |
+| 148 | 权限启用检查 ERROR_NOT_ALL_ASSIGNED | `grep -c "errorNotAllAssigned" Tshell-client/implant/core/commands/privesc_windows.go` | ≥2 |
+| 149 | UAC 劫持键 + 立即还原 | `grep -c "uacHijackBase\|restore()" Tshell-client/implant/core/commands/privesc_uac_windows.go` | ≥2 |
+| 150 | 删不掉键时退化为清空值 | `grep -c "clearHijackValues" Tshell-client/implant/core/commands/privesc_uac_windows.go` | ≥2 |
+| 151 | 独立清理入口（随时可用） | `grep -c "uac_cleanup" Tshell-client/implant/core/commands/privesc_windows.go` | ≥1 |
+| 152 | TTP 报告映射 | `grep -c '"getsystem"' Tshell-server/pkg/api/report.go` | ≥1 |
+| 153 | 控制台帮助文本 | `grep -c "getsystem" Tshell-web/src/layout/BeaconConsole.vue` | ≥2 |
+
+### 验证结果（2026-10-18，Windows 开发机）
+- 服务端 `go vet ./...` + `go run staticcheck -checks=all,-ST*,-U1000 ./...` 全绿；
+  `pkg/sendcommand`/`pkg/command`/`pkg/api` 测试全绿（新增 `TestGetSystemCommand`）
+- 植入体 `go test ./...` 全绿（Windows 目标）+ 13 传输交叉编译全绿（linux/darwin 桩）
+- 新增提权单测 9 项：参数校验 / 幂等 / 权限语义（含 `SeTcbPrivilege` 必须失败）/
+  注册表还原与退化 / `RegDeleteKeyW` 不递归这条 quirk / 进程枚举过滤
+- **本环境限制（不是缺陷）**：受限令牌下 `LookupPrivilegeValueW` 对所有权限都返回失败，
+  因此 `token` 路径的端到端与权限启用断言在本机会跳过并打印原因；
+  真实提权成功率需授权 VM 验证（清单见 `docs/PRIVILEGE_ESCALATION.md` §7）
+
+### 本轮踩到并修掉的真问题
+- `RegDeleteKeyW` **不递归**：带子键的键返回 `Access is denied`（我最初的注释写反了）。
+  已改为自己深度优先清子键，并留 `TestRegDeleteKeyIsNotRecursive` 守住这条语义。
+- 注册表还原失败时的**安全兜底**：删不掉键就清空劫持命令行值 —— 留下可用的劫持
+  比"报告失败"危险得多（`TestUACCleanupDegradesSafely` 守这条）。
+
+## P 组（阶段三 §3.5：MFA / HSTS / jwt.algorithm，2026-10 追加）
+
+> 用法同前：改动涉及认证面时逐条 grep，期望值 ≥1（0 = 被回滚）。
+
+| # | 优化 | 验证命令 | 期望 |
+|---|------|----------|------|
+| 154 | TOTP 核心（RFC 6238） | `grep -c "func VerifyWith\|func CodeWith" Tshell-server/pkg/security/otp/totp.go` | ≥2 |
+| 155 | 恢复码独立实现 | `grep -c "func NewRecoveryCodes\|func UseRecoveryCode" Tshell-server/pkg/security/otp/recovery.go` | ≥2 |
+| 156 | 二维码编码器（零依赖） | `grep -c "func EncodeQR\|func SVG" Tshell-server/pkg/security/otp/qrcode.go` | ≥2 |
+| 157 | 密钥密文落库（非明文） | `grep -c "SealMFASecret\|ErrMFANotEnabled" Tshell-server/pkg/security/mfa.go` | ≥2 |
+| 158 | 中间态令牌 **audience 隔离** | `grep -c "AudienceMFAPending" Tshell-server/pkg/security/jwt_manager.go` | ≥3 |
+| 159 | 拒绝 pending 当访问令牌 | `grep -c "不能作为访问令牌" Tshell-server/pkg/security/jwt_manager.go` | ≥1 |
+| 160 | 登录分流（先判 MFA 再签凭据） | `grep -c "users.MFAEnabled" Tshell-server/pkg/api/users.go` | ≥1 |
+| 161 | MFA 端点 | `grep -c "func MFA.*Handler" Tshell-server/pkg/api/mfa.go` | ≥6 |
+| 162 | QR 端点只收 otpauth | `grep -c 'HasPrefix(text, "otpauth://")' Tshell-server/pkg/api/mfa.go` | ≥1 |
+| 163 | 动态码防重放 | `grep -c "mfaLastSteps" Tshell-server/pkg/api/mfa.go` | ≥3 |
+| 164 | HSTS 仅 HTTPS 下发 | `grep -c "Strict-Transport-Security" Tshell-server/pkg/security/middleware.go` | ≥1 |
+| 165 | jwt.algorithm 真约束 | `grep -c "func ValidateJWTAlgorithm" Tshell-server/pkg/config/manager.go` | ≥1 |
+| 166 | 迁移 v3（users MFA 字段） | `grep -c "migrateUsersMFATable" Tshell-server/pkg/database/migrations.go` | ≥1 |
+| 167 | MFA 字段不进 JSON | `grep -c 'json:"-"' Tshell-server/pkg/database/sqlite3.go` | ≥3 |
+| 168 | 前端两步登录分支 | `grep -c "mfa_required" Tshell-web/src/views/login/LoginView.vue` | ≥1 |
+| 169 | 账号安全页 | `grep -c "MFAView" Tshell-web/src/views/settings/SettingsView.vue` | ≥1 |
+
+### 验证结果（2026-10-18，Windows 开发机）
+- 服务端 `go vet ./...` 全绿；新增/相关包测试全绿：
+  `pkg/security`（含 otp）、`pkg/api`（含 13 项 MFA 集成测试）、`pkg/config`、`pkg/database`
+- 前端 `vue-tsc` 0 错误、vitest **53 passed（11 文件）**、`npm run build` 成功
+- 全量 `go test ./...` 的失败项均为**既有 Windows 环境限制**（文件权限 666/600、
+  符号链接需特权、端口占用），见 `docs/ROADMAP.md` §5 第 8 条 —— 非本轮引入
+
+### 本轮踩到并修掉的真问题
+- **二维码编码器四处"尺寸正常但读不出来"的错误**（自实现，无参考实现对拍）：
+  定位图形画成 7×7 实心方块（距离 2 那一圈必须浅色）；格式信息 bit 14 写到 (8,15)
+  （应在 (8,14)，那格属数据区）；zigzag 列游标写成 `right = 5` 导致**第 0 列永不被访问**、
+  直接越界写穿；比特读取器以"码字比特+补位数"为上限多读 7 位。
+  另有两处表转录错误：V7-M 块表写成 4×27（标准 4×31）；v7 起两个合法对齐图形被误跳过。
+  对策是加**三道互相独立的守卫**（几何↔表、表自洽、遍历↔布局），
+  并强制编码与解码**共用同一个 `reserveFunctionModules`**（两套规则必然漂移）。
+- **恢复码被误判成动态码**：`isRecoveryCodeShape` 原本"含数字就当动态码"，
+  而恢复码字母表本就含 2-9 —— 用户拿着正确恢复码却被报"动态码错误"。改为按长度判定。
+- **防重放状态跨测试/跨重绑残留**：`mfaLastSteps` 是包级 map，关闭/重置 MFA 时未清理，
+  重新绑定后新认证器可能一开始就被判"该动态码已被使用"。已加 `resetMFAReplayGuard`。
+- **集成测试必须挂 `ErrorHandlerMiddleware`**：`AbortWithError` 只登记错误 + Abort，
+  真正把 AppError 翻成 HTTP 状态码的是中间件。测试里不挂它，所有失败路径都会得到
+  "200 + 空 body"，把断言全放过去 —— 这是一类会让测试**假装通过**的陷阱。
+
+## Q 组（阶段三 §3.6：per-listener C2 画像，2026-10 追加）
+
+| # | 优化 | 验证命令 | 期望 |
+|---|------|----------|------|
+| 170 | listener 表 profile 列 | `grep -c "Profile string" Tshell-server/pkg/database/sqlite3.go` | ≥1 |
+| 171 | 迁移 v4 | `grep -c "migrateListenerProfileColumn" Tshell-server/pkg/database/migrations.go` | ≥1 |
+| 172 | 路由按监听器画像注册 | `grep -c "func registerHTTPRoutes(mux \*http.ServeMux, vkey, salt, profileName string)" Tshell-server/pkg/api/listener.go` | ≥1 |
+| 173 | WS 路径不再硬编码 | `grep -c "resolveWSRoute" Tshell-server/pkg/api/listener.go` | ≥2 |
+| 174 | 画像回落常量 | `grep -c "DefaultProfileName\|DefaultGetURI" Tshell-server/pkg/c2profile/manager.go` | ≥2 |
+| 175 | 生成载荷基准=监听器画像 | `grep -c "listenerProfileForPayload" Tshell-server/pkg/api/server.go` | ≥2 |
+| 176 | 前端画像下拉 | `grep -c "c2profileApi.listProfiles" Tshell-web/src/layout/Dialogs/EditListenerDialog.vue` | ≥1 |
+| 177 | profile 进入请求体 | `grep -c "profile: formData.profile" Tshell-web/src/views/listener/listener.vue` | ≥2 |
+
+### 验证结果（2026-10-19，Windows 开发机）
+- 服务端 `go vet ./...` + staticcheck 全绿；`pkg/api`（含 5 项 per-listener 画像测试）、
+  `pkg/c2profile`、`pkg/database`、`pkg/security/*` 全绿
+- 前端 `vue-tsc` 0 错误、vitest 53 passed、build 成功
+
+### 本轮踩到并修掉的真问题（§3.6）
+- **`profileListenerMismatch` 里按 Name 走捷径，把单测短路成空转**：
+  `if p.Name == listenerProfile.Name { return "" }` 让测试里两个同名画像
+  （都叫 "default"、但字段已被改）永远"一致"，7 个用例里有 5 个其实是空跑。
+  已删掉捷径 —— **逐字段比较才是契约**，同名不同内容（文件被改过）恰恰是要抓的情况。
+- **测试进程没有画像注册表**：`AddListener` 现在要求"绑定的画像必须存在"，
+  而 api 包测试默认没加载过 profiles/ 目录，于是所有监听器用例都得到
+  "C2 画像不存在: default"。加了 `ensureTestProfiles`（用 `t.TempDir()` 写一份
+  default.yaml + `InitNoWatch`），测试不再依赖工作目录里有没有那个文件夹。

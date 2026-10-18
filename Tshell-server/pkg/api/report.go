@@ -281,6 +281,7 @@ var ttpMap = map[string][2]string{
 	"winrm_exec":      {"横向移动", "T1021 WinRM"},
 	"make_token":      {"凭证获取", "T1134 令牌模拟"},
 	"steal_token":     {"凭证获取", "T1134 令牌窃取"},
+	"getsystem":       {"提权", "T1134 令牌操纵 / T1548.002 UAC 绕过"},
 	"inject":          {"防御规避", "T1055 进程注入"},
 	"keylog_start":    {"收集", "T1056 键盘记录"},
 	"keylog_get":      {"收集", "T1056 键盘记录"},

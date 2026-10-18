@@ -4,10 +4,11 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"BackendTemplate/pkg/utils/logx"
+	"github.com/gin-gonic/gin"
 )
 
 // ConfigGetter 接口，用于获取配置信息而不引起循环导入
@@ -151,11 +152,61 @@ func SecurityHeadersMiddleware() gin.HandlerFunc {
 		// 修复CSP策略，允许data: URI格式的图片，支持屏幕截图功能
 		c.Header("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ws: wss:; object-src 'none'; media-src 'self' data: blob:")
 
+		// HSTS：只在**确实走 HTTPS** 的请求上下发。
+		//
+		// 为什么不能无条件发：HSTS 是浏览器强制的"以后都用 HTTPS 访问我"。
+		// 在纯 HTTP 部署上撒这个头毫无作用（浏览器会忽略非 HTTPS 响应里的 HSTS），
+		// 却会让"我们以为已启用 HSTS"这种错觉成立 —— 比不发更危险。
+		// 反向代理终止 TLS 的场景，请求本身是 http，但 X-Forwarded-Proto 会告诉我们
+		// 客户端看到的是 https，isSecureRequest 已处理这一点。
+		if isSecureRequest(c) || ForceHSTS() {
+			c.Header("Strict-Transport-Security", hstsHeaderValue)
+		}
+
 		// 移除可能泄露服务器信息的头部
 		c.Header("Server", "Tshell")
 
 		c.Next()
 	}
+}
+
+// hstsHeaderValue 一年 + 子域 + preload。
+// 不把 max-age 先调小"观察一下"：实践中那往往变成永远不调大。
+const hstsHeaderValue = "max-age=31536000; includeSubDomains; preload"
+
+// forceHSTS 安装期开关：由 InitSecurityHeaders 设置，供"反代不传
+// X-Forwarded-Proto"这类部署由运维显式确认整条链路是 HTTPS 后打开。
+var (
+	hstsForceMu sync.RWMutex
+	hstsForce   bool
+)
+
+// InitSecurityHeaders 由启动流程调用，注入配置（force_hsts）
+func InitSecurityHeaders(forceHSTS bool) {
+	hstsForceMu.Lock()
+	hstsForce = forceHSTS
+	hstsForceMu.Unlock()
+}
+
+// ForceHSTS 当前是否强制下发 HSTS
+func ForceHSTS() bool {
+	hstsForceMu.RLock()
+	defer hstsForceMu.RUnlock()
+	return hstsForce
+}
+
+// isSecureRequest 判断请求是否经 HTTPS（直连 TLS 或反代标记 X-Forwarded-Proto）。
+// 与 pkg/api/users.go 中的同名函数语义一致；安全头与 Cookie 的 Secure 判定必须同源，
+// 否则会出现"Cookie 当 HTTPS 设了 Secure，但 HSTS 没发"这种不一致。
+func isSecureRequest(c *gin.Context) bool {
+	if c.Request.TLS != nil {
+		return true
+	}
+	proto := c.GetHeader("X-Forwarded-Proto")
+	if i := strings.Index(proto, ","); i >= 0 {
+		proto = proto[:i] // 多级代理会追加，取第一段（最靠近客户端的那一跳）
+	}
+	return strings.EqualFold(strings.TrimSpace(proto), "https")
 }
 
 // 请求日志中间件

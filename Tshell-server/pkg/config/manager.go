@@ -114,7 +114,30 @@ type JWTConfig struct {
 	AccessTokenTTL  time.Duration `json:"access_token_ttl" yaml:"access_token_ttl" env:"ACCESS_TOKEN_TTL" default:"15m"`
 	RefreshTokenTTL time.Duration `json:"refresh_token_ttl" yaml:"refresh_token_ttl" env:"REFRESH_TOKEN_TTL" default:"168h"`
 	MaxRefreshCount int           `json:"max_refresh_count" yaml:"max_refresh_count" env:"MAX_REFRESH_COUNT" default:"100"`
-	Algorithm       string        `json:"algorithm" yaml:"algorithm" env:"ALGORITHM" default:"HS256"`
+	// Algorithm 签名算法。**目前实现只支持 RS256**（非对称签名：校验方只需要公钥）。
+	// 默认值曾是 HS256 —— 一个与实现不符的谎言：配置说 HS256，代码走 RS256，
+	// 于是这条配置既没用又会误导运维。现在它是**真约束**：非 RS256/空值之外的取值
+	// 直接拒绝启动（见 ValidateJWTAlgorithm），而不是被静默忽略。
+	Algorithm string `json:"algorithm" yaml:"algorithm" env:"ALGORITHM" default:"RS256"`
+}
+
+// SupportedJWTAlgorithm 当前实现唯一支持的 JWT 签名算法
+const SupportedJWTAlgorithm = "RS256"
+
+// ValidateJWTAlgorithm 校验配置的签名算法是否被实现支持。
+//
+// 返回错误时调用方应拒绝启动：一个"配了但没用上"的算法配置比没有配置更危险 ——
+// 运维以为换了算法，实际没有。
+func ValidateJWTAlgorithm(algorithm string) error {
+	if algorithm == "" {
+		return fmt.Errorf("jwt.algorithm 为空：请显式写 %s（空值曾被当作\"用默认\"，会导致实际算法不明）", SupportedJWTAlgorithm)
+	}
+	if !strings.EqualFold(algorithm, SupportedJWTAlgorithm) {
+		return fmt.Errorf("jwt.algorithm=%q 不受支持：当前实现只支持 %s"+
+			"（HS256 等对称算法会让任何拿到公钥的人也能签发令牌）",
+			algorithm, SupportedJWTAlgorithm)
+	}
+	return nil
 }
 
 // LoggingConfig 日志配置
@@ -138,6 +161,11 @@ type SecurityConfig struct {
 	MaxLoginAttempts  int           `json:"max_login_attempts" yaml:"max_login_attempts" env:"MAX_LOGIN_ATTEMPTS" default:"5"`
 	EnableIPWhitelist bool          `json:"enable_ip_whitelist" yaml:"enable_ip_whitelist" env:"ENABLE_IP_WHITELIST" default:"false"`
 	WhitelistIPs      []string      `json:"whitelist_ips" yaml:"whitelist_ips" env:"WHITELIST_IPS"`
+	// ForceHSTS 强制下发 HSTS 响应头。
+	// 默认 false：只在 HTTPS 请求上下发（浏览器会忽略非 HTTPS 响应里的 HSTS，
+	// 在纯 HTTP 部署上撒这个头只会造成"以为启用了"的错觉）。
+	// 反向代理终止 TLS 且不传 X-Forwarded-Proto 时，由运维确认整条链路是 HTTPS 后打开。
+	ForceHSTS bool `json:"force_hsts" yaml:"force_hsts" env:"FORCE_HSTS" default:"false"`
 	// SessionKeyInfo 会话密钥派生盐上下文(客户端生成时 patch 进二进制;修改后需重新生成客户端;
 	// 默认中性随机串,不带 c2/key/session 等明显特征)
 	SessionKeyInfo string `json:"session_key_info" yaml:"session_key_info" env:"SESSION_KEY_INFO" default:"8d2c91f4a6"`

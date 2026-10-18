@@ -33,6 +33,7 @@ func postJSON(t *testing.T, router *gin.Engine, path, body string) (*httptest.Re
 // （地址里的 _ / % 还会被当通配符，例如 "dns_1.example.com:53" 会匹配到
 // "dnsX1.example.com:53"）。而其余接口一律按 listen_address 精确查库，判重口径必须一致。
 func TestAddListenerDedupIsExact(t *testing.T) {
+	ensureTestProfiles(t)
 	setupMaskTestDB(t)
 
 	// 已存在一条（不启动，避免占用端口）
@@ -80,6 +81,7 @@ func TestAddListenerDedupIsExact(t *testing.T) {
 // 语义上：状态为运行但句柄已丢（启动失败/异常退出残留）时关闭应算成功——
 // 调用方已把状态置为已停止，"没有句柄可关"不构成失败。
 func TestCloseListenerMissingHandleSingleResponse(t *testing.T) {
+	ensureTestProfiles(t)
 	setupMaskTestDB(t)
 
 	const addr = "0.0.0.0:18091"
@@ -108,6 +110,7 @@ func TestCloseListenerMissingHandleSingleResponse(t *testing.T) {
 // TestDeleteListenerMissingHandleSingleResponse 删除路径同理：句柄缺失时也只回一次成功响应，
 // 且删除照常完成。
 func TestDeleteListenerMissingHandleSingleResponse(t *testing.T) {
+	ensureTestProfiles(t)
 	setupMaskTestDB(t)
 
 	const addr = "0.0.0.0:18090"

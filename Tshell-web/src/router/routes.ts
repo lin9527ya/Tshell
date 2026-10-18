@@ -148,6 +148,7 @@ export type ClientFunc = (typeof CLIENT_FUNCS)[number]
 /** 系统设置页的页签（与路由 /setting/:tab 的 tab 对应） */
 export const SETTING_TABS = [
   'config',
+  'account',
   'backup',
   'status',
   'users',

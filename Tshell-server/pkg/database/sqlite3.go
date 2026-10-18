@@ -178,19 +178,29 @@ func InitializeDefaultUserFromConfig(username, password string) error {
 
 type Users struct {
 	Username      string    `json:"username" xorm:"index"` // 登录/刷新/用户管理均按 username 查询
-	PasswordHash  string    `json:"password_hash"`  // bcrypt哈希密码
-	Salt          string    `json:"salt"`           // 密码盐值
-	CreatedAt     time.Time `json:"created_at"`     // 创建时间
-	LastLogin     time.Time `json:"last_login"`     // 最后登录时间
-	LoginAttempts int       `json:"login_attempts"` // 登录尝试次数
-	Locked        bool      `json:"locked"`         // 账户锁定状态
+	PasswordHash  string    `json:"password_hash"`         // bcrypt哈希密码
+	Salt          string    `json:"salt"`                  // 密码盐值
+	CreatedAt     time.Time `json:"created_at"`            // 创建时间
+	LastLogin     time.Time `json:"last_login"`            // 最后登录时间
+	LoginAttempts int       `json:"login_attempts"`        // 登录尝试次数
+	Locked        bool      `json:"locked"`                // 账户锁定状态
 	//Email       string
 	//Phone       string
-	Role          string    `json:"role"` // admin | operator | auditor（C13 RBAC）
+	Role string `json:"role"` // admin | operator | auditor（C13 RBAC）
 	//Permissions int
+
+	// ===== MFA/TOTP（阶段三 §3.5）=====
+	//
+	// 密钥**必须密文落库**（AES-256-GCM，密钥由 JWT 私钥经 HKDF 派生，见
+	// pkg/security/mfa.go）：库文件/备份泄露时，明文 TOTP 密钥等于第二因子作废。
+	// 这三个字段一律不出现在任何 API 响应里（结构体 tag 上没有 omitempty 也是
+	// 有意的：序列化 Users 的地方都要显式挑字段，避免"顺手 json.Marshal 就泄出去"）。
+	MFASecretEnc      string `xorm:"'mfa_secret_enc' default('')" json:"-"`      // 加密后的 TOTP 密钥
+	MFAEnabled        bool   `xorm:"'mfa_enabled' default(0)" json:"-"`          // 是否已确认开启
+	MFARecoveryHashes string `xorm:"'mfa_recovery_hashes' default('')" json:"-"` // 恢复码 bcrypt 哈希（JSON 数组串）
 }
 type Clients struct {
-	ID                int64 `xorm:"'id' pk autoincr" json:"id"`
+	ID                int64  `xorm:"'id' pk autoincr" json:"id"`
 	Uid               string `xorm:"index"`
 	FirstStart        string
 	ExternalIP        string
@@ -206,11 +216,11 @@ type Clients struct {
 	Online            string `xorm:"index"`
 	Color             string
 	Group             string `json:"group" xorm:"index"` // C14: 客户端分组
-	Listener          string `xorm:"index"` // 客户端对应的监听器协议类型（websocket/tcp/kcp等）
-	Os                string `xorm:"default('')"` // 客户端操作系统类型（linux/windows/darwin，元数据上报）
-	HeartbeatTimeout  string `xorm:"default('30')"` // 心跳超时次数，保持30次
-	HeartbeatInterval string `xorm:"default('10')"` // 心跳检测间隔（秒），保持10秒
-	LastActive        string `json:"last_active"`   // 最后活跃时间（用于统计离线时长）
+	Listener          string `xorm:"index"`              // 客户端对应的监听器协议类型（websocket/tcp/kcp等）
+	Os                string `xorm:"default('')"`        // 客户端操作系统类型（linux/windows/darwin，元数据上报）
+	HeartbeatTimeout  string `xorm:"default('30')"`      // 心跳超时次数，保持30次
+	HeartbeatInterval string `xorm:"default('10')"`      // 心跳检测间隔（秒），保持10秒
+	LastActive        string `json:"last_active"`        // 最后活跃时间（用于统计离线时长）
 }
 type Notes struct {
 	Uid  string `xorm:"index"`
@@ -228,7 +238,7 @@ type Downloads struct {
 	DownloadedSize int
 }
 type Listener struct {
-	Id                int64 `xorm:"pk autoincr"`
+	Id                int64  `xorm:"pk autoincr"`
 	Type              string `xorm:"index"`
 	ListenAddress     string `xorm:"index"`
 	ConnectAddress    string `xorm:"index"`
@@ -238,7 +248,16 @@ type Listener struct {
 	Note              string `xorm:"default('')"`                   // 监听器备注
 	VKey              string `xorm:"'v_key' default('')"`           // VKey
 	EncryptionSalt    string `xorm:"'encryption_salt' default('')"` // 流量加密盐
+	// Profile 该监听器绑定的 C2 画像名（profiles/*.yaml，空=default）。
+	//
+	// 这是**监听器侧**的画像：决定 http/https 注册哪个 URI、websocket 监听哪个
+	// WS 路径，也是生成载荷时一致性校验的基准。不同监听器可各用一个画像 ——
+	// 这正是"同一台 Team Server 并存多套流量特征"的实现方式。
+	// 已上线并连着的载荷不受影响（它们连自己的路径）；改这一列只影响之后新生成的
+	// 载荷与新连接。
+	Profile string `xorm:"'profile' default('')"`
 }
+
 // WebDelivery 载荷投递配置（Delivery Hub）
 // 兼容旧字段 ListeningPort/FileName；新字段支持统一路由、伪装、防护与统计
 type WebDelivery struct {
@@ -280,9 +299,9 @@ type WebDelivery struct {
 	// 最大下载次数，0=不限制；达到后自动关闭
 	MaxDownloads int `xorm:"default(0)" json:"max_downloads"`
 	// 命中/下载统计
-	HitCount    int64  `xorm:"default(0)" json:"hit_count"`
-	LastHitAt   string `xorm:"varchar(64) default('')" json:"last_hit_at"`
-	LastHitIP   string `xorm:"varchar(64) default('')" json:"last_hit_ip"`
+	HitCount  int64  `xorm:"default(0)" json:"hit_count"`
+	LastHitAt string `xorm:"varchar(64) default('')" json:"last_hit_at"`
+	LastHitIP string `xorm:"varchar(64) default('')" json:"last_hit_ip"`
 	// 一次性链接：1=启用（首次成功下载后作废对应资源）
 	OneTime int `xorm:"default(0)" json:"one_time"`
 	// stager / shellcode 公开 URL（创建时填好，便于前端展示）
@@ -298,13 +317,13 @@ type WebDelivery struct {
 // 生成 Stager 时随机生成 64 位令牌并记录配额（如 3 次），下载时校验并扣减，
 // 用完返回伪装 404。区别于 WebDelivery.AccessToken（全局静态 token）。
 type StagerToken struct {
-	ID        int64  `xorm:"'id' pk autoincr" json:"id"`
-	PublicKey string `xorm:"varchar(64) index" json:"public_key"` // 关联投递 public_key
-	Token     string `xorm:"varchar(64) index unique" json:"token"` // 64 位随机令牌（hex）
-	Quota     int    `json:"quota"`          // 允许下载次数
-	Used      int    `json:"used"`           // 已使用次数
-	Note      string `xorm:"varchar(200) default('')" json:"note"` // 备注（如 Stager 标识）
-	CreatedAt string `xorm:"varchar(32) default('')" json:"created_at"`
+	ID         int64  `xorm:"'id' pk autoincr" json:"id"`
+	PublicKey  string `xorm:"varchar(64) index" json:"public_key"`   // 关联投递 public_key
+	Token      string `xorm:"varchar(64) index unique" json:"token"` // 64 位随机令牌（hex）
+	Quota      int    `json:"quota"`                                 // 允许下载次数
+	Used       int    `json:"used"`                                  // 已使用次数
+	Note       string `xorm:"varchar(200) default('')" json:"note"`  // 备注（如 Stager 标识）
+	CreatedAt  string `xorm:"varchar(32) default('')" json:"created_at"`
 	LastUsedAt string `xorm:"varchar(32) default('')" json:"last_used_at"`
 	LastUsedIP string `xorm:"varchar(64) default('')" json:"last_used_ip"`
 }
@@ -376,7 +395,7 @@ type AuditLogDB struct {
 	Message    string    `json:"message" xorm:"text"`
 	ErrorMsg   string    `json:"error_msg" xorm:"text"`
 	Details    string    `json:"details" xorm:"text"` // JSON字符串
-	CreatedAt time.Time `json:"created_at" xorm:"datetime notnull index"`
+	CreatedAt  time.Time `json:"created_at" xorm:"datetime notnull index"`
 	// TsUnix 时间范围查询专用（秒）。SQLite 的 DATETIME 列有 NUMERIC 亲和性，
 	// 与字符串/时间参数比较的结果不可靠（实测 time.Time 绑定在该列上恒不命中），
 	// 范围过滤与排序统一走这个数值列。
@@ -407,7 +426,7 @@ type Task struct {
 	// 列名必须显式指定：xorm 默认把 UID 映射成 u_id，与查询里的 uid 对不上
 	UID        string    `xorm:"'uid' varchar(128) index" json:"uid"`
 	Operator   string    `xorm:"varchar(64)" json:"operator"`
-	Kind       string    `xorm:"varchar(20) index" json:"kind"`   // batch / console / exec
+	Kind       string    `xorm:"varchar(20) index" json:"kind"` // batch / console / exec
 	Command    string    `xorm:"text" json:"command"`
 	Status     string    `xorm:"varchar(20) index" json:"status"` // dispatched / completed / failed / cancelled / timeout
 	Result     string    `xorm:"text" json:"result"`
@@ -423,7 +442,7 @@ type Task struct {
 // 来源: 手动录入 / 命令产出自动识别(WiFi 密码等) / 后续提取命令族(LSASS/DPAPI/浏览器)。
 type Loot struct {
 	Id        int64  `json:"id" xorm:"pk autoincr"`
-	Uid       string `json:"uid" xorm:"index"`         // 来源会话
+	Uid       string `json:"uid" xorm:"index"`              // 来源会话
 	Type      string `json:"type" xorm:"varchar(20) index"` // pwd 明文 / hash NTLM哈希 / domain 域账号 / note 备忘
 	User      string `json:"user" xorm:"varchar(255)"`      // 用户名
 	Realm     string `json:"realm" xorm:"varchar(255)"`     // 域/REALM
@@ -643,6 +662,63 @@ func migrateListenerTable() error {
 	return nil
 }
 
+// migrateUsersMFATable 为 users 表补齐 MFA/TOTP 字段（阶段三 §3.5）。
+//
+// 三列都带默认值，所以老库升级后现有用户自动是"未开启 MFA" —— 不需要回填，
+// 也不会因为 NULL 导致后续读取 panic。
+// 密钥列存的是**密文**（见 pkg/security/mfa.go），明文密钥绝不落库。
+func migrateUsersMFATable() error {
+	tableName := "users"
+	cols := tableColumns(tableName)
+
+	columns := []struct {
+		name     string
+		ddl      string
+		describe string
+	}{
+		{"mfa_secret_enc", "TEXT DEFAULT ''", "加密后的 TOTP 密钥（AES-256-GCM）"},
+		{"mfa_enabled", "BOOLEAN DEFAULT 0", "是否已确认开启 MFA"},
+		{"mfa_recovery_hashes", "TEXT DEFAULT ''", "恢复码 bcrypt 哈希（JSON 数组串）"},
+	}
+
+	for _, c := range columns {
+		if cols[c.name] {
+			log.Printf("✅ Users表已存在%s字段，跳过", c.name)
+			continue
+		}
+		log.Printf("正在为Users表添加%s字段（%s）...", c.name, c.describe)
+		// 幂等：ALTER 前先查列是否存在（上面的 cols 已判断），失败则中止整个迁移
+		sql := fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", tableName, c.name, c.ddl)
+		if err := ExecuteSQL(Engine, sql); err != nil {
+			return fmt.Errorf("添加Users表%s字段失败: %v", c.name, err)
+		}
+		log.Printf("✅ Users表%s字段添加成功", c.name)
+	}
+	return nil
+}
+
+// migrateListenerProfileColumn 为 listener 表添加 profile 列（阶段三 §3.6）。
+//
+// 默认空串 = default 画像，所以老库升级后所有既有监听器的行为与升级前**完全一致**
+// （原来就是按 default 注册的），不需要回填、也不会因为 NULL 让查询出错。
+func migrateListenerProfileColumn() error {
+	const (
+		tableName = "listener"
+		colName   = "profile"
+	)
+	cols := tableColumns(tableName)
+	if cols[colName] {
+		log.Printf("✅ Listener表已存在%s字段，跳过迁移", colName)
+		return nil
+	}
+	log.Printf("正在为Listener表添加%s字段（绑定的 C2 画像名，空=default）...", colName)
+	if err := ExecuteSQL(Engine, fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s TEXT DEFAULT ''", tableName, colName)); err != nil {
+		return fmt.Errorf("添加Listener表%s字段失败: %v", colName, err)
+	}
+	log.Printf("✅ Listener表%s字段添加成功", colName)
+	return nil
+}
+
 // migrateClientsTableWithId 重建Clients表以添加ID主键
 func migrateClientsTableWithId() error {
 	// 1. 创建新表
@@ -859,7 +935,6 @@ func defaultHeartbeatInterval() string {
 // AppendShellContent 增量追加 shell 内容（P1-5: 异步批量落库，见 shell_batch_writer.go）。
 // 原同步实现每次输出都执行一条 UPDATE，高频会话 + 多客户端时 SQLite 写锁竞争严重。
 
-
 // ensureWebDeliverySchema 迁移旧 web_delivery 表（无 id 主键）到新结构。
 // SQLite 无法 ALTER TABLE 添加 PRIMARY KEY，必须重建表。
 func ensureWebDeliverySchema(engine *xorm.Engine) error {
@@ -878,12 +953,12 @@ func ensureWebDeliverySchema(engine *xorm.Engine) error {
 
 	// 检查是否已有 id 列
 	type colInfo struct {
-		Cid        int    `xorm:"cid"`
-		Name       string `xorm:"name"`
-		Type       string `xorm:"type"`
-		Notnull    int    `xorm:"notnull"`
-		DfltValue  string `xorm:"dflt_value"`
-		Pk         int    `xorm:"pk"`
+		Cid       int    `xorm:"cid"`
+		Name      string `xorm:"name"`
+		Type      string `xorm:"type"`
+		Notnull   int    `xorm:"notnull"`
+		DfltValue string `xorm:"dflt_value"`
+		Pk        int    `xorm:"pk"`
 	}
 	var cols []colInfo
 	if err := engine.SQL("PRAGMA table_info(`web_delivery`)").Find(&cols); err != nil {
@@ -1128,10 +1203,10 @@ func ConnectDateBase() {
 	Engine.SetConnMaxLifetime(5 * time.Minute)
 	// SQLite 专有调优：PostgreSQL 下这些语句无效（会报语法错误），必须跳过
 	if !IsPostgres() {
-	_, _ = Engine.Exec("PRAGMA foreign_keys=ON")  
-	_, _ = Engine.Exec("PRAGMA temp_store=MEMORY")  
-	_, _ = Engine.Exec("PRAGMA cache_size=-64000")  
-	_, _ = Engine.Exec("PRAGMA mmap_size=268435456")  
+		_, _ = Engine.Exec("PRAGMA foreign_keys=ON")
+		_, _ = Engine.Exec("PRAGMA temp_store=MEMORY")
+		_, _ = Engine.Exec("PRAGMA cache_size=-64000")
+		_, _ = Engine.Exec("PRAGMA mmap_size=268435456")
 		// P0-1B: WAL 调优——限制 WAL 文件上限 64M，autocheckpoint 1000 页
 		_, _ = Engine.Exec("PRAGMA journal_size_limit=67108864")
 		_, _ = Engine.Exec("PRAGMA wal_autocheckpoint=1000")
@@ -1161,7 +1236,6 @@ func ConnectDateBase() {
 		}
 	}
 
-
 	// C35: 不再初始化第二个数据库引擎（DatabaseManager）——
 	// 原实现用第二个连接池操作同一 SQLite 文件（双池竞争）、可能开启 ShowSQL 刷屏，
 	// 且夜间 VACUUM 会锁库阻塞；API 层统一使用全局 Engine。
@@ -1175,11 +1249,11 @@ func ConnectDateBase() {
 	_, _ = Engine.Exec("DROP INDEX IF EXISTS idx_clients_online_listener")
 
 	err = Engine.Sync2(new(Users), new(Clients), new(Notes), new(Shell), new(Downloads), new(Listener), new(WebDelivery), new(DeliveryAccessLog), new(Socks5), new(TunnelProxy), new(AuditLogDB), new(Plugin), new(StagerToken), new(Loot), new(Task))
-_, _ = Engine.Exec("CREATE INDEX IF NOT EXISTS idx_clients_uid ON clients(uid)")  
-_, _ = Engine.Exec("CREATE INDEX IF NOT EXISTS idx_clients_online ON clients(online)")  
-_, _ = Engine.Exec("CREATE INDEX IF NOT EXISTS idx_clients_listener ON clients(listener)")  
-_, _ = Engine.Exec("CREATE INDEX IF NOT EXISTS idx_shell_uid ON shell(uid)")  
-_, _ = Engine.Exec("CREATE INDEX IF NOT EXISTS idx_downloads_uid ON downloads(uid)")  
+	_, _ = Engine.Exec("CREATE INDEX IF NOT EXISTS idx_clients_uid ON clients(uid)")
+	_, _ = Engine.Exec("CREATE INDEX IF NOT EXISTS idx_clients_online ON clients(online)")
+	_, _ = Engine.Exec("CREATE INDEX IF NOT EXISTS idx_clients_listener ON clients(listener)")
+	_, _ = Engine.Exec("CREATE INDEX IF NOT EXISTS idx_shell_uid ON shell(uid)")
+	_, _ = Engine.Exec("CREATE INDEX IF NOT EXISTS idx_downloads_uid ON downloads(uid)")
 	if err != nil {
 		log.Fatalf("初始化数据库失败: %v", err)
 	}
@@ -1288,6 +1362,7 @@ func GetClientByUid(uid string) (*Clients, error) {
 	}
 	return &client, nil
 }
+
 // database_engine_role_migrate 为旧用户补齐默认角色（C13 RBAC 迁移）
 func database_engine_role_migrate(engine *xorm.Engine, username string) {
 	if engine == nil || username == "" {

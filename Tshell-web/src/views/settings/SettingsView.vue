@@ -51,6 +51,8 @@ const tab = computed<SettingTab>(() => {
 //   status/pool                       → 后端 protected（全角色）→ '1'(SystemView)
 const TABS: { key: SettingTab; zh: string; en: string; permiss: string }[] = [
   { key: 'config', zh: '服务配置', en: 'Config', permiss: Perm.AdminOnly },
+  // 账号安全：**所有登录用户**都能管自己的 MFA，不是管理员专属
+  { key: 'account', zh: '账号安全', en: 'Account', permiss: Perm.SystemView },
   { key: 'status', zh: '服务器状态', en: 'Status', permiss: Perm.SystemView },
   { key: 'users', zh: '用户管理', en: 'Users', permiss: Perm.AdminOnly },
   { key: 'keys', zh: '密钥管理', en: 'Keys', permiss: Perm.AdminOnly },
@@ -76,6 +78,7 @@ watch(visibleTabs, (tabs) => {
 // 同 ClientDetail：先解析再交给 KeepAlive（Vue 3.3 不能缓存 async 包装器）
 const LOADERS: Record<SettingTab, () => Promise<{ default: Component }>> = {
   config: () => import('@/views/config/ServerConfigView.vue'),
+  account: () => import('@/views/settings/MFAView.vue'),
   status: () => import('@/views/server/ServerStatusView.vue'),
   users: () => import('@/views/config/UserManagementView.vue'),
   keys: () => import('@/views/config/KeyManagementView.vue'),

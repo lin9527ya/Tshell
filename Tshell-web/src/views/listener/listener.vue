@@ -520,6 +520,7 @@ async function onListenerSaved(formData: any) {
         interval: formData.interval,
         vkey: formData.vkey,
         encryptionSalt: formData.encryptionSalt,
+        profile: formData.profile || "default",
       })
     } else {
       res = await ListenerAPI.addListener({
@@ -531,6 +532,7 @@ async function onListenerSaved(formData: any) {
         interval: formData.interval,
         vkey: formData.vkey,
         encryptionSalt: formData.encryptionSalt,
+        profile: formData.profile || "default",
       })
     }
 
