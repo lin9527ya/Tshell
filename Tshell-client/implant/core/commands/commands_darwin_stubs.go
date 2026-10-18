@@ -19,17 +19,6 @@ func ModifyFileTimeAdvanced(filePath string, newTime time.Time) error {
 	return os.Chtimes(filePath, newTime, newTime)
 }
 
-func StartInteractiveShell() ([]byte, error) {
-	return nil, errors.New("交互式终端功能在Darwin平台暂不支持")
-}
-
-func SendInteractiveInput(input []byte) ([]byte, error) {
-	return nil, errors.New("交互式终端功能在Darwin平台暂不支持")
-}
-func StopInteractiveShell() ([]byte, error) {
-	return nil, errors.New("交互式终端功能在Darwin平台暂不支持")
-}
-
 func StartCMDInteractiveShell() ([]byte, error) {
 	return nil, errors.New("双引擎交互式Shell功能在Darwin平台不可用")
 }

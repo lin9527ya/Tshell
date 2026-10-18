@@ -49,6 +49,26 @@ func TestDarwinStubbedFeaturesNowImplemented(t *testing.T) {
 			t.Errorf("%s 应在 commands_darwin_hidpi.go 中有真实实现", fn)
 		}
 	}
+
+	// 交互式 PTY 由 linux||darwin 共享实现提供（抽出前 macOS 是桩）
+	ptySrc, err := os.ReadFile("commands_pty_unix.go")
+	if err != nil {
+		t.Fatalf("读取 commands_pty_unix.go 失败: %v", err)
+	}
+	ptyText := string(ptySrc)
+	if !strings.Contains(ptyText, "//go:build linux || darwin") {
+		t.Error("commands_pty_unix.go 的构建标签应为 linux || darwin")
+	}
+	for _, fn := range []string{"StartInteractiveShell", "SendInteractiveInput", "StopInteractiveShell"} {
+		if !regexp.MustCompile(`func ` + fn + `\(`).MatchString(ptyText) {
+			t.Errorf("%s 应在 commands_pty_unix.go 中有共享实现", fn)
+		}
+	}
+	// Darwin 桩文件里不得再出现这些入口（重复定义会编译失败，这里是文档性守卫）
+	stubSrc, _ := os.ReadFile("commands_darwin_stubs.go")
+	if regexp.MustCompile(`func StartInteractiveShell\(`).MatchString(string(stubSrc)) {
+		t.Error("StartInteractiveShell 不应再出现在 Darwin 桩文件里")
+	}
 	// 实现必须真的调用系统工具/API，而不是换了个地方报不支持
 	for _, want := range []string{"/usr/bin/chflags", "/usr/sbin/screencapture"} {
 		if !strings.Contains(text, want) {

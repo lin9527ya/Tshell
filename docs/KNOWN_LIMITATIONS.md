@@ -102,11 +102,14 @@
   - **文件隐藏**：`chflags hidden|nohidden`（与 Windows 的隐藏属性语义一致）。
   - **屏幕截图**：系统 `screencapture -x -t png`；屏幕监控采用**拉取式**
     （服务端"获取监控帧"接口按需截一帧），不在客户端常驻推送循环。
+  - **交互式 PTY 终端**：把 Linux 的 PTY 实现抽成 `linux || darwin` 共享文件
+    （`commands_pty_unix.go`），平台差异只有默认 shell（Linux `/bin/bash`，
+    macOS 优先 `/bin/zsh`，缺失回退 bash）。xterm 终端页在 macOS 上完整可用。
 - 遗留：
-  - 交互式 PTY 终端（需把 Linux 的 PTY 实现抽成 linux||darwin 共享，尚未做）；
   - InlineBin（内存执行）、令牌操作、进程注入等 Windows 专属能力在 macOS 上仍明确报不支持；
-  - macOS 端未在真实设备上验证（本仓库只能交叉编译，单测覆盖 plist 生成与转义）。
-- 状态：✅（持久化/隐藏/截图/监控拉取）/ ⏳（PTY、实机验证）
+  - macOS 端未在真实设备上验证（本仓库只能交叉编译；单测覆盖 plist 生成、PTY 会话
+    生命周期/特殊键/窗口调整、截图与隐藏的实现选择）。
+- 状态：✅（持久化/隐藏/截图/监控拉取/交互式 PTY）/ ⏳（实机验证）
 
 ## 12f. 端口扫描（阶段三 · 第 13 项子能力）
 - 现状：✅ 已实现：控制台命令 `scan <目标> <端口> [超时毫秒]`，如
