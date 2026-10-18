@@ -439,6 +439,11 @@ func main() {
 	delivery.GlobalHub.SetMainPort(*bindPort)
 
 	r := gin.New()
+	// 可信代理网段：gin 默认信任任意来源的 X-Forwarded-For，直连部署下
+	// 审计日志的 client_ip / 在线操作员的 last_ip 可被远程请求伪造（见 pkg/security/proxy_trust.go）
+	if err := security.ApplyTrustedProxies(r); err != nil {
+		logx.Warnf("⚠️ [网络] 可信代理网段设置失败，将按 gin 默认（信任任意来源转发头）运行: %v\n", err)
+	}
 
 	// 添加错误处理中间件
 	r.Use(errors.Recovery())

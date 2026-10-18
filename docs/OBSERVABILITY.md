@@ -12,7 +12,7 @@ Prometheus 文本格式，由 `pkg/metrics` 提供（独立注册表，只暴露
 |---|---|
 | `metrics.enabled: false` | 端点返回 404 |
 | `metrics.token: "<串>"` | 必须带 `Authorization: Bearer <token>`（常量时间比较）；**本机来源也要带** |
-| 未配 token | 仅允许回环来源（Prometheus 与服务端同机） |
+| 未配 token | 仅允许回环来源（Prometheus 与服务端同机）；**按 TCP 对端判定**，`X-Forwarded-For` 不能冒充本机 |
 | 未配 token + `metrics.allow_remote: true` | 允许跨机抓取（**等于公开运行情报，仅限隔离网络**；启动日志会告警） |
 
 任何情况下，持 admin 角色的会话（`Authorization2` 或 HttpOnly Cookie）都可查看。
@@ -120,6 +120,7 @@ groups:
 | API 限流（`security.api_rate_limit`，默认 100 次/分/IP） | 抓取间隔 ≥1s 不会触发；请勿把 scrape_interval 设到亚秒级 |
 | IP 白名单（`security.enable_ip_whitelist`） | 启用后 Prometheus 所在 IP 必须在白名单内 |
 | JWT | 不影响：抓取走 token 或回环，不经过 `protected` 组 |
+| 可信代理（`pkg/security.ApplyTrustedProxies`） | 审计日志的 `client_ip`、在线操作员的 `last_ip` 只在**对端是回环/私网**时采信转发头；直连部署下远程请求无法伪造自己的来源 IP |
 
 ## 5. 设计取舍
 

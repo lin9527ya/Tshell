@@ -110,6 +110,28 @@ func TestMetricsAdminSession(t *testing.T) {
 	}
 }
 
+// TestMetricsXForwardedForCannotSpoofLoopback 转发头不能冒充本机：
+// gin 的 c.ClientIP() 默认信任任意来源的 X-Forwarded-For，若用它做回环判定，
+// 远程攻击者加一个 "X-Forwarded-For: 127.0.0.1" 就能读到运行情报。
+func TestMetricsXForwardedForCannotSpoofLoopback(t *testing.T) {
+	withMetricsOptions(t, MetricsOptions{Enabled: true})
+	r := metricsRouter()
+
+	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	req.RemoteAddr = "203.0.113.9:4444"
+	req.Header.Set("X-Forwarded-For", "127.0.0.1")
+	req.Header.Set("X-Real-IP", "127.0.0.1")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("伪造转发头的远程请求状态码 = %d，期望 403（%s）", w.Code, w.Body.String())
+	}
+	if strings.Contains(w.Body.String(), "tshell_") {
+		t.Fatal("伪造转发头的远程请求读到了指标内容")
+	}
+}
+
 // TestMetricsDisabled 关闭时返回 404 而不是指标内容
 func TestMetricsDisabled(t *testing.T) {
 	withMetricsOptions(t, MetricsOptions{Enabled: false})

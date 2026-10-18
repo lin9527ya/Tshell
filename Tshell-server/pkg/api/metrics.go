@@ -64,7 +64,7 @@ func metricsAuthorized(c *gin.Context) bool {
 	// 3) 无 token 时的来源判定：本机放行；跨机必须显式 allow_remote
 	//    （配了 token 就不再有"本机免 token"的口子，否则 token 形同虚设）
 	if metricsOptions.Token == "" {
-		if isLoopbackIP(c.ClientIP()) {
+		if isLoopbackIP(metricsPeerIP(c)) {
 			return true
 		}
 		return metricsOptions.AllowRemote
@@ -100,6 +100,21 @@ func adminClaimsFromRequest(c *gin.Context) *security.Claims {
 		return nil
 	}
 	return claims
+}
+
+// metricsPeerIP 取真实 TCP 对端地址（不看转发头）。
+//
+// 不能用 gin 的 c.ClientIP()：它默认信任任意来源的 X-Forwarded-For，
+// 远程攻击者加一个 "X-Forwarded-For: 127.0.0.1" 就能冒充本机、读到
+// beacon 在线数这类运行情报（实测可复现，见 metrics_test.go）。
+// 反向代理与服务端同机时对端即回环，规则仍然成立；代理在别的机器上时
+// 需要配 metrics.token —— 这是刻意的取舍：来源判定只认 TCP 层事实。
+func metricsPeerIP(c *gin.Context) string {
+	host, _, err := net.SplitHostPort(c.Request.RemoteAddr)
+	if err != nil {
+		host = c.Request.RemoteAddr
+	}
+	return host
 }
 
 // isLoopbackIP 判定来源是否为本机

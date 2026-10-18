@@ -47,6 +47,7 @@ Tshell/
 - **命令链路**:服务端队列 → 加密下发 → 客户端 `HandleCommand`(入口 recover + 逐命令边界校验)→ 回包 → `HandleClientReply`(共享处理:shell 追加/下载节流/截图分发)。
 - **离线信号**:断线时 `CleanupClientQueues` 广播,等待中的 API handler 提前返回(避免白等超时)。
 - **连接池**:MaxConnections 限制 + 健康检查 + 空闲清理,WS 已入池。
+- **来源 IP 判定**:可信代理网段为回环+私网(`pkg/security/proxy_trust.go`);直连部署下远程请求的 `X-Forwarded-For` 不被采信,审计与在线状态里的 IP 不可伪造(gin 默认信任任意来源的转发头)。
 - **RBAC**:admin/operator/auditor 三角色,服务端路由层强制(RequireRole),前端路由守卫 + 菜单按 permiss 过滤;高危操作(ExecuteBin/批量删除/forward/载荷生成)限 admin+operator;密钥管理/安全中心/配置/用户管理为 admin 独有;审计日志读接口为 admin+auditor。
 - **审计**:操作审计中间件 + 文件审计中间件;审计日志**文件 + SQLite 双写**(查询/统计/保留策略走 `audit_log_db` 表,文件保留人读);交付访问日志 30 天轮转。
 - **任务**:一等对象(`tasks` 表),状态机 `dispatched→completed|failed|cancelled|timeout`,记录 operator/命令/结果,可取消,超时与保留由后台清理任务收敛。
