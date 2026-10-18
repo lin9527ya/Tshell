@@ -304,6 +304,7 @@ import {
   filterShellContentForMimikatz,
   type FilterOptions,
 } from '@/views/plugins/output-filter'
+import { usePanelResize } from '@/views/plugins/usePanelResize'
 import { ref, onMounted, computed, onUnmounted, defineAsyncComponent } from 'vue';
 const ScriptManagerPanel = defineAsyncComponent(() => import('@/layout/ScriptManagerPanel.vue'));
 import { useI18nStore } from '@/stores/i18n';
@@ -358,19 +359,20 @@ const isWindowsClient = computed(() => {
 });
 
 // 输出框尺寸控制
-const outputHeight = ref(400);
-const outputWidth = ref(800);
+// 拖拽缩放规则已抽到 usePanelResize.ts（19 项测试）：最小尺寸钳制、
+// 三种拖拽模式各自只改一个维度、以及"以渲染尺寸为基准"这条防跳变规则。
+const {
+  width: outputWidth,
+  height: outputHeight,
+  userResized,
+  start: startPanelResize,
+  move: movePanelResize,
+  end: endPanelResize,
+} = usePanelResize();
 // 默认由 CSS 撑满容器（自适应）；用户拖拽过手柄后才固定为像素尺寸
-const userResized = ref(false);
 const outputTextarea = ref<HTMLTextAreaElement>();
 
 // 拖拽调整大小相关
-let isResizing = ref(false);
-let resizeType = ref('');
-let startX = 0;
-let startY = 0;
-let startWidth = 0;
-let startHeight = 0;
 
 // 上传对话框相关
 const showUploadDialog = ref(false);
@@ -399,63 +401,37 @@ onUnmounted(() => {
   }
 });
 
-// 拖拽调整大小功能
+// 拖拽调整大小功能。
+// 规则都在 usePanelResize 里（最小尺寸钳制、三种模式、以渲染尺寸为基准防跳变），
+// 这里只负责把 DOM 事件与元素当前尺寸喂进去。
+const renderedSize = () => {
+  const el = outputTextarea.value;
+  if (!el) return null;
+  const r = el.getBoundingClientRect();
+  return { width: r.width, height: r.height };
+};
+
 const startResize = (e: MouseEvent) => {
   e.preventDefault();
-  isResizing.value = true;
-  resizeType.value = 'both';
-  startX = e.clientX;
-  startY = e.clientY;
-  const el = outputTextarea.value;
-  if (el) {
-    // 自适应状态下以当前渲染尺寸作为拖拽起点，避免从 800x400 跳变
-    outputWidth.value = Math.round(el.getBoundingClientRect().width);
-    outputHeight.value = Math.round(el.getBoundingClientRect().height);
-  }
-  userResized.value = true;
-  startWidth = outputWidth.value;
-  startHeight = outputHeight.value;
+  startPanelResize('both', e.clientX, e.clientY, renderedSize());
 };
 
 const startResizeRight = (e: MouseEvent) => {
   e.preventDefault();
-  isResizing.value = true;
-  resizeType.value = 'width';
-  startX = e.clientX;
-  const el = outputTextarea.value;
-  if (el) outputWidth.value = Math.round(el.getBoundingClientRect().width);
-  userResized.value = true;
-  startWidth = outputWidth.value;
+  startPanelResize('width', e.clientX, e.clientY, renderedSize());
 };
 
 const startResizeBottom = (e: MouseEvent) => {
   e.preventDefault();
-  isResizing.value = true;
-  resizeType.value = 'height';
-  startY = e.clientY;
-  const el = outputTextarea.value;
-  if (el) outputHeight.value = Math.round(el.getBoundingClientRect().height);
-  userResized.value = true;
-  startHeight = outputHeight.value;
+  startPanelResize('height', e.clientX, e.clientY, renderedSize());
 };
 
 const handleMouseMove = (e: MouseEvent) => {
-  if (!isResizing.value) return;
-  
-  if (resizeType.value === 'both' || resizeType.value === 'width') {
-    const deltaX = e.clientX - startX;
-    outputWidth.value = Math.max(400, startWidth + deltaX);
-  }
-  
-  if (resizeType.value === 'both' || resizeType.value === 'height') {
-    const deltaY = e.clientY - startY;
-    outputHeight.value = Math.max(200, startHeight + deltaY);
-  }
+  movePanelResize(e.clientX, e.clientY);
 };
 
 const handleMouseUp = () => {
-  isResizing.value = false;
-  resizeType.value = '';
+  endPanelResize();
 };
 
 // 设置执行模式
