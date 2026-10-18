@@ -180,19 +180,24 @@ func pkcs12PBE3DESDecrypt(salt []byte, iterations int, password string, cipherte
 	}
 	out := make([]byte, len(ciphertext))
 	cipher.NewCBCDecrypter(block, iv).CryptBlocks(out, ciphertext)
-	return pkcs12Unpad(out)
+	return pkcs12Unpad(out, des.BlockSize)
 }
 
 // pkcs12Unpad 去掉 PKCS#7 填充。
 //
+// blockSize 必须由调用方给出（3DES=8，AES=16）——**不能写死**。
+// 这里曾经写死 des.BlockSize(8)，导致 AES-CBC 的填充值落在 9..16 时被判非法：
+// 也就是明文长度 %16 落在 0..7 时解密必然失败（约占一半的块）。
+// 症状是"同一段数据有的能解、有的解不开"，很容易误判成密钥问题。
+//
 // 校验填充的合法性并返回错误：填充不对说明口令错（或数据损坏），
 // 此时返回"解出来的字节"只会让上层把垃圾当明文用。
-func pkcs12Unpad(b []byte) ([]byte, error) {
-	if len(b) == 0 {
+func pkcs12Unpad(b []byte, blockSize int) ([]byte, error) {
+	if len(b) == 0 || blockSize <= 0 || blockSize > 255 {
 		return nil, errPKCS12
 	}
 	n := int(b[len(b)-1])
-	if n == 0 || n > des.BlockSize || n > len(b) {
+	if n == 0 || n > blockSize || n > len(b) {
 		return nil, errPKCS12
 	}
 	for _, c := range b[len(b)-n:] {

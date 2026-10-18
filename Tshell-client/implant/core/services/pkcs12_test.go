@@ -220,19 +220,19 @@ func TestPBE3DESBadCiphertextLength(t *testing.T) {
 
 func TestUnpadRejectsBadPadding(t *testing.T) {
 	// 末字节为 0：非法
-	if _, err := pkcs12Unpad([]byte{1, 2, 3, 0}); err == nil {
+	if _, err := pkcs12Unpad([]byte{1, 2, 3, 0}, des.BlockSize); err == nil {
 		t.Error("末字节 0 应判为非法填充")
 	}
 	// 末字节大于块大小：非法
-	if _, err := pkcs12Unpad([]byte{1, 2, 3, 9}); err == nil {
+	if _, err := pkcs12Unpad([]byte{1, 2, 3, 9}, des.BlockSize); err == nil {
 		t.Error("填充值大于块大小应判为非法")
 	}
 	// 填充字节不一致：非法
-	if _, err := pkcs12Unpad([]byte{1, 2, 3, 2, 3}); err == nil {
+	if _, err := pkcs12Unpad([]byte{1, 2, 3, 2, 3}, des.BlockSize); err == nil {
 		t.Error("填充字节不一致应判为非法")
 	}
 	// 合法填充：8 字节块 = 4 字节数据 + 4 字节填充值 4
-	got, err := pkcs12Unpad([]byte{1, 2, 3, 4, 4, 4, 4, 4})
+	got, err := pkcs12Unpad([]byte{1, 2, 3, 4, 4, 4, 4, 4}, des.BlockSize)
 	if err != nil {
 		t.Fatalf("合法填充被判非法: %v", err)
 	}
