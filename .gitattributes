@@ -1,0 +1,28 @@
+# 二进制文件必须显式声明，不能让 Git 按内容嗅探决定是否做行尾转换。
+#
+# 背景：Tshell-server/pkg/api/server/ 下是**预编译的 gzip 客户端模板**（.exe/.dll/
+# 无扩展名的 ELF），服务端用 //go:embed 嵌入后按 gzip 魔数解压再 patch 占位符。
+# 在 Windows 上 core.autocrlf=true（Git for Windows 默认）时，若这些文件被当成文本，
+# 检出时会被写入 CRLF、破坏 gzip 流与 PE/ELF 头 —— 表现为服务端启动/生成载荷时报
+# "模板解压失败" 或 patch 后客户端跑不起来。
+#
+# 规则按路径锚定，不使用全局 `* text=auto`（那会让整仓行尾重新归一化，产生巨量 diff）。
+# 新增二进制产物目录时，记得在这里补一条。
+
+# 客户端模板（gzip 压缩的植入体，含 .exe/.dll 与无扩展名的 ELF/Mach-O）
+Tshell-server/pkg/api/server/** binary
+
+# 其他随仓库提供的二进制资产
+*.exe   binary
+*.dll   binary
+*.so    binary
+*.dylib binary
+*.xdb   binary
+*.ico   binary
+*.png   binary
+*.jpg   binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
+*.zip   binary
+*.gz    binary
