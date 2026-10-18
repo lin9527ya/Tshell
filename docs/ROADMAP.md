@@ -137,8 +137,23 @@ go test -race ./Tshell-server/...     # 见 §4 回归基线（注意用外层�
   - 前端：`Tshell-web/src/layout/Dialogs/CredentialDumpDialog.vue`、`src/api/cred/index.ts`
 - **验收**：每个模块独立开关 + 独立单测；产物落 loot 表并按 uid/类型过滤可查；
   不落盘明文口令（内存解析 → 直接回传）—— 已满足（单测覆盖；实机验证待做）
-- **剩余**：Kerberos / BloodHound / Firefox；以及 Windows 实机验证
-  （见 `docs/CREDENTIAL_ACCESS.md` §9）
+- **Firefox（NSS）**：密码学核心已实现（2026-10-19）
+  - `implant/core/services/pkcs12.go`：RFC 7292 附录 B 的 PKCS#12 PBE
+    （`pbeWithSHAAnd3-KeyTripleDES-CBC`，正是 `key4.db` 用的那套）
+    + B.1 的 BMPString 口令编码 + PKCS#7 去填充
+  - **正确性靠已知答案向量（KAT），不是往返测试**：RFC 本身不带向量，
+    而"自己加密自己解密"只能证明自洽（KDF 理解错了两边一起错，测试照样全绿）。
+    向量取自 Go 官方 `x/crypto/pkcs12/pbkdf_test.go`：
+    经典 "sesame" 向量 + 一条**前导零回归**向量（专门覆盖 `I_j` 加法后出现前导零 ——
+    用 `big.Int` 实现会吃掉前导零导致块长不足，x/crypto 历史上确有该 bug；
+    本实现用定长字节加法从结构上规避）
+  - 17 项单测；13 种传输标签交叉编译通过
+  - **仍未做**：`key4.db` 的**容器解析**（metadata.item2 口令校验链 →
+    nssPrivate.a11 → 解出主密钥）+ `logins.json` 的 ASN.1 条目解密，
+    以及 Firefox 配置目录发现。这部分**必须先拿到真实 profile 夹具**才能验证 ——
+    只实现不验证会得到"能编译、测试全绿、真机上一条口令也读不出"的模块
+- **剩余**：Kerberos / BloodHound（需 Windows / 域环境）；Firefox 容器解析（需夹具）；
+  Windows 实机验证（见 `docs/CREDENTIAL_ACCESS.md` §9）
 
 #### 3.2 提权模块（getsystem / UAC bypass）— **M**
 - **目标**：至少 getsystem（命名空间 + 令牌复制）+ 一种 UAC bypass（fodhelper 或
