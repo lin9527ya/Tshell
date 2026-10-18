@@ -118,7 +118,7 @@ func GetDashboardStats(c *gin.Context) {
 			LogFilePath: "./logs",
 			WebPort:     8089,
 			BasicAuth:   false,
-			Version:     "4.9.3",
+			Version:     "1.0.0",
 		}
 	}
 

@@ -27,7 +27,7 @@ import (
 	"time"
 )
 
-var Version = "dev"
+var Version = "1.0.0"
 
 func main() {
 	cfgPath := flag.String("config", "relay.json", "配置文件路径")

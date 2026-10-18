@@ -50,7 +50,7 @@ var embedFS embed.FS
 // 构建期注入（-ldflags "-X main.Version=..."）：用于 /api/version 与产物溯源。
 // 未注入时保持 dev/unknown，避免把本地开发构建误认为发布版本。
 var (
-	Version   = "dev"
+	Version   = "1.0.0"
 	GitCommit = "unknown"
 	BuildTime = "unknown"
 )

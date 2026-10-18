@@ -193,7 +193,7 @@ type AuthConfig struct {
 // ApplicationConfig 应用配置
 type ApplicationConfig struct {
 	Name    string `json:"name" yaml:"name" env:"APP_NAME" default:"Tshell"`
-	Version string `json:"version" yaml:"version" env:"APP_VERSION" default:"4.9.3"`
+	Version string `json:"version" yaml:"version" env:"APP_VERSION" default:"1.0.0"`
 	Author  string `json:"author" yaml:"author" env:"APP_AUTHOR" default:"Tshell Team"`
 }
 
