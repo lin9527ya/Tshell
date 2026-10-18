@@ -609,11 +609,20 @@ func GetDeliveryCommands(c *gin.Context) {
 	})
 	// 【统一响应格式】urls 并入 data（含 status+data+urls 的响应经包装中间件后
 	// 额外顶层字段会丢失；业务数据统一放 data）
+	//
+	// launch_methods：该载荷形态**真能用**的启动方式目录（§3.10 供应链）。
+	// 只回形态匹配的那些 —— 给运维一串点了必然失败的命令比不给更糟。
+	// format 没落库，按保存的文件名后缀推断（见 delivery.InferLaunchFormat 的说明）
+	launchFormat := string(delivery.InferLaunchFormat(meta.SaveFilename, meta.FileName))
 	c.JSON(http.StatusOK, gin.H{"status": 200, "data": gin.H{
 		"commands": cmds,
 		"urls": gin.H{
 			"full": meta.ServerAddress, "stager": meta.StagerURL, "shellcode": meta.ShellcodeURL,
 		},
+		"launch_format":      launchFormat,
+		"launch_methods":     delivery.LaunchMethodsFor(launchFormat),
+		"launch_note":        delivery.LaunchFormatNote(launchFormat),
+		"launch_unsupported": delivery.UnsupportedLaunchNotes(),
 	}})
 }
 

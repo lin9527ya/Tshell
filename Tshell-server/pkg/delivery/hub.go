@@ -649,7 +649,6 @@ func logAccess(p *Profile, resource string, r *http.Request, code int, bytes int
 	_, _ = database.DB().Insert(&entry)
 }
 
-
 // DefaultsView 前端可见的全局 delivery 默认
 type DefaultsView struct {
 	DefaultScheme     string `json:"defaultScheme"`
@@ -676,4 +675,3 @@ func GetDefaultsView() DefaultsView {
 		TrustProxyHeaders: d.TrustProxyHeaders,
 	}
 }
-

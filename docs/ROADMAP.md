@@ -276,7 +276,28 @@ go test -race ./Tshell-server/...     # 见 §4 回归基线（注意用外层�
   见 `docs/RELAY.md` §6–§8
 
 #### 3.10 供应链 — **M**
-- 代码签名（Windows 载荷）、LOLBin 侧载（`rundll32`/`mshta` 之外的组合）
+- **LOLBin 启动方式目录**：✅ 已实现（2026-10-19）。`pkg/delivery/launcher.go`
+  - 此前只有"下载并直接执行"（IWR/certutil/bitsadmin/curl），**没有"落地之后怎么起"** ——
+    而直接起 payload.exe 意味着父进程就是调用它的 shell、控制台可能闪窗、
+    某些环境只放行特定签名 LOLBin
+  - 11 种方式：`direct` / `conhost --headless`（无窗口，Win11+）/ `forfiles`（父进程伪装）/
+    `pcalua` / `wmic process call create` / `explorer` / `schtasks` /
+    `rundll32`（DLL）/ `regsvr32`（DLL）/ `regsvr32` Squiblydoo（远程 SCT）/
+    `mshta`（远程 HTA）
+  - 每种都声明：支持哪种载荷形态、换来什么（Buys）、前提与坑（Caveats）
+  - **形态不匹配明确拒绝**，不给一条点了必然失败的命令；
+    `shellcode` 没有启动方式（它不是可执行文件），返回解释说明需要注入器
+  - 显式记录 installutil/msbuild/regasm/regsvcs **对本项目原生 PE 无效**及原因 ——
+    不写清楚运维会照着公开资料白试一遍
+  - 两个容易写错的点已编码并单测：`forfiles /c` 的内层引号必须写 `\"`；
+    含空格路径/以反斜杠结尾的路径的引号与反斜杠翻倍规则（`CommandLineToArgvW` 语义）
+  - API：`/webdelivery/commands` 一并回 `launch_methods` / `launch_note` /
+    `launch_unsupported`（形态按保存的文件名后缀推断，因为 `format` 没落库）
+  - 测试 27 项
+- **代码签名**：仍未做 —— 需要一张 Windows 代码签名证书（EV/OV）。
+  签名本身是 `signtool`/`osslsigncode` 的外部步骤，接入点在
+  `build_templates.ps1` 与 `pkg/delivery/payload.go` 生成之后；
+  没有证书无法验证签名结果，因此没有盲写。
 
 #### 3.11 前端债 — **M**
 - **Pivot 拓扑图**：✅ 已实现（2026-10-19）。新增 `views/graph/`：
