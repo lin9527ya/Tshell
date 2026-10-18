@@ -280,6 +280,9 @@
                     <el-dropdown-item command="sleep">{{ isZh ? '回连间隔' : 'Sleep' }}</el-dropdown-item>
                     <el-dropdown-item command="group">{{ isZh ? '设置分组' : 'Set Group' }}</el-dropdown-item>
                     <el-dropdown-item command="alive">{{ isZh ? '检查存活' : 'Check Alive' }}</el-dropdown-item>
+                    <el-dropdown-item v-if="isWindowsSession(row)" command="cred" divided>
+                      {{ isZh ? '凭据获取（LSASS）' : 'Credential Access' }}
+                    </el-dropdown-item>
                     <el-dropdown-item command="clientReport">{{ isZh ? '会话报告' : 'Session Report' }}</el-dropdown-item>
                     <el-dropdown-item command="migrate" divided>{{ isZh ? '进程迁移' : 'Migrate' }}</el-dropdown-item>
                     <el-dropdown-item command="disconnect">{{ isZh ? '断开连接' : 'Disconnect' }}</el-dropdown-item>
@@ -302,6 +305,7 @@
     <SleepDialog v-model="sleepDlg.visible" :uid="sleepDlg.uid" :sleep="sleepDlg.sleep" :uids="workspace.selectedUids" />
     <ProcessMigrateDialog v-model="migrateDlg.visible" :uid="migrateDlg.uid" :pid="migrateDlg.pid" />
     <ClientReportDialog v-model="reportDlg.visible" :uid="reportDlg.uid" />
+    <CredentialDumpDialog v-model="credDlg.visible" :uid="credDlg.uid" />
 
   </div>
 </template>
@@ -326,6 +330,7 @@ import NoteDialog from './Dialogs/NoteDialog.vue'
 import SleepDialog from './Dialogs/SleepDialog.vue'
 import ProcessMigrateDialog from './Dialogs/ProcessMigrateDialog.vue'
 import ClientReportDialog from './Dialogs/ClientReportDialog.vue'
+import CredentialDumpDialog from './Dialogs/CredentialDumpDialog.vue'
 
 interface RowData extends ClientData {
   last_active?: string
@@ -499,6 +504,7 @@ const noteDlg = ref({ visible: false, uid: '', note: '' })
 const sleepDlg = ref<{ visible: boolean; uid: string; sleep?: number | string }>({ visible: false, uid: '' })
 const migrateDlg = ref({ visible: false, uid: '', pid: '' })
 const reportDlg = ref({ visible: false, uid: '' })
+const credDlg = ref({ visible: false, uid: '' })
 
 function onRowCmd(cmd: string, row: RowData) {
   selectedRow.value = row
@@ -525,7 +531,14 @@ function onRowCmd(cmd: string, row: RowData) {
     actLock(row)
   } else if (cmd === 'unlock') {
     actUnlock(row)
+  } else if (cmd === 'cred') {
+    credDlg.value = { visible: true, uid: row.Uid }
   }
+}
+
+// isWindowsSession 凭据获取当前只支持 Windows（技术路径均为 Windows 专有）
+function isWindowsSession(row: RowData): boolean {
+  return detectClientOs(row as any) === 'windows'
 }
 
 // 占用/释放会话：告诉别人"这台我在动"，避免互相踩踏（服务端据此拒绝他人下发）
