@@ -52,3 +52,6 @@ Tshell-server/tshell
 /*.zip
 /*.msi
 /*.exe
+
+# 可复现构建产物与清单（本地生成，不入库）
+dist/

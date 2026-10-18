@@ -66,11 +66,16 @@ build_server() {
   # 产出的 cgo exe 无法执行——"not a valid Win32 application";文件模式已验证可用)。
   # CC 传 PATH 中的编译器名而非显式路径,与环境变量解析保持一致。
   CGO_ENABLED=1 GOPROXY=https://goproxy.cn,direct GOMEMLIMIT=3GiB \
-    # 版本信息注入：/api/version 可查，便于产物溯源
+    # 版本信息注入：/api/version 可查，便于产物溯源。
+    # 【可复现】构建时间取提交时间（或 SOURCE_DATE_EPOCH）而不是"现在"——
+    # 用 date 会让同一份源码每次构建都产出不同二进制，无法校验产物来源。
     VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo dev)
     COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo unknown)
-    BUILDTIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-    go build -ldflags "-s -w -X main.Version=${VERSION} -X main.GitCommit=${COMMIT} -X main.BuildTime=${BUILDTIME}" -trimpath -o "$out" ./main.go
+    SDE="${SOURCE_DATE_EPOCH:-$(git log -1 --format=%ct 2>/dev/null || echo 0)}"
+    BUILDTIME=$(date -u -d "@${SDE}" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo 1970-01-01T00:00:00Z)
+    # -buildvcs=false：VCS 信息由上面的 ldflags 显式注入，不让工具链再嵌一份
+    #（默认嵌入的 vcs.modified 会随工作区是否干净变化，破坏可复现性）
+    go build -buildvcs=false -ldflags "-s -w -X main.Version=${VERSION} -X main.GitCommit=${COMMIT} -X main.BuildTime=${BUILDTIME}" -trimpath -o "$out" ./main.go
   ok "服务端构建完成: Tshell-server/$out(重启生效)"
 }
 

@@ -26,6 +26,11 @@ jobs:
           VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo dev)
           COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo unknown)
           go build -ldflags "-X main.Version=$VERSION -X main.GitCommit=$COMMIT" ./...
+      - name: Build (file mode, as build.sh does)
+        # build.sh 用文件模式 `go build ./main.go`（Windows+TDM-GCC 下验证过的唯一可用形态）。
+        # 包模式 `go build ./...` 对"main 包里多出第二个 .go"是绿的，只有文件模式会炸，
+        # 因此这里单独守一道。
+        run: go build -o /dev/null ./main.go
       - name: Vet
         # 含根目录 package main（route_policy_test 所在包）
         run: go vet ./...
@@ -37,6 +42,30 @@ jobs:
           total=$(go tool cover -func=coverage.out | tail -1 | awk '{print $3}' | tr -d '%')
           echo "total coverage: ${total}%"
           awk -v t="$total" 'BEGIN { exit !(t >= 20) }' || { echo "::error::覆盖率 ${total}% 低于阈值 20%"; exit 1; }
+
+  reproducible:
+    name: Reproducible Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: Tshell-client/implant/go.mod
+          cache: true
+      - name: Install C toolchain (server needs cgo for SQLite)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq gcc
+      - name: Build twice and compare
+        # 同一源码 + 同一工具链 + 同一参数必须产出逐字节相同的二进制。
+        # 构建时间取提交时间（SOURCE_DATE_EPOCH），不用"现在"。
+        run: ./scripts/repro-build.sh --check --out "$RUNNER_TEMP/repro"
+      - name: Upload manifest and SBOM
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-manifest
+          path: |
+            ${{ runner.temp }}/repro/build-manifest.json
+            ${{ runner.temp }}/repro/sbom-*.json
 
   implant:
     name: Implant (Go, 12 transports)
