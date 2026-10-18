@@ -1194,6 +1194,10 @@ _, _ = Engine.Exec("CREATE INDEX IF NOT EXISTS idx_downloads_uid ON downloads(ui
 	}
 	var user Users
 	exists, err := Engine.Where("username = ?", "admin").Get(&user)
+	if err != nil {
+		// 查询失败与"用户不存在"必须区分：前者继续走下去会误判为首次部署
+		log.Printf("⚠️ 查询 admin 用户失败: %v", err)
+	}
 	if !exists {
 		// 【安全修复】不再硬编码创建 admin/admin123。
 		// 默认管理员由 main.go 在 ConnectDateBase 之后调用

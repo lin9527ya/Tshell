@@ -116,7 +116,7 @@ func columnExists(table, column string) bool {
 // ResetAutoIncrement 把表的自增序列重置到 to（下一个插入从 to+1 开始）。
 // SQLite 用 sqlite_sequence；PostgreSQL 用 setval + pg_get_serial_sequence。
 func ResetAutoIncrement(table string, to int64) error {
-	if TableExists(table) == false {
+	if !TableExists(table) {
 		return fmt.Errorf("表不存在: %s", table)
 	}
 	if IsPostgres() {

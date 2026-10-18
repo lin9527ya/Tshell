@@ -29,10 +29,10 @@ docs/archive/
 
 # ===== 根目录本地敏感文件与工作区产物（2026-10 卫生收敛）=====
 # 私钥/证书/数据库：一次 git add -A 就会把私钥与战利品库推上远端
-/*.pem
-/*.key
-/*.db
-/token.txt
+*.pem
+*.key
+*.db
+token.txt
 
 # 本地工具与历史脚本归档（未纳入版本控制）
 .playwright-mcp/
@@ -55,3 +55,6 @@ Tshell-server/tshell
 
 # 可复现构建产物与清单（本地生成，不入库）
 dist/
+
+# JWT 运行时状态（黑名单/刷新令牌）
+**/jwt_state.json
