@@ -82,9 +82,12 @@ jobs:
       - name: Build all transports
         run: |
           for t in tcp kcp http https oss websocket dns \
-                   tcp_forward kcp_forward ws_forward http_forward https_forward; do
+                   tcp_forward kcp_forward ws_forward http_forward https_forward multi; do
             go build -tags transport_$t -o /dev/null ./cmd/single || exit 1
           done
+      - name: Test multi-transport scheduler
+        # 多传输调度器的用例带 transport_multi 构建标签，默认 go test 不会执行
+        run: go test -tags transport_multi ./cmd/single/ -count=1
       - name: Test (race)
         # ./... 含 cmd/single 的传输接线守卫（pollTransport 必须实现 PollInterval）
         run: go test -race ./... -count=1

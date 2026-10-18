@@ -311,6 +311,8 @@ export default {
       reconnectBaseDelay?: string, reconnectMaxRetries?: string, injectTech?: string,
       masqueradeName?: string, quietMode?: string, etwPatch?: string, amsiBypass?: string,
       syscallMode?: string, autoDelete?: string, userAgent?: string, profileName?: string,
+      // 多传输端点列表（scheme://addr,...）：非空时后端使用 multi 模板
+      endpoints?: string,
     }){
         return request({
       //      baseURL: axiosConfig.baseURL,

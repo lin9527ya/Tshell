@@ -39,6 +39,21 @@
       <div class="cs-form-row">
         <label class="cs-form-label">{{ isZh ? '上线密码:' : 'Pass:' }}</label>
         <el-input v-model="form.pass" size="small" :placeholder="isZh ? '客户端启动上线密码（可选）' : 'Beacon startup password (optional)'" class="cs-form-input" />
+
+      <div class="cs-form-row">
+        <label class="cs-form-label">{{ isZh ? '多传输端点:' : 'Multi-transport:' }}</label>
+        <el-input
+          v-model="form.endpoints"
+          size="small"
+          class="cs-form-input"
+          :placeholder="isZh ? '可选，逗号分隔：tcp://1.2.3.4:443,https://cdn.example.com/api' : 'optional, comma-separated: tcp://1.2.3.4:443,https://cdn.example.com/api'"
+        />
+      </div>
+      <div v-if="form.endpoints.trim()" class="cs-form-hint">
+        {{ isZh
+          ? '客户端会按顺序尝试这些端点，某个连不上时自动切到下一个（可跨传输类型）。所有端点必须使用与所选监听器相同的 VKey/盐。'
+          : 'The beacon tries these endpoints in order and falls back to the next on failure (may switch transport type). All endpoints must share the selected listener\'s VKey/salt.' }}
+      </div>
       </div>
 
       <!-- 高级配置（OPSEC 编译期） -->
@@ -166,6 +181,8 @@ const form = reactive({
   autoDelete: true,
   masqueradeName: '',
   quietMode: true,
+  // 多传输端点（可选）：留空=单传输；填写后客户端按顺序在运行时切换传输
+  endpoints: '',
 })
 
 function onChooseListener(l: ListenerOption) {
@@ -194,6 +211,7 @@ async function handleGenerate() {
       reconnectMaxRetries: form.reconnectMaxRetries > 0 ? String(form.reconnectMaxRetries) : '',
       injectTech: form.injectTech || undefined,
       masqueradeName: form.masqueradeName.trim() || undefined,
+      endpoints: form.endpoints.trim() || undefined,
       quietMode: form.quietMode ? '1' : '0',
       etwPatch: form.etwPatch ? '1' : '0',
       amsiBypass: form.amsiBypass ? '1' : '0',
@@ -220,6 +238,14 @@ function handleHelp() {
 </script>
 
 <style scoped>
+/* 多传输端点输入下方的说明（跨传输回退的关键约束） */
+.cs-form-hint {
+  margin: -4px 0 8px 96px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--cs-text-dim);
+}
+
 .cs-input-with-btn {
   flex: 1;
   display: flex;

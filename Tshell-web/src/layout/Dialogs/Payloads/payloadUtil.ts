@@ -208,6 +208,9 @@ export async function generateClientBinary(opts: {
   syscallMode?: string
   autoDelete?: string
   profileName?: string
+  // 多传输端点列表（"scheme://addr,scheme://addr"）：非空时后端使用 multi 模板，
+  // 客户端按端点顺序在运行时切换传输
+  endpoints?: string
 }): Promise<boolean> {
   const blob = await generateClientBinaryBlob(opts)
   if (!blob) return false
@@ -242,6 +245,7 @@ export async function generateClientBinaryBlob(opts: {
   masqueradeName?: string
   quietMode?: string
   profileName?: string
+  endpoints?: string
 }): Promise<Blob | null> {
   let keys: { vkey: string; encryptSalt: string }
   if (opts.vkey && opts.encryptSalt) {
@@ -263,6 +267,7 @@ export async function generateClientBinaryBlob(opts: {
     masqueradeName: opts.masqueradeName || '',
     quietMode: opts.quietMode || '',
     profileName: opts.profileName || '',
+    endpoints: opts.endpoints || '',
   })
   if (!res || res.status !== 200) {
     throw new Error('生成失败，请检查后端日志')

@@ -111,5 +111,6 @@ GOMEMLIMIT=3GiB go build -ldflags "-s -w" -trimpath -o tshell-server.exe .\main.
 
 ## 六、升级注意事项
 
+- **多传输载荷**：生成时填"多传输端点"（`scheme://addr,...`）即用 multi 模板；所有端点必须与所选监听器使用相同的 VKey/盐。重建模板后需重建服务端才会生效（模板经 `go:embed` 嵌入）。
 - **三端同步**:模板(build_templates.sh)→ 前端(build:embed)→ 服务端重建。加密/协议变更(如会话唯一化、nonce 协商)要求服务端与客户端**同时升级**,旧客户端无法与新版服务端通信。
 - 修改监听器密钥后,已生成的客户端需重新生成。

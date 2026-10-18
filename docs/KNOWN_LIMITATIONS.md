@@ -139,7 +139,21 @@
 - 状态：⏳（重架构，需设计中继协议与链路加密）
 
 ## 14. 多协议热切换（B10，单二进制多协议）
-- 状态：⏳（需合并各 cmd/*/main.go 为统一入口 + 适配器热切换）
+- 现状：✅ 已实现（运行时传输回退链）。`-tags transport_multi` 构建一个包含全部
+  12 种传输的二进制；服务端生成载荷时传 `endpoints`（`scheme://addr,...`），
+  patch 进 512 字节定长占位符。运行时按端点顺序尝试，某个连不上时 runloop 轮转到
+  下一个端点 —— 下一个端点可以是完全不同的传输（tcp → https → dns）。
+  - 客户端：传输构造器注册到运行时表（`registerTransport`），`multiTransport`
+    按 scheme 选择实现；`listenerType` 在每次连接时更新为实际传输，服务端据此
+    记录会话类型（FirstBlood 后 `ClientListenerType` 由实际监听器更新）。
+  - 服务端：`POST /api/client/GenServer` 新增 `endpoints` 字段；校验端点格式/类型
+    （≤8 个、总长 ≤512）；**校验端点监听器与主监听器的 VKey/盐一致**（一个二进制
+    只能带一份密钥，密钥不一致的 beacon 切过去后握手必失败，现场只表现为"切过去就掉线"）。
+  - 模板：`build_templates.sh` 已加入 `multi`（各平台 EXE + DLL），生成到
+    `pkg/api/server/multi/`。
+- 遗留：多传输的**主动健康探测**（当前只在连接失败时回退，不会在"连接还在但已半死"
+  时主动切换）；macOS/Windows 实机验证。
+- 状态：✅（运行时回退链）/ ⏳（主动探测、实机验证）
 
 ## 15. TLS 证书自动签发（ACME）
 - 状态：⏳
