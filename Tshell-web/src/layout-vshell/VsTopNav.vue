@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import VsIcon from './VsIcon.vue'
 import ThemeDrawer from '@/layout-vshell/ThemeDrawer.vue'
 import ReportsDialog from '@/layout/Dialogs/ReportsDialog.vue'
-import { deriveMenu } from '@/router/routes'
+import { BUSINESS_ROUTES, deriveMenu, type AppRouteMeta } from '@/router/routes'
 import { useI18nStore } from '@/stores/i18n'
 import { useThemeStore } from '@/stores/theme'
 import { useUserStore } from '@/stores/user'
@@ -40,6 +40,14 @@ const navItems = computed(() =>
 )
 
 const label = (m: { title: string; titleEn: string }) => (isZh.value ? m.title : m.titleEn)
+
+// 拓扑图入口的可见性：与 /graph 路由的 permiss 保持一致（后端 /graph/data 是 operatorOnly）。
+// 直接读路由表而不是硬编码权限串，避免两处漂移。
+const canViewGraph = computed(() => {
+  const route = BUSINESS_ROUTES.find((r) => r.name === 'PivotGraph')
+  const need = (route?.meta as AppRouteMeta | undefined)?.permiss
+  return !need || permissStore.key.includes(need)
+})
 
 // 副栏（左侧菜单模式）顶栏的面包屑 = 当前菜单项标题
 const activeTitle = computed(() => {
@@ -145,6 +153,16 @@ function lockUntil(iso: string): string {
 
       <button class="vs-action-btn" :title="isZh ? '切换语言' : 'Language'" @click.stop="i18nStore.toggleLocale()">
         <VsIcon name="language" :size="16" />
+      </button>
+
+      <!-- 拓扑网络图入口：隐藏路由（不进顶栏 8 项），从这里进 -->
+      <button
+        v-if="canViewGraph"
+        class="vs-action-btn"
+        :title="isZh ? '拓扑网络图' : 'Pivot Graph'"
+        @click.stop="router.push('/graph')"
+      >
+        <VsIcon name="project-diagram" :size="16" />
       </button>
 
       <div class="vs-collab-wrap">

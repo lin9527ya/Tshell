@@ -89,6 +89,18 @@ export const BUSINESS_ROUTES: RouteRecordRaw[] = [
     component: () => import('@/views/tunnel/TunnelProxy.vue'),
     meta: { title: '隧道代理', titleEn: 'Tunnels', icon: 'globe', permiss: Perm.PayloadGen } satisfies AppRouteMeta,
   },
+  {
+    // 拓扑网络图：服务端 → 监听器 → 客户端 → 隧道 → 目标。
+    //
+    // 隐藏路由（menu: false）是有意的：顶栏固定 8 项平铺，加第 9 项会挤掉现有布局。
+    // 入口放在顶栏工具栏按钮 —— i18n 里的 tb.pivot_graph 就是为它准备的，
+    // 而工具栏本来就是"全局视图/全局动作"的位置。
+    // 权限对齐后端：/graph/data 是 operatorOnly。
+    path: 'graph',
+    name: 'PivotGraph',
+    component: () => import('@/views/graph/PivotGraphView.vue'),
+    meta: { title: '拓扑网络图', titleEn: 'Pivot Graph', icon: 'project-diagram', permiss: Perm.ClientControl, menu: false, keepAlive: true } satisfies AppRouteMeta,
+  },
 
   // ---- 系统设置（页内 8 个页签）----
   {

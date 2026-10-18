@@ -165,8 +165,11 @@ if ($null -ne $CCx86_64) {
             Remove-Item $tmpOut -ErrorAction SilentlyContinue
             & go build -buildvcs=false -tags "transport_$proto dll" -buildmode=c-shared -ldflags "-s -w" -trimpath -o $tmpOut "./cmd/single" 2>$errFile
             if ($LASTEXITCODE -eq 0) {
-                # 清理 c-shared 伴随生成的 .h 文件
-                Remove-Item ($out -replace '\.dll$', '.h') -ErrorAction SilentlyContinue
+                # 清理 c-shared 伴随生成的 .h 文件。
+                # 注意：-buildmode=c-shared 对 -o x.dll 生成的头文件是 **x.dll.h**（不是 x.h），
+                # 原来写成 -replace '\.dll\$','.h' 匹配不到，于是每次构建都在模板目录留下
+                # 一堆 .h 副产物（会被 git status 看到、误提交进仓库）。
+                Remove-Item ($out + '.h') -ErrorAction SilentlyContinue
                 Gzip-InPlace $tmpOut
                 Move-Item -Force $tmpOut $out
                 Write-Host "OK   DLL $proto $goos/$goarch -> $(Split-Path $out -Leaf) (gzip)"

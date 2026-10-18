@@ -279,10 +279,25 @@ go test -race ./Tshell-server/...     # 见 §4 回归基线（注意用外层�
 - 代码签名（Windows 载荷）、LOLBin 侧载（`rundll32`/`mshta` 之外的组合）
 
 #### 3.11 前端债 — **M**
-- Pivot 拓扑图是空壳：`api/clients/index.ts` 的 `get_graph_data()`（`/graph/data`）与请求层特判都在，但**没有任何组件消费**
-- 报告只导出 JSON dump（无 CSV/PDF/HTML）
-- i18n 覆盖率低：`isZh ? ... : ...` 内联三元 **1496 处**，字典在 `Tshell-web/src/stores/i18n.ts`（仅 478 行）
-- `as any` **51 处**；最大单文件 `views/client/View/ClientFiles.vue` **2213 行**、`views/plugins/PluginsView.vue` **1947 行**
+- **Pivot 拓扑图**：✅ 已实现（2026-10-19）。新增 `views/graph/`：
+  - `layout.ts` 分层布局（server→listener→client→tunnel→target）。**不用力导向**：
+    这份数据本身是分层的，而且力导向每次刷新坐标都不同 —— 同一个拓扑看起来像变了张网；
+    另外不引第三方图库（为一个视图拉进几百 KB 不划算）
+  - `PivotGraphView.vue`：SVG 渲染 + 图例 + 点击节点看 meta + 相关边高亮；
+    离线客户端画成灰色虚线空心（否则一片点看不出谁掉线）；
+    403 给出"需要 operator 及以上"的页面内提示（`/graph/data` 是 operatorOnly，不该弹全局报错）
+  - 入口：隐藏路由 `/graph`（顶栏固定 8 项，加第 9 项会挤掉布局）+ 顶栏工具栏按钮
+    （i18n 里 `tb.pivot_graph` 就是为它准备的）；按钮可见性直接读路由表的 permiss，避免两处漂移
+  - 测试 21 项（布局 11 + 组件 10）
+- **报告导出**：✅ 已加 CSV（2026-10-19）。`views/reports/export.ts`：
+  - 三个报告都能导出 CSV（Excel 直接打开）+ 保留 JSON
+  - **CSV 公式注入防护**：报告字段（主机名/User-Agent/文件名/命令）来自被控端可控输入，
+    以 `=` `+` `-` `@` 开头的单元格在 Excel/WPS 里会被当公式执行 —— 导出前加前导单引号
+  - RFC 4180 转义（含逗号/引号/换行的字段）＋ UTF-8 BOM（否则 Excel 中文乱码）
+  - 测试 21 项
+- **仍未做**：i18n 内联三元 **1496 处**（字典仅 478 行）；`as any` **51 处**；
+  最大单文件 `views/client/View/ClientFiles.vue` **2213 行**、`views/plugins/PluginsView.vue` **1947 行**
+  —— 属独立的重构工作量，不是一次能收掉的
 
 ---
 

@@ -13,7 +13,8 @@
         <el-tab-pane :label="isZh ? '威胁指标 (IOC)' : 'Indicators (IOC)'" name="ioc">
           <div class="rp-toolbar">
             <button class="cs-btn cs-btn-primary" @click="loadIOC">{{ isZh ? '生成' : 'Generate' }}</button>
-            <button class="cs-btn" :disabled="!ioc" @click="exportIOC">{{ isZh ? '导出' : 'Export' }}</button>
+            <button class="cs-btn" :disabled="!ioc" @click="exportIOC">{{ isZh ? '导出 CSV' : 'Export CSV' }}</button>
+            <button class="cs-btn" :disabled="!ioc" @click="exportIOCJson">JSON</button>
             <span v-if="ioc" class="rp-meta">{{ ioc.generated_at }}</span>
           </div>
           <div v-if="ioc" class="rp-stats">
@@ -45,7 +46,8 @@
         <el-tab-pane :label="isZh ? '社会工程' : 'Social Engineering'" name="social">
           <div class="rp-toolbar">
             <button class="cs-btn cs-btn-primary" @click="loadSocial">{{ isZh ? '生成' : 'Generate' }}</button>
-            <button class="cs-btn" :disabled="!social" @click="exportSocial">{{ isZh ? '导出' : 'Export' }}</button>
+            <button class="cs-btn" :disabled="!social" @click="exportSocial">{{ isZh ? '导出 CSV' : 'Export CSV' }}</button>
+            <button class="cs-btn" :disabled="!social" @click="exportSocialJson">JSON</button>
             <span v-if="social" class="rp-meta">{{ social.generated_at }}</span>
           </div>
           <div v-if="social" class="rp-stats">
@@ -66,7 +68,8 @@
         <el-tab-pane :label="isZh ? '战术 TTP' : 'Tactics & TTP'" name="ttp">
           <div class="rp-toolbar">
             <button class="cs-btn cs-btn-primary" @click="loadTTP">{{ isZh ? '生成' : 'Generate' }}</button>
-            <button class="cs-btn" :disabled="!ttp" @click="exportTTP">{{ isZh ? '导出' : 'Export' }}</button>
+            <button class="cs-btn" :disabled="!ttp" @click="exportTTP">{{ isZh ? '导出 CSV' : 'Export CSV' }}</button>
+            <button class="cs-btn" :disabled="!ttp" @click="exportTTPJson">JSON</button>
             <span v-if="ttp" class="rp-meta">{{ ttp.generated_at }}</span>
           </div>
           <div v-if="ttp" class="rp-stats">
@@ -116,6 +119,7 @@ import { computed, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useI18nStore } from '@/stores/i18n'
 import reportApi from '@/api/report'
+import { iocToCSV, reportFileName, socialToCSV, ttpToCSV } from '@/views/reports/export'
 
 const props = defineProps<{ modelValue: boolean }>()
 const emit = defineEmits<{ (e: 'update:modelValue', val: boolean): void }>()
@@ -168,8 +172,8 @@ async function loadTTP() {
   }
 }
 
-function download(name: string, text: string) {
-  const blob = new Blob([text], { type: 'text/plain' })
+function download(name: string, text: string, mime = 'text/plain') {
+  const blob = new Blob([text], { type: mime })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
@@ -178,19 +182,45 @@ function download(name: string, text: string) {
   URL.revokeObjectURL(url)
 }
 
+// 导出提供 CSV 与 JSON 两种：CSV 给分析人员用表格筛选/统计（Excel 直接打开），
+// JSON 给自动化/存档用。此前只有 JSON —— 交付时基本没法用。
+function downloadCSV(kind: string, text: string) {
+  // 带 charset 让浏览器不猜编码（内容里已有 BOM，双保险）
+  download(reportFileName(kind, 'csv'), text, 'text/csv;charset=utf-8')
+}
+
+function downloadJSON(kind: string, data: unknown) {
+  download(reportFileName(kind, 'json'), JSON.stringify(data, null, 2), 'application/json')
+}
+
 function exportIOC() {
   if (!ioc.value) return
-  download(`ioc_report_${Date.now()}.json`, JSON.stringify(ioc.value, null, 2))
+  downloadCSV('ioc', iocToCSV(ioc.value))
+}
+
+function exportIOCJson() {
+  if (!ioc.value) return
+  downloadJSON('ioc', ioc.value)
 }
 
 function exportSocial() {
   if (!social.value) return
-  download(`social_report_${Date.now()}.json`, JSON.stringify(social.value, null, 2))
+  downloadCSV('social', socialToCSV(social.value))
+}
+
+function exportSocialJson() {
+  if (!social.value) return
+  downloadJSON('social', social.value)
 }
 
 function exportTTP() {
   if (!ttp.value) return
-  download(`ttp_report_${Date.now()}.json`, JSON.stringify(ttp.value, null, 2))
+  downloadCSV('ttp', ttpToCSV(ttp.value))
+}
+
+function exportTTPJson() {
+  if (!ttp.value) return
+  downloadJSON('ttp', ttp.value)
 }
 
 function close() {
