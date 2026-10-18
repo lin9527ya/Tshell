@@ -233,7 +233,8 @@ func ExecuteBin(c *gin.Context) {
 		}
 		auditBinExecute(c, "SUCCESS", mode, uid, file.Filename, len(fileBytes), args, "")
 		publishOperatorAction(uid, operatorFromContext(c), "exec", mode+" "+file.Filename)
-		c.JSON(http.StatusOK, gin.H{"status": http.StatusOK})
+		// 带上任务 ID：调用方（插件页）据此轮询真实终态，不再靠"输出稳定 N 次"猜完成
+		c.JSON(http.StatusOK, gin.H{"status": http.StatusOK, "task_id": execTaskID})
 	}
 
 	// 根据不同模式处理，并在处理完成后统一返回响应

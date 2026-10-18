@@ -103,7 +103,7 @@ func HandleClientReply(listenerType, uid string, replyType uint32, data []byte,
 		sql := `UPDATE downloads SET file_size = ?, downloaded_size = ? WHERE uid = ? AND file_path = ?;`
 		database.Engine.QueryString(sql, fileLen, 0, uid, filePath)
 		// v2：按 requestId 管理文件句柄（并发下载互不污染 + 断点续传）
-		if err := VarDownloadFiles.Start(uid, downloadReqID, filePath); err != nil {
+		if err := VarDownloadFiles.Start(uid, downloadReqID, filePath, fileLen); err != nil {
 			logx.Errorf("❌ 下载文件打开失败 - UID: %s, 路径: %s, 错误: %v", uid, filePath, err)
 		}
 	case DOWNLOAD: // 文件下载分块（v2：requestId(4)|chunk）
@@ -114,7 +114,7 @@ func HandleClientReply(listenerType, uid string, replyType uint32, data []byte,
 		downloadReqID := binary.BigEndian.Uint32(data[:4])
 		fileContent := data[4:]
 		// 按 requestId 追加写入（写错误检查，不再静默丢数据）
-		if ok, err := VarDownloadFiles.Append(uid, downloadReqID, fileContent); err != nil {
+		if ok, _, err := VarDownloadFiles.Append(uid, downloadReqID, fileContent); err != nil {
 			return err
 		} else if ok {
 			// 【优化】下载进度节流落库：内存累加 + 周期批量刷盘，避免每分块一次 DB 写事务

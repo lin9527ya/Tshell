@@ -328,6 +328,9 @@ func main() {
 	command.LootIngestFunc = func(uid, output string) { api.IngestLootFromOutput(uid, output) }
 	// 任务回显归属：回包到达时把该 uid 最早一条 dispatched 任务置 completed
 	command.TaskOutputFunc = api.OnTaskOutput
+
+	// 下载终态（完成/中断）→ 收敛任务状态；下载协议无结束报文，只能由数据层判定
+	command.DownloadEndFunc = api.OnDownloadEnd
 	// 订阅客户端上线事件：触发 cna beacon_initial 事件（tcp/ws/kcp/http 各协议统一入口）
 	if command.GlobalEventBus != nil {
 		go func() {
@@ -630,6 +633,7 @@ func main() {
 	operatorOnly.GET("/client/tasks/:uid", api.GetClientTaskQueue)
 	// 任务一等对象：明细查询（可过滤/分页）与取消（仅 dispatched 可取消）
 	operatorOnly.GET("/tasks", api.ListTaskRows)
+	operatorOnly.GET("/tasks/:id", api.GetTaskRow)
 	operatorOnly.POST("/tasks/:id/cancel", api.CancelTask)
 
 	// 多操作员协作：在线状态（读：全角色）+ 会话锁（写：admin/operator）

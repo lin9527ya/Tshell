@@ -182,6 +182,52 @@ func BatchCommand(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": 200, "task_id": batchID, "total": len(rows)})
 }
 
+// GetTaskRow 单条任务（GET /api/tasks/:id）——前端按 id 轮询终态用。
+func GetTaskRow(c *gin.Context) {
+	if database.Engine == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库不可用"})
+		return
+	}
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || id <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的任务 ID"})
+		return
+	}
+	var task database.Task
+	has, err := database.Engine.ID(id).Get(&task)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询任务失败: " + err.Error()})
+		return
+	}
+	if !has {
+		c.JSON(http.StatusNotFound, gin.H{"error": "任务不存在"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": 200, "data": task})
+}
+
+// OnDownloadEnd 下载终态回调（由 pkg/command 在下载完成/中断时调用）。
+// 下载没有"结束"报文，此前只有一行字节进度；这里把它收敛成任务的终态，
+// 让任务中心能回答"这个文件下完了没有"。
+func OnDownloadEnd(uid, filePath, status string) {
+	if database.Engine == nil || uid == "" || filePath == "" {
+		return
+	}
+	// 同一 uid 同一路径可能重复下载：只收敛最早一条仍在 dispatched 的记录
+	var task database.Task
+	has, err := database.Engine.Where("uid = ? AND kind = ? AND command = ? AND status = ?",
+		uid, "download", "download "+filePath, taskStatusDispatched).
+		OrderBy("id ASC").Get(&task)
+	if err != nil || !has {
+		return
+	}
+	if status == command.DownloadStatusCompleted {
+		finishTask(task.Id, taskStatusCompleted, "已保存至服务端 Downloads 目录: "+filePath, "")
+		return
+	}
+	finishTask(task.Id, taskStatusFailed, "", "下载未完成（客户端断开或长时间无数据）: "+filePath)
+}
+
 // ListTasks 批量任务视图（按 BatchID 聚合，兼容旧前端契约）。
 // 数据来自 task 表；status=done 表示该组所有 uid 都已终态。
 func ListTasks(c *gin.Context) {

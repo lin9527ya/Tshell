@@ -78,8 +78,21 @@ WHERE uid = ? AND file_path = ?;
 `
 		database.Engine.QueryString(sql, 0, 0, fileBody.Uid, fileBody.FilePath)
 	}
-	sendcommand.SendCommand(fileBody.Uid, "download "+fileBody.FilePath)
-	c.JSON(http.StatusOK, gin.H{"status": http.StatusOK})
+	// 任务一等对象：下载此前不落任务，任务中心看不到"谁在拖哪个文件"，
+	// 前端只能靠轮询字节数猜完成（超时就报错）。这里建任务，终态由
+	// command.DownloadEndFunc → OnDownloadEnd 收敛（写满声明大小=completed，
+	// 客户端断线/空闲超时=failed）。
+	downloadCmd := "download " + fileBody.FilePath
+	var taskID int64
+	if _, rows := createTaskRows([]string{fileBody.Uid}, operatorFromContext(c), "download", downloadCmd); len(rows) > 0 {
+		taskID = rows[0].Id
+	}
+	if err := sendcommand.SendCommandChecked(fileBody.Uid, downloadCmd); err != nil {
+		finishTask(taskID, taskStatusFailed, "", err.Error())
+		c.JSON(http.StatusServiceUnavailable, gin.H{"status": 503, "error": "下载指令下发失败: " + err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"status": http.StatusOK, "task_id": taskID})
 }
 
 type DownloadsInfo struct {
