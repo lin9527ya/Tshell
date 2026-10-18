@@ -29,6 +29,16 @@ $ErrorActionPreference = "Stop"
 $Root = $PSScriptRoot
 if (-not $Root) { $Root = Split-Path $MyInvocation.MyCommand.Path }
 
+# 版本信息统一在**外层仓库**上取:Tshell-server\ 里有上游遗留的嵌套 .git(tag 0.0.5),
+# 构建时会 Set-Location 进该目录,在那里跑 git 拿到的是陈旧信息,与本仓库无关。
+# 【可复现】构建时间取提交时间(或 SOURCE_DATE_EPOCH),不用"现在"。
+$Version = (git -C $Root describe --tags --always --dirty 2>$null); if (-not $Version) { $Version = "dev" }
+$Commit = (git -C $Root rev-parse --short HEAD 2>$null); if (-not $Commit) { $Commit = "unknown" }
+$Sde = 0
+if ($env:SOURCE_DATE_EPOCH) { [void][int]::TryParse($env:SOURCE_DATE_EPOCH, [ref]$Sde) }
+else { [void][int]::TryParse((git -C $Root log -1 --format=%ct 2>$null), [ref]$Sde) }
+$BuildTime = [DateTimeOffset]::FromUnixTimeSeconds($Sde).UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ssZ")
+
 function Write-Step($n, $msg) { Write-Host "=== [$n] $msg ===" -ForegroundColor Cyan }
 function Write-Ok($msg)       { Write-Host "[ OK ] $msg" -ForegroundColor Green }
 
@@ -62,10 +72,7 @@ function Build-Server {
     # cgo exe 无法执行——"not a valid Win32 application";文件模式已验证可用)
     $env:CGO_ENABLED = "1"
     $env:GOPROXY = "https://goproxy.cn,direct"; $env:GOMEMLIMIT = "3GiB"
-    # 版本信息注入：/api/version 可查，便于产物溯源
-    $Version = (git describe --tags --always --dirty 2>$null); if (-not $Version) { $Version = "dev" }
-    $Commit = (git rev-parse --short HEAD 2>$null); if (-not $Commit) { $Commit = "unknown" }
-    $BuildTime = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+    # 版本信息在脚本开头已按外层仓库算好(见顶部注释),这里直接用
     go build -ldflags "-s -w -X main.Version=$Version -X main.GitCommit=$Commit -X main.BuildTime=$BuildTime" -trimpath -o tshell-server.exe .\main.go
     if ($LASTEXITCODE -ne 0) { throw "服务端构建失败" }
     Remove-Item Env:CGO_ENABLED, Env:GOPROXY, Env:GOMEMLIMIT -ErrorAction SilentlyContinue
