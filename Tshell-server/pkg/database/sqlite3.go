@@ -355,19 +355,23 @@ type TunnelProxy struct {
 	UpdatedAt     time.Time `json:"updated_at" xorm:"'updated_at' updated datetime notnull"`
 }
 
-// AuditLogDB 审计日志数据库模型
+// AuditLogDB 审计日志数据库模型。
+//
+// 列名必须显式指定：xorm 默认映射会把 LogID/UserID/ClientIP/RequestURI 拆成
+// log_i_d/user_i_d/client_i_p/request_u_r_i（与查询条件里的 snake_case 对不上）；
+// 表名同样要显式（默认会变成 audit_log_d_b）。
 type AuditLogDB struct {
 	ID         int64     `json:"id" xorm:"'id' pk autoincr"`
-	LogID      string    `json:"log_id" xorm:"varchar(64) notnull unique index"`
+	LogID      string    `json:"log_id" xorm:"'log_id' varchar(64) notnull unique index"`
 	Timestamp  time.Time `json:"timestamp" xorm:"datetime notnull index"`
 	Level      string    `json:"level" xorm:"varchar(20) notnull index"`
 	Category   string    `json:"category" xorm:"varchar(20) notnull index"`
 	Action     string    `json:"action" xorm:"varchar(100) notnull index"`
-	UserID     string    `json:"user_id" xorm:"varchar(64) index"`
+	UserID     string    `json:"user_id" xorm:"'user_id' varchar(64) index"`
 	Username   string    `json:"username" xorm:"varchar(100) index"`
-	ClientIP   string    `json:"client_ip" xorm:"varchar(45) index"`
+	ClientIP   string    `json:"client_ip" xorm:"'client_ip' varchar(45) index"`
 	UserAgent  string    `json:"user_agent" xorm:"text"`
-	RequestURI string    `json:"request_uri" xorm:"varchar(500)"`
+	RequestURI string    `json:"request_uri" xorm:"'request_uri' varchar(500)"`
 	Method     string    `json:"method" xorm:"varchar(10)"`
 	StatusCode int       `json:"status_code" xorm:"int"`
 	Duration   int64     `json:"duration" xorm:"bigint"` // 毫秒
@@ -375,8 +379,15 @@ type AuditLogDB struct {
 	Message    string    `json:"message" xorm:"text"`
 	ErrorMsg   string    `json:"error_msg" xorm:"text"`
 	Details    string    `json:"details" xorm:"text"` // JSON字符串
-	CreatedAt  time.Time `json:"created_at" xorm:"datetime notnull index"`
+	CreatedAt time.Time `json:"created_at" xorm:"datetime notnull index"`
+	// TsUnix 时间范围查询专用（秒）。SQLite 的 DATETIME 列有 NUMERIC 亲和性，
+	// 与字符串/时间参数比较的结果不可靠（实测 time.Time 绑定在该列上恒不命中），
+	// 范围过滤与排序统一走这个数值列。
+	TsUnix int64 `json:"-" xorm:"'ts_unix' bigint index"`
 }
+
+// TableName 显式表名（默认映射为 audit_log_d_b）
+func (AuditLogDB) TableName() string { return "audit_log_db" }
 
 // Plugin 插件元数据（对齐 tshell 的 Plugin 表，P1+P5）
 type Plugin struct {
@@ -406,6 +417,9 @@ type Task struct {
 	Error      string    `xorm:"varchar(512)" json:"error"`
 	CreatedAt  time.Time `xorm:"'created_at' datetime notnull index" json:"created_at"`
 	FinishedAt time.Time `xorm:"'finished_at' datetime" json:"finished_at"`
+	// CreatedUnix 超时/清理查询专用（秒）：DATETIME 列的时间比较在 SQLite 上不可靠，
+	// 见 AuditLogDB.TsUnix 的说明。
+	CreatedUnix int64 `json:"-" xorm:"'created_unix' bigint index"`
 }
 
 // Loot 凭据/制品库(功能批): 行动中获取的凭据与制品集中管理。

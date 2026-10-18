@@ -64,7 +64,7 @@ func createTaskRows(uids []string, operator, kind, command string) (string, []*d
 		}
 		task := &database.Task{
 			BatchID: batchID, UID: uid, Operator: operator, Kind: kind,
-			Command: command, Status: taskStatusDispatched, CreatedAt: now,
+			Command: command, Status: taskStatusDispatched, CreatedAt: now, CreatedUnix: now.Unix(),
 		}
 		if _, err := database.Engine.Insert(task); err != nil {
 			logx.Warnf("[TASK] 任务落库失败 uid=%s: %v\n", uid, err)
@@ -300,12 +300,12 @@ func StartTaskCleanup() {
 				continue
 			}
 			if _, err := database.Engine.Table(new(database.Task)).
-				Where("status = ? AND created_at < ?", taskStatusDispatched, time.Now().Add(-taskStaleTimeout)).
+				Where("status = ? AND created_unix < ?", taskStatusDispatched, time.Now().Add(-taskStaleTimeout).Unix()).
 				Update(map[string]interface{}{"status": taskStatusTimeout, "finished_at": time.Now()}); err != nil {
 				logx.Warnf("[TASK] 超时任务清理失败: %v\n", err)
 			}
 			if _, err := database.Engine.
-				Where("status != ? AND created_at < ?", taskStatusDispatched, time.Now().Add(-taskRetention)).
+				Where("status != ? AND created_unix < ?", taskStatusDispatched, time.Now().Add(-taskRetention).Unix()).
 				Delete(new(database.Task)); err != nil {
 				logx.Warnf("[TASK] 过期任务清理失败: %v\n", err)
 			}

@@ -345,6 +345,9 @@ func (al *AuditLogger) flushBatch(batch []AuditLog) {
 	if al.logFile != nil {
 		al.logFile.Sync()
 	}
+
+	// 与文件双写：库用于查询/分页/统计（文件保留人读与原始导出）
+	al.persistBatch(batch)
 }
 
 // flushBuffer 刷新当前缓冲区（锁内 swap 后投递后台落盘）。
@@ -422,6 +425,13 @@ func (al *AuditLogger) performCleanup() {
 
 	if err != nil {
 		logx.Infof("清理日志文件时出错: %v\n", err)
+	}
+
+	// 同步清理库内过期审计记录（落库后与文件同一保留期）
+	if n, derr := cleanupDBBefore(cutoff); derr != nil {
+		logx.Infof("清理过期审计记录失败: %v\n", derr)
+	} else if n > 0 {
+		logx.Infof("🗑️ 删除过期审计记录: %d 条\n", n)
 	}
 }
 

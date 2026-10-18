@@ -1,14 +1,12 @@
 package audit
 
 import (
-	"bufio"
-	"encoding/json"
+	"BackendTemplate/pkg/database"
 	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -225,85 +223,36 @@ func CleanupOldLogs(c *gin.Context) {
 		return
 	}
 
+	// 库内记录与文件同一保留期
+	dbDeleted, dbErr := cleanupDBBefore(cutoff)
+	if dbErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"status": http.StatusInternalServerError,
+			"error":  "清理审计记录失败: " + dbErr.Error(),
+		})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"status": http.StatusOK,
 		"data": gin.H{
-			"deleted_files": deletedCount,
-			"cutoff_date":   cutoff,
+			"deleted_files":   deletedCount,
+			"deleted_records": dbDeleted,
+			"cutoff_date":     cutoff,
 		},
 	})
 }
 
 // queryLogs 查询日志数据
 func queryLogs(params LogQueryParams) ([]AuditLog, int, error) {
-	if GlobalAuditLogger == nil {
-		return nil, 0, fmt.Errorf("审计日志系统未初始化")
-	}
-
-	var allLogs []AuditLog
-
-	// 获取日志目录中的所有文件
-	files, err := filepath.Glob(filepath.Join(GlobalAuditLogger.logDir, "audit_*.log"))
-	if err != nil {
-		return nil, 0, err
-	}
-
-	// 按文件名倒序（最新日期在前），并限制扫描文件数（防全目录全量读取的内存/IO 放大）
-	sort.Sort(sort.Reverse(sort.StringSlice(files)))
-	const maxScanFiles = 30 // 最多扫描最近 30 个日志文件
-	if len(files) > maxScanFiles {
-		files = files[:maxScanFiles]
-	}
-
-	// 读取日志文件（倒序：新→旧）
-	for _, file := range files {
-		// 检查文件日期是否在查询范围内
-		if params.StartTime != nil || params.EndTime != nil {
-			filename := filepath.Base(file)
-			dateStr := strings.TrimPrefix(filename, "audit_")
-			dateStr = strings.TrimSuffix(dateStr, ".log")
-
-			if fileDate, err := time.Parse("2006-01-02", dateStr); err == nil {
-				if params.StartTime != nil && fileDate.Before(*params.StartTime) {
-					continue
-				}
-				if params.EndTime != nil && fileDate.After(*params.EndTime) {
-					continue
-				}
-			}
-		}
-
-		logs, err := readLogFile(file, params)
-		if err != nil {
-			continue // 跳过错误文件
-		}
-		allLogs = append(allLogs, logs...)
-	}
-
-	// 排序（按时间倒序）
-	sort.Slice(allLogs, func(i, j int) bool {
-		return allLogs[i].Timestamp.After(allLogs[j].Timestamp)
-	})
-
-	// 分页
-	total := len(allLogs)
-	start := (params.Page - 1) * params.PageSize
-	end := start + params.PageSize
-
-	if start >= total {
-		return []AuditLog{}, total, nil
-	}
-	if end > total {
-		end = total
-	}
-
-	return allLogs[start:end], total, nil
+	// 查询走库（原实现：遍历最近 30 个文件全量解析→内存过滤排序→切片分页）
+	return queryLogsFromDB(params)
 }
 
-// QueryLoginFailures 读取落盘审计日志，返回 since 之后的登录失败记录（时间倒序，最多 limit 条）。
-// 与 /api/audit/logs 同源，供 IOC 报告等聚合使用；失败时返回 nil（调用方保持空数组）。
+// QueryLoginFailures 返回 since 之后的登录失败记录（时间倒序，最多 limit 条）。
+// 与 /api/audit/logs 同源（落库后走库），供 IOC 报告等聚合使用；失败返回 nil。
 func QueryLoginFailures(since time.Time, limit int) []string {
-	if GlobalAuditLogger == nil || limit <= 0 {
+	if database.Engine == nil || limit <= 0 {
 		return nil
 	}
 	logs, _, err := queryLogs(LogQueryParams{
@@ -323,94 +272,7 @@ func QueryLoginFailures(since time.Time, limit int) []string {
 	return out
 }
 
-// readLogFile 读取单个日志文件
-func readLogFile(filename string, params LogQueryParams) ([]AuditLog, error) {
-	file, err := os.Open(filename)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
 
-	var logs []AuditLog
-	scanner := bufio.NewScanner(file)
-
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
-			continue
-		}
-
-		var log AuditLog
-		if err := json.Unmarshal([]byte(line), &log); err != nil {
-			continue // 跳过无效行
-		}
-
-		// 应用过滤条件
-		if !matchesFilters(log, params) {
-			continue
-		}
-
-		logs = append(logs, log)
-	}
-
-	return logs, nil
-}
-
-// matchesFilters 检查日志是否匹配过滤条件
-func matchesFilters(log AuditLog, params LogQueryParams) bool {
-	// 时间范围
-	if params.StartTime != nil && log.Timestamp.Before(*params.StartTime) {
-		return false
-	}
-	if params.EndTime != nil && log.Timestamp.After(*params.EndTime) {
-		return false
-	}
-
-	// 日志级别
-	if params.Level != "" && log.Level != params.Level {
-		return false
-	}
-
-	// 日志分类
-	if params.Category != "" && log.Category != params.Category {
-		return false
-	}
-
-	// 操作
-	if params.Action != "" && !strings.Contains(strings.ToLower(log.Action), strings.ToLower(params.Action)) {
-		return false
-	}
-
-	// 用户名
-	if params.Username != "" && !strings.Contains(strings.ToLower(log.Username), strings.ToLower(params.Username)) {
-		return false
-	}
-
-	// 客户端IP
-	if params.ClientIP != "" && !strings.Contains(log.ClientIP, params.ClientIP) {
-		return false
-	}
-
-	// 结果
-	if params.Result != "" && log.Result != params.Result {
-		return false
-	}
-
-	// 关键词搜索
-	if params.Keyword != "" {
-		keyword := strings.ToLower(params.Keyword)
-		if !strings.Contains(strings.ToLower(log.Message), keyword) &&
-			!strings.Contains(strings.ToLower(log.Action), keyword) &&
-			!strings.Contains(strings.ToLower(log.Username), keyword) &&
-			!strings.Contains(strings.ToLower(log.ClientIP), keyword) {
-			return false
-		}
-	}
-
-	return true
-}
-
-// generateStatistics 生成统计信息
 func generateStatistics(startTime time.Time) (*LogStatistics, error) {
 	params := LogQueryParams{
 		StartTime: &startTime,
