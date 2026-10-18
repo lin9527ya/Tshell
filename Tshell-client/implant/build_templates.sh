@@ -62,6 +62,17 @@ compress_template() {
   return 0
 }
 
+# 暂存目录：模板构建过程中的 .new/.tmp 文件不能出现在 pkg/api/server/ 下 ——
+# 服务端用 //go:embed server/* 嵌入模板，构建期间哪怕只有几十毫秒存在 .new 文件，
+# 并发的 go build/test 都会因为 embed 到不完整的临时文件而失败（实测踩过）。
+# 暂存目录放在 pkg/api 下（server/ 之外）：go:embed server/* 不会看到构建中的
+# 临时文件。注意：**重建模板期间不要同时构建服务端**——即使文件替换是原子 rename，
+# go:embed 的 stat→open 之间仍可能跨越一次替换，报 "unexpected length"。
+# 正确顺序：先 build_templates.sh，再构建服务端。
+STAGE="$(cd "$SERVER_TEMPLATES/.." && pwd)/.tmpl-stage"
+rm -rf "$STAGE"; mkdir -p "$STAGE"
+trap 'rm -rf "$STAGE"' EXIT
+
 ok=0; fail=0
 for pp in $PROTOS; do
   proto=${pp%%:*}; prefix=${pp##*:}
@@ -76,7 +87,7 @@ for pp in $PROTOS; do
     # 【重建修复】构建到临时文件再原子覆盖：模板已是 gzip 内容，go build 拒绝
     # 直接覆盖"非对象文件"（报 already exists and is not an object file）→ 旧模板永不更新。
     # 失败时删除临时文件并保留旧模板（保持"保留旧"语义）。
-    tmpout="$out.new"
+    tmpout="$STAGE/${prefix}_${goos}_${goarch}${ext}"
     rm -f "$tmpout"
     # OPSEC: Windows EXE 使用 GUI 子系统(-H windowsgui),启动无控制台窗口闪烁(HideConsole 运行时二次隐藏)
     ldflags="-s -w"
@@ -126,7 +137,7 @@ if [ -n "$CC_x86_64" ]; then
       mkdir -p "$SERVER_TEMPLATES/$proto"
       out="$SERVER_TEMPLATES/$proto/${prefix}_${goos}_${goarch}.dll"
       # 同 EXE 段：临时文件构建 + 原子覆盖（模板已是 gzip，go build 拒绝直接覆盖非对象文件）
-      tmpout="$out.new"
+      tmpout="$STAGE/${prefix}_${goos}_${goarch}.dll"
       rm -f "$tmpout"
       if GOOS=$goos GOARCH=$goarch CGO_ENABLED=1 CC=$cc go build -buildvcs=false -tags "transport_$proto dll" -buildmode=c-shared -ldflags "-s -w" -trimpath -o "$tmpout" ./cmd/single 2>/tmp/implant_build_err; then
         rm -f "${out%.dll}.h"  # 清理 c-shared 伴随生成的 .h 文件
