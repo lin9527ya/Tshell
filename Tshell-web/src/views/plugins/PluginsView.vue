@@ -295,6 +295,15 @@
 </template>
 
 <script setup lang="ts">
+// 输出过滤逻辑已抽到 output-filter.ts（26 项测试）。这里的 filterOpts 负责
+// 把"本地化提示文案 + 调试日志出口"注入进去 —— 模块本身保持与语言无关、
+// 默认无副作用；组件传入 console.log 以**保持原有的调试日志行为**。
+import {
+  executionModeText,
+  filterShellContentByMode,
+  filterShellContentForMimikatz,
+  type FilterOptions,
+} from '@/views/plugins/output-filter'
 import { ref, onMounted, computed, onUnmounted, defineAsyncComponent } from 'vue';
 const ScriptManagerPanel = defineAsyncComponent(() => import('@/layout/ScriptManagerPanel.vue'));
 import { useI18nStore } from '@/stores/i18n';
@@ -450,31 +459,30 @@ const handleMouseUp = () => {
 };
 
 // 设置执行模式
+// 模式显示文案已抽到 output-filter.ts（可单测）。这里保留同名薄封装，调用点不用改。
+const getExecutionModeText = () => executionModeText(executionMode.value, isZh.value);
+
+// 两个过滤器的"无输出"提示文案**不一样**（原实现如此）：
+//   通用版：引导去看当前执行模式
+//   mimikatz 版：引导去检查执行是否成功、必要时看完整 Shell 历史
+// 传错会让操作员按错误的提示去排查。
+const filterOpts = (kind: 'mode' | 'mimikatz'): FilterOptions => ({
+  noOutputHint:
+    kind === 'mimikatz'
+      ? isZh.value
+        ? '暂无执行相关输出，请检查执行是否成功。\n\n如果问题持续，请查看完整Shell历史。'
+        : 'No execution output found, check whether the run succeeded.\n\nIf the problem persists, review the full shell history.'
+      : isZh.value
+        ? '暂无当前执行模式的相关输出。\n\n请执行插件后查看结果。'
+        : 'No output for the current execution mode.\n\nRun a plugin and check the result.',
+  log: (...args: unknown[]) => console.log(...args),
+})
+
 const setExecutionMode = (mode: string) => {
   executionMode.value = mode;
 };
 
 // 获取执行模式文本
-const getExecutionModeText = () => {
-  switch (executionMode.value) {
-    case 'execute-assembly':
-      return 'Execute Assembly';
-    case 'inline-bin':
-      return 'Inline Bin';
-    case 'shellcode-inject':
-      return isZh.value ? 'Shellcode注入' : 'Shellcode';
-    case 'script':
-      return 'Linux Script';
-    case 'binary':
-      return 'Linux Binary';
-    case 'bof':
-      return 'BOF(COFF)';
-    case 'exec-file':
-      return 'Exec File';
-    default:
-      return isZh.value ? '请选择模式' : 'Select Mode';
-  }
-};
 
 // 获取客户端显示信息（与隧道代理一致）
 const getClientDisplayInfo = (client: ClientData) => {
@@ -736,10 +744,10 @@ const refreshShellContent = async () => {
       let shellContent = fullShellContent;
       if (executionMode.value && pluginForm.value.selectedPlugin) {
         if (isMimikatzTool) {
-          shellContent = filterShellContentForMimikatz(fullShellContent, executionMode.value, pluginForm.value.selectedPlugin);
+          shellContent = filterShellContentForMimikatz(fullShellContent, executionMode.value, pluginForm.value.selectedPlugin, filterOpts('mimikatz'));
           console.log('🔍 使用 mimikatz 专用过滤器');
         } else {
-          shellContent = filterShellContentByMode(fullShellContent, executionMode.value, pluginForm.value.selectedPlugin);
+          shellContent = filterShellContentByMode(fullShellContent, executionMode.value, pluginForm.value.selectedPlugin, filterOpts('mode'));
           console.log('🔍 使用标准过滤器');
         }
       }
@@ -935,171 +943,8 @@ Common fixes:
 };
 
 // 过滤Shell内容，只保留最新一次执行的相关输出
-const filterShellContentByMode = (fullContent: string, currentMode: string, pluginName: string) => {
-  if (!fullContent || !currentMode) return fullContent;
-  
-  const lines = fullContent.split('\n');
-  const filteredLines: string[] = [];
-  
-  // 执行模式列表
-  const executionModes = ['execute-assembly', 'inline-bin', 'shellcode-inject', 'script', 'binary', 'bof', 'exec-file'];
-  
-  // 找到最后一次当前模式的执行命令位置
-  let lastCommandIndex = -1;
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const line = lines[i];
-    if (line.startsWith('$ ') && line.includes(currentMode) && line.includes(pluginName)) {
-      lastCommandIndex = i;
-      break;
-    }
-  }
-  
-  // 如果没找到当前模式的命令，返回提示信息
-  if (lastCommandIndex === -1) {
-    return isZh.value
-      ? '暂无当前执行模式的相关输出。\n\n请执行插件后查看结果。'
-      : 'No output for the current execution mode.\n\nRun a plugin and check the result.';
-  }
-  
-  // 从最后一次命令开始，收集到下一个执行模式命令之前的所有内容
-  let endIndex = lines.length;
-  for (let i = lastCommandIndex + 1; i < lines.length; i++) {
-    const line = lines[i];
-    if (line.startsWith('$ ') && executionModes.some(mode => line.includes(mode))) {
-      endIndex = i;
-      break;
-    }
-  }
-  
-  // 提取最新执行的内容
-  const latestExecutionLines = lines.slice(lastCommandIndex, endIndex);
-  
-  // 特殊处理：确保包含重要的输出内容（如 mimikatz 结果）
-  let finalContent = latestExecutionLines.join('\n');
-  
-  // 如果过滤后的内容很少，可能丢失了重要信息，尝试扩展范围
-  if (finalContent.length < 500 && pluginName.toLowerCase().includes('mimikatz')) {
-    console.log('🔍 检测到 mimikatz，扩展输出范围以包含更多内容');
-    
-    // 向前扩展搜索范围，寻找可能的输出内容
-    let expandedStartIndex = Math.max(0, lastCommandIndex - 50);
-    let expandedLines = lines.slice(expandedStartIndex, endIndex);
-    
-    // 查找包含凭据信息的行
-    const credentialKeywords = [
-      'Authentication Id', 'Session', 'Username', 'Domain', 
-      'NTLM', 'SHA1', 'Password', 'Kerberos', 'Primary',
-      'msv', 'tspkg', 'wdigest', 'kerberos', 'ssp', 'credman',
-      '=== CAPTURED OUTPUT ===', '=== FINAL OUTPUT DUMP ==='
-    ];
-    
-    for (let line of expandedLines) {
-      if (credentialKeywords.some(keyword => line.toLowerCase().includes(keyword.toLowerCase()))) {
-        console.log('🎯 发现凭据相关内容，使用扩展范围');
-        finalContent = expandedLines.join('\n');
-        break;
-      }
-    }
-  }
-  
-  console.log('🔍 最新执行内容过滤结果:', {
-    '原始总行数': lines.length,
-    '最后命令位置': lastCommandIndex,
-    '结束位置': endIndex,
-    '提取行数': latestExecutionLines.length,
-    '最终内容长度': finalContent.length,
-    '执行模式': currentMode,
-    '插件名': pluginName
-  });
-  
-  return finalContent;
-};
 
 // 专门为 mimikatz 类工具设计的宽松过滤函数
-const filterShellContentForMimikatz = (fullContent: string, currentMode: string, pluginName: string) => {
-  if (!fullContent || !currentMode) return fullContent;
-  
-  const lines = fullContent.split('\n');
-  
-  // 执行模式列表
-  const executionModes = ['execute-assembly', 'inline-bin', 'shellcode-inject', 'script', 'binary', 'bof', 'exec-file'];
-  
-  // 找到最后一次当前模式的执行命令位置
-  let lastCommandIndex = -1;
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const line = lines[i];
-    if (line.startsWith('$ ') && line.includes(currentMode) && line.includes(pluginName)) {
-      lastCommandIndex = i;
-      break;
-    }
-  }
-  
-  // 如果没找到当前模式的命令，尝试找到任何 mimikatz 相关的执行
-  if (lastCommandIndex === -1) {
-    for (let i = lines.length - 1; i >= 0; i--) {
-      const line = lines[i];
-      if (line.startsWith('$ ') && 
-          (line.toLowerCase().includes('mimikatz') || 
-           line.toLowerCase().includes('sekur') ||
-           line.includes(pluginName))) {
-        lastCommandIndex = i;
-        break;
-      }
-    }
-  }
-  
-  if (lastCommandIndex === -1) {
-    // 如果还是找不到，返回最近的一大段内容以防漏掉重要信息
-    const recentLines = lines.slice(Math.max(0, lines.length - 200));
-    const recentContent = recentLines.join('\n');
-    
-    // 检查最近内容是否包含凭据信息
-    const credentialKeywords = [
-      'Authentication Id', 'Session', 'Username', 'Domain', 
-      'NTLM', 'SHA1', 'mimikatz', '=== CAPTURED OUTPUT ==='
-    ];
-    
-    if (credentialKeywords.some(keyword => recentContent.toLowerCase().includes(keyword.toLowerCase()))) {
-      console.log('🎯 在最近内容中发现可能的 mimikatz 输出');
-      return recentContent;
-    }
-    
-    return isZh.value
-      ? '暂无执行相关输出，请检查执行是否成功。\n\n如果问题持续，请查看完整Shell历史。'
-      : 'No execution output found, check whether the run succeeded.\n\nIf the problem persists, review the full shell history.';
-  }
-  
-  // 使用更宽松的结束条件：寻找下一个明确的命令，而不是执行模式命令
-  let endIndex = lines.length;
-  for (let i = lastCommandIndex + 1; i < lines.length; i++) {
-    const line = lines[i];
-    // 只在遇到明确的新命令时才停止（而不是任何执行模式命令）
-    if (line.startsWith('$ ') && 
-        !line.includes('[CLIENT-PACKET]') && 
-        !line.includes('完整数据包') &&
-        executionModes.some(mode => line.includes(mode)) &&
-        !line.includes(pluginName)) { // 排除同一个插件的重复执行
-      endIndex = i;
-      break;
-    }
-  }
-  
-  // 提取内容，但给 mimikatz 更大的范围
-  let startIndex = Math.max(0, lastCommandIndex - 20); // 向前包含更多上下文
-  const extractedLines = lines.slice(startIndex, endIndex);
-  
-  console.log('🔍 Mimikatz 专用过滤结果:', {
-    '原始总行数': lines.length,
-    '开始位置': startIndex,
-    '最后命令位置': lastCommandIndex,
-    '结束位置': endIndex,
-    '提取行数': extractedLines.length,
-    '执行模式': currentMode,
-    '插件名': pluginName
-  });
-  
-  return extractedLines.join('\n');
-};
 let pollingInterval: ReturnType<typeof setInterval> | null = null;
 
 // 插件执行 = 一条 exec 任务（后端 /bin/execute 建任务并回传 task_id）。
@@ -1131,8 +976,8 @@ const startPollingForResults = (clientUid: string, pluginName: string, taskId: n
     if (!(response.data && response.data.status === 200)) return lastContent;
     const fullShellContent = smartDecodeContent(response.data.data || '');
     const filtered = isMimikatzTool
-      ? filterShellContentForMimikatz(fullShellContent, executionMode.value, pluginName)
-      : filterShellContentByMode(fullShellContent, executionMode.value, pluginName);
+      ? filterShellContentForMimikatz(fullShellContent, executionMode.value, pluginName, filterOpts('mimikatz'))
+      : filterShellContentByMode(fullShellContent, executionMode.value, pluginName, filterOpts('mode'));
     lastContent = filtered;
     return filtered;
   };

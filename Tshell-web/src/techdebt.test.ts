@@ -23,10 +23,17 @@ import { join, relative, basename } from 'node:path'
 // 且会把 src/ 之外的东西（脚本、产物）也纳入计数。
 const SRC = __dirname
 
-/** 语言以函数参数传入、而非从 store 取的文件（正确设计，不计入） */
+/**
+ * 语言以**函数参数**传入、而非从 store 取的文件（正确设计，不计入）。
+ *
+ * 这些都不是组件：把语言作为显式参数传入，模块才能不依赖 Pinia 直接单测。
+ * 强行改成 store 调用反而破坏可测试性 —— 所以棘轮对它们豁免，
+ * 而不是逼着后来者把好设计改掉。
+ */
 const PARAM_LOCALE_FILES = new Set([
   join('api', 'cred', 'index.ts'),
   join('stores', 'screenshots.ts'),
+  join('views', 'plugins', 'output-filter.ts'),
 ])
 
 function walk(dir: string, out: string[] = []): string[] {
