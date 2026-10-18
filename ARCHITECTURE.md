@@ -48,7 +48,9 @@ Tshell/
 - **离线信号**:断线时 `CleanupClientQueues` 广播,等待中的 API handler 提前返回(避免白等超时)。
 - **连接池**:MaxConnections 限制 + 健康检查 + 空闲清理,WS 已入池。
 - **RBAC**:admin/operator/auditor 三角色,服务端路由层强制(RequireRole),前端路由守卫 + 菜单按 permiss 过滤;高危操作(ExecuteBin/批量删除/forward/载荷生成)限 admin+operator;密钥管理/安全中心/配置/用户管理为 admin 独有;审计日志读接口为 admin+auditor。
-- **审计**:操作审计中间件 + 文件审计中间件,审计日志落**文件**(SQLite 落库为待办,见 docs/KNOWN_LIMITATIONS.md #12);交付访问日志 30 天轮转。
+- **审计**:操作审计中间件 + 文件审计中间件;审计日志**文件 + SQLite 双写**(查询/统计/保留策略走 `audit_log_db` 表,文件保留人读);交付访问日志 30 天轮转。
+- **任务**:一等对象(`tasks` 表),状态机 `dispatched→completed|failed|cancelled|timeout`,记录 operator/命令/结果,可取消,超时与保留由后台清理任务收敛。
+- **协作**(多操作员):在线状态(任一已认证请求与事件流连接续期,5 分钟无活动视为离线)、会话锁(占用某台主机后其他操作员对其下发命令返回 409,30 分钟自动过期)、操作广播(`operator_action` 事件经事件总线推送)、团队频道(事件流 WebSocket 上行 `chat`,服务端广播给所有操作员)。锁是**软**的:无人持锁时行为与单操作员完全一致。
 
 ## 前端要点
 
