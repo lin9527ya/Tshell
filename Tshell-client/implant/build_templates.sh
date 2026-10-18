@@ -18,7 +18,13 @@ set -u
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"  # implant 模块根
 
-SERVER_TEMPLATES="$(cd "$SCRIPT_DIR/../../Tshell-server/pkg/api/server" && pwd)"
+# 模板目录（服务端 go:embed 的 server/）：该目录是构建产物且被 .gitignore 忽略，
+# 全新检出（CI / 新克隆）里**根本不存在** —— 原来直接 cd 进去取 pwd，cd 失败时
+# 变量静默变空，后面 STAGE 就落到 "/.tmpl-stage" 上（CI 里报 mkdir //.tmpl-stage:
+# permission denied，13 个协议全失败）。这里显式创建并校验。
+SERVER_TEMPLATES="$SCRIPT_DIR/../../Tshell-server/pkg/api/server"
+mkdir -p "$SERVER_TEMPLATES" || { echo "FAIL: 无法创建模板目录 $SERVER_TEMPLATES"; exit 1; }
+SERVER_TEMPLATES="$(cd "$SERVER_TEMPLATES" && pwd)" || { echo "FAIL: 无法解析模板目录"; exit 1; }
 
 # ============ 预编译隐藏库（hide_net.c，LD_PRELOAD 网络连接隐藏）============
 # 由宿主机 gcc 编译并嵌入植入体（go:embed core/commands/hide_preload/so/）。
@@ -78,7 +84,7 @@ compress_template() {
 # 临时文件。注意：**重建模板期间不要同时构建服务端**——即使文件替换是原子 rename，
 # go:embed 的 stat→open 之间仍可能跨越一次替换，报 "unexpected length"。
 # 正确顺序：先 build_templates.sh，再构建服务端。
-STAGE="$(cd "$SERVER_TEMPLATES/.." && pwd)/.tmpl-stage"
+STAGE="$(cd "$SERVER_TEMPLATES/.." && pwd)/.tmpl-stage" || { echo "FAIL: 无法解析暂存目录"; exit 1; }
 rm -rf "$STAGE"; mkdir -p "$STAGE"
 trap 'rm -rf "$STAGE"' EXIT
 
