@@ -1,0 +1,212 @@
+# Tshell 单副本部署清单（Kubernetes）
+#
+# ⚠️ 本清单**刻意不提供水平扩展**。这不是"还没做"，而是当前架构的硬约束：
+#    连接池 / 在线状态 / 协作会话锁 / 事件流 / 命令队列全部在**进程内存**里，
+#    数据库是单文件 SQLite。跑两个副本会直接损坏数据：
+#      - 两个进程同时写一个 SQLite 文件 → 写冲突、库损坏（SQLite 不支持多写者）
+#      - 同一会话的命令可能被两个副本各发一次 → 目标机重复执行
+#      - 协作锁失效 → 两个操作员同时操作同一会话
+#    详见 DEPLOYMENT.md 的「单实例限制」一节。
+#
+#    工作区里那份旧的 k8s-deployment.yaml（replicas: 2 + 两个 HPA + algorithm: HS256）
+#    是本清单要取代的对象：它不但扩展性与代码能力不符，其中的 HS256 还会被
+#    服务端**直接拒绝启动**（只支持 RS256），SQLite 挂共享 PVC 更是必然损坏。
+#
+# 需要更高可用性时，当前架构下唯一诚实的方案是：
+#    单副本 + 定时备份（BACKUP_RESTORE.md）+ 冷备，而不是加副本。
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tshell
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: tshell-data
+  namespace: tshell
+spec:
+  # ReadWriteOnce 是**必须**的：即便将来误加了副本数，RWO 也能让第二个 Pod
+  # 卡在挂载阶段，而不是两个进程同时写坏库（最后一道物理防线）
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tshell-config
+  namespace: tshell
+data:
+  config.yaml: |
+    server:
+      host: 0.0.0.0
+      port: 8089
+      mode: release
+      read_timeout: 30s
+      write_timeout: 30s
+      idle_timeout: 60s
+
+    database:
+      # 仅支持 sqlite3（PostgreSQL 后端已可切，但共享状态仍在进程内存，
+      # 换库并不会让它变成可水平扩展 —— 见 DEPLOYMENT.md）
+      type: sqlite3
+      path: /data/database.db
+
+    jwt:
+      # 密钥文件缺失时自动生成并落在 /data（PVC 上），
+      # 因此**不要**把这个文件放进镜像层：重建 Pod 会换密钥，
+      # 已签发的 token 全部失效，且 TOTP 密钥会解不开（见 AUTH_MFA.md）
+      secret_key_file: /data/jwt_key.hex
+      access_token_ttl: 15m
+      refresh_token_ttl: 168h
+      max_refresh_count: 100
+      # 只支持 RS256；填别的值会拒绝启动（不是静默忽略）
+      algorithm: RS256
+
+    logging:
+      level: info
+      format: json
+      output: stdout
+
+    security:
+      # 反代（Ingress）通常不传 X-Forwarded-Proto，此时 HSTS 不会下发；
+      # 确认流量全程 HTTPS 后置 true
+      force_hsts: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tshell
+  namespace: tshell
+spec:
+  # ⚠️ 必须为 1。改大之前请先读本文件顶部的说明。
+  replicas: 1
+  strategy:
+    # Recreate 而不是 RollingUpdate：滚动更新期间会**同时存在两个 Pod**，
+    # 即使只有几秒，两个进程也会同时打开同一个 SQLite 文件。
+    # 宁可接受几十秒中断，也不要冒损坏库的风险。
+    type: Recreate
+  selector:
+    matchLabels:
+      app: tshell
+  template:
+    metadata:
+      labels:
+        app: tshell
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        fsGroup: 65532
+      containers:
+        - name: tshell
+          image: tshell:latest # 换成你的镜像
+          args: ["-config", "/etc/tshell/config.yaml"]
+          ports:
+            - name: http
+              containerPort: 8089
+          volumeMounts:
+            - name: config
+              mountPath: /etc/tshell
+              readOnly: true
+            - name: data
+              mountPath: /data
+          # 用 TCP 探针而不是 HTTP /healthz：
+          # 服务端没有**未鉴权**的健康端点（/metrics 默认只允许本机抓取），
+          # 而给 C2 面板加一个未鉴权端点本身就是一个信息暴露面 ——
+          # 不值得为了探针好看去开这个口子。
+          startupProbe:
+            tcpSocket:
+              port: http
+            # 服务端内嵌了前端与 200+ 个载荷模板，冷启动需要时间
+            failureThreshold: 30
+            periodSeconds: 2
+          readinessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 20
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              # 载荷模板 + 前端已内嵌在二进制里，内存上限给足；
+              # 注意生成大载荷（donut/shellcode）时会短时占用较多内存
+              memory: 2Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: config
+          configMap:
+            name: tshell-config
+        - name: data
+          persistentVolumeClaim:
+            claimName: tshell-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tshell
+  namespace: tshell
+spec:
+  selector:
+    app: tshell
+  ports:
+    - name: http
+      port: 8089
+      targetPort: http
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: tshell
+  namespace: tshell
+  annotations:
+    # 面板全程 HTTPS：否则会话令牌与凭据在链路上是明文
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    # 反向代理下要让服务端看到真实来源 IP（登录限流/审计依赖它）
+    nginx.ingress.kubernetes.io/use-forwarded-headers: "true"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: ["tshell.example.com"]
+      secretName: tshell-tls
+  rules:
+    - host: tshell.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: tshell
+                port:
+                  name: http
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: tshell
+  namespace: tshell
+spec:
+  # minAvailable: 0 是**如实**表达：单副本架构下无法承诺任何可用性，
+  # 节点维护时这个 Pod 一定会中断。
+  # 写 minAvailable: 1 只会让节点排空（drain）永远卡住 —— 那不是在保可用性，
+  # 是在掩盖"这套部署没有冗余"这个事实。
+  minAvailable: 0
+  selector:
+    matchLabels:
+      app: tshell
+# 这里**没有** HorizontalPodAutoscaler，是刻意的：
+# 见文件顶部。需要它之前，先把共享状态（在线状态/会话锁/命令队列/事件流）
+# 外置到 Redis/Postgres，并解决 SQLite 的单写者限制。

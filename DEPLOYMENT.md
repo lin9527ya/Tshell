@@ -94,9 +94,16 @@ GOMEMLIMIT=3GiB go build -ldflags "-s -w" -trimpath -o tshell-server.exe .\main.
 
 因此：
 
-- **不要**给 Deployment 设置 `replicas > 1`，**不要**配 HPA（工作区里那份
-  `k8s-deployment.yaml` 是旧草稿：`replicas: 2` + 两个 HPA，与代码能力不符，
-  不要直接套用）；
+- **不要**给 Deployment 设置 `replicas > 1`，**不要**配 HPA。工作区里那份
+  `k8s-deployment.yaml` 是旧草稿，**不要直接套用** —— 它除了 `replicas: 2` + 两个 HPA
+  与代码能力不符之外，还有两个会直接出事的配置：`algorithm: HS256` 现在会被服务端
+  **拒绝启动**（只支持 RS256），以及两个副本挂同一个 SQLite PVC 必然写坏库。
+- **请用 `deploy/k8s/tshell.yaml`**（已入库的单副本清单）：`replicas: 1`、
+  `strategy: Recreate`（滚动更新期间会同时存在两个 Pod，即使几秒也会双写 SQLite）、
+  `ReadWriteOnce` PVC（作为误加副本时的物理防线）、PDB `minAvailable: 0`
+  （如实表达单副本没有冗余，而不是让节点排空永远卡住）、无 HPA。
+  探针用 `tcpSocket` 而不是 HTTP —— 服务端没有未鉴权的健康端点，
+  而给 C2 面板加一个未鉴权端点本身就是信息暴露面，不值得为了探针好看去开。
 - 需要更高吞吐时，横向扩展的是**监听器 + 重定向器**（见 docs/REDIRECTOR.md），
   服务端本身保持单实例；
 - 高可用请做**冷备**：定时备份（docs/BACKUP_RESTORE.md）+ 备机就绪，故障时用

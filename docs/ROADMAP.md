@@ -193,12 +193,23 @@ go test -race ./Tshell-server/...     # 见 §4 回归基线（注意用外层�
 #### 3.4 水平扩展（多副本）— **XL**
 - **目标**：k8s 的 `replicas`/HPA 真正可用
 - **现状**：单实例（连接池/在线状态/会话锁/事件流/命令队列都在进程内存）；
-  PostgreSQL 后端已可切（前置条件已具备）；工作区的 `k8s-deployment.yaml` 是旧草稿
-  （`replicas: 2` + 两个 HPA），与代码能力不符且未入库
-- **入口**：`pkg/connection/`（在线状态、连接池）、`pkg/command/`（队列、事件总线）、
-  `pkg/collab/`（会话锁）→ 外置到 Redis/Postgres；新增 leader 选举
-- **验收**：两副本经 LB 后任务不重不漏；**或者**明确把清单改成单副本并删掉 HPA（成本更低）
-- **替代方案（推荐先做）**：单副本 + 定时备份 + 冷备，已在 `DEPLOYMENT.md` 写明
+  PostgreSQL 后端已可切（前置条件已具备）
+- **本次决定（2026-10-19）**：走验收条款里的**第二条分支** ——
+  明确声明单副本并删掉 HPA，而不是留一份"看起来能扩"的清单。
+  - 新增 `deploy/k8s/tshell.yaml`（已入库）：`replicas: 1`、
+    `strategy: Recreate`（滚动更新期间会同时存在两个 Pod，即使几秒也会双写 SQLite）、
+    `ReadWriteOnce` PVC（误加副本时的物理防线）、PDB `minAvailable: 0`
+    （如实表达无冗余，而不是让节点排空永远卡住）、**无 HPA**、
+    探针用 `tcpSocket`（服务端没有未鉴权健康端点，而给 C2 面板新开一个
+    未鉴权端点本身就是信息暴露面）
+  - 顺带修掉旧草稿里两个会直接出事的配置：`algorithm: HS256`
+    现在会被**拒绝启动**（只支持 RS256）；两副本挂同一 SQLite PVC 必然写坏库
+  - `DEPLOYMENT.md` 的「单实例限制」指向新清单并说明为什么旧草稿不能套用
+  - 13 项结构断言用 js-yaml 校验通过（replicas/策略/无 HPA/PDB/RS256/非 root/探针…）
+- **真正的水平扩展仍需**（未做，XL）：把 `pkg/connection/`（在线状态、连接池）、
+  `pkg/command/`（队列、事件总线）、`pkg/collab/`（会话锁）外置到 Redis/Postgres，
+  并解决 SQLite 单写者限制 + 加 leader 选举。
+  验收标准仍是"两副本经 LB 后任务不重不漏"
 
 #### 3.5 平台自身安全补强 — **M**
 - **MFA/TOTP**：✅ 已实现（2026-10-18）两步登录 + 自助绑定/关闭 + 管理员重置
