@@ -81,6 +81,17 @@
 - 详见 docs/CREDENTIAL_ACCESS.md（含"验证状态"与首次验证建议）。
 - 状态：✅（链路）/ ⏳（实机验证 + 后续模块）
 
+## 12d. 内存 OPSEC（阶段三 · 第 14 项）
+- 现状：✅ sleep mask 修复并扩展到**全部传输**（原来只有轮询型走 mask，且遮蔽的是
+  `GetSessionKey()` 返回的拷贝 —— 真身一直明文驻留，等于没保护）；遮蔽范围含会话密钥/
+  上一把/主密钥/盐 + 清空 AEAD 缓存；按片遮蔽 + 在途判定，不打断活跃会话。
+  ✅ syscall trampoline：RWX → W^X（RW 写入后 VirtualProtect 为 RX），
+  `jmp rel32`（±2GB 射程，ASLR 下会溢出成垃圾地址）→ `mov rax,imm64; jmp rax`。
+- 遗留：Ekko/Foliage 式"加密自身内存镜像"、调用栈伪造、注入路径全 syscall 化
+  —— 均需 Windows 实机验证；Go runtime 无法安全加密自身 .text 段。
+- 详见 docs/MEMORY_OPSEC.md。
+- 状态：✅（sleep mask / trampoline）/ ⏳（Ekko 级 mask、调用栈伪造、全 syscall）
+
 ## 13. 级联 C2（B9，二级中继）
 - 状态：⏳（重架构，需设计中继协议与链路加密）
 
