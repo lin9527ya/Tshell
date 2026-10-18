@@ -530,6 +530,7 @@ import {
   parseFileSize,
   parseToDate,
 } from '@/views/client/files/format'
+import { decodeFileContent } from '@/views/client/files/decodeContent'
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -1138,34 +1139,9 @@ async function editFile(file: any) {
 
   try {
     const res = await ClientAPI.fetch_file_content({ uid: uid.value, path: file.path })
-    let raw = ''
-    if (res?.data) {
-      if (typeof res.data === 'string') {
-        raw = res.data
-      } else if (typeof res.data.data === 'string') {
-        raw = res.data.data
-      } else if (res.data.data?.content !== undefined) {
-        raw = res.data.data.content
-      } else if (res.data.content !== undefined) {
-        raw = res.data.content
-      } else if (res.data.data?.fileContent !== undefined) {
-        raw = res.data.data.fileContent
-      } else if (typeof res.data.data === 'object') {
-        raw = JSON.stringify(res.data.data, null, 2)
-      }
-    }
-
-    // 处理 base64 解码
-    if (raw && typeof raw === 'string' && /^[A-Za-z0-9+/=]+$/.test(raw.trim()) && raw.trim().length % 4 === 0 && !raw.includes('\n') && raw.length > 24) {
-      try {
-        const decoded = atob(raw.trim())
-        if (decoded) {
-          raw = decodeURIComponent(escape(decoded))
-        }
-      } catch {}
-    }
-
-    fileContent.value = String(raw ?? '')
+    // 内容形态兼容 + base64 启发式已抽到 files/decodeContent.ts（27 项测试）。
+    // 那段分支多、易错，且出错的症状只是"编辑器显示乱码"。
+    fileContent.value = decodeFileContent(res)
     updateEditorLineNumbers()
   } catch (err: any) {
     ElMessage.error(isZh.value ? '读取文件内容失败: ' + (err?.message || err) : 'Failed to read file')

@@ -448,7 +448,22 @@ go test -race ./Tshell-server/...     # 见 §4 回归基线（注意用外层�
     插件版两位小数去尾零（1024 → "1 KB"），文件管理器版一位小数（1024 → "1.0 KB"）。
     这是原代码就有的分歧，不是本次引入的。统一会改变其中一处显示，属可见变更，
     应单独提一次由人确认 —— 已写进注释，并有测试显式钉住分歧
-  - **仍未做**：`ClientFiles.vue` 的 517 行模板尚未拆（PluginsView 的已拆完）
+  - `decodeContent.ts` + 27 项测试（2026-10-19）：把文件编辑器的**内容解码**从
+    ClientFiles 里抽出来。ClientFiles 2128 → 2104 行。选它是因为这段逻辑
+    **形状兼容分支极多**（裸串 / {data} / {data:{content}} / {content} /
+    {data:{fileContent}} / 对象兜底）再加一层"像 base64 就解一次"的启发式，
+    埋在 `editFile` 里时无法单独验证，而出错症状只是"编辑器显示乱码"
+  - 抽取时钉住两条容易写错的地方：
+    ① 分支顺序 —— `content` 必须比"data 是对象就 JSON.stringify"更先判，
+       否则编辑器里会出现一整段 `{"content":"真正的文件内容"}`
+    ② base64 的 24 字符阈值是**刻意的保守取舍**：误判会把普通文本变乱码
+       （用户会以为文件坏了），比漏解一次严重得多。已用测试显式钉住阈值
+  - 顺手把 `decodeURIComponent(escape(...))` 换成 `TextDecoder('utf-8', {fatal:true})`：
+    前者对非 Latin-1 字节会抛 URIError 且 `escape` 已废弃；两者在"解不出时原样返回"
+    这一点上行为一致（都有测试覆盖）
+  - **仍未做**：`ClientFiles.vue` 的 517 行**模板**尚未拆（PluginsView 的已拆完）。
+    其逻辑部分已抽出（format.ts / decodeContent.ts）；剩余的是把标记搬到子组件 ——
+    需要连同 scoped 样式一起搬，且没有视觉回归测试，属收益小于风险的一步
 
 ---
 
