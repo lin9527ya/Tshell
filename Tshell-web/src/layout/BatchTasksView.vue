@@ -3,11 +3,35 @@
     <!-- CS Toolbar -->
     <div class="bt-toolbar">
       <div class="bt-title-group">
-        <span class="bt-title">{{ isZh ? '批量任务进度' : 'Batch Task Progress' }}</span>
-        <span class="bt-count">({{ tasks.length }})</span>
+        <span class="bt-title">{{ isZh ? '任务中心' : 'Task Center' }}</span>
+        <span class="bt-count">({{ total }})</span>
+        <el-tag v-if="runningCount" size="small" type="warning" class="bt-running">
+          {{ isZh ? `${runningCount} 进行中` : `${runningCount} running` }}
+        </el-tag>
       </div>
+
+      <div class="bt-filters">
+        <el-select v-model="filters.status" size="small" class="bt-filter-status" @change="reload">
+          <el-option :label="isZh ? '全部状态' : 'All statuses'" value="" />
+          <el-option v-for="s in STATUS_OPTIONS" :key="s.value" :label="isZh ? s.zh : s.en" :value="s.value" />
+        </el-select>
+        <el-select v-model="filters.kind" size="small" class="bt-filter-kind" @change="reload">
+          <el-option :label="isZh ? '全部类型' : 'All kinds'" value="" />
+          <el-option v-for="k in KIND_OPTIONS" :key="k.value" :label="isZh ? k.zh : k.en" :value="k.value" />
+        </el-select>
+        <el-input
+          v-model="filters.uid"
+          size="small"
+          clearable
+          class="bt-filter-uid"
+          :placeholder="isZh ? '按会话 UID 过滤' : 'Filter by UID'"
+          @keyup.enter="reload"
+          @clear="reload"
+        />
+      </div>
+
       <div class="bt-spacer" />
-      <button class="cs-btn" :disabled="loading" @click="fetchTasks">{{ isZh ? '刷新' : 'Refresh' }}</button>
+      <button class="cs-btn" :disabled="loading" @click="reload">{{ isZh ? '刷新' : 'Refresh' }}</button>
     </div>
 
     <!-- Tasks Table -->
@@ -20,63 +44,87 @@
         v-loading="loading"
         class="cs-session-table"
       >
-        <!-- Expandable details row -->
+        <!-- 展开：结果与错误全文 -->
         <el-table-column type="expand" width="36">
           <template #default="{ row }">
             <div class="bt-expand-box">
-              <div class="bt-expand-title">{{ isZh ? '各 Beacon 执行明细' : 'Execution Details per Beacon' }}:</div>
-              <div class="bt-expand-grid">
-                <div
-                  v-for="(resultText, uid) in (row.results || {})"
-                  :key="uid"
-                  class="bt-result-card"
-                >
-                  <div class="bt-card-header">
-                    <span class="bt-card-uid cs-font-mono">{{ String(uid).slice(0, 8) }}</span>
-                    <span class="bt-card-badge">{{ isZh ? '已接收' : 'Received' }}</span>
-                  </div>
-                  <pre class="bt-card-output cs-font-mono">{{ resultText }}</pre>
-                </div>
+              <div class="bt-expand-title">{{ isZh ? '任务详情' : 'Task Detail' }}</div>
+              <div class="bt-expand-meta">
+                <span><b>{{ isZh ? '会话' : 'Session' }}:</b> <code class="cs-font-mono">{{ row.uid }}</code></span>
+                <span><b>{{ isZh ? '批次' : 'Batch' }}:</b> <code class="cs-font-mono">{{ row.batch_id || '-' }}</code></span>
+                <span><b>{{ isZh ? '下发' : 'Dispatched' }}:</b> {{ formatTime(row.created_at) }}</span>
+                <span v-if="row.finished_at && row.finished_at !== '0001-01-01T00:00:00Z'">
+                  <b>{{ isZh ? '结束' : 'Finished' }}:</b> {{ formatTime(row.finished_at) }}
+                </span>
               </div>
-              <div v-if="!row.results || !Object.keys(row.results).length" class="bt-empty-hint">
-                {{ isZh ? '任务已下发至服务端队列，等待目标 Beacon 拉取执行...' : 'Tasks queued on server, awaiting beacon heartbeat fetch...' }}
+              <div v-if="row.error" class="bt-error-box">
+                <div class="bt-error-title">{{ isZh ? '失败原因' : 'Error' }}</div>
+                <pre class="bt-card-output cs-font-mono">{{ row.error }}</pre>
+              </div>
+              <div class="bt-expand-title">{{ isZh ? '回显结果' : 'Result' }}</div>
+              <pre v-if="row.result" class="bt-card-output cs-font-mono">{{ row.result }}</pre>
+              <div v-else class="bt-empty-hint">
+                {{ row.status === 'dispatched'
+                  ? (isZh ? '尚未收到回显（命令可能仍在队列中等待目标拉取）' : 'No output yet (may still be queued on the target)')
+                  : (isZh ? '该任务没有回显内容' : 'No output recorded') }}
               </div>
             </div>
           </template>
         </el-table-column>
 
-        <el-table-column prop="id" label="任务 ID" width="160">
+        <el-table-column prop="id" :label="isZh ? '任务 ID' : 'ID'" width="80">
           <template #default="{ row }">
             <span class="cs-font-mono text-dim">{{ row.id }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="command" :label="isZh ? '下发命令' : 'Command'" min-width="200" show-overflow-tooltip>
+
+        <el-table-column :label="isZh ? '状态' : 'Status'" width="100" align="center">
+          <template #default="{ row }">
+            <el-tag :type="statusTagType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>
+          </template>
+        </el-table-column>
+
+        <el-table-column :label="isZh ? '类型' : 'Kind'" width="90" align="center">
+          <template #default="{ row }">
+            <span class="cs-cell-text">{{ kindLabel(row.kind) }}</span>
+          </template>
+        </el-table-column>
+
+        <el-table-column prop="uid" :label="isZh ? '目标会话' : 'Session'" width="110">
+          <template #default="{ row }">
+            <span class="cs-font-mono" :title="row.uid">{{ shortUid(row.uid) }}</span>
+          </template>
+        </el-table-column>
+
+        <el-table-column prop="operator" :label="isZh ? '操作员' : 'Operator'" width="110" show-overflow-tooltip>
+          <template #default="{ row }">
+            <span class="cs-cell-text">{{ row.operator || '-' }}</span>
+          </template>
+        </el-table-column>
+
+        <el-table-column prop="command" :label="isZh ? '命令' : 'Command'" min-width="200" show-overflow-tooltip>
           <template #default="{ row }">
             <span class="cs-font-mono font-bold">{{ row.command }}</span>
           </template>
         </el-table-column>
-        <el-table-column :label="isZh ? '目标数' : 'Targets'" width="90" align="center">
+
+        <el-table-column :label="isZh ? '耗时' : 'Elapsed'" width="90" align="center">
           <template #default="{ row }">
-            <el-tag size="small" type="info">{{ Array.isArray(row.uids) ? row.uids.length : 0 }}</el-tag>
+            <span class="cs-font-mono text-dim">{{ elapsed(row) }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="status" :label="isZh ? '状态' : 'Status'" width="100" align="center">
+
+        <el-table-column :label="isZh ? '操作' : 'Actions'" width="110" fixed="right" align="center">
           <template #default="{ row }">
-            <el-tag :type="row.status === 'done' ? 'success' : 'warning'" size="small">
-              {{ row.status === 'done' ? (isZh ? '已完成' : 'Done') : (isZh ? '进行中' : 'Running') }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="created_at" :label="isZh ? '创建时间' : 'Created At'" width="165">
-          <template #default="{ row }">
-            <span class="cs-font-mono text-dim">{{ formatTime(row.created_at) }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column :label="isZh ? '执行进度' : 'Progress'" min-width="160">
-          <template #default="{ row }">
-            <span class="cs-font-mono">
-              {{ Object.keys(row.results || {}).length }} / {{ Array.isArray(row.uids) ? row.uids.length : 0 }} {{ isZh ? '已回显' : 'echoed' }}
-            </span>
+            <button
+              v-if="row.status === 'dispatched'"
+              class="cs-btn bt-cancel-btn"
+              :title="isZh ? '停止等待回显（已下发的命令无法从目标撤回）' : 'Stop waiting (cannot be retracted from target)'"
+              @click="cancelTask(row)"
+            >
+              {{ isZh ? '取消' : 'Cancel' }}
+            </button>
+            <span v-else class="text-dim">—</span>
           </template>
         </el-table-column>
       </el-table>
@@ -84,7 +132,21 @@
       <EmptyState
         v-if="!tasks.length && !loading"
         variant="overlay"
-        :title="isZh ? '暂无批量任务' : 'No batch tasks'"
+        :title="isZh ? '暂无任务' : 'No tasks'"
+      />
+    </div>
+
+    <div class="bt-pager">
+      <el-pagination
+        small
+        background
+        layout="prev, pager, next, sizes, total"
+        :total="total"
+        :current-page="page"
+        :page-size="size"
+        :page-sizes="[50, 100, 200]"
+        @current-change="onPageChange"
+        @size-change="onSizeChange"
       />
     </div>
   </div>
@@ -92,55 +154,154 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18nStore } from '@/stores/i18n'
-import { useVisibilityInterval } from '@/utils/useVisibilityInterval'
 import EmptyState from '@/components/Common/EmptyState.vue'
-import ClientAPI from '@/api/clients'
-
-interface TaskRow {
-  id: string
-  command: string
-  uids: string[]
-  status: 'running' | 'done'
-  created_at: string
-  results: Record<string, string>
-}
+import TaskAPI, { type TaskRow } from '@/api/tasks'
 
 const i18nStore = useI18nStore()
 const isZh = computed(() => i18nStore.isZh)
 
 const tasks = ref<TaskRow[]>([])
+const total = ref(0)
+const page = ref(1)
+const size = ref(50)
 const loading = ref(false)
+const filters = ref({ status: '', kind: '', uid: '' })
+
+const STATUS_OPTIONS = [
+  { value: 'dispatched', zh: '进行中', en: 'Running' },
+  { value: 'completed', zh: '已完成', en: 'Completed' },
+  { value: 'failed', zh: '失败', en: 'Failed' },
+  { value: 'cancelled', zh: '已取消', en: 'Cancelled' },
+  { value: 'timeout', zh: '超时', en: 'Timeout' },
+]
+const KIND_OPTIONS = [
+  { value: 'console', zh: '控制台命令', en: 'Console' },
+  { value: 'batch', zh: '批量下发', en: 'Batch' },
+  { value: 'exec', zh: '载荷执行', en: 'Exec' },
+  { value: 'download', zh: '文件下载', en: 'Download' },
+]
+
+const runningCount = computed(() => tasks.value.filter((t) => t.status === 'dispatched').length)
+
+function statusLabel(s: string): string {
+  const opt = STATUS_OPTIONS.find((o) => o.value === s)
+  if (opt) return isZh.value ? opt.zh : opt.en
+  return s || '-'
+}
+
+function statusTagType(s: string): 'success' | 'warning' | 'danger' | 'info' {
+  if (s === 'completed') return 'success'
+  if (s === 'dispatched') return 'warning'
+  if (s === 'failed' || s === 'timeout') return 'danger'
+  return 'info'
+}
+
+function kindLabel(k: string): string {
+  const opt = KIND_OPTIONS.find((o) => o.value === k)
+  return opt ? (isZh.value ? opt.zh : opt.en) : (k || '-')
+}
+
+const shortUid = (uid: string) => (uid ? uid.slice(0, 8) : '-')
 
 function formatTime(t: string): string {
   if (!t) return '-'
   const d = new Date(t)
-  if (isNaN(d.getTime())) return t
+  if (isNaN(d.getTime()) || d.getFullYear() < 1970) return '-'
   return d.toLocaleString('zh-CN')
+}
+
+// 耗时：未结束的任务按"到现在"计（避免显示成 0 秒的误导）
+function elapsed(row: TaskRow): string {
+  const start = new Date(row.created_at).getTime()
+  if (!start || isNaN(start)) return '-'
+  const endRaw = row.status === 'dispatched' ? Date.now() : new Date(row.finished_at).getTime()
+  const end = endRaw && !isNaN(endRaw) && endRaw > 0 ? endRaw : Date.now()
+  const sec = Math.max(0, Math.round((end - start) / 1000))
+  if (sec < 60) return `${sec}s`
+  if (sec < 3600) return `${Math.floor(sec / 60)}m${sec % 60}s`
+  return `${Math.floor(sec / 3600)}h${Math.floor((sec % 3600) / 60)}m`
 }
 
 async function fetchTasks() {
   loading.value = true
   try {
-    const res = await ClientAPI.list_tasks()
-    if (res.data?.status === 200 && Array.isArray(res.data.data)) {
-      // 后端无排序，新的在前
-      tasks.value = [...res.data.data].reverse()
-    } else {
-      tasks.value = []
-    }
+    const res = await TaskAPI.list({
+      page: page.value,
+      size: size.value,
+      status: filters.value.status || undefined,
+      kind: filters.value.kind || undefined,
+      uid: filters.value.uid.trim() || undefined,
+    })
+    const data = res.data?.data
+    tasks.value = Array.isArray(data?.list) ? data.list : []
+    total.value = Number(data?.total) || 0
   } catch {
-    tasks.value = []
+    // 请求层已提示；保持上一次数据，避免抖动清空
   } finally {
     loading.value = false
   }
 }
 
-// 【性能】5s 轮询接入可见性治理(非活动标签/页面隐藏时暂停)
-useVisibilityInterval(fetchTasks, 5000)
+function reload() {
+  page.value = 1
+  fetchTasks()
+}
+
+function onPageChange(p: number) {
+  page.value = p
+  fetchTasks()
+}
+
+function onSizeChange(s: number) {
+  size.value = s
+  page.value = 1
+  fetchTasks()
+}
+
+async function cancelTask(row: TaskRow) {
+  try {
+    await ElMessageBox.confirm(
+      isZh.value
+        ? `取消任务 #${row.id}（${row.command}）？\n\n注意：命令已经下发给目标，服务端无法撤回，这里只是停止等待回显。`
+        : `Cancel task #${row.id} (${row.command})?\n\nThe command is already dispatched and cannot be retracted; this only stops waiting for output.`,
+      isZh.value ? '取消任务' : 'Cancel Task',
+      { confirmButtonText: isZh.value ? '取消任务' : 'Cancel Task', cancelButtonText: isZh.value ? '返回' : 'Back', type: 'warning' },
+    )
+  } catch {
+    return
+  }
+  try {
+    await TaskAPI.cancel(row.id)
+    ElMessage.success(isZh.value ? '任务已取消' : 'Task cancelled')
+    fetchTasks()
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.error || (isZh.value ? '取消失败' : 'Cancel failed'))
+  }
+}
+
+// 5s 轮询（仅在有进行中任务时刷新，避免空转请求）
+let pollTimer: number | null = null
+function startPolling() {
+  if (pollTimer !== null) return
+  pollTimer = window.setInterval(() => {
+    if (document.visibilityState === 'hidden') return
+    if (!tasks.value.some((t) => t.status === 'dispatched')) return
+    fetchTasks()
+  }, 5000)
+}
 
 onMounted(() => {
   fetchTasks()
+  startPolling()
+})
+
+onBeforeUnmount(() => {
+  if (pollTimer !== null) {
+    window.clearInterval(pollTimer)
+    pollTimer = null
+  }
 })
 </script>
 
@@ -182,6 +343,21 @@ onMounted(() => {
   color: var(--cs-text-dim);
 }
 
+.bt-running {
+  border: none;
+}
+
+.bt-filters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 12px;
+}
+
+.bt-filter-status { width: 130px; }
+.bt-filter-kind { width: 130px; }
+.bt-filter-uid { width: 200px; }
+
 .bt-spacer {
   flex: 1;
 }
@@ -211,12 +387,31 @@ onMounted(() => {
   color: #ffffff;
 }
 
+.bt-table-wrap :deep(.el-tag--danger) {
+  background: var(--cs-error);
+  color: #ffffff;
+}
+
 .bt-table-wrap :deep(.el-tag--info) {
   background: color-mix(in srgb, var(--cs-text-dim) 14%, transparent);
   color: var(--cs-text-dim);
 }
 
-/* ===== 展开行：各 Beacon 执行明细 ===== */
+.bt-cancel-btn {
+  height: 22px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.bt-pager {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: flex-end;
+  padding: 6px 16px;
+  border-top: 1px solid var(--cs-card-border);
+}
+
+/* ===== 展开行：任务详情 ===== */
 .bt-expand-box {
   padding: 12px 16px;
   background: var(--cs-bg);
@@ -230,41 +425,32 @@ onMounted(() => {
   color: var(--cs-text-bright);
 }
 
-.bt-expand-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 12px;
+.bt-expand-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 10px;
+  font-size: 12px;
+  color: var(--cs-text-dim);
 }
 
-.bt-result-card {
-  background: var(--cs-card-bg);
-  border: 1px solid var(--cs-card-border);
-  border-radius: 8px;
+.bt-error-box {
+  margin-bottom: 10px;
+  border: 1px solid color-mix(in srgb, var(--cs-error) 40%, transparent);
+  border-radius: 6px;
   overflow: hidden;
 }
 
-.bt-card-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 6px 10px;
-  background: var(--cs-panel);
-  border-bottom: 1px solid var(--cs-card-border);
-}
-
-.bt-card-uid {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--cs-active);
-}
-
-.bt-card-badge {
+.bt-error-title {
+  padding: 4px 10px;
   font-size: 12px;
-  color: var(--cs-online);
+  font-weight: 600;
+  color: var(--cs-error);
+  background: color-mix(in srgb, var(--cs-error) 10%, transparent);
 }
 
 .bt-card-output {
-  max-height: 120px;
+  max-height: 220px;
   margin: 0;
   padding: 8px 10px;
   overflow-y: auto;
@@ -272,7 +458,7 @@ onMounted(() => {
   font-size: 13px;
   line-height: 1.5;
   color: var(--cs-text);
-  background: transparent;
+  background: var(--cs-card-bg);
   white-space: pre-wrap;
   word-break: break-all;
 }

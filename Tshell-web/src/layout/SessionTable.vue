@@ -37,7 +37,7 @@
           </button>
         </div>
         <button class="cs-btn cs-btn-xs" @click="batchSetGroup">{{ isZh ? '批量分组' : 'Set Group' }}</button>
-        <button class="cs-btn cs-btn-xs" @click="openBatchTasks">{{ isZh ? '任务进度' : 'Tasks' }}</button>
+        <button class="cs-btn cs-btn-xs" @click="openBatchTasks">{{ isZh ? '任务中心' : 'Tasks' }}</button>
         <button class="cs-btn cs-btn-xs" :disabled="!hasOfflineSelected" @click="cleanupOfflineBatch">{{ isZh ? '清理离线' : 'Clean Offline' }}</button>
         <button class="cs-btn cs-btn-xs" @click="clearTableSelection">{{ isZh ? '取消选择' : 'Clear' }}</button>
       </template>

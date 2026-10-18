@@ -525,6 +525,7 @@ import {
   Folder, Document, Fold, FolderOpened, Monitor, HomeFilled, Top, Loading
 } from '@element-plus/icons-vue'
 import ClientAPI from '@/api/clients'
+import TaskAPI from '@/api/tasks'
 import { useGlobalFileTreeStore } from '@/stores/fileTree'
 import { useCurrentFileNode } from '@/stores/currentFileNode'
 import { useClientsStore } from '@/stores/clients'
@@ -1299,34 +1300,65 @@ async function downloadFile(file: any) {
   // 关掉对话框/卸载组件后 1.5s 轮询仍永久运行(目标文件若被清理则永远到不了 100)。
   stopDownloadPoll()
   try {
-    await ClientAPI.download_file({ uid: uid.value, filePath: file.path })
+    const res = await ClientAPI.download_file({ uid: uid.value, filePath: file.path })
+    // 下载已是任务（后端建 kind=download 的任务并回传 ID）：
+    // 完成/失败由任务终态给出，字节进度只用于进度条展示。
+    // 原实现只盯百分比，失败（目标离线、连接中断）要等 6 分钟轮询超时才提示。
+    const taskId = Number(res?.data?.task_id) || 0
     let attempts = 0
-    const maxAttempts = 240 // 上限 6 分钟,兜底防永久轮询
+    const maxAttempts = 400 // 上限 10 分钟,兜底防永久轮询
     downloadPollTimer = window.setInterval(async () => {
       if (++attempts > maxAttempts) {
         stopDownloadPoll()
         downloadStatus.value = 'error'
-        ElMessage.warning(isZh.value ? '下载进度轮询超时,请到下载列表查看结果' : 'Progress polling timed out; check the downloads list')
+        ElMessage.warning(
+          isZh.value
+            ? '等待下载结果超时,请到任务中心查看该任务状态'
+            : 'Timed out waiting for the download; check the Task Center',
+        )
         return
       }
       try {
+        // 1) 字节进度（真实进度条数据）
         const infoRes = await ClientAPI.get_downloads_info({ uid: uid.value })
         const downloads = infoRes.data?.data || []
         const target = downloads.find((d: any) => d.filePath === file.path)
         if (target) {
           const pct = parseInt(target.downloadPart, 10) || 0
           downloadProgress.value = Math.min(pct, 100)
-          if (pct >= 100) {
-            stopDownloadPoll()
-            downloadStatus.value = 'success'
-            ElMessage.success(isZh.value ? `文件 ${file.name} 已下载至团队服务器` : `Downloaded ${file.name}`)
-          }
+        }
+
+        // 2) 终态判定：任务状态
+        if (taskId) {
+          try {
+            const taskRes = await TaskAPI.get(taskId)
+            const status = taskRes.data?.data?.status
+            if (status === 'completed') {
+              stopDownloadPoll()
+              downloadProgress.value = 100
+              downloadStatus.value = 'success'
+              ElMessage.success(isZh.value ? `文件 ${file.name} 已下载至团队服务器` : `Downloaded ${file.name}`)
+              return
+            }
+            if (status === 'failed' || status === 'timeout' || status === 'cancelled') {
+              stopDownloadPoll()
+              downloadStatus.value = 'error'
+              const reason = taskRes.data?.data?.error || (isZh.value ? '下载未完成' : 'Download did not finish')
+              ElMessage.error(reason)
+              return
+            }
+          } catch { /* 单次查询失败不判定，下一轮重试 */ }
+        } else if ((parseInt(target?.downloadPart, 10) || 0) >= 100) {
+          // 无任务 ID（后端未建任务）时的兜底：仍按百分比判定
+          stopDownloadPoll()
+          downloadStatus.value = 'success'
+          ElMessage.success(isZh.value ? `文件 ${file.name} 已下载至团队服务器` : `Downloaded ${file.name}`)
         }
       } catch {}
     }, 1500)
   } catch (e: any) {
     downloadStatus.value = 'error'
-    ElMessage.error(isZh.value ? '下发下载任务失败' : 'Download failed')
+    ElMessage.error(e?.response?.data?.error || (isZh.value ? '下发下载任务失败' : 'Download failed'))
   }
 }
 

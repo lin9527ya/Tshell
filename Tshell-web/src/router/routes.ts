@@ -55,7 +55,7 @@ export const BUSINESS_ROUTES: RouteRecordRaw[] = [
     path: 'tasks',
     name: 'BatchTasks',
     component: () => import('@/layout/BatchTasksView.vue'),
-    meta: { title: '批量任务', titleEn: 'Batch Tasks', permiss: Perm.ClientControl, menu: false } satisfies AppRouteMeta,
+    meta: { title: '任务中心', titleEn: 'Task Center', permiss: Perm.ClientControl, menu: false } satisfies AppRouteMeta,
   },
 
   // ---- 监听 ----

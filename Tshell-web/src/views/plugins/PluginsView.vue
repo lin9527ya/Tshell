@@ -302,7 +302,8 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import { InfoFilled, UploadFilled, Delete, CopyDocument, Download, Refresh } from '@element-plus/icons-vue';
 import pluginApi from '@/api/plugin';
 import type { ClientInfo, PluginInfo } from '@/api/plugin';
-import ClientAPI from '@/api/clients';
+import ClientAPI from '@/api/clients'
+import TaskAPI from '@/api/tasks';
 import type { ClientData } from '@/stores/clients';
 import { smartDecodeContent } from '@/utils/encoding';
 import PageHeader from '@/components/Common/PageHeader.vue';
@@ -387,9 +388,6 @@ onUnmounted(() => {
     clearInterval(pollingInterval);
     pollingInterval = null;
   }
-  lastShellContentLength = 0;
-  contentStableCount = 0;
-  hasSeenCompletionMarker = false;
 });
 
 // 拖拽调整大小功能
@@ -645,9 +643,6 @@ const stopPolling = () => {
   if (pollingInterval) {
     clearInterval(pollingInterval);
     pollingInterval = null;
-    lastShellContentLength = 0;
-    contentStableCount = 0;
-    hasSeenCompletionMarker = false;
     
     pluginOutput.value += isZh.value
       ? '\n\n[⏹️] 用户手动停止轮询\n提示：您可以稍后手动查看Shell历史记录来确认执行结果'
@@ -879,11 +874,15 @@ Downloading plugin file...`;
         : '\nCommand sent to client\n\nWaiting for results...';
       ElMessage.success(isZh.value ? '插件命令已发送，正在等待执行结果' : 'Command sent, waiting for results');
       
-      // 重置轮询状态
-      lastShellContentLength = 0;
-      
+      // 任务 ID：由 /bin/execute 建任务时回传，用它轮询真实终态
+      // （后端未建任务时 task_id 为 0，此时按输出稳定性兜底）
+      const execTaskId = Number(result.task_id) || 0;
+      if (!execTaskId) {
+        console.warn('未取得任务 ID，回退到输出稳定性判定（任务中心将看不到本次执行）');
+      }
+
       // 开始轮询获取执行结果
-      startPollingForResults(clientUid, pluginName);
+      startPollingForResults(clientUid, pluginName, execTaskId);
     } else {
       const errorMsg = result.data || result.message || (isZh.value ? '未知错误' : 'Unknown error');
       pluginOutput.value = isZh.value
@@ -1102,290 +1101,213 @@ const filterShellContentForMimikatz = (fullContent: string, currentMode: string,
   return extractedLines.join('\n');
 };
 let pollingInterval: ReturnType<typeof setInterval> | null = null;
-let lastShellContentLength = 0; // 记录上次Shell内容长度
-let executionStartTime = 0; // 记录执行开始时间
-let contentStableCount = 0; // 记录内容稳定的次数
-let hasSeenCompletionMarker = false; // 记录是否已经看到完成标志
 
-const startPollingForResults = (clientUid: string, pluginName: string) => {
+// 插件执行 = 一条 exec 任务（后端 /bin/execute 建任务并回传 task_id）。
+// 完成判定改由**任务终态**给出：原实现靠"输出连续稳定 N 次 + 命中完成标志字符串"猜，
+// 分不清"执行完了"与"还在跑但暂时没输出"，只能一路等到超时再强行展示结果。
+// 现在：dispatched = 还在跑（实时刷输出），completed/failed/timeout/cancelled = 已结束。
+const startPollingForResults = (clientUid: string, pluginName: string, taskId: number) => {
   if (pollingInterval) {
     clearInterval(pollingInterval);
+    pollingInterval = null;
   }
-  
-  let attempts = 0;
-  const maxAttempts = 30; // 增加到30秒超时，给mimikatz更多时间
-  executionStartTime = Date.now();
-  
-  // 重置状态变量
-  contentStableCount = 0;
-  hasSeenCompletionMarker = false;
-  
-  // 检查是否是mimikatz或类似工具，使用更快的轮询间隔
-  const isMimikatzTool = pluginName.toLowerCase().includes('mimikatz') || 
+
+  const startedAt = Date.now();
+  const maxWaitMs = 10 * 60 * 1000; // 前端等待上限（mimikatz 这类慢工具要留足时间）
+  const pollingIntervalMs = 1000;
+  const isMimikatzTool = pluginName.toLowerCase().includes('mimikatz') ||
                         pluginName.toLowerCase().includes('sekur') ||
                         pluginName.toLowerCase().includes('creds');
-  // 【优化】轮询统一 1000ms（原 mimikatz 500ms），配合 maxAttempts 超时保护，降低 API 频率
-  const pollingIntervalMs = 1000;
-  
-  let pollingInFlight = false; // 防止并发轮询竞态
+
+  let pollingInFlight = false;
+  let taskStatus = '';
+  let taskError = '';
+  let lastContent = '';
+  let stableReads = 0;
+
+  // 读取并过滤当前 shell 回显（展示用；不再参与"是否执行完"的判定）
+  const readShellContent = async (): Promise<string> => {
+    const response = await pluginApi.get_shell_history(clientUid);
+    if (!(response.data && response.data.status === 200)) return lastContent;
+    const fullShellContent = smartDecodeContent(response.data.data || '');
+    const filtered = isMimikatzTool
+      ? filterShellContentForMimikatz(fullShellContent, executionMode.value, pluginName)
+      : filterShellContentByMode(fullShellContent, executionMode.value, pluginName);
+    lastContent = filtered;
+    return filtered;
+  };
+
+  const clientLabel = () => {
+    const c = onlineClients.value.find(client => client.Uid === clientUid);
+    return c ? (c.Computer || c.ExternalIP || clientUid.slice(0, 8)) : clientUid.slice(0, 8);
+  };
+
+  const elapsedSec = () => Math.round((Date.now() - startedAt) / 1000);
+
+  const stopPolling = () => {
+    if (pollingInterval) {
+      clearInterval(pollingInterval);
+      pollingInterval = null;
+    }
+  };
+
+  // 终态展示：ok=成功结束（无论有没有输出），note 为补充说明（失败原因/超时提示）
+  const showFinal = (content: string, opts: { ok: boolean; title?: string; note?: string }) => {
+    const header = isZh.value
+      ? `[${opts.ok ? '✓' : '✗'}] ${opts.title || (opts.ok ? '插件执行完成' : '插件执行未成功')}
+模式: ${getExecutionModeText()}
+插件: ${pluginName}
+参数: ${pluginForm.value.arguments || '无'}
+客户端: ${clientLabel()}
+执行时间: ${elapsedSec()}秒
+显示模式: ${isMimikatzTool ? '完整输出模式（mimikatz优化）' : '过滤输出模式'}`
+      : `[${opts.ok ? '✓' : '✗'}] ${opts.title || (opts.ok ? 'Plugin finished' : 'Plugin did not finish')}
+Mode: ${getExecutionModeText()}
+Plugin: ${pluginName}
+Arguments: ${pluginForm.value.arguments || 'none'}
+Client: ${clientLabel()}
+Elapsed: ${elapsedSec()}s
+Display mode: ${isMimikatzTool ? 'full output (mimikatz tuned)' : 'filtered output'}`;
+
+    const body = content && content.trim().length > 0
+      ? (isZh.value ? `\n\n=== 最终执行结果 ===\n${content}` : `\n\n=== Final Execution Result ===\n${content}`)
+      : (isZh.value ? '\n\n（该任务没有回显内容）' : '\n\n(no output recorded for this task)');
+
+    pluginOutput.value = header + body + (opts.note ? `\n\n${opts.note}` : '');
+    stopPolling();
+    if (opts.ok) {
+      ElMessage.success(isZh.value ? '插件执行完成，完整结果已显示' : 'Plugin finished, full results shown');
+    } else {
+      ElMessage.error(opts.note || (isZh.value ? '插件执行未成功' : 'Plugin did not finish'));
+    }
+  };
+
+  // 回显与任务状态更新之间有毫秒级时差：终态后短轮询补齐输出
+  const settleRead = async (): Promise<string> => {
+    let best = lastContent;
+    for (let i = 0; i < 3; i++) {
+      await new Promise(r => setTimeout(r, 700));
+      try {
+        const c = await readShellContent();
+        if (c.length > best.length) best = c;
+        if (best.trim().length > 0 && i >= 1) break;
+      } catch { /* 忽略单次失败 */ }
+    }
+    return best;
+  };
+
   pollingInterval = setInterval(async () => {
-    attempts++;
-    if (pollingInFlight) return; // 上一次轮询未完成，跳过
+    if (pollingInFlight) return;
     pollingInFlight = true;
 
     try {
-      const response = await pluginApi.get_shell_history(clientUid);
-      if (response.data && response.data.status === 200) {
-        const rawContent = response.data.data || '';
-        // 编码修复：Windows GBK 输出转 UTF-8（"输出总是有问题"的根因）
-        const fullShellContent = smartDecodeContent(rawContent);
-        
-        // 对于mimikatz工具，减少过滤，显示更多内容
-        let shellContent;
-        if (isMimikatzTool) {
-          // mimikatz工具使用宽松的过滤策略
-          shellContent = filterShellContentForMimikatz(fullShellContent, executionMode.value, pluginName);
-        } else {
-          // 其他工具使用标准过滤
-          shellContent = filterShellContentByMode(fullShellContent, executionMode.value, pluginName);
-        }
-        
-        // 改进的完成检测逻辑 - 遵循项目规范
-        const completionMarkers = [
-          '[+] Assembly execution completed successfully',
-          'Assembly loaded, methodInfo:',
-          'Stdout length:',
-          'Assembly execution completed',
-          'Assembly executed successfully',
-          '[Windows内存执行]',
-          '=== FINAL OUTPUT DUMP ===',
-          '=== CAPTURED OUTPUT ===',
-          '[+] Execution completed successfully',
-          'InlineBin execution completed',
-          // Linux 模式完成标志
-          'Linux script executed',
-          'Linux binary executed',
-          'script error:',
-          'binary error:',
-          // BOF 完成标志
-          'BOF executed',
-          'BOF entry point',
-          // exec-file 完成标志
-          'file executed',
-          'file exec error',
-          // mimikatz特有的完成标志
-          'Authentication Id',
-          'NTLM',
-          'SHA1'
-        ];
-        
-        // 检测内容更新
-        if (shellContent.length !== lastShellContentLength) {
-          contentStableCount = 0;
-          lastShellContentLength = shellContent.length;
-          
-          // 检查是否包含完成标志
-          const currentlyHasMarker = completionMarkers.some(marker => 
-            shellContent.toLowerCase().includes(marker.toLowerCase()));
-          if (currentlyHasMarker && !hasSeenCompletionMarker) {
-            hasSeenCompletionMarker = true;
-            console.log('🎯 检测到完成标志，继续收集内容...');
+      // 1) 真实终态：任务状态（服务端按回包收敛，见 pkg/api/tasks.go）
+      if (taskId) {
+        try {
+          const taskRes = await TaskAPI.get(taskId);
+          const t = taskRes.data?.data;
+          if (t && t.status) {
+            taskStatus = t.status;
+            taskError = t.error || '';
           }
-          
-          // 实时更新显示
-          if (shellContent.trim().length > 0) {
-            const statusText = hasSeenCompletionMarker
-              ? (isZh.value ? '收集输出中' : 'collecting output')
-              : (isZh.value ? '正在执行' : 'running');
-            pluginOutput.value = isZh.value
-              ? `[⏳] 插件${statusText}...
+        } catch { /* 单次查询失败不改变判定，下一轮重试 */ }
+      }
+
+      // 2) 实时输出（展示用）
+      let shellContent = lastContent;
+      try {
+        shellContent = await readShellContent();
+      } catch (e) {
+        console.error('获取Shell历史失败:', e);
+      }
+
+      if (taskStatus && taskStatus !== 'dispatched') {
+        const content = await settleRead();
+        if (taskStatus === 'completed') {
+          showFinal(content, { ok: true });
+        } else if (taskStatus === 'failed') {
+          showFinal(content, {
+            ok: false,
+            title: isZh.value ? '插件执行失败' : 'Plugin execution failed',
+            note: (isZh.value ? '失败原因: ' : 'Reason: ') + (taskError || (isZh.value ? '未知（目标未回执）' : 'unknown')),
+          });
+        } else if (taskStatus === 'cancelled') {
+          showFinal(content, {
+            ok: false,
+            title: isZh.value ? '任务已取消' : 'Task cancelled',
+            note: isZh.value ? '已停止等待回显（命令无法从目标撤回）' : 'Stopped waiting for output (command cannot be retracted)',
+          });
+        } else if (taskStatus === 'timeout') {
+          showFinal(content, {
+            ok: false,
+            title: isZh.value ? '任务超时' : 'Task timed out',
+            note: isZh.value ? '服务端判定目标长时间未回执，可能已离线' : 'Target did not respond in time; it may be offline',
+          });
+        } else {
+          showFinal(content, { ok: false, title: isZh.value ? `任务状态: ${taskStatus}` : `Task status: ${taskStatus}` });
+        }
+        return;
+      }
+
+      // 3) 仍在执行：刷新实时视图
+      if (shellContent.trim().length > 0) {
+        pluginOutput.value = isZh.value
+          ? `[⏳] 插件正在执行...
 模式: ${getExecutionModeText()}
 插件: ${pluginName}
 参数: ${pluginForm.value.arguments || '无'}
-尝试次数: ${attempts}/${maxAttempts}
-显示模式: ${isMimikatzTool ? '完整输出模式（mimikatz优化）' : '过滤输出模式'}
+客户端: ${clientLabel()}
+已等待: ${elapsedSec()}秒${taskId ? '' : '（未取得任务状态，按输出稳定性判断）'}
 
 === 实时执行结果 ===
-${shellContent}
-
-${statusText}中...`
-              : `[⏳] Plugin ${statusText}...
+${shellContent}`
+          : `[⏳] Plugin running...
 Mode: ${getExecutionModeText()}
 Plugin: ${pluginName}
 Arguments: ${pluginForm.value.arguments || 'none'}
-Attempt: ${attempts}/${maxAttempts}
-Display mode: ${isMimikatzTool ? 'full output (mimikatz tuned)' : 'filtered output'}
+Client: ${clientLabel()}
+Elapsed: ${elapsedSec()}s${taskId ? '' : ' (no task status; judging by output stability)'}
 
 === Live Execution Result ===
-${shellContent}
-
-${statusText}...`;
-          }
-        } else {
-          // 内容没有更新
-          contentStableCount++;
-          console.log(`📄 内容稳定计数: ${contentStableCount}, 已看到完成标志: ${hasSeenCompletionMarker}`);
-          
-          // 对于mimikatz工具，缩短稳定等待时间
-          const requiredStableCount = isMimikatzTool ? 2 : 3;
-          
-          // 如果已经看到完成标志且内容稳定，则认为执行完成
-          if (hasSeenCompletionMarker && contentStableCount >= requiredStableCount && shellContent.trim().length > 10) {
-            console.log('🎉 内容已稳定，显示最终结果');
-            
-            const executionTime = Math.round((Date.now() - executionStartTime) / 1000);
-            const selectedClient = onlineClients.value.find(client => client.Uid === clientUid);
-            const clientId = selectedClient ? (selectedClient.ID || selectedClient.id || 'N/A') : 'N/A';
-            
-            // 显示最终结果
-            pluginOutput.value = isZh.value
-              ? `[✓] 插件执行完成
-模式: ${getExecutionModeText()}
-插件: ${pluginName}
-参数: ${pluginForm.value.arguments || '无'}
-客户端: ${clientId}
-执行时间: ${executionTime}秒
-显示模式: ${isMimikatzTool ? '完整输出模式（mimikatz优化）' : '过滤输出模式'}
-
-=== 最终执行结果 ===
-${shellContent}`
-              : `[✓] Plugin Execution Finished
-Mode: ${getExecutionModeText()}
-Plugin: ${pluginName}
-Arguments: ${pluginForm.value.arguments || 'none'}
-Client: ${clientId}
-Elapsed: ${executionTime}s
-Display mode: ${isMimikatzTool ? 'full output (mimikatz tuned)' : 'filtered output'}
-
-=== Final Execution Result ===
 ${shellContent}`;
-            
-            clearInterval(pollingInterval!);
-            pollingInterval = null;
-            lastShellContentLength = 0;
-            contentStableCount = 0;
-            hasSeenCompletionMarker = false;
-            ElMessage.success(isZh.value ? '插件执行完成，完整结果已显示' : 'Plugin finished, full results shown');
-            return;
-          }
-        }
-        
-        // 超时处理
-        if (attempts >= maxAttempts) {
-          const finalShellContent = shellContent || '';
-          
-          // 如果有内容且看到了完成标志，就直接显示结果
-          if (hasSeenCompletionMarker && finalShellContent.trim().length > 10) {
-            const executionTime = Math.round((Date.now() - executionStartTime) / 1000);
-            const selectedClient = onlineClients.value.find(client => client.Uid === clientUid);
-            const clientId = selectedClient ? (selectedClient.ID || selectedClient.id || 'N/A') : 'N/A';
-            
-            pluginOutput.value = isZh.value
-              ? `[✓] 插件执行完成（超时显示）
+        if (shellContent === lastContent) stableReads++; else stableReads = 0;
+      } else {
+        pluginOutput.value = isZh.value
+          ? `[⏳] 已下发，等待目标回显...
 模式: ${getExecutionModeText()}
 插件: ${pluginName}
-参数: ${pluginForm.value.arguments || '无'}
-客户端: ${clientId}
-执行时间: ${executionTime}秒
-显示模式: ${isMimikatzTool ? '完整输出模式（mimikatz优化）' : '过滤输出模式'}
+客户端: ${clientLabel()}
+已等待: ${elapsedSec()}秒
 
-=== 最终执行结果 ===
-${finalShellContent}
-
-提示：由于达到${maxAttempts}秒超时限制，系统强制显示结果。`
-              : `[✓] Plugin Execution Finished (shown on timeout)
+提示：目标为轮询型客户端时，需要等它下一次回连才会取到命令。`
+          : `[⏳] Dispatched, waiting for target output...
 Mode: ${getExecutionModeText()}
 Plugin: ${pluginName}
-Arguments: ${pluginForm.value.arguments || 'none'}
-Client: ${clientId}
-Elapsed: ${executionTime}s
-Display mode: ${isMimikatzTool ? 'full output (mimikatz tuned)' : 'filtered output'}
+Client: ${clientLabel()}
+Elapsed: ${elapsedSec()}s
 
-=== Final Execution Result ===
-${finalShellContent}
-
-Note: the ${maxAttempts}s timeout was reached, so the result is shown as-is.`;
-            ElMessage.success(isZh.value ? '插件执行结果已显示（超时显示）' : 'Results shown (timeout)');
-          } else {
-            // 显示调试信息帮助排查问题
-            const recentLines = fullShellContent.split('\n').slice(-30).join('\n');
-            pluginOutput.value += isZh.value
-              ? `
-
-[⚠️] 轮询超时 (${maxAttempts}秒)
-
-原始Shell输出（最近30行）：
-${recentLines}
-
-过滤后内容长度：${finalShellContent.length}
-
-可能原因：
-1. 插件执行时间较长
-2. 输出内容被过度过滤
-3. 客户端网络延迟
-
-建议：请检查客户端Shell历史记录或联系技术支持`
-              : `
-
-[⚠️] Polling Timeout (${maxAttempts}s)
-
-Raw shell output (last 30 lines):
-${recentLines}
-
-Filtered content length: ${finalShellContent.length}
-
-Possible causes:
-1. The plugin takes a long time to run
-2. The output was over-filtered
-3. Client network latency
-
-Suggestion: check the client shell history or contact support`;
-            ElMessage.warning(isZh.value ? '轮询超时，请检查Shell历史记录' : 'Polling timed out, check shell history');
-          }
-          
-          clearInterval(pollingInterval!);
-          pollingInterval = null;
-          lastShellContentLength = 0;
-          contentStableCount = 0;
-          hasSeenCompletionMarker = false;
-        } else {
-          // 更新进度显示
-          if (shellContent.trim().length === 0 || (attempts <= 3 && !hasSeenCompletionMarker)) {
-            const dots = '.'.repeat((attempts % 4) + 1);
-            const progressLines = pluginOutput.value.split('\n');
-            
-            // 找到最后一行进度信息并更新
-            let lastLineIndex = progressLines.length - 1;
-            while (lastLineIndex >= 0 && progressLines[lastLineIndex].includes(isZh.value ? '正在等待执行结果' : 'Waiting for results')) {
-              progressLines.splice(lastLineIndex, 1);
-              lastLineIndex--;
-            }
-
-            progressLines.push(isZh.value
-              ? `正在等待执行结果${dots} (${attempts}/${maxAttempts}) - 已等待${attempts}秒`
-              : `Waiting for results${dots} (${attempts}/${maxAttempts}) - ${attempts}s elapsed`);
-            pluginOutput.value = progressLines.join('\n');
-          }
-        }
+Note: polling transports fetch commands on their next check-in.`;
       }
-    } catch (error) {
-      console.error('获取Shell历史失败:', error);
-      if (attempts >= maxAttempts) {
-        pluginOutput.value += isZh.value
-          ? `
 
-[✗] 获取执行结果失败
-错误信息: ${error instanceof Error ? error.message : String(error)}
-请检查网络连接和客户端状态`
-          : `
+      // 4) 拿不到任务状态时的兜底（DB 不可用/任务未建成）：输出稳定即视为结束
+      if (!taskId && stableReads >= 3 && shellContent.trim().length > 10) {
+        showFinal(shellContent, {
+          ok: true,
+          title: isZh.value ? '插件执行完成（按输出稳定性判断）' : 'Plugin finished (judged by output stability)',
+          note: isZh.value ? '未能取得任务状态（数据库不可用？），此处按输出连续稳定判定' : 'No task status available (DB down?); judged by stable output',
+        });
+        return;
+      }
 
-[✗] Failed to Fetch Execution Result
-Error: ${error instanceof Error ? error.message : String(error)}
-Check the network connection and client state`;
-        clearInterval(pollingInterval!);
-        pollingInterval = null;
-        lastShellContentLength = 0;
-        ElMessage.error(isZh.value ? '获取执行结果失败' : 'Failed to get execution results');
+      // 5) 前端等待上限
+      if (Date.now() - startedAt > maxWaitMs) {
+        showFinal(lastContent, {
+          ok: false,
+          title: isZh.value ? '等待回显超时' : 'Timed out waiting for output',
+          note: isZh.value
+            ? `已等待 ${Math.round(maxWaitMs / 60000)} 分钟仍未收到回执。任务仍在服务端任务中心（可查状态或取消），目标可能已离线或命令仍在队列中。`
+            : `Waited ${Math.round(maxWaitMs / 60000)} minutes with no response. The task is still listed in the Task Center (check status or cancel); the target may be offline or the command still queued.`,
+        });
       }
     } finally {
       pollingInFlight = false;

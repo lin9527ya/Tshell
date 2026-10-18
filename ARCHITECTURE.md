@@ -50,6 +50,12 @@ Tshell/
 - **RBAC**:admin/operator/auditor 三角色,服务端路由层强制(RequireRole),前端路由守卫 + 菜单按 permiss 过滤;高危操作(ExecuteBin/批量删除/forward/载荷生成)限 admin+operator;密钥管理/安全中心/配置/用户管理为 admin 独有;审计日志读接口为 admin+auditor。
 - **审计**:操作审计中间件 + 文件审计中间件;审计日志**文件 + SQLite 双写**(查询/统计/保留策略走 `audit_log_db` 表,文件保留人读);交付访问日志 30 天轮转。
 - **任务**:一等对象(`tasks` 表),状态机 `dispatched→completed|failed|cancelled|timeout`,记录 operator/命令/结果,可取消,超时与保留由后台清理任务收敛。
+  - 类型(`kind`):`console`(控制台命令)/`batch`(批量下发)/`exec`(载荷执行)/`download`(文件下载)。
+  - 终态来源:控制台/执行类由回包触发(`OnTaskOutput`,同 uid 最早一条 dispatched);下载类由数据层判定
+    (`DownloadEndFunc`:写满客户端声明大小=completed,断线或 120s 无分块=failed)。
+  - 接口:`GET /api/tasks`(过滤+分页)、`GET /api/tasks/:id`、`POST /api/tasks/:id/cancel`。
+  - 前端任务中心(`/tasks`)按真实状态展示与取消;插件页与文件下载对话框按 `task_id` 轮询终态,
+    不再靠"输出稳定 N 次"或"百分比到 100"猜完成。
 - **协作**(多操作员):在线状态(任一已认证请求与事件流连接续期,5 分钟无活动视为离线)、会话锁(占用某台主机后其他操作员对其下发命令返回 409,30 分钟自动过期)、操作广播(`operator_action` 事件经事件总线推送)、团队频道(事件流 WebSocket 上行 `chat`,服务端广播给所有操作员)。锁是**软**的:无人持锁时行为与单操作员完全一致。
 
 ## 前端要点
