@@ -682,10 +682,13 @@ func main() {
 	r.GET("/metrics", api.MetricsHandler)
 
 	protected.GET("/version", func(c *gin.Context) {
+		// schema_version 让运维能一眼看出"这个二进制对应的库结构到哪一步了"
+		schemaVersion, _ := database.SchemaVersion()
 		c.JSON(http.StatusOK, gin.H{
-			"version":    Version,
-			"commit":     GitCommit,
-			"build_time": BuildTime,
+			"version":        Version,
+			"commit":         GitCommit,
+			"build_time":     BuildTime,
+			"schema_version": schemaVersion,
 		})
 	})
 

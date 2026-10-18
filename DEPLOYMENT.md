@@ -72,6 +72,31 @@ GOMEMLIMIT=3GiB go build -ldflags "-s -w" -trimpath -o tshell-server.exe .\main.
 - Nginx 参考配置见 `Tshell-web/nginx.conf`(已含收紧的 CSP)。
 - 建议 Nginx 层启用 HTTPS 并代理 `/api/`(含 WebSocket Upgrade 头)。
 
+### 单实例限制（重要）
+
+**必须单副本部署，不支持水平扩展。** 这不是"还没做"，而是当前架构的硬约束：
+
+| 状态 | 位置 | 多副本会怎样 |
+|---|---|---|
+| 连接池 / 监听器 | 进程内存 | 客户端只连到某一个副本，另一个副本看不到该会话 |
+| 在线操作员、会话锁 | 进程内存 | 两个副本各记各的，锁形同虚设 |
+| 事件流订阅者 | 进程内存 | 前端连到哪个副本就只能收到哪个副本的事件 |
+| 命令队列 / 任务队列 | 进程内存 | 命令下发到 A、回包到达 B（B 不认识这个会话） |
+| 数据库 | 单文件 SQLite | 多副本抢同一个文件，SQLite 单写者，写竞争会直接报错 |
+
+因此：
+
+- **不要**给 Deployment 设置 `replicas > 1`，**不要**配 HPA（工作区里那份
+  `k8s-deployment.yaml` 是旧草稿：`replicas: 2` + 两个 HPA，与代码能力不符，
+  不要直接套用）；
+- 需要更高吞吐时，横向扩展的是**监听器 + 重定向器**（见 docs/REDIRECTOR.md），
+  服务端本身保持单实例；
+- 高可用请做**冷备**：定时备份（docs/BACKUP_RESTORE.md）+ 备机就绪，故障时用
+  `-restore` 恢复后切流量。这是当前架构下唯一诚实的 HA 方案。
+
+真正的水平扩展需要先做存储抽象（Postgres）+ 共享状态（会话/队列/锁外置）
++ leader 选举，属于独立的架构工程，未在本阶段实现。
+
 ## 五、日常运维
 
 | 操作 | 方式 |
@@ -80,7 +105,9 @@ GOMEMLIMIT=3GiB go build -ldflags "-s -w" -trimpath -o tshell-server.exe .\main.
 | 会话密钥轮换 | 密钥管理页可轮换监听器密钥;会话密钥 24h 自动过期 |
 | 审计 | 审计日志页(操作/登录/安全拦截);交付访问日志自动保留 30 天 |
 | 离线清理 | 断线客户端由离线检测器标记 + 队列自动清理 |
-| 回归验证 | `bash scripts/e2e.sh`(一键:启动→监听器→客户端→唯一化+命令) |
+| 回归验证 | `bash scripts/e2e.sh`(一键:启动→监听器→客户端→唯一化+命令;注意其判定依赖 debug 构建的客户端日志,release 模板下必然失败——见 KNOWN_LIMITATIONS) |
+| 数据库备份/恢复 | 见 docs/BACKUP_RESTORE.md(`./tshell -backup` / `-restore`) |
+| 指标 | `/metrics`(Prometheus,默认仅本机;见 docs/OBSERVABILITY.md) |
 
 ## 六、升级注意事项
 

@@ -57,6 +57,7 @@ Tshell/
   - 接口:`GET /api/tasks`(过滤+分页)、`GET /api/tasks/:id`、`POST /api/tasks/:id/cancel`。
   - 前端任务中心(`/tasks`)按真实状态展示与取消;插件页与文件下载对话框按 `task_id` 轮询终态,
     不再靠"输出稳定 N 次"或"百分比到 100"猜完成。
+- **Schema 迁移**:`schema_migrations` 版本表 + 有序迁移清单(幂等、失败不记录、可重试),`/api/version` 暴露 `schema_version`;必须单副本部署(见 DEPLOYMENT.md 的单实例约束)。
 - **端口扫描**(阶段三):控制台命令 `scan <目标> <端口> [超时ms]`,TCP connect 跨平台扫描,支持 CIDR/主机名/端口范围/`top`,总量与并发有上限,结果按主机聚合回显。
 - **macOS 能力**(阶段三):launchd 持久化(LaunchAgent/LaunchDaemon,plist 由平台无关的生成器产出并单测校验)、`chflags` 文件隐藏、`screencapture` 截图与拉取式屏幕监控;PTY 交互终端待做。
 - **内存 OPSEC**(阶段三):sleep mask 就地遮蔽**真实**密钥材料(会话密钥/上一把/主密钥/盐 + 清空 AEAD 缓存),按片遮蔽(默认 2s)+ 在途判定,覆盖全部传输且不打断活跃隧道;syscall trampoline 走 W^X(RW→RX)与绝对跳转;详见 docs/MEMORY_OPSEC.md。

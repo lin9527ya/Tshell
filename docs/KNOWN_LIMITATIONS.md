@@ -118,6 +118,23 @@
 - 遗留：SYN 半开扫描（需要 raw socket/root）未做；UDP 扫描未做。
 - 状态：✅（TCP connect）/ ⏳（SYN/UDP）
 
+## 12g. Schema 迁移与水平扩展（阶段二 §10 / 阶段三 §16）
+- 现状（本次实现）：
+  - **版本化迁移**：`schema_migrations` 表 + 有序迁移清单（`pkg/database/migrations.go`），
+    启动时按序补齐缺口；每个迁移成功后立即记录，失败则中止启动且不记录（可重试，
+    要求迁移幂等）。`GET /api/version` 增加 `schema_version` 字段。
+    原实现只有"检查列存在再 ALTER"的两个函数，没有版本记录，无法判断一个库到哪一步。
+  - **单实例约束写进文档**：`DEPLOYMENT.md` 明确说明为什么必须单副本
+    （连接池/在线状态/会话锁/事件流/命令队列均在进程内存，数据库是单文件 SQLite），
+    并给出当前架构下唯一诚实的 HA 方案（定时备份 + 冷备）。
+- 遗留：
+  - 存储抽象（repository 层）与 Postgres 支持未做：当前所有 SQL 直接写在 `pkg/api`/`pkg/database`，
+    且含 SQLite 专有语法（PRAGMA、`UPDATE ...` 的 SQLite 方言等）；
+  - 共享状态外置（会话/队列/锁）与 leader 选举未做 —— 这两项完成后才能真正多副本。
+- 工作区里的 `k8s-deployment.yaml` 是旧草稿（replicas:2 + 两个 HPA），与代码能力不符，
+  且未被 Git 跟踪；不要直接套用。
+- 状态：✅（版本化迁移 + 单实例文档）/ ⏳（存储抽象、Postgres、共享状态）
+
 ## 13. 级联 C2（B9，二级中继）
 - 状态：⏳（重架构，需设计中继协议与链路加密）
 

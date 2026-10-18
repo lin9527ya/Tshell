@@ -443,16 +443,10 @@ func MigrateDatabase() error {
 		return fmt.Errorf("数据库引擎未初始化")
 	}
 
-	// 迁移 Clients 表
-	err := migrateClientsTable()
-	if err != nil {
-		return fmt.Errorf("Clients表迁移失败: %v", err)
-	}
-
-	// 迁移 Listener 表
-	err = migrateListenerTable()
-	if err != nil {
-		return fmt.Errorf("Listener表迁移失败: %v", err)
+	// 版本化迁移：schema_migrations 记录已应用版本，按序补齐缺口。
+	// 新增 schema 变更请在 migrations() 里追加（只追加、不改已发布的版本号）。
+	if err := runMigrations(); err != nil {
+		return err
 	}
 
 	// 索引由 xorm Sync2 依据结构 tag 统一管理（Clients.Online / Notes.Uid 已加 index tag）
