@@ -281,6 +281,19 @@ func GenServer(c *gin.Context) {
 	}
 	// C2 Profile 驱动：URI/WS 路径/心跳基准/UA（profiles/*.yaml，空 profile 用客户端默认）
 	prof := c2profile.Get(serverBody.ProfileName)
+	// 未知名画像：Get 返回 nil，下面的 patch 会写入空 URI 生成一个连不上的载荷，直接拒绝
+	if prof == nil && serverBody.ProfileName != "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "C2 Profile 不存在: " + serverBody.ProfileName})
+		return
+	}
+	// 一致性校验：监听器的 HTTP 路由/WS 路径/DNS 前缀/padding 都只按 default 画像注册
+	// （listener.go 的 registerHTTPRoutes 用 GetDefault()，WS 路径硬编码 /ws），
+	// 选一个与 default 不同的画像生成载荷，客户端会被 patch 成另一套特征 —— 必然连不上。
+	// per-listener 画像尚未实现，这里明确拒绝而不是生成一个静默失败的载荷。
+	if msg := profileListenerMismatch(prof, c2profile.GetDefault()); msg != "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": msg})
+		return
+	}
 	// 会话密钥派生盐上下文(配置驱动,两端一致)
 	sessionKeyInfo := "8d2c91f4a6"
 	if g := config.GetGlobalConfig(); g != nil && g.Security.SessionKeyInfo != "" {
@@ -632,4 +645,37 @@ func boolToOnOff(b bool) string {
 		return "1"
 	}
 	return "0"
+}
+
+// profileListenerMismatch 检查画像与监听器实际注册的流量特征是否一致（一致返回空串）。
+//
+// 监听器侧目前只认 default 画像：HTTP get/post 路由与 DNS 前缀在监听器启动时取自
+// GetDefault()，WebSocket 路径硬编码 "/ws"，padding 也读 GetDefault()。
+// 只有纯客户端侧字段（UA/JA3/心跳/metadata_channel）允许与 default 不同。
+func profileListenerMismatch(p, def *c2profile.Profile) string {
+	if p == nil || def == nil {
+		return ""
+	}
+	var diffs []string
+	if p.HTTP.Get.URI != def.HTTP.Get.URI {
+		diffs = append(diffs, fmt.Sprintf("http.get.uri %q ≠ default %q", p.HTTP.Get.URI, def.HTTP.Get.URI))
+	}
+	if p.HTTP.Post.URI != def.HTTP.Post.URI {
+		diffs = append(diffs, fmt.Sprintf("http.post.uri %q ≠ default %q", p.HTTP.Post.URI, def.HTTP.Post.URI))
+	}
+	if p.WS.Path != "/ws" {
+		diffs = append(diffs, fmt.Sprintf("ws.path %q ≠ 监听器固定路径 %q", p.WS.Path, "/ws"))
+	}
+	if p.DNS.BeaconPrefix != def.DNS.BeaconPrefix {
+		diffs = append(diffs, fmt.Sprintf("dns.beacon_prefix %q ≠ default %q", p.DNS.BeaconPrefix, def.DNS.BeaconPrefix))
+	}
+	if p.HTTP.Get.Padding != def.HTTP.Get.Padding {
+		diffs = append(diffs, fmt.Sprintf("http.get.padding %v ≠ default %v", p.HTTP.Get.Padding, def.HTTP.Get.Padding))
+	}
+	if len(diffs) == 0 {
+		return ""
+	}
+	return "该画像的监听器侧特征与 default 不一致，生成后会连不上：" +
+		strings.Join(diffs, "；") +
+		"。监听器目前只按 default 画像注册（per-listener 画像尚未实现），请修改 default.yaml 并重启监听器，或使用与 default 一致的画像。"
 }
