@@ -92,6 +92,22 @@
 - 详见 docs/MEMORY_OPSEC.md。
 - 状态：✅（sleep mask / trampoline）/ ⏳（Ekko 级 mask、调用栈伪造、全 syscall）
 
+## 12e. macOS 能力补齐（阶段三 · 第 15 项）
+- 现状（本次实现）：
+  - **持久化**：launchd —— `launchagent`（~/Library/LaunchAgents，登录用户身份）与
+    `launchdaemon`（/Library/LaunchDaemons，需 root）。plist 带 RunAtLoad + KeepAlive +
+    Background + 输出丢弃，并以 `os.Args[1:]` 作为启动参数（生成时设了口令的植入体
+    不带口令会直接退出，表现为"持久化成功但重启不上线"）。载入按
+    `launchctl bootstrap gui/<uid>` → `launchctl load -w` 顺序尝试。
+  - **文件隐藏**：`chflags hidden|nohidden`（与 Windows 的隐藏属性语义一致）。
+  - **屏幕截图**：系统 `screencapture -x -t png`；屏幕监控采用**拉取式**
+    （服务端"获取监控帧"接口按需截一帧），不在客户端常驻推送循环。
+- 遗留：
+  - 交互式 PTY 终端（需把 Linux 的 PTY 实现抽成 linux||darwin 共享，尚未做）；
+  - InlineBin（内存执行）、令牌操作、进程注入等 Windows 专属能力在 macOS 上仍明确报不支持；
+  - macOS 端未在真实设备上验证（本仓库只能交叉编译，单测覆盖 plist 生成与转义）。
+- 状态：✅（持久化/隐藏/截图/监控拉取）/ ⏳（PTY、实机验证）
+
 ## 13. 级联 C2（B9，二级中继）
 - 状态：⏳（重架构，需设计中继协议与链路加密）
 
