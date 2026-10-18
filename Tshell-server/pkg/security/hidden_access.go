@@ -2,12 +2,14 @@ package security
 
 import (
 	"BackendTemplate/pkg/command"
+	"BackendTemplate/pkg/metrics"
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/hex"
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -100,6 +102,14 @@ func HiddenAccessMiddleware() gin.HandlerFunc {
 
 		// 检查是否是API请求（API请求需要JWT认证，不受隐藏访问影响）
 		if strings.HasPrefix(path, "/api/") {
+			c.Next()
+			return
+		}
+
+		// Prometheus 指标端点：抓取方无法完成隐藏入口握手（它只会带 token/UA），
+		// 且该端点自带访问控制（见 api.MetricsHandler）。仅在指标功能启用时绕过，
+		// 关闭时不绕过 —— 否则扫描者能靠 404/伪装页的差异发现这个特殊路径。
+		if metricsPathBypass.Load() && path == "/metrics" {
 			c.Next()
 			return
 		}
@@ -242,10 +252,19 @@ func (ham *HiddenAccessManager) checkAccessKey(c *gin.Context) bool {
 	return false
 }
 
+// metricsPathBypass /metrics 是否绕过隐藏访问入口（由 main 按 config.metrics.enabled 注入）
+var metricsPathBypass atomic.Bool
+
+// SetMetricsPathBypass 设置 /metrics 是否绕过隐藏访问入口
+func SetMetricsPathBypass(v bool) { metricsPathBypass.Store(v) }
+
 // handleUnauthorizedAccess 处理未授权访问
 func (ham *HiddenAccessManager) handleUnauthorizedAccess(c *gin.Context, ip, path, query string) {
 	// 记录可疑访问
 	logx.Infof("🚫 未授权访问被阻止: IP=%s, Path=%s, Query=%s\n", ip, path, query)
+
+	// 指标：安全拦截次数（按原因）——与事件流/通知互补，供告警规则使用
+	metrics.SecurityBlock("hidden_access")
 
 	// D17: 发布安全拦截事件（供事件流/通知告警）
 	if command.GlobalEventBus != nil {

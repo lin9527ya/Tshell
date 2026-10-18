@@ -42,6 +42,12 @@ logging:
     max_retain_days: 30        # 审计日志保留天数
     enable_console: true       # 是否启用控制台输出
 
+metrics:
+    # Prometheus 指标端点 /metrics（在线 beacon 数、连接、命令队列积压、任务吞吐、API 延迟）
+    enabled: true              # 关闭后 /metrics 返回 404
+    token: ""                  # 非空则必须带 Authorization: Bearer <token> 才能抓取
+    allow_remote: false        # 默认只允许本机抓取；跨机抓取建议配 token 而不是开这个开关
+
 client:
     sleep: 5                   # 客户端默认心跳/睡眠间隔（秒；等同 CS beacon 的 sleep，决定回连与命令节流节奏）
     jitter: 20                 # 心跳抖动百分比（0-50；在间隔上随机 ±，打破固定节奏）

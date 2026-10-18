@@ -4,6 +4,7 @@ import (
 	"BackendTemplate/pkg/command"
 	"BackendTemplate/pkg/database"
 	"BackendTemplate/pkg/errors"
+	"BackendTemplate/pkg/metrics"
 	"BackendTemplate/pkg/sendcommand"
 	"BackendTemplate/pkg/utils/logx"
 	"fmt"
@@ -70,6 +71,7 @@ func createTaskRows(uids []string, operator, kind, command string) (string, []*d
 			logx.Warnf("[TASK] 任务落库失败 uid=%s: %v\n", uid, err)
 			continue
 		}
+		metrics.TaskCreated(kind)
 		rows = append(rows, task)
 	}
 	return batchID, rows
@@ -83,12 +85,22 @@ func finishTask(id int64, status, result, errMsg string) {
 	if len(result) > taskResultMaxBytes {
 		result = result[:taskResultMaxBytes] + "\n...(已截断)"
 	}
-	if _, err := database.Engine.Table(new(database.Task)).
+	// 读一次取 kind/创建时间供指标用；终态判定仍由下面 UPDATE 的 WHERE 原子保证
+	var snapshot database.Task
+	hasSnapshot, _ := database.Engine.ID(id).Get(&snapshot)
+
+	res, err := database.Engine.Table(new(database.Task)).
 		Where("id = ? AND status = ?", id, taskStatusDispatched).
 		Update(map[string]interface{}{
 			"status": status, "result": result, "error": errMsg, "finished_at": time.Now(),
-		}); err != nil {
+		})
+	if err != nil {
 		logx.Warnf("[TASK] 更新任务终态失败 id=%d: %v\n", id, err)
+		return
+	}
+	// res=0 表示任务已是终态（重复回调），不重复计数
+	if res > 0 && hasSnapshot {
+		metrics.TaskFinished(snapshot.Kind, status, time.Since(snapshot.CreatedAt))
 	}
 }
 
@@ -353,10 +365,16 @@ func StartTaskCleanup() {
 			if database.Engine == nil {
 				continue
 			}
-			if _, err := database.Engine.Table(new(database.Task)).
+			// 超时收敛：批量 UPDATE 拿不到逐条的 kind，指标按"条数"计入 unknown
+			// （这里只用于观察"有多少任务在滞留"，不参与按类型的吞吐分析）
+			if n, err := database.Engine.Table(new(database.Task)).
 				Where("status = ? AND created_unix < ?", taskStatusDispatched, time.Now().Add(-taskStaleTimeout).Unix()).
 				Update(map[string]interface{}{"status": taskStatusTimeout, "finished_at": time.Now()}); err != nil {
 				logx.Warnf("[TASK] 超时任务清理失败: %v\n", err)
+			} else if n > 0 {
+				for i := int64(0); i < n; i++ {
+					metrics.TaskFinished("unknown", taskStatusTimeout, 0)
+				}
 			}
 			if _, err := database.Engine.
 				Where("status != ? AND created_unix < ?", taskStatusDispatched, time.Now().Add(-taskRetention).Unix()).

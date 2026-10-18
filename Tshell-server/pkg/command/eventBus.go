@@ -32,6 +32,13 @@ type C2Event struct {
 	Detail    map[string]interface{} `json:"detail,omitempty"`
 }
 
+// SubscriberCount 当前订阅者数（指标用）
+func (b *EventBus) SubscriberCount() int {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return len(b.subs)
+}
+
 // EventBus 事件总线（订阅者 chan 广播）
 type EventBus struct {
 	mu      sync.RWMutex

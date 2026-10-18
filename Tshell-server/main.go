@@ -16,6 +16,7 @@ import (
 	"BackendTemplate/pkg/encrypt"
 	"BackendTemplate/pkg/errors"
 	"BackendTemplate/pkg/handlers"
+	"BackendTemplate/pkg/metrics"
 	"BackendTemplate/pkg/notification"
 	"BackendTemplate/pkg/proxy"
 	"BackendTemplate/pkg/security"
@@ -275,6 +276,63 @@ func main() {
 	}
 	defer connection.GlobalConnectionManager.Close()
 
+	// ===== 可观测性：Prometheus 指标 =====
+	// 访问策略来自 config.metrics（默认只允许本机抓取；跨机需 token）
+	api.SetMetricsOptions(api.MetricsOptions{
+		Enabled:     appConfig.Metrics.Enabled,
+		Token:       appConfig.Metrics.Token,
+		AllowRemote: appConfig.Metrics.AllowRemote,
+	})
+	// 启用指标时放行 /metrics 通过隐藏访问入口（抓取方无法完成隐藏入口握手）
+	security.SetMetricsPathBypass(appConfig.Metrics.Enabled)
+	metrics.Register()
+	metrics.BindSnapshots(metrics.SnapshotFuncs{
+		Beacons: func() (int64, int64) {
+			if database.Engine == nil {
+				return 0, 0
+			}
+			online, _ := database.Engine.Where("online = ?", "1").Count(&database.Clients{})
+			total, _ := database.Engine.Count(&database.Clients{})
+			return online, total
+		},
+		Connections: func() map[string]int64 {
+			out := make(map[string]int64)
+			if connection.GlobalConnectionManager == nil {
+				return out
+			}
+			for _, ci := range connection.GlobalConnectionManager.GetAllConnections() {
+				out[ci.ProtocolSafe()]++
+			}
+			return out
+		},
+		CommandQueues: func() (int64, int64) {
+			depth, maxPerClient, _ := command.CommandQueues.Stats()
+			return depth, maxPerClient
+		},
+		EventSubscribers: func() int64 {
+			if command.GlobalEventBus == nil {
+				return 0
+			}
+			return int64(command.GlobalEventBus.SubscriberCount())
+		},
+		DBConnections: func() (int64, int64, int64, int64) {
+			if database.Engine == nil || database.Engine.DB() == nil {
+				return 0, 0, 0, 0
+			}
+			st := database.Engine.DB().Stats()
+			return int64(st.OpenConnections), int64(st.InUse), int64(st.Idle), st.WaitCount
+		},
+	})
+	if appConfig.Metrics.Enabled {
+		mode := "仅本机抓取"
+		if appConfig.Metrics.Token != "" {
+			mode = "需 Bearer token"
+		} else if appConfig.Metrics.AllowRemote {
+			mode = "⚠️ 允许跨机且未配 token（任何人可读运行情报，建议配置 metrics.token）"
+		}
+		logx.Infof("📊 [指标] /metrics 已启用（%s）\n", mode)
+	}
+
 	// 初始化内存优化器
 	err = connection.InitMemoryOptimizer(nil) // 使用默认配置
 	if err != nil {
@@ -385,6 +443,9 @@ func main() {
 	// 添加错误处理中间件
 	r.Use(errors.Recovery())
 	r.Use(errors.RequestIDMiddleware())
+	// 可观测性：请求计数/耗时直方图 + 慢请求日志（放在认证之前，
+	// 这样未认证请求与限流耗时也在观测范围内）
+	r.Use(metrics.Middleware())
 	r.Use(errors.TimestampMiddleware())
 	r.Use(errors.ErrorHandlerMiddleware())
 	// J9: 全局请求体大小限制（10MB，防超大 JSON 内存 DoS）
@@ -541,6 +602,10 @@ func main() {
 	protected.GET("/auth/check", api.AuthCheckHandler)
 
 	// 构建信息（所有登录角色）：排障与产物溯源（版本/commit/构建时间由 ldflags 注入）
+	// Prometheus 指标端点：默认只允许本机抓取（指标含 beacon 在线数等运行情报），
+	// 跨机抓取需配 metrics.token；见 api.MetricsHandler 的访问规则
+	r.GET("/metrics", api.MetricsHandler)
+
 	protected.GET("/version", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"version":    Version,

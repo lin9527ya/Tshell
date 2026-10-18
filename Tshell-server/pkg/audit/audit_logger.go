@@ -1,6 +1,7 @@
 package audit
 
 import (
+	"BackendTemplate/pkg/metrics"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -313,7 +314,9 @@ func (al *AuditLogger) writeLog(auditLog AuditLog) {
 		case auditFlushCh <- batch:
 		default:
 			// 队列已满：丢弃本批（避免内存堆积；审计丢失可接受，实时性优先）
+			// 但"丢了"必须可观测：这是审计缺口的唯一信号
 			logx.Infof("[AUDIT] 落盘队列已满，丢弃 %d 条审计日志\n", len(batch))
+			metrics.AuditDropped(len(batch))
 		}
 		return
 	}

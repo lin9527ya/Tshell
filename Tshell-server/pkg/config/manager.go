@@ -41,6 +41,9 @@ type Config struct {
 	// 安全配置
 	Security SecurityConfig `json:"security" yaml:"security" env:"SECURITY"`
 
+	// 可观测性：Prometheus 指标端点
+	Metrics MetricsConfig `json:"metrics" yaml:"metrics" env:"METRICS"`
+
 	// 连接池配置
 	ConnectionPool ConnectionPoolConfig `json:"connection_pool" yaml:"connection_pool" env:"CONNECTION_POOL"`
 
@@ -133,6 +136,15 @@ type SecurityConfig struct {
 	// SessionKeyInfo 会话密钥派生盐上下文(客户端生成时 patch 进二进制;修改后需重新生成客户端;
 	// 默认中性随机串,不带 c2/key/session 等明显特征)
 	SessionKeyInfo string `json:"session_key_info" yaml:"session_key_info" env:"SESSION_KEY_INFO" default:"8d2c91f4a6"`
+}
+
+// MetricsConfig Prometheus 指标端点配置。
+// 默认只允许本机抓取：指标含 beacon 在线数、任务吞吐等运行情报，
+// 跨机抓取（allow_remote）必须同时配置 token。
+type MetricsConfig struct {
+	Enabled     bool   `json:"enabled" yaml:"enabled" env:"METRICS_ENABLED" default:"true"`
+	Token       string `json:"token" yaml:"token" env:"METRICS_TOKEN" default:""`
+	AllowRemote bool   `json:"allow_remote" yaml:"allow_remote" env:"METRICS_ALLOW_REMOTE" default:"false"`
 }
 
 // ConnectionPoolConfig 连接池配置

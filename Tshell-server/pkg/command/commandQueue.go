@@ -26,6 +26,30 @@ func (c *ClientCommandQueue) QueueLen(clientID string) int {
 	return len(cq.data)
 }
 
+// Stats 汇总当前所有客户端队列的积压情况（指标用）：
+// 返回 (积压总数, 单客户端最大积压, 有积压的客户端数)。
+// 遍历 sync.Map 是 O(客户端数)，仅在指标抓取（默认 15s 一次）时调用。
+func (c *ClientCommandQueue) Stats() (depth, maxPerClient, clients int64) {
+	c.queues.Range(func(_, v interface{}) bool {
+		cq, ok := v.(*clientQueue)
+		if !ok {
+			return true
+		}
+		cq.mu.Lock()
+		n := int64(len(cq.data))
+		cq.mu.Unlock()
+		depth += n
+		if n > maxPerClient {
+			maxPerClient = n
+		}
+		if n > 0 {
+			clients++
+		}
+		return true
+	})
+	return depth, maxPerClient, clients
+}
+
 // MaxQueuePerClient 单个客户端命令队列上限（块），防止大文件上传全量驻留内存
 const MaxQueuePerClient = 1024
 

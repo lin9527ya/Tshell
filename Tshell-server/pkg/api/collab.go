@@ -3,6 +3,7 @@ package api
 import (
 	"BackendTemplate/pkg/collab"
 	"BackendTemplate/pkg/command"
+	"BackendTemplate/pkg/metrics"
 	"net/http"
 	"strings"
 	"time"
@@ -127,6 +128,7 @@ func publishOperatorAction(uid, operator, action, detail string) {
 	if operator == "" {
 		return
 	}
+	metrics.OperatorAction(action)
 	command.PublishEvent(command.EventOperatorAction, uid, map[string]interface{}{
 		"operator": operator,
 		"action":   action,
