@@ -137,7 +137,7 @@ go test -race ./Tshell-server/...     # 见 §4 回归基线（注意用外层�
   - 前端：`Tshell-web/src/layout/Dialogs/CredentialDumpDialog.vue`、`src/api/cred/index.ts`
 - **验收**：每个模块独立开关 + 独立单测；产物落 loot 表并按 uid/类型过滤可查；
   不落盘明文口令（内存解析 → 直接回传）—— 已满足（单测覆盖；实机验证待做）
-- **Firefox（NSS）**：密码学原语已实现并验证（2026-10-19，第二轮更正）
+- **Firefox（NSS）**：✅ **已完成并用真实 Firefox 产物端到端验证**（2026-10-19）
   - **先更正上一轮的一处误判**：上一轮实现了 PKCS#12 PBE 并以为"正是 key4.db 用的那套"。
     对照参考实现（`lclevy/firepwd` 的 `firepwd.py`，支持到 NSS 3.49 / Firefox 144）
     后确认**并非如此**。Firefox 实际用的算法是：
@@ -149,25 +149,35 @@ go test -race ./Tshell-server/...     # 见 §4 回归基线（注意用外层�
     | `key4.db`（更早） | Mozilla 自有 KDF（HMAC-SHA1 组合）+ 3DES |
     `pkcs12.go` 保留（它实现的是 RFC 7292 附录 B，本身正确且有 KAT），
     但**不要**拿它解 Firefox 数据 —— 这条已写进 `nss_crypto.go` 的文件头注释
-  - 新增 `implant/core/services/nss_crypto.go`：上面四条路径对应的原语 ——
+  - `implant/core/services/nss_crypto.go`：上述四条路径的原语 ——
     `pbes2AES256CBCDecrypt`、`nssTripleDESCBCDecrypt`、`nssAES256CBCDecrypt`、
     `nssMozKDF`，以及 **NSS 的 IV 怪癖** `nssIVFromOctetString`
     （PBES2 参数里的 IV 只存 14 字节，NSS 实际是**从 DER tag 字节起读 16 字节**，
     即把 `04 0e` 当成 IV 前两字节；写成"补两个 0"会静默解不开）
-  - **验证分层，各自能证明什么写清楚**：
-    - PBKDF2：与**两个独立实现**（stdlib `crypto/pbkdf2` 与 `x/crypto/pbkdf2`）
-      做 40 组随机输入差分测试 —— 这是最强的一项
-    - CBC 解密：往返 + 边界（底层 AES/3DES 是标准库，这里验的是密钥截断/IV/去填充）
-    - Mozilla KDF：只能做结构测试（对着参考实现的分步公式逐项比）。
-      **端到端正确性必须有真实 profile 夹具，本文件不假装它已被验证**
-  - 26 项单测；13 种传输标签交叉编译通过
-  - **仍未做**：`key4.db` 的**容器解析**（metadata.item2 口令校验链 →
-    nssPrivate.a11 → 主密钥）+ `logins.json` 的 ASN.1 条目解析 +
-    Firefox 配置目录发现。这部分**必须先有真实 profile 夹具**才能验证
-  - 也确认过：`lclevy/firepwd` 仓库**不带任何测试夹具**（已查其目录列表），
-    公开可得的 Firefox profile 测试数据并未找到；本机无 openssl / 无 python
-    `cryptography`，因此也无法用互操作方式补验
-- **剩余**：Kerberos / BloodHound（需 Windows / 域环境）；Firefox 容器解析（需夹具）；
+  - `implant/core/services/firefox_nss.go`：容器解析与编排 ——
+    DER 解析两种 PBE 容器、`metadata.item2` 口令校验链、`nssPrivate.a11` 主密钥、
+    `logins.json` 条目（按条目内声明的 OID 选 3DES/AES）、
+    跨平台 profile 目录发现（Windows/macOS/Linux/snap）
+  - **验证方式（这一项的关键）**：向量取自 `unode/firefox_decrypt` 测试套件里的
+    **真实 Firefox 配置**（`test_profile_firefox_nopassword_114` / `_59`），
+    真值由该套件用 libnss 产出，期望明文取自其 `exported_passwords.csv`。
+    实测两条 profile 的凭据**全部逐字节对上**，包括非 ASCII（`сЮЛОажс$4vz*VçàhxpfCbmwo`）、
+    制表符与各类引号（`Apassword\twithtabs,;colonandsemi'"andquotes`）。
+    那套夹具是 GPL-3，**未**随本仓库分发 —— 只嵌入从中抽出的数据字节
+  - **真实数据抓到 4 个自造夹具抓不到的问题**：
+    1. 真实表名是 `metaData`（驼峰），而 SQLite 标识符大小写不敏感、
+       调用方习惯写 `metadata` —— 共享的 `core/sqlite` reader 原先是精确匹配，
+       已改为按 SQLite 语义做 ASCII 大小写不敏感匹配
+    2. `a11` 的明文**就是裸主密钥**（24/48 字节），不是 `SEQUENCE{OCTETSTRING}` 包装
+    3. `password-check` 的比对形态取决于**填充是否已剥离**：firepwd 比的是带填充的
+       `password-check\x02\x02`（它不去填充），本实现统一去填充，故比对 14 字节裸串。
+       照抄参考实现的 16 字节常量会一直校验失败
+    4. 夹具里有一条**故意损坏**的条目（用户名密文填充非法，对应参考套件的
+       `handle_corrupted_passwords.t`）。原先实现会静默丢弃整条 —— 对凭据工具而言
+       丢条目等于丢证据。已改为保留条目并标注**哪个字段**没解出来
+  - 26 项密码学单测 + 9 项 Firefox 集成测试；13 种传输标签交叉编译通过
+  - 另有 `TSHELL_FIREFOX_PROFILE=<dir>` 环境变量入口，指向真实 profile 可跑全链路
+- **剩余**：Kerberos / BloodHound（需 Windows / 域环境）；
   Windows 实机验证（见 `docs/CREDENTIAL_ACCESS.md` §9）
 
 #### 3.2 提权模块（getsystem / UAC bypass）— **M**

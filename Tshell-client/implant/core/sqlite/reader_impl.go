@@ -149,6 +149,29 @@ func rowidAliasColumn(sql string) (int, bool) {
 	return -1, false
 }
 
+// equalFoldASCII 按 ASCII 规则做大小写不敏感比较（SQLite 标识符的语义）
+func equalFoldASCII(a, b string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := 0; i < len(a); i++ {
+		ca, cb := a[i], b[i]
+		if ca == cb {
+			continue
+		}
+		if 'A' <= ca && ca <= 'Z' {
+			ca += 'a' - 'A'
+		}
+		if 'A' <= cb && cb <= 'Z' {
+			cb += 'a' - 'A'
+		}
+		if ca != cb {
+			return false
+		}
+	}
+	return true
+}
+
 // findTable 在 sqlite_master（根页 1）里找表的根页号与建表 SQL
 func (db *DB) findTable(name string) (int, string, error) {
 	rows, _, err := db.readTableRows(1, MaxRows, nil, 0)
@@ -166,7 +189,11 @@ func (db *DB) findTable(name string) (int, string, error) {
 		if len(r) <= colSQL {
 			continue
 		}
-		if asString(r[colName]) != name {
+		// SQLite 的表名是**大小写不敏感**的（ASCII），这里必须跟着不敏感：
+		// 真实文件里就有 `metaData`（Firefox key4.db）这种驼峰写法，
+		// 而调用方习惯写全小写的 `metadata`。按精确匹配会报"表不存在"，
+		// 而那个错看起来像文件损坏/格式不支持，很难反查到只是大小写。
+		if !equalFoldASCII(asString(r[colName]), name) {
 			continue
 		}
 		if asString(r[colType]) != "table" {
