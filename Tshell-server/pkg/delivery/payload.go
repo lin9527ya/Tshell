@@ -137,7 +137,7 @@ func PatchClientBinary(binaryData []byte, opt PatchOptions) ([]byte, error) {
 	// heartbeat = beacon sleep 秒数（统一心跳，CS 单一事实来源）
 	// 默认链：opt.SleepSeconds(显式) > opt.HeartbeatMs 换算(profile 毫秒) > 监听器配置 > 默认 5
 	hbInterval := "10"
-	if database.Engine != nil {
+	if database.DB() != nil {
 		_, hbInterval = database.GetListenerHeartbeatConfigByAddr(connectAddress, listenerType)
 	}
 	sleepSeconds := hbInterval
@@ -163,16 +163,14 @@ func PatchClientBinary(binaryData []byte, opt PatchOptions) ([]byte, error) {
 	// 心跳超时占位符为可选且已废弃（客户端 RecvDeadline 按 sleep+jitter 自算）：
 	// 统一以空格替换并保留原长度（防止旧模板残留占位符触发 fail-closed），
 	// 旧模板无此占位符时忽略
-	if err := replaceOrErr(hbTimeoutPh, []byte(strings.Repeat(" ", len(hbTimeoutPh)))); err != nil {
-		// 忽略：模板可能不含该占位符
-	}
+	// 忽略错误：模板可能不含该占位符
+	_ = replaceOrErr(hbTimeoutPh, []byte(strings.Repeat(" ", len(hbTimeoutPh))))
 
 	// 抖动百分比：配置文件 client.jitter，best-effort（模板缺失时忽略，与 GenServer 行为一致）
 	if opt.JitterPercent != "" {
 		jitterPh := "JITTER_PERCENT_PLACEHOLDER_12345"
-		if err := replaceOrErr(jitterPh, []byte(padRight(opt.JitterPercent, len(jitterPh)))); err != nil {
-			// 忽略：模板可能不含该占位符
-		}
+		// 忽略错误：模板可能不含该占位符
+		_ = replaceOrErr(jitterPh, []byte(padRight(opt.JitterPercent, len(jitterPh))))
 	}
 
 	// B8: 域前置/CDN 回源 Host（http/https 客户端专用占位符，未配置时保持占位符以禁用）
@@ -449,7 +447,7 @@ func resolveKeys(opt PatchOptions, connectAddress, listenerType string) (masterK
 		return masterKey, salt
 	}
 	// from DB by address
-	if database.Engine != nil {
+	if database.DB() != nil {
 		mk, s := encrypt.GetListenerKeyConfigByAddress(connectAddress)
 		if len(masterKey) == 0 && len(mk) > 0 {
 			masterKey = mk

@@ -50,11 +50,11 @@ func InitTunnelManager() {
 // 界面会一直显示"运行中"而实际没有任何监听，点"停止"还会报"不存在或未运行"。
 // 返回被置停的记录供启动日志列出——与监听器同一口径：不自动恢复，但要让人看见。
 func ResetTunnelStatusOnStartup() []database.TunnelProxy {
-	if database.Engine == nil {
+	if database.DB() == nil {
 		return nil
 	}
 	var running []database.TunnelProxy
-	if err := database.Engine.Where("status = ?", 1).Find(&running); err != nil {
+	if err := database.DB().Where("status = ?", 1).Find(&running); err != nil {
 		log.Printf("[TUNNEL] 读取重启前隧道状态失败: %v", err)
 		return nil
 	}
@@ -62,7 +62,7 @@ func ResetTunnelStatusOnStartup() []database.TunnelProxy {
 		return nil
 	}
 	// Status=0 是零值：xorm 的 Update(&struct) 会跳过零值列，必须用 Cols 显式指定
-	if _, err := database.Engine.Cols("status").Update(&database.TunnelProxy{Status: 0}); err != nil {
+	if _, err := database.DB().Cols("status").Update(&database.TunnelProxy{Status: 0}); err != nil {
 		log.Printf("[TUNNEL] 置停隧道状态失败: %v", err)
 	}
 	return running
@@ -76,7 +76,7 @@ func (tm *TunnelManager) StartTunnel(tunnelID int64) error {
 	// 从数据库获取隧道配置
 	var tunnel database.TunnelProxy
 	tunnel.ID = tunnelID
-	exists, err := database.Engine.Get(&tunnel)
+	exists, err := database.DB().Get(&tunnel)
 	if err != nil {
 		return fmt.Errorf("查询隧道配置失败: %v", err)
 	}
@@ -91,7 +91,7 @@ func (tm *TunnelManager) StartTunnel(tunnelID int64) error {
 
 	// 检查客户端连接
 	var client database.Clients
-	exists, err = database.Engine.Where("uid = ? AND online = '1'", tunnel.ClientUID).Get(&client)
+	exists, err = database.DB().Where("uid = ? AND online = '1'", tunnel.ClientUID).Get(&client)
 	if err != nil || !exists {
 		return fmt.Errorf("客户端不在线")
 	}
@@ -129,7 +129,7 @@ func (tm *TunnelManager) StopTunnel(tunnelID int64) error {
 	// 从数据库获取隧道配置
 	var tunnel database.TunnelProxy
 	tunnel.ID = tunnelID
-	exists, err := database.Engine.Get(&tunnel)
+	exists, err := database.DB().Get(&tunnel)
 	if err != nil {
 		return fmt.Errorf("查询隧道配置失败: %v", err)
 	}
@@ -162,14 +162,14 @@ func (tm *TunnelManager) startSocks5Tunnel(tunnel database.TunnelProxy) error {
 
 	// 获取客户端信息
 	var client database.Clients
-	exists, err := database.Engine.Where("uid = ? AND online = '1'", tunnel.ClientUID).Get(&client)
+	exists, err := database.DB().Where("uid = ? AND online = '1'", tunnel.ClientUID).Get(&client)
 	if err != nil || !exists {
 		return fmt.Errorf("客户端不在线或不存在")
 	}
 
 	// 获取监听器信息以确定客户端连接地址
 	var listener database.Listener
-	exists, err = database.Engine.Where("type = ? AND status = ?", client.Listener, 1).Get(&listener)
+	exists, err = database.DB().Where("type = ? AND status = ?", client.Listener, 1).Get(&listener)
 	if err != nil || !exists {
 		return fmt.Errorf("监听器不存在或未运行")
 	}
@@ -272,7 +272,7 @@ func (tm *TunnelManager) stopSocks5Tunnel(tunnelID int64) error {
 		// 尝试根据tunnelID从数据库获取端口信息来清理
 		var tunnel database.TunnelProxy
 		tunnel.ID = tunnelID
-		exists, err := database.Engine.Get(&tunnel)
+		exists, err := database.DB().Get(&tunnel)
 		if err == nil && exists {
 			socksAddress := fmt.Sprintf(":%d", tunnel.ServerPort)
 			agentAddress := fmt.Sprintf(":%d", tunnel.ServerPort+1000)

@@ -14,7 +14,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	_, err = database.Engine.Exec("UPDATE users SET password_hash=?, login_attempts=0, locked=0 WHERE username='admin'", string(h))
+	_, err = database.DB().Exec("UPDATE users SET password_hash=?, login_attempts=0, locked=0 WHERE username='admin'", string(h))
 	if err != nil {
 		panic(err)
 	}

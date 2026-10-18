@@ -392,7 +392,7 @@ func cnaFilterRow(row map[string]cna.Value, col, val string) bool {
 	}
 	for k, v := range row {
 		if strings.ToLower(k) == col {
-			return strings.ToLower(cna.ToString(v)) == strings.ToLower(val)
+			return strings.EqualFold(cna.ToString(v), val)
 		}
 	}
 	return false
@@ -418,7 +418,7 @@ func cnaPick(row map[string]cna.Value, cols []string) map[string]cna.Value {
 
 func cnaQueryBeacons(q string) []cna.Value {
 	var list []database.Clients
-	if err := database.Engine.Find(&list); err != nil {
+	if err := database.DB().Find(&list); err != nil {
 		return nil
 	}
 	cols := cnaSelectCols(q)
@@ -426,18 +426,18 @@ func cnaQueryBeacons(q string) []cna.Value {
 	var out []cna.Value
 	for _, cl := range list {
 		row := map[string]cna.Value{
-			"uid":          cl.Uid,
-			"external_ip":  cl.ExternalIP,
-			"internal_ip":  cl.InternalIP,
-			"username":     cl.Username,
-			"computer":     cl.Computer,
-			"process":      cl.Process,
-			"pid":          cl.Pid,
-			"arch":         cl.Arch,
-			"listener":     cl.Listener,
-			"online":       cl.Online,
-			"last_active":  cl.LastActive,
-			"first_start":  cl.FirstStart,
+			"uid":         cl.Uid,
+			"external_ip": cl.ExternalIP,
+			"internal_ip": cl.InternalIP,
+			"username":    cl.Username,
+			"computer":    cl.Computer,
+			"process":     cl.Process,
+			"pid":         cl.Pid,
+			"arch":        cl.Arch,
+			"listener":    cl.Listener,
+			"online":      cl.Online,
+			"last_active": cl.LastActive,
+			"first_start": cl.FirstStart,
 		}
 		if hasWhere && !cnaFilterRow(row, col, val) {
 			continue
@@ -449,17 +449,17 @@ func cnaQueryBeacons(q string) []cna.Value {
 
 func cnaQueryListeners(q string) []cna.Value {
 	var list []database.Listener
-	if err := database.Engine.Find(&list); err != nil {
+	if err := database.DB().Find(&list); err != nil {
 		return nil
 	}
 	cols := cnaSelectCols(q)
 	var out []cna.Value
 	for _, l := range list {
 		row := map[string]cna.Value{
-			"type":       l.Type,
-			"listen_address": l.ListenAddress,
+			"type":            l.Type,
+			"listen_address":  l.ListenAddress,
 			"connect_address": l.ConnectAddress,
-			"status":     ToIntStr(l.Status),
+			"status":          ToIntStr(l.Status),
 		}
 		out = append(out, cnaPick(row, cols))
 	}
@@ -522,7 +522,7 @@ func normalizeArch(arch string) string {
 // pickListener 选择一个监听器构建 listener://address
 func pickListener() (string, error) {
 	var list []database.Listener
-	if err := database.Engine.Find(&list); err != nil || len(list) == 0 {
+	if err := database.DB().Find(&list); err != nil || len(list) == 0 {
 		return "", fmt.Errorf("无可用监听器，请先创建监听器")
 	}
 	// 优先启用中的监听器
@@ -551,7 +551,7 @@ func DefaultPublicHost() string {
 func ListListenerNames() []cna.Value {
 	var out []cna.Value
 	var listeners []database.Listener
-	if err := database.Engine.Find(&listeners); err == nil {
+	if err := database.DB().Find(&listeners); err == nil {
 		for _, l := range listeners {
 			out = append(out, l.Type)
 		}

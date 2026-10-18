@@ -139,13 +139,16 @@
     序列重置 → 列内省；并借此修掉一个真实的 schema 缺陷（listener 迁移检查的是
     `vkey` 而模型列名是 `v_key`，导致多建一列）。
   - 内置备份在 PostgreSQL 下不启用（503），改用 pg_dump（见 docs/STORAGE.md）。
+  - **存储访问层（Store 接口）**：业务代码统一走 `database.DB()`（`pkg/database/store.go`
+    的 `Store` 接口），不再直接引用具体引擎；根包 `store_access_test.go` 是回归棘轮
+    （业务代码一旦重写 `database.Engine` 即 CI 失败）。见 docs/STORAGE.md 第 4 节。
 - 遗留：
-  - repository 层尚未抽出：`pkg/api` 中的 xorm 调用仍直接使用全局 `database.Engine`；
+  - 领域 repository 尚未抽出：查询语句仍写在各业务包里（只是访问点已收口到 `Store`）；
   - SQLite → PostgreSQL 无内置数据迁移工具（需 pgloader/脚本搬运）；
   - 共享状态外置（会话/队列/锁）与 leader 选举未做 —— 这两项完成后才能真正多副本。
 - 工作区里的 `k8s-deployment.yaml` 是旧草稿（replicas:2 + 两个 HPA），与代码能力不符，
   且未被 Git 跟踪；不要直接套用。
-- 状态：✅（版本化迁移 + 单实例文档）/ ⏳（存储抽象、Postgres、共享状态）
+- 状态：✅（版本化迁移 + 存储访问层 + Postgres + 单实例文档）/ ⏳（领域 repository、共享状态）
 
 ## 13. 级联 C2（B9，二级中继）
 - 现状：✅ 已实现（传输层中继，`Tshell-relay/`，纯标准库）：

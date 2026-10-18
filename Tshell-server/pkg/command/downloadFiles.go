@@ -67,9 +67,9 @@ func (m *DownloadFileManager) Start(uid string, requestId uint32, filePath strin
 
 	// 确保下载目录存在（目录名使用客户端数字 ID，便于识别与归档）
 	dirName := uid
-	if database.Engine != nil {
+	if database.DB() != nil {
 		var client database.Clients
-		if has, err := database.Engine.Where("uid = ?", uid).Get(&client); err == nil && has && client.ID > 0 {
+		if has, err := database.DB().Where("uid = ?", uid).Get(&client); err == nil && has && client.ID > 0 {
 			dirName = strconv.FormatInt(client.ID, 10)
 		}
 	}

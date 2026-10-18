@@ -247,7 +247,7 @@ func UpdateListenerKeyConfig(c *gin.Context) {
 	// 【修复】支持只更新单字段：VKey 与 Salt 可单独更新（原实现要求同时非空）
 	// 先查出旧值，未提交的字段保留原值
 	var oldListener database.Listener
-	if oldHas, _ := database.Engine.Where("listen_address = ?", req.ListenAddress).Get(&oldListener); oldHas {
+	if oldHas, _ := database.DB().Where("listen_address = ?", req.ListenAddress).Get(&oldListener); oldHas {
 		if req.VKey == "" {
 			req.VKey = oldListener.VKey
 		}
@@ -266,7 +266,7 @@ func UpdateListenerKeyConfig(c *gin.Context) {
 	}
 
 	// 更新数据库中的监听器配置
-	if database.Engine == nil {
+	if database.DB() == nil {
 		c.JSON(http.StatusServiceUnavailable, KeyStatusResponse{
 			Status:  503,
 			Message: "数据库未初始化",
@@ -276,7 +276,7 @@ func UpdateListenerKeyConfig(c *gin.Context) {
 
 	// 查找监听器
 	var listener database.Listener
-	has, err := database.Engine.Where("listen_address = ?", req.ListenAddress).Get(&listener)
+	has, err := database.DB().Where("listen_address = ?", req.ListenAddress).Get(&listener)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, KeyStatusResponse{
 			Status:  500,
@@ -294,7 +294,7 @@ func UpdateListenerKeyConfig(c *gin.Context) {
 	}
 
 	// 更新密钥配置（显式 Cols：防止 xorm 跳过零值字段导致清空密钥静默失效）
-	_, err = database.Engine.Where("listen_address = ?", req.ListenAddress).
+	_, err = database.DB().Where("listen_address = ?", req.ListenAddress).
 		Cols("v_key", "encryption_salt").
 		Update(&database.Listener{
 			VKey:           req.VKey,
@@ -337,7 +337,7 @@ func ResetListenerKeyConfig(c *gin.Context) {
 	listenAddress = resolveListenerAddress(listenAddress, "listen")
 
 	// 更新数据库中的监听器配置为默认值
-	if database.Engine == nil {
+	if database.DB() == nil {
 		c.JSON(http.StatusServiceUnavailable, KeyStatusResponse{
 			Status:  503,
 			Message: "数据库未初始化",
@@ -350,7 +350,7 @@ func ResetListenerKeyConfig(c *gin.Context) {
 	// 否则重置后该监听器所有流量可被任何知道默认值的人解密）
 	newVKey, newSalt := encrypt.GenerateListenerKeyConfig()
 	// （显式 Cols：防止 xorm 跳过零值字段导致密钥未写入）
-	_, err := database.Engine.Where("listen_address = ?", listenAddress).
+	_, err := database.DB().Where("listen_address = ?", listenAddress).
 		Cols("v_key", "encryption_salt").
 		Update(&database.Listener{
 			VKey:           newVKey,

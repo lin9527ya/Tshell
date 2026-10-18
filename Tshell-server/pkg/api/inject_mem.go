@@ -174,11 +174,11 @@ func SendInjectMem(uid string, data []byte, pid int, tech string) (int64, uint32
 func DispatchInject(uid string, pid int, tech string) error {
 	if err := dispatchInjectInner(uid, pid, tech); err != nil {
 		// 失败回写该会话 shell content，控制台可见
-		if database.Engine != nil {
+		if database.DB() != nil {
 			var shell database.Shell
-			database.Engine.Where("uid = ?", uid).Get(&shell)
+			database.DB().Where("uid = ?", uid).Get(&shell)
 			shell.ShellContent += "\n[!] inject failed: " + err.Error() + "\n"
-			database.Engine.Where("uid = ?", uid).Update(&shell)
+			database.DB().Where("uid = ?", uid).Update(&shell)
 		}
 		logx.Errorf("❌ [INJECT-DISPATCH] %s 注入失败: %v\n", uid, err)
 		return err

@@ -54,13 +54,13 @@ func GetDashboardStats(c *gin.Context) {
 	stats := DashboardStats{}
 
 	// 检查数据库连接状态
-	if database.Engine == nil {
+	if database.DB() == nil {
 		errors.AbortWithError(c, errors.NewInternalError("数据库连接未初始化"))
 		return
 	}
 
 	// P0-1A: 监听器数量（小表，单次 Count 保留）
-	listenerCount, err := database.Engine.Where("status = ?", 1).Count(&database.Listener{})
+	listenerCount, err := database.DB().Where("status = ?", 1).Count(&database.Listener{})
 	if err != nil {
 		logx.Infof("获取监听器数据失败: %v\n", err)
 		stats.MonitorCount = 0
@@ -75,12 +75,12 @@ func GetDashboardStats(c *gin.Context) {
 		Online int64 `xorm:"online"`
 	}
 	var agg clientAgg
-	_, aggErr := database.Engine.SQL(
+	_, aggErr := database.DB().SQL(
 		"SELECT COUNT(*) AS total, COALESCE(SUM(CASE WHEN online='1' THEN 1 ELSE 0 END),0) AS online FROM clients",
 	).Get(&agg)
 	if aggErr != nil {
 		logx.Infof("聚合查询 clients 失败，回退分步 Count: %v", aggErr)
-		onlineCount, e1 := database.Engine.Where("online = ?", "1").Count(&database.Clients{})
+		onlineCount, e1 := database.DB().Where("online = ?", "1").Count(&database.Clients{})
 		if e1 != nil {
 			logx.Infof("获取在线客户端数据失败: %v", e1)
 			stats.ConnectionCount = 0
@@ -89,7 +89,7 @@ func GetDashboardStats(c *gin.Context) {
 			stats.ConnectionCount = int(onlineCount)
 			stats.OnlineUserCount = int(onlineCount)
 		}
-		if allCount, e2 := database.Engine.Count(&database.Clients{}); e2 != nil {
+		if allCount, e2 := database.DB().Count(&database.Clients{}); e2 != nil {
 			logx.Infof("获取客户端总数失败: %v", e2)
 			stats.UserCount = 0
 		} else {

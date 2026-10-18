@@ -101,7 +101,7 @@ func loadAndPatchClient(listener, osType, archType, pass, format string) ([]byte
 // ListWebDelivery 列表
 func ListWebDelivery(c *gin.Context) {
 	var webs []database.WebDelivery
-	database.Engine.Find(&webs)
+	database.DB().Find(&webs)
 	c.JSON(http.StatusOK, gin.H{"status": http.StatusOK, "data": webs})
 }
 
@@ -182,7 +182,7 @@ func StartWebDelivery(c *gin.Context) {
 			return
 		}
 		var existing database.WebDelivery
-		if has, _ := database.Engine.Where("listening_port = ? AND status = 1", req.Port).Get(&existing); has {
+		if has, _ := database.DB().Where("listening_port = ? AND status = 1", req.Port).Get(&existing); has {
 	c.JSON(http.StatusOK, gin.H{"status": 400, "data": "端口记录已存在: " + req.Port})
 			return
 		}
@@ -277,7 +277,7 @@ func StartWebDelivery(c *gin.Context) {
 	}
 
 	// 入库
-	if _, err := database.Engine.Insert(&meta); err != nil {
+	if _, err := database.DB().Insert(&meta); err != nil {
 		// 无 ID 主键的旧库可能失败；尝试不带 ID
 	c.JSON(http.StatusOK, gin.H{"status": 400, "data": "写入数据库失败: " + err.Error()})
 		return
@@ -291,7 +291,7 @@ func StartWebDelivery(c *gin.Context) {
 		if err := startDedicatedServer(meta, payload); err != nil {
 			// 回滚 hub + db
 			delivery.GlobalHub.Unregister(meta.PublicKey, meta.ListeningPort)
-			database.Engine.Where("public_key = ?", meta.PublicKey).Delete(&database.WebDelivery{})
+			database.DB().Where("public_key = ?", meta.PublicKey).Delete(&database.WebDelivery{})
 	c.JSON(http.StatusOK, gin.H{"status": 400, "data": "独立端口启动失败: " + err.Error()})
 			return
 		}
@@ -425,13 +425,13 @@ func CloseWebDelivery(c *gin.Context) {
 	var meta database.WebDelivery
 	found := false
 	if web.ID > 0 {
-		found, _ = database.Engine.ID(web.ID).Get(&meta)
+		found, _ = database.DB().ID(web.ID).Get(&meta)
 	}
 	if !found && web.PublicKey != "" {
-		found, _ = database.Engine.Where("public_key = ?", web.PublicKey).Get(&meta)
+		found, _ = database.DB().Where("public_key = ?", web.PublicKey).Get(&meta)
 	}
 	if !found && web.Port != "" {
-		found, _ = database.Engine.Where("listening_port = ?", web.Port).Get(&meta)
+		found, _ = database.DB().Where("listening_port = ?", web.Port).Get(&meta)
 	}
 	if !found {
 	c.JSON(http.StatusOK, gin.H{"status": 400, "data": "WebDelivery不存在"})
@@ -448,10 +448,10 @@ func CloseWebDelivery(c *gin.Context) {
 		Mutex.Unlock()
 	}
 	delivery.GlobalHub.Unregister(meta.PublicKey, meta.ListeningPort)
-	database.Engine.ID(meta.ID).Cols("status").Update(&database.WebDelivery{Status: 2})
+	database.DB().ID(meta.ID).Cols("status").Update(&database.WebDelivery{Status: 2})
 	// legacy rows without id
 	if meta.ID == 0 {
-		database.Engine.Where("listening_port = ?", meta.ListeningPort).Cols("status").Update(&database.WebDelivery{Status: 2})
+		database.DB().Where("listening_port = ?", meta.ListeningPort).Cols("status").Update(&database.WebDelivery{Status: 2})
 	}
 	c.JSON(http.StatusOK, gin.H{"status": http.StatusOK})
 }
@@ -471,13 +471,13 @@ func OpenWebDelivery(c *gin.Context) {
 	var meta database.WebDelivery
 	found := false
 	if web.ID > 0 {
-		found, _ = database.Engine.ID(web.ID).Get(&meta)
+		found, _ = database.DB().ID(web.ID).Get(&meta)
 	}
 	if !found && web.PublicKey != "" {
-		found, _ = database.Engine.Where("public_key = ?", web.PublicKey).Get(&meta)
+		found, _ = database.DB().Where("public_key = ?", web.PublicKey).Get(&meta)
 	}
 	if !found && web.Port != "" {
-		found, _ = database.Engine.Where("listening_port = ?", web.Port).Get(&meta)
+		found, _ = database.DB().Where("listening_port = ?", web.Port).Get(&meta)
 	}
 	if !found {
 	c.JSON(http.StatusOK, gin.H{"status": 400, "data": "WebDelivery不存在"})
@@ -517,9 +517,9 @@ func OpenWebDelivery(c *gin.Context) {
 
 	meta.Status = 1
 	if meta.ID > 0 {
-		database.Engine.ID(meta.ID).Cols("status", "server_address", "stager_url", "shellcode_url", "public_key", "bind_mode").Update(&meta)
+		database.DB().ID(meta.ID).Cols("status", "server_address", "stager_url", "shellcode_url", "public_key", "bind_mode").Update(&meta)
 	} else {
-		database.Engine.Where("listening_port = ?", meta.ListeningPort).Update(&meta)
+		database.DB().Where("listening_port = ?", meta.ListeningPort).Update(&meta)
 	}
 
 	delivery.GlobalHub.Register(meta, payload)
@@ -553,13 +553,13 @@ func DeleteWebDelivery(c *gin.Context) {
 	var meta database.WebDelivery
 	found := false
 	if web.ID > 0 {
-		found, _ = database.Engine.ID(web.ID).Get(&meta)
+		found, _ = database.DB().ID(web.ID).Get(&meta)
 	}
 	if !found && web.PublicKey != "" {
-		found, _ = database.Engine.Where("public_key = ?", web.PublicKey).Get(&meta)
+		found, _ = database.DB().Where("public_key = ?", web.PublicKey).Get(&meta)
 	}
 	if !found && web.Port != "" {
-		found, _ = database.Engine.Where("listening_port = ?", web.Port).Get(&meta)
+		found, _ = database.DB().Where("listening_port = ?", web.Port).Get(&meta)
 	}
 	if !found {
 		// still try delete by port for legacy
@@ -571,7 +571,7 @@ func DeleteWebDelivery(c *gin.Context) {
 			}
 			Mutex.Unlock()
 			delivery.GlobalHub.Unregister("", web.Port)
-			database.Engine.Where("listening_port = ?", web.Port).Delete(&database.WebDelivery{})
+			database.DB().Where("listening_port = ?", web.Port).Delete(&database.WebDelivery{})
 	c.JSON(http.StatusOK, gin.H{"status": http.StatusOK})
 			return
 		}
@@ -590,10 +590,10 @@ func DeleteWebDelivery(c *gin.Context) {
 	auditLogEvent("WEBDELIVERY_DELETE", "SUCCESS", "删除投递 "+meta.PublicKey, nil)
 	delivery.GlobalHub.Unregister(meta.PublicKey, meta.ListeningPort)
 	if meta.ID > 0 {
-		database.Engine.ID(meta.ID).Delete(&database.WebDelivery{})
-		database.Engine.Where("delivery_id = ?", meta.ID).Delete(&database.DeliveryAccessLog{})
+		database.DB().ID(meta.ID).Delete(&database.WebDelivery{})
+		database.DB().Where("delivery_id = ?", meta.ID).Delete(&database.DeliveryAccessLog{})
 	} else {
-		database.Engine.Where("listening_port = ?", meta.ListeningPort).Delete(&database.WebDelivery{})
+		database.DB().Where("listening_port = ?", meta.ListeningPort).Delete(&database.WebDelivery{})
 	}
 	c.JSON(http.StatusOK, gin.H{"status": http.StatusOK})
 }
@@ -609,14 +609,14 @@ func GetDeliveryCommands(c *gin.Context) {
 	if idStr != "" {
 		id, _ := strconv.ParseInt(idStr, 10, 64)
 		if id > 0 {
-			found, _ = database.Engine.ID(id).Get(&meta)
+			found, _ = database.DB().ID(id).Get(&meta)
 		}
 	}
 	if !found && key != "" {
-		found, _ = database.Engine.Where("public_key = ?", key).Get(&meta)
+		found, _ = database.DB().Where("public_key = ?", key).Get(&meta)
 	}
 	if !found && port != "" {
-		found, _ = database.Engine.Where("listening_port = ?", port).Get(&meta)
+		found, _ = database.DB().Where("listening_port = ?", port).Get(&meta)
 	}
 	if !found {
 	c.JSON(http.StatusOK, gin.H{"status": 400, "data": "WebDelivery不存在"})
@@ -656,7 +656,7 @@ func GetDeliveryAccessLogs(c *gin.Context) {
 		}
 	}
 	var logs []database.DeliveryAccessLog
-	q := database.Engine.Desc("id").Limit(limit)
+	q := database.DB().Desc("id").Limit(limit)
 	if idStr != "" {
 		id, _ := strconv.ParseInt(idStr, 10, 64)
 		q = q.Where("delivery_id = ?", id)
@@ -670,7 +670,7 @@ func GetDeliveryAccessLogs(c *gin.Context) {
 // RestoreWebDeliveriesOnStartup 启动时恢复 status=1 的 shared/dedicated 投递
 func RestoreWebDeliveriesOnStartup() {
 	var list []database.WebDelivery
-	if err := database.Engine.Where("status = ?", 1).Find(&list); err != nil {
+	if err := database.DB().Where("status = ?", 1).Find(&list); err != nil {
 		return
 	}
 	for _, meta := range list {
@@ -728,13 +728,13 @@ func cleanupOrphanDelivery(meta *database.WebDelivery) string {
 	if listenerType != "" && listenerAddr != "" {
 		// 监听器存在性检查：connect_address 或 listen_address（含 0.0.0.0/:port 变体）
 		var lis database.Listener
-		exists, _ := database.Engine.
+		exists, _ := database.DB().
 			Where("type = ? AND (connect_address = ? OR listen_address = ? OR listen_address = ? OR listen_address = ?)",
 				listenerType, listenerAddr, listenerAddr, "0.0.0.0"+listenerAddr[strings.LastIndex(listenerAddr, ":"):], ":"+listenerAddr[strings.LastIndex(listenerAddr, ":")+1:]).
 			Get(&lis)
 		if !exists {
 			// 监听器已删除：删除残留投递记录（一次性清理）
-			affected, _ := database.Engine.Where("public_key = ?", meta.PublicKey).Delete(&database.WebDelivery{})
+			affected, _ := database.DB().Where("public_key = ?", meta.PublicKey).Delete(&database.WebDelivery{})
 			if affected > 0 {
 				return "关联监听器已删除，已自动清理残留投递记录"
 			}
@@ -743,7 +743,7 @@ func cleanupOrphanDelivery(meta *database.WebDelivery) string {
 	}
 
 	// 监听器仍存在但模板不匹配（旧模板）：禁用投递，避免每次启动重复失败
-	_, err := database.Engine.Where("public_key = ?", meta.PublicKey).Update(&database.WebDelivery{Status: 0})
+	_, err := database.DB().Where("public_key = ?", meta.PublicKey).Update(&database.WebDelivery{Status: 0})
 	if err == nil {
 		return "模板与当前代码不匹配，已禁用（可删除后重新创建投递）"
 	}

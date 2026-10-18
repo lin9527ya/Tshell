@@ -146,7 +146,7 @@ func LoginHandler(c *gin.Context) {
 
 	// 查询用户并进行安全验证
 	var users database.Users
-	found, err := database.Engine.Where("username = ?", loginData.Username).Get(&users)
+	found, err := database.DB().Where("username = ?", loginData.Username).Get(&users)
 	if err != nil {
 		errors.AbortWithError(c, errors.NewDatabaseError(err))
 		return
@@ -181,7 +181,7 @@ func LoginHandler(c *gin.Context) {
 			users.Locked = true
 			logx.Infof("警告：用户 %s 因多次登录失败被锁定\n", loginData.Username)
 		}
-		database.Engine.Where("username = ?", loginData.Username).Update(&users)
+		database.DB().Where("username = ?", loginData.Username).Update(&users)
 		// D17: 发布登录失败事件（供事件流/通知告警）
 		if command.GlobalEventBus != nil {
 			command.PublishEvent(command.EventLoginFailed, loginData.Username, map[string]interface{}{
@@ -196,7 +196,7 @@ func LoginHandler(c *gin.Context) {
 	// 认证成功，更新登录信息
 	users.LastLogin = time.Now()
 	users.LoginAttempts = 0 // 重置失败计数
-	if _, err := database.Engine.Where("username = ?", loginData.Username).Update(&users); err != nil {
+	if _, err := database.DB().Where("username = ?", loginData.Username).Update(&users); err != nil {
 		// 更新失败不影响登录，只记录警告
 		logx.Infof("警告：更新用户登录信息失败: %v\n", err)
 	}
@@ -331,7 +331,7 @@ func ChangePasswordHandler(c *gin.Context) {
 	if passwordData.OldPassword != passwordData.NewPassword {
 		username := c.MustGet("username").(string)
 		var users database.Users
-		database.Engine.Where("username = ?", username).Get(&users)
+		database.DB().Where("username = ?", username).Get(&users)
 
 		// 使用安全的密码验证
 		var isValidOldPassword bool
@@ -357,7 +357,7 @@ func ChangePasswordHandler(c *gin.Context) {
 			// 清除旧的明文密码字段（如果存在）
 			// users.Password = "" // 如果数据库中还有这个字段
 
-			database.Engine.Where("username = ?", username).Update(&users)
+			database.DB().Where("username = ?", username).Update(&users)
 			// D46: 改密成功后吊销该用户所有旧令牌与刷新令牌（旧会话立即失效）
 			security.GlobalJWTManager.RevokeUserTokens(username, time.Now())
 			c.JSON(http.StatusOK, gin.H{"code": 200, "message": "Password changed successfully"})
@@ -402,7 +402,7 @@ func GetUserListHandler(c *gin.Context) {
 		query.PageSize = 100
 	}
 
-	session := database.Engine.NewSession()
+	session := database.DB().NewSession()
 	defer session.Close()
 
 	if query.Search != "" {
@@ -473,7 +473,7 @@ func CreateUserHandler(c *gin.Context) {
 		return
 	}
 
-	exists, err := database.Engine.Where("username = ?", req.Username).Exist(new(database.Users))
+	exists, err := database.DB().Where("username = ?", req.Username).Exist(new(database.Users))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询用户失败"})
 		return
@@ -489,7 +489,7 @@ func CreateUserHandler(c *gin.Context) {
 		return
 	}
 	user.Role = role
-	if _, err := database.Engine.Insert(user); err != nil {
+	if _, err := database.DB().Insert(user); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "插入用户失败: " + err.Error()})
 		return
 	}
@@ -524,7 +524,7 @@ func DeleteUserHandler(c *gin.Context) {
 	}
 
 	var target database.Users
-	has, err := database.Engine.Where("username = ?", req.Username).Get(&target)
+	has, err := database.DB().Where("username = ?", req.Username).Get(&target)
 	if err != nil || !has {
 		c.JSON(http.StatusOK, gin.H{"code": 404, "message": "用户不存在"})
 		return
@@ -532,14 +532,14 @@ func DeleteUserHandler(c *gin.Context) {
 
 	// 禁止删除最后一个 admin（保留至少一个管理员可登录）
 	if defaultRole(target.Role) == security.RoleAdmin {
-		adminCount, _ := database.Engine.Where("role = ?", security.RoleAdmin).Count(new(database.Users))
+		adminCount, _ := database.DB().Where("role = ?", security.RoleAdmin).Count(new(database.Users))
 		if adminCount <= 1 {
 			c.JSON(http.StatusOK, gin.H{"code": 400, "message": "不能删除最后一个管理员"})
 			return
 		}
 	}
 
-	if _, err := database.Engine.Where("username = ?", req.Username).Delete(new(database.Users)); err != nil {
+	if _, err := database.DB().Where("username = ?", req.Username).Delete(new(database.Users)); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "删除用户失败: " + err.Error()})
 		return
 	}
@@ -577,7 +577,7 @@ func AdminResetPasswordHandler(c *gin.Context) {
 	}
 
 	var user database.Users
-	has, err := database.Engine.Where("username = ?", req.Username).Get(&user)
+	has, err := database.DB().Where("username = ?", req.Username).Get(&user)
 	if err != nil || !has {
 		c.JSON(http.StatusOK, gin.H{"code": 404, "message": "用户不存在"})
 		return
@@ -589,7 +589,7 @@ func AdminResetPasswordHandler(c *gin.Context) {
 		return
 	}
 	user.PasswordHash = newHash
-	if _, err := database.Engine.Where("username = ?", req.Username).Update(&user); err != nil {
+	if _, err := database.DB().Where("username = ?", req.Username).Update(&user); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新密码失败"})
 		return
 	}

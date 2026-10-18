@@ -26,7 +26,7 @@ func resolveDownloadDir(uid string) string {
 		return uid
 	}
 	var dlClient database.Clients
-	if has, err := database.Engine.Where("uid = ?", uid).Get(&dlClient); err == nil && has && dlClient.ID > 0 {
+	if has, err := database.DB().Where("uid = ?", uid).Get(&dlClient); err == nil && has && dlClient.ID > 0 {
 		return strconv.FormatInt(dlClient.ID, 10)
 	}
 	return uid
@@ -57,19 +57,20 @@ func DownloadFile(c *gin.Context) {
 	// 下载目录使用客户端数字 ID（便于识别与归档）
 	dirName := fileBody.Uid
 	var dlClient database.Clients
-	if has, err := database.Engine.Where("uid = ?", fileBody.Uid).Get(&dlClient); err == nil && has && dlClient.ID > 0 {
+	if has, err := database.DB().Where("uid = ?", fileBody.Uid).Get(&dlClient); err == nil && has && dlClient.ID > 0 {
 		dirName = strconv.FormatInt(dlClient.ID, 10)
 	}
-	_, err := os.Stat("./Downloads/" + dirName)
-	if os.IsNotExist(err) {
+	if _, statErr := os.Stat("./Downloads/" + dirName); os.IsNotExist(statErr) {
 		// 文件夹不存在，创建文件夹
-		err = os.MkdirAll("./Downloads/"+dirName, os.ModePerm)
+		if mkErr := os.MkdirAll("./Downloads/"+dirName, os.ModePerm); mkErr != nil {
+			log.Printf("创建下载目录失败: %v", mkErr)
+		}
 	}
 
 	var fileDownloads database.Downloads
-	exist, _ := database.Engine.Where("uid = ? AND file_path = ?", fileBody.Uid, fileBody.FilePath).Get(&fileDownloads)
+	exist, _ := database.DB().Where("uid = ? AND file_path = ?", fileBody.Uid, fileBody.FilePath).Get(&fileDownloads)
 	if !exist {
-		database.Engine.Insert(&database.Downloads{Uid: fileBody.Uid, FileName: filepath.Base(fileBody.FilePath), FilePath: fileBody.FilePath, FileSize: 0, DownloadedSize: 0})
+		database.DB().Insert(&database.Downloads{Uid: fileBody.Uid, FileName: filepath.Base(fileBody.FilePath), FilePath: fileBody.FilePath, FileSize: 0, DownloadedSize: 0})
 	} else {
 		sql := `
 UPDATE downloads
@@ -110,7 +111,7 @@ func GetDownloadsInfo(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	}
 	var downloads []database.Downloads
-	database.Engine.Where("uid = ?", downloadBody.Uid).Find(&downloads)
+	database.DB().Where("uid = ?", downloadBody.Uid).Find(&downloads)
 	var result []DownloadsInfo
 	for _, download := range downloads {
 		var tmpDownloadsInfo DownloadsInfo
@@ -185,7 +186,7 @@ func DeleteDownloadedFile(c *gin.Context) {
 	}
 
 	// 删除数据库记录
-	affected, err := database.Engine.Where("uid = ? AND file_path = ?", deleteBody.Uid, deleteBody.FilePath).Delete(&database.Downloads{})
+	affected, err := database.DB().Where("uid = ? AND file_path = ?", deleteBody.Uid, deleteBody.FilePath).Delete(&database.Downloads{})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "删除数据库记录失败"})
 		return

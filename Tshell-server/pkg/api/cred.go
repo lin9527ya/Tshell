@@ -135,8 +135,8 @@ func ListCredArtifacts(c *gin.Context) {
 
 	pending := cred.Global.Pending(uid)
 	artifacts := make([]database.Loot, 0)
-	if database.Engine != nil {
-		session := database.Engine.Where("source = ?", cred.KindLsass)
+	if database.DB() != nil {
+		session := database.DB().Where("source = ?", cred.KindLsass)
 		if uid != "" {
 			session = session.And("uid = ?", uid)
 		}

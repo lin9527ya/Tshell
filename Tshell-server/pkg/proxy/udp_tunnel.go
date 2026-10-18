@@ -54,12 +54,12 @@ func (tm *TunnelManager) startUDPTunnel(tunnel database.TunnelProxy) error {
 		return fmt.Errorf("UDP转发缺少目标地址")
 	}
 	var client database.Clients
-	exists, err := database.Engine.Where("uid = ? AND online = '1'", tunnel.ClientUID).Get(&client)
+	exists, err := database.DB().Where("uid = ? AND online = '1'", tunnel.ClientUID).Get(&client)
 	if err != nil || !exists {
 		return fmt.Errorf("客户端不在线或不存在")
 	}
 	var listener database.Listener
-	exists, err = database.Engine.Where("type = ? AND status = ?", client.Listener, 1).Get(&listener)
+	exists, err = database.DB().Where("type = ? AND status = ?", client.Listener, 1).Get(&listener)
 	if err != nil || !exists {
 		return fmt.Errorf("监听器不存在或未运行")
 	}

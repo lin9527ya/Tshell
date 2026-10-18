@@ -62,7 +62,7 @@ func Migrate(c *gin.Context) {
 
 	// 1. 会话与监听器信息
 	var client database.Clients
-	has, err := database.Engine.Where("uid = ?", body.Uid).Get(&client)
+	has, err := database.DB().Where("uid = ?", body.Uid).Get(&client)
 	if err != nil || !has {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "会话不存在"})
 		return

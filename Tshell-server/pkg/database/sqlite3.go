@@ -80,10 +80,7 @@ func isWeakPassword(pwd string) bool {
 			return true
 		}
 	}
-	if len(pwd) < 8 {
-		return true
-	}
-	return false
+	return len(pwd) < 8
 }
 
 // CreateSecureUser 创建安全用户
@@ -1239,7 +1236,7 @@ _, _ = Engine.Exec("CREATE INDEX IF NOT EXISTS idx_downloads_uid ON downloads(ui
 }
 
 // InsertData 函数用于插入任意表的数据（D45: 移除每次插入的 Sync2——schema 同步在启动时统一完成）
-func InsertData(engine *xorm.Engine, table interface{}) error {
+func InsertData(engine Store, table interface{}) error {
 	// 使用反射获取表的信息
 	valueOfTable := reflect.ValueOf(table)
 	if valueOfTable.Kind() != reflect.Ptr || valueOfTable.Elem().Kind() != reflect.Struct {
@@ -1254,7 +1251,7 @@ func InsertData(engine *xorm.Engine, table interface{}) error {
 
 	return nil
 }
-func ExecuteSQL(engine *xorm.Engine, sql string, args ...interface{}) error {
+func ExecuteSQL(engine Store, sql string, args ...interface{}) error {
 	_, err := engine.Exec(append([]interface{}{sql}, args...)...)
 	if err != nil {
 		return fmt.Errorf("failed to execute SQL: %v", err)

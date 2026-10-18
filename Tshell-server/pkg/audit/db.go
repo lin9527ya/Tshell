@@ -24,19 +24,19 @@ var errAuditDBNotReady = fmt.Errorf("审计日志库未初始化")
 // persistBatch 将一批审计日志写入 AuditLogDB（由 flushBatch 在文件落盘后调用）。
 // 失败仅记 debug 日志，不影响文件主链路。
 func (al *AuditLogger) persistBatch(batch []AuditLog) {
-	if database.Engine == nil || len(batch) == 0 {
+	if database.DB() == nil || len(batch) == 0 {
 		return
 	}
 	rows := make([]database.AuditLogDB, 0, len(batch))
 	for _, l := range batch {
 		rows = append(rows, auditLogToDB(l))
 	}
-	if _, err := database.Engine.Insert(&rows); err == nil {
+	if _, err := database.DB().Insert(&rows); err == nil {
 		return
 	}
 	// 整批失败（多为 LogID 唯一索引冲突，如重放）：逐条插入并跳过冲突项
 	for i := range rows {
-		if _, err := database.Engine.Insert(&rows[i]); err != nil {
+		if _, err := database.DB().Insert(&rows[i]); err != nil {
 			logx.Debugf("[AUDIT] 日志入库失败（已跳过）: %s: %v\n", rows[i].LogID, err)
 		}
 	}
@@ -113,15 +113,15 @@ func applyLogFilters(sess *xorm.Session, params LogQueryParams) *xorm.Session {
 
 // queryLogsFromDB 从库中按条件查询并分页（时间倒序）。
 func queryLogsFromDB(params LogQueryParams) ([]AuditLog, int, error) {
-	if database.Engine == nil {
+	if database.DB() == nil {
 		return nil, 0, errAuditDBNotReady
 	}
-	total, err := applyLogFilters(database.Engine.Where("1=1"), params).Count(new(database.AuditLogDB))
+	total, err := applyLogFilters(database.DB().Where("1=1"), params).Count(new(database.AuditLogDB))
 	if err != nil {
 		return nil, 0, err
 	}
 	var rows []database.AuditLogDB
-	if err := applyLogFilters(database.Engine.Where("1=1"), params).
+	if err := applyLogFilters(database.DB().Where("1=1"), params).
 		OrderBy("ts_unix DESC, id DESC").
 		Limit(params.PageSize, (params.Page-1)*params.PageSize).
 		Find(&rows); err != nil {
@@ -136,8 +136,8 @@ func queryLogsFromDB(params LogQueryParams) ([]AuditLog, int, error) {
 
 // cleanupDBBefore 删除早于 cutoff 的库内审计日志（与文件清理同步执行）。
 func cleanupDBBefore(cutoff time.Time) (int64, error) {
-	if database.Engine == nil {
+	if database.DB() == nil {
 		return 0, nil
 	}
-	return database.Engine.Where("ts_unix < ?", cutoff.Unix()).Delete(new(database.AuditLogDB))
+	return database.DB().Where("ts_unix < ?", cutoff.Unix()).Delete(new(database.AuditLogDB))
 }

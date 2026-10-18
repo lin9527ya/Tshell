@@ -252,7 +252,7 @@ func queryLogs(params LogQueryParams) ([]AuditLog, int, error) {
 // QueryLoginFailures 返回 since 之后的登录失败记录（时间倒序，最多 limit 条）。
 // 与 /api/audit/logs 同源（落库后走库），供 IOC 报告等聚合使用；失败返回 nil。
 func QueryLoginFailures(since time.Time, limit int) []string {
-	if database.Engine == nil || limit <= 0 {
+	if database.DB() == nil || limit <= 0 {
 		return nil
 	}
 	logs, _, err := queryLogs(LogQueryParams{

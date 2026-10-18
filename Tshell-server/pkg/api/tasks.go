@@ -52,7 +52,7 @@ func operatorFromContext(c *gin.Context) string {
 
 // createTaskRows 为每个 uid 建一条 dispatched 任务，返回任务组 ID 与实际建成的行。
 func createTaskRows(uids []string, operator, kind, command string) (string, []*database.Task) {
-	if database.Engine == nil {
+	if database.DB() == nil {
 		return "", nil
 	}
 	batchID := newTaskBatchID()
@@ -67,7 +67,7 @@ func createTaskRows(uids []string, operator, kind, command string) (string, []*d
 			BatchID: batchID, UID: uid, Operator: operator, Kind: kind,
 			Command: command, Status: taskStatusDispatched, CreatedAt: now, CreatedUnix: now.Unix(),
 		}
-		if _, err := database.Engine.Insert(task); err != nil {
+		if _, err := database.DB().Insert(task); err != nil {
 			logx.Warnf("[TASK] 任务落库失败 uid=%s: %v\n", uid, err)
 			continue
 		}
@@ -79,7 +79,7 @@ func createTaskRows(uids []string, operator, kind, command string) (string, []*d
 
 // finishTask 写入终态（只对 dispatched 生效，避免覆盖已终态；幂等）。
 func finishTask(id int64, status, result, errMsg string) {
-	if database.Engine == nil || id <= 0 {
+	if database.DB() == nil || id <= 0 {
 		return
 	}
 	if len(result) > taskResultMaxBytes {
@@ -87,9 +87,9 @@ func finishTask(id int64, status, result, errMsg string) {
 	}
 	// 读一次取 kind/创建时间供指标用；终态判定仍由下面 UPDATE 的 WHERE 原子保证
 	var snapshot database.Task
-	hasSnapshot, _ := database.Engine.ID(id).Get(&snapshot)
+	hasSnapshot, _ := database.DB().ID(id).Get(&snapshot)
 
-	res, err := database.Engine.Table(new(database.Task)).
+	res, err := database.DB().Table(new(database.Task)).
 		Where("id = ? AND status = ?", id, taskStatusDispatched).
 		Update(map[string]interface{}{
 			"status": status, "result": result, "error": errMsg, "finished_at": time.Now(),
@@ -108,11 +108,11 @@ func finishTask(id int64, status, result, errMsg string) {
 // 协议没有逐命令 ACK / 请求 ID，无法精确归属；按"先下发先回显"近似
 // （同一 uid 上并发多条命令时可能错位——这是协议层限制，注释在此说明）。
 func OnTaskOutput(uid, output string) {
-	if database.Engine == nil || uid == "" {
+	if database.DB() == nil || uid == "" {
 		return
 	}
 	var task database.Task
-	has, err := database.Engine.Where("uid = ? AND status = ?", uid, taskStatusDispatched).
+	has, err := database.DB().Where("uid = ? AND status = ?", uid, taskStatusDispatched).
 		OrderBy("id").Get(&task)
 	if err != nil || !has {
 		return
@@ -196,7 +196,7 @@ func BatchCommand(c *gin.Context) {
 
 // GetTaskRow 单条任务（GET /api/tasks/:id）——前端按 id 轮询终态用。
 func GetTaskRow(c *gin.Context) {
-	if database.Engine == nil {
+	if database.DB() == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库不可用"})
 		return
 	}
@@ -206,7 +206,7 @@ func GetTaskRow(c *gin.Context) {
 		return
 	}
 	var task database.Task
-	has, err := database.Engine.ID(id).Get(&task)
+	has, err := database.DB().ID(id).Get(&task)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询任务失败: " + err.Error()})
 		return
@@ -222,7 +222,7 @@ func GetTaskRow(c *gin.Context) {
 // 下载没有"结束"报文，此前只有一行字节进度；这里把它收敛成任务的终态，
 // 让任务中心能回答"这个文件下完了没有"。
 func OnDownloadEnd(uid, filePath, status string) {
-	if database.Engine == nil || uid == "" || filePath == "" {
+	if database.DB() == nil || uid == "" || filePath == "" {
 		return
 	}
 	// 凭据制品优先：命中凭据请求的产物时按凭据链路收敛（校验/登记/任务/审计），
@@ -232,7 +232,7 @@ func OnDownloadEnd(uid, filePath, status string) {
 	}
 	// 同一 uid 同一路径可能重复下载：只收敛最早一条仍在 dispatched 的记录
 	var task database.Task
-	has, err := database.Engine.Where("uid = ? AND kind = ? AND command = ? AND status = ?",
+	has, err := database.DB().Where("uid = ? AND kind = ? AND command = ? AND status = ?",
 		uid, "download", "download "+filePath, taskStatusDispatched).
 		OrderBy("id ASC").Get(&task)
 	if err != nil || !has {
@@ -248,12 +248,12 @@ func OnDownloadEnd(uid, filePath, status string) {
 // ListTasks 批量任务视图（按 BatchID 聚合，兼容旧前端契约）。
 // 数据来自 task 表；status=done 表示该组所有 uid 都已终态。
 func ListTasks(c *gin.Context) {
-	if database.Engine == nil {
+	if database.DB() == nil {
 		c.JSON(http.StatusOK, gin.H{"status": 200, "data": []TaskRecord{}})
 		return
 	}
 	var rows []database.Task
-	if err := database.Engine.OrderBy("id DESC").Limit(1000).Find(&rows); err != nil {
+	if err := database.DB().OrderBy("id DESC").Limit(1000).Find(&rows); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询任务失败: " + err.Error()})
 		return
 	}
@@ -293,7 +293,7 @@ func ListTasks(c *gin.Context) {
 // ListTaskRows 任务明细（可过滤、分页）——任务中心用。
 // GET /api/tasks?uid=&status=&kind=&page=&size=
 func ListTaskRows(c *gin.Context) {
-	if database.Engine == nil {
+	if database.DB() == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库不可用"})
 		return
 	}
@@ -307,7 +307,7 @@ func ListTaskRows(c *gin.Context) {
 	}
 	// xorm.Session 不能 Clone，条件构造抽成闭包，统计与查询各建一个 session
 	applyFilters := func() *xorm.Session {
-		sess := database.Engine.Where("1=1")
+		sess := database.DB().Where("1=1")
 		if uid := strings.TrimSpace(c.Query("uid")); uid != "" {
 			sess = sess.And("uid = ?", uid)
 		}
@@ -338,7 +338,7 @@ func ListTaskRows(c *gin.Context) {
 // 说明：命令一旦下发无法从客户端撤回（协议无撤销），队列型客户端的命令块也没有
 // 请求 ID、无法从队列中摘除 —— 这里只把任务标记为 cancelled，如实表达"不再等待回显"。
 func CancelTask(c *gin.Context) {
-	if database.Engine == nil {
+	if database.DB() == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库不可用"})
 		return
 	}
@@ -347,7 +347,7 @@ func CancelTask(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的任务 ID"})
 		return
 	}
-	res, err := database.Engine.Table(new(database.Task)).
+	res, err := database.DB().Table(new(database.Task)).
 		Where("id = ? AND status = ?", id, taskStatusDispatched).
 		Update(map[string]interface{}{"status": taskStatusCancelled, "finished_at": time.Now()})
 	if err != nil {
@@ -367,12 +367,12 @@ func StartTaskCleanup() {
 		ticker := time.NewTicker(10 * time.Minute)
 		defer ticker.Stop()
 		for range ticker.C {
-			if database.Engine == nil {
+			if database.DB() == nil {
 				continue
 			}
 			// 超时收敛：批量 UPDATE 拿不到逐条的 kind，指标按"条数"计入 unknown
 			// （这里只用于观察"有多少任务在滞留"，不参与按类型的吞吐分析）
-			if n, err := database.Engine.Table(new(database.Task)).
+			if n, err := database.DB().Table(new(database.Task)).
 				Where("status = ? AND created_unix < ?", taskStatusDispatched, time.Now().Add(-taskStaleTimeout).Unix()).
 				Update(map[string]interface{}{"status": taskStatusTimeout, "finished_at": time.Now()}); err != nil {
 				logx.Warnf("[TASK] 超时任务清理失败: %v\n", err)
@@ -381,7 +381,7 @@ func StartTaskCleanup() {
 					metrics.TaskFinished("unknown", taskStatusTimeout, 0)
 				}
 			}
-			if _, err := database.Engine.
+			if _, err := database.DB().
 				Where("status != ? AND created_unix < ?", taskStatusDispatched, time.Now().Add(-taskRetention).Unix()).
 				Delete(new(database.Task)); err != nil {
 				logx.Warnf("[TASK] 过期任务清理失败: %v\n", err)
@@ -400,7 +400,7 @@ func UpdateClientGroup(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "uid 必填"})
 		return
 	}
-	_, err := database.Engine.Where("uid = ?", req.Uid).Update(&database.Clients{Group: req.Group})
+	_, err := database.DB().Where("uid = ?", req.Uid).Update(&database.Clients{Group: req.Group})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": errors.SanitizeError(err)})
 		return
@@ -418,7 +418,7 @@ func BatchUpdateClientGroup(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "uids 必填"})
 		return
 	}
-	session := database.Engine.NewSession()
+	session := database.DB().NewSession()
 	defer session.Close()
 	if err := session.Begin(); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": errors.SanitizeError(err)})

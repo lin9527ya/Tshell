@@ -63,7 +63,7 @@ func DynamicStageShellCodeGen(c *gin.Context) {
 
 	// 获取WebDelivery信息
 	var wd database.WebDelivery
-	database.Engine.Where("listening_port = ?", request.Port).Get(&wd)
+	database.DB().Where("listening_port = ?", request.Port).Get(&wd)
 	if wd.ListeningPort == "" {
 		c.JSON(http.StatusOK, gin.H{"status": 400, "data": "WebDelivery不存在"})
 		return
@@ -279,7 +279,7 @@ func GetStagerBuildInfo(c *gin.Context) {
 	// 这里可以从数据库获取构建历史
 	// 为简化实现，返回基本信息
 	var wd database.WebDelivery
-	database.Engine.Where("listening_port = ?", port).Get(&wd)
+	database.DB().Where("listening_port = ?", port).Get(&wd)
 	if wd.ListeningPort == "" {
 		c.JSON(http.StatusOK, gin.H{"status": 400, "data": "WebDelivery不存在"})
 		return
@@ -302,17 +302,17 @@ func logStagerBuild(port, format, sourceHash string, size int) {
 	logx.Infof("[STAGER BUILD] Port: %s, Format: %s, Hash: %s, Size: %d bytes\n",
 		port, format, sourceHash, size)
 	var wd database.WebDelivery
-	if has, _ := database.Engine.Where("listening_port = ?", port).Get(&wd); has {
+	if has, _ := database.DB().Where("listening_port = ?", port).Get(&wd); has {
 		wd.BuildCount++
 		wd.LastBuild = time.Now().Format("2006-01-02 15:04:05") // P2-10: 真实构建时间(原 stager-info 返回假数据)
-		database.Engine.Where("listening_port = ?", port).Update(&wd)
+		database.DB().Where("listening_port = ?", port).Update(&wd)
 	}
 }
 
 // getBuildCount 获取构建次数
 func getBuildCount(port string) int {
 	var wd database.WebDelivery
-	if has, _ := database.Engine.Where("listening_port = ?", port).Get(&wd); has {
+	if has, _ := database.DB().Where("listening_port = ?", port).Get(&wd); has {
 		return wd.BuildCount
 	}
 	return 0
@@ -336,7 +336,7 @@ func StageShellCodeGen(c *gin.Context) {
 	shellcode.Listener = resolveListenerAddress(shellcode.Listener, "connect")
 
 	var wd database.WebDelivery
-	database.Engine.Where("listening_port = ?", shellcode.Port).Get(&wd)
+	database.DB().Where("listening_port = ?", shellcode.Port).Get(&wd)
 	if wd.ListeningPort == "" {
 		c.JSON(http.StatusOK, gin.H{"status": 400, "data": "WebDelivery不存在"})
 		return
@@ -495,7 +495,7 @@ func DeleteStagerToken(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"status": 400, "message": "参数无效"})
 		return
 	}
-	if _, err := database.Engine.ID(req.ID).Delete(new(database.StagerToken)); err != nil {
+	if _, err := database.DB().ID(req.ID).Delete(new(database.StagerToken)); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"status": 500, "message": err.Error()})
 		return
 	}

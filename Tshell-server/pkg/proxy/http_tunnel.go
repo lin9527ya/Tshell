@@ -76,14 +76,14 @@ func StartHTTPTunnel(tunnel database.TunnelProxy) error {
 
 	// 获取客户端信息
 	var client database.Clients
-	exists, err := database.Engine.Where("uid = ? AND online = '1'", tunnel.ClientUID).Get(&client)
+	exists, err := database.DB().Where("uid = ? AND online = '1'", tunnel.ClientUID).Get(&client)
 	if err != nil || !exists {
 		return fmt.Errorf("客户端不在线或不存在")
 	}
 
 	// 获取监听器信息以确定客户端连接地址
 	var listener database.Listener
-	exists, err = database.Engine.Where("type = ? AND status = ?", client.Listener, 1).Get(&listener)
+	exists, err = database.DB().Where("type = ? AND status = ?", client.Listener, 1).Get(&listener)
 	if err != nil || !exists {
 		return fmt.Errorf("监听器不存在或未运行")
 	}
@@ -105,7 +105,7 @@ func StartHTTPTunnel(tunnel database.TunnelProxy) error {
 	// 分配Agent监听端口（HTTP代理端口+1000）
 	agentPort := tunnel.ServerPort + 1000
 	if _, exists := globalHTTPTunnelManager.listeners[agentPort]; exists {
-		return fmt.Errorf("Agent端口 %d 已被占用", agentPort)
+		return fmt.Errorf("agent 端口 %d 已被占用", agentPort)
 	}
 
 	// 从监听器连接地址中提取IP地址

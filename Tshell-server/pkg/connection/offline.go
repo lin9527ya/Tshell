@@ -131,8 +131,8 @@ func Thresholds(sleepSeconds, jitterPercent int) (quick, warning, critical time.
 // 与监听类型映射。所有离线写点（检测器/断连 defer/SmartOfflineCheck）统一走这里，
 // 消除散落的 Online="2" 直写与状态震荡。
 func MarkOffline(uid, listener, reason string) {
-	if database.Engine != nil {
-		affected, err := database.Engine.Where("uid = ?", uid).Update(&database.Clients{Online: "2"})
+	if database.DB() != nil {
+		affected, err := database.DB().Where("uid = ?", uid).Update(&database.Clients{Online: "2"})
 		database.LogUpdate(affected, err, "MarkOffline uid="+uid)
 	}
 	logx.Infof("🔴 [%s] 客户端 %s 标记离线（%s）\n", listener, uid, reason)

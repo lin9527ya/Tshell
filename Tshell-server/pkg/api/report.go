@@ -4,7 +4,6 @@ import (
 	"BackendTemplate/pkg/audit"
 	"BackendTemplate/pkg/database"
 	"BackendTemplate/pkg/security"
-	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -20,19 +19,19 @@ import (
 
 // ClientReport 客户端操作报告
 type ClientReport struct {
-	UID         string           `json:"uid"`
-	GeneratedAt string           `json:"generated_at"`
-	ShellHistory string          `json:"shell_history"`
-	SessionLogs []SessionLogInfo `json:"session_logs"`
-	Downloads   []database.Downloads `json:"downloads"`
+	UID          string               `json:"uid"`
+	GeneratedAt  string               `json:"generated_at"`
+	ShellHistory string               `json:"shell_history"`
+	SessionLogs  []SessionLogInfo     `json:"session_logs"`
+	Downloads    []database.Downloads `json:"downloads"`
 }
 
 // SessionLogInfo 会话录像信息
 type SessionLogInfo struct {
-	File      string `json:"file"`
-	Size      int64  `json:"size"`
-	Modified  string `json:"modified"`
-	Downloadable bool `json:"downloadable"`
+	File         string `json:"file"`
+	Size         int64  `json:"size"`
+	Modified     string `json:"modified"`
+	Downloadable bool   `json:"downloadable"`
 }
 
 // GetClientReport 导出客户端操作报告
@@ -53,7 +52,7 @@ func GetClientReport(c *gin.Context) {
 
 	// 1. Shell 历史
 	var shell database.Shell
-	database.Engine.Where("uid = ?", uid).Get(&shell)
+	database.DB().Where("uid = ?", uid).Get(&shell)
 	report.ShellHistory = shell.ShellContent
 
 	// 2. 会话录像列表
@@ -68,9 +67,9 @@ func GetClientReport(c *gin.Context) {
 			if len(name) > len(uid) && name[:len(uid)] == uid {
 				info, _ := e.Info()
 				report.SessionLogs = append(report.SessionLogs, SessionLogInfo{
-					File:        name,
-					Size:        info.Size(),
-					Modified:    info.ModTime().Format("2006-01-02 15:04:05"),
+					File:         name,
+					Size:         info.Size(),
+					Modified:     info.ModTime().Format("2006-01-02 15:04:05"),
 					Downloadable: true,
 				})
 			}
@@ -81,7 +80,7 @@ func GetClientReport(c *gin.Context) {
 	}
 
 	// 3. 下载记录
-	database.Engine.Where("uid = ?", uid).Find(&report.Downloads)
+	database.DB().Where("uid = ?", uid).Find(&report.Downloads)
 
 	c.JSON(http.StatusOK, gin.H{"status": 200, "data": report})
 }
@@ -106,7 +105,7 @@ func DownloadSessionLog(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "录像文件不存在"})
 		return
 	}
-	c.Header("Content-Disposition", "attachment; filename="+fmt.Sprintf("%s", clean))
+	c.Header("Content-Disposition", "attachment; filename="+clean)
 	c.File(path)
 }
 
@@ -114,12 +113,12 @@ func DownloadSessionLog(c *gin.Context) {
 
 // IOCReport 威胁指标报告
 type IOCReport struct {
-	GeneratedAt      string   `json:"generated_at"`
-	Hosts            []IOCSession `json:"hosts"`
-	ListenerAddresses []string `json:"listener_addresses"`
-	LoginFailures    []string `json:"login_failures"`
-	BlockedIPs       []string `json:"blocked_ips"`
-	Artifacts        []IOCArtifact `json:"artifacts"`
+	GeneratedAt       string        `json:"generated_at"`
+	Hosts             []IOCSession  `json:"hosts"`
+	ListenerAddresses []string      `json:"listener_addresses"`
+	LoginFailures     []string      `json:"login_failures"`
+	BlockedIPs        []string      `json:"blocked_ips"`
+	Artifacts         []IOCArtifact `json:"artifacts"`
 }
 
 // IOCSession 会话指标
@@ -146,7 +145,7 @@ func GetIOCReport(c *gin.Context) {
 	rep := IOCReport{GeneratedAt: time.Now().Format("2006-01-02 15:04:05"), Hosts: []IOCSession{}, ListenerAddresses: []string{}, LoginFailures: []string{}, BlockedIPs: []string{}, Artifacts: []IOCArtifact{}}
 
 	var clients []database.Clients
-	if err := database.Engine.Find(&clients); err == nil {
+	if err := database.DB().Find(&clients); err == nil {
 		for _, cl := range clients {
 			rep.Hosts = append(rep.Hosts, IOCSession{
 				UID: cl.Uid, Host: cl.Computer, User: cl.Username,
@@ -156,7 +155,7 @@ func GetIOCReport(c *gin.Context) {
 		}
 	}
 	var listeners []database.Listener
-	if err := database.Engine.Find(&listeners); err == nil {
+	if err := database.DB().Find(&listeners); err == nil {
 		seen := map[string]bool{}
 		for _, l := range listeners {
 			addr := l.ConnectAddress
@@ -171,7 +170,7 @@ func GetIOCReport(c *gin.Context) {
 		}
 	}
 	var downloads []database.Downloads
-	if err := database.Engine.Find(&downloads); err == nil {
+	if err := database.DB().Find(&downloads); err == nil {
 		seen := map[string]bool{}
 		for _, d := range downloads {
 			if !seen[d.FileName] {
@@ -198,11 +197,11 @@ func GetIOCReport(c *gin.Context) {
 
 // SocialReport 社会工程报告
 type SocialReport struct {
-	GeneratedAt string         `json:"generated_at"`
+	GeneratedAt string           `json:"generated_at"`
 	Deliveries  []SocialDelivery `json:"deliveries"`
 	Clicks      []SocialClick    `json:"clicks"`
-	TotalClicks int             `json:"total_clicks"`
-	UniqueIPs   int             `json:"unique_ips"`
+	TotalClicks int              `json:"total_clicks"`
+	UniqueIPs   int              `json:"unique_ips"`
 }
 
 type SocialDelivery struct {
@@ -212,11 +211,11 @@ type SocialDelivery struct {
 }
 
 type SocialClick struct {
-	Time     string `json:"time"`
-	Resource string `json:"resource"`
-	ClientIP string `json:"client_ip"`
-	UserAgent string `json:"user_agent"`
-	StatusCode int   `json:"status_code"`
+	Time       string `json:"time"`
+	Resource   string `json:"resource"`
+	ClientIP   string `json:"client_ip"`
+	UserAgent  string `json:"user_agent"`
+	StatusCode int    `json:"status_code"`
 }
 
 // GetSocialReport 社会工程报告:基于 WebDelivery 投递访问日志
@@ -224,7 +223,7 @@ func GetSocialReport(c *gin.Context) {
 	rep := SocialReport{GeneratedAt: time.Now().Format("2006-01-02 15:04:05"), Deliveries: []SocialDelivery{}, Clicks: []SocialClick{}}
 
 	var wds []database.WebDelivery
-	if err := database.Engine.Find(&wds); err == nil {
+	if err := database.DB().Find(&wds); err == nil {
 		for _, w := range wds {
 			st := "关闭"
 			if w.Status == 1 {
@@ -236,11 +235,11 @@ func GetSocialReport(c *gin.Context) {
 		}
 	}
 	var logs []database.DeliveryAccessLog
-	if err := database.Engine.Desc("i_d").Limit(500).Find(&logs); err == nil {
+	if err := database.DB().Desc("i_d").Limit(500).Find(&logs); err == nil {
 		ips := map[string]bool{}
 		for _, l := range logs {
 			rep.Clicks = append(rep.Clicks, SocialClick{
-				Time: l.CreatedAt.Format("2006-01-02 15:04:05"),
+				Time:     l.CreatedAt.Format("2006-01-02 15:04:05"),
 				Resource: l.Resource, ClientIP: l.ClientIP,
 				UserAgent: l.UserAgent, StatusCode: l.StatusCode,
 			})
@@ -275,30 +274,30 @@ type TTPTechnique struct {
 
 // ttpMap 命令首词 → (战术, 技术) 基础映射(MITRE ATT&CK 简化)
 var ttpMap = map[string][2]string{
-	"persist": {"持久化", "T1547 启动项/计划任务"},
-	"wmi_persist": {"持久化", "T1546 WMI 事件订阅"},
-	"psexec": {"横向移动", "T1021 SMB 服务执行"},
-	"wmi_exec": {"横向移动", "T1047 WMI 远程执行"},
-	"winrm_exec": {"横向移动", "T1021 WinRM"},
-	"make_token": {"凭证获取", "T1134 令牌模拟"},
-	"steal_token": {"凭证获取", "T1134 令牌窃取"},
-	"inject": {"防御规避", "T1055 进程注入"},
-	"keylog_start": {"收集", "T1056 键盘记录"},
-	"keylog_get": {"收集", "T1056 键盘记录"},
-	"screenshot1": {"收集", "T1113 屏幕截图"},
-	"clipboard": {"收集", "T1115 剪贴板"},
-	"ad_enum": {"侦察", "T1018 域枚举"},
-	"net": {"侦察", "T1018 网络发现"},
-	"shell": {"执行", "T1059 命令解释器"},
-	"execute": {"执行", "T1059 程序执行"},
-	"selfdelete": {"防御规避", "T1070 痕迹清理"},
+	"persist":         {"持久化", "T1547 启动项/计划任务"},
+	"wmi_persist":     {"持久化", "T1546 WMI 事件订阅"},
+	"psexec":          {"横向移动", "T1021 SMB 服务执行"},
+	"wmi_exec":        {"横向移动", "T1047 WMI 远程执行"},
+	"winrm_exec":      {"横向移动", "T1021 WinRM"},
+	"make_token":      {"凭证获取", "T1134 令牌模拟"},
+	"steal_token":     {"凭证获取", "T1134 令牌窃取"},
+	"inject":          {"防御规避", "T1055 进程注入"},
+	"keylog_start":    {"收集", "T1056 键盘记录"},
+	"keylog_get":      {"收集", "T1056 键盘记录"},
+	"screenshot1":     {"收集", "T1113 屏幕截图"},
+	"clipboard":       {"收集", "T1115 剪贴板"},
+	"ad_enum":         {"侦察", "T1018 域枚举"},
+	"net":             {"侦察", "T1018 网络发现"},
+	"shell":           {"执行", "T1059 命令解释器"},
+	"execute":         {"执行", "T1059 程序执行"},
+	"selfdelete":      {"防御规避", "T1070 痕迹清理"},
 	"selfdelete_exit": {"防御规避", "T1070 痕迹清理"},
-	"etw_patch": {"防御规避", "T1562 禁用检测"},
-	"unhook_ntdll": {"防御规避", "T1562 禁用检测"},
-	"hideprocess": {"防御规避", "T1564 伪装"},
-	"hidenet": {"防御规避", "T1564 伪装"},
-	"reg_query": {"发现", "T1012 注册表查询"},
-	"services": {"发现", "T1007 服务发现"},
+	"etw_patch":       {"防御规避", "T1562 禁用检测"},
+	"unhook_ntdll":    {"防御规避", "T1562 禁用检测"},
+	"hideprocess":     {"防御规避", "T1564 伪装"},
+	"hidenet":         {"防御规避", "T1564 伪装"},
+	"reg_query":       {"发现", "T1012 注册表查询"},
+	"services":        {"发现", "T1007 服务发现"},
 }
 
 // GetTTPReport 战术 TTP 报告:解析会话 shell 历史命令 → MITRE 映射统计
@@ -306,11 +305,11 @@ func GetTTPReport(c *gin.Context) {
 	rep := TTPReport{GeneratedAt: time.Now().Format("2006-01-02 15:04:05"), PerSession: []TTPLine{}, Techniques: []TTPTechnique{}}
 
 	var clients []database.Clients
-	_ = database.Engine.Find(&clients)
+	_ = database.DB().Find(&clients)
 	techniqueCount := map[string]int{}
 	for _, cl := range clients {
 		var sh database.Shell
-		if has, _ := database.Engine.Where("uid = ?", cl.Uid).Get(&sh); !has {
+		if has, _ := database.DB().Where("uid = ?", cl.Uid).Get(&sh); !has {
 			continue
 		}
 		for _, line := range splitShellLines(sh.ShellContent) {

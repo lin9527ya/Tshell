@@ -159,7 +159,7 @@ func HandleTcpConnectionForWithKeys(conn net.Conn, listenerType string, masterKe
 
 // 在数据库中标记为离线
 			// LogUpdate 统一记结果日志；不用 MarkOffline——其无条件删 ClientListenerType 会破坏上方振荡修复守卫的语义
-			affected, err := database.Engine.Where("uid = ?", currentUID).Update(&database.Clients{Online: "2"})
+			affected, err := database.DB().Where("uid = ?", currentUID).Update(&database.Clients{Online: "2"})
 			database.LogUpdate(affected, err, "TCP断连置离线 uid="+currentUID)
 
 			// 实时事件：连接断开也要发布离线事件（原仅超时判离线时发布）
@@ -389,9 +389,9 @@ func processMessage(ctx context.Context, reader *bufio.Reader, conn net.Conn, co
 			if tcpAddr, ok := conn.LocalAddr().(*net.TCPAddr); ok {
 				port := strconv.Itoa(tcpAddr.Port)
 				var lis database.Listener
-				if has, _ := database.Engine.Where("type = ? AND listen_address LIKE ?", listenerType, "%:"+port).Get(&lis); has && lis.ConnectAddress != "" {
+				if has, _ := database.DB().Where("type = ? AND listen_address LIKE ?", listenerType, "%:"+port).Get(&lis); has && lis.ConnectAddress != "" {
 					connection.ClientListenerAddr[uid] = lis.ConnectAddress
-				} else if has, _ := database.Engine.Where("type = ?", listenerType).Desc("id").Get(&lis); has && lis.ConnectAddress != "" {
+				} else if has, _ := database.DB().Where("type = ?", listenerType).Desc("id").Get(&lis); has && lis.ConnectAddress != "" {
 					connection.ClientListenerAddr[uid] = lis.ConnectAddress
 				} else {
 					connection.ClientListenerAddr[uid] = net.JoinHostPort(tcpAddr.IP.String(), port)
@@ -403,7 +403,7 @@ func processMessage(ctx context.Context, reader *bufio.Reader, conn net.Conn, co
 		connection.MuClientListenerType.Unlock()
 
 		var client database.Clients
-		exsists, _ := database.Engine.Where("uid = ?", uid).Get(&client)
+		exsists, _ := database.DB().Where("uid = ?", uid).Get(&client)
 		if !exsists { // FirstBlood
 			processID := binary.BigEndian.Uint32(metainfo[:4])
 			flag := int(metainfo[4:5][0])
@@ -451,9 +451,9 @@ func processMessage(ctx context.Context, reader *bufio.Reader, conn net.Conn, co
 			// 从监听器配置中获取心跳参数
 			heartbeatTimeout, heartbeatInterval := database.GetListenerHeartbeatConfigByAddr(conn.LocalAddr().String(), listenerType)
 
-			database.Engine.Insert(&database.Clients{Uid: uid, FirstStart: formattedTime, ExternalIP: externalIp, InternalIP: localIP, Username: UserName, Computer: hostName, Process: processName, Pid: strconv.Itoa(int(processID)), Address: address, Arch: arch, Note: "", Sleep: strconv.Itoa(connection.ResolveSleepSeconds(osArray, heartbeatInterval)), Online: "1", Color: "", Listener: listenerType, Os: clientOs, HeartbeatTimeout: heartbeatTimeout, HeartbeatInterval: heartbeatInterval})
-			database.Engine.Insert(&database.Shell{Uid: uid, ShellContent: ""})
-			database.Engine.Insert(&database.Notes{Uid: uid, Note: ""})
+			database.DB().Insert(&database.Clients{Uid: uid, FirstStart: formattedTime, ExternalIP: externalIp, InternalIP: localIP, Username: UserName, Computer: hostName, Process: processName, Pid: strconv.Itoa(int(processID)), Address: address, Arch: arch, Note: "", Sleep: strconv.Itoa(connection.ResolveSleepSeconds(osArray, heartbeatInterval)), Online: "1", Color: "", Listener: listenerType, Os: clientOs, HeartbeatTimeout: heartbeatTimeout, HeartbeatInterval: heartbeatInterval})
+			database.DB().Insert(&database.Shell{Uid: uid, ShellContent: ""})
+			database.DB().Insert(&database.Notes{Uid: uid, Note: ""})
 
 			// 触发客户端上线通知
 			if notificationManager := notification.GetNotificationManager(); notificationManager != nil {

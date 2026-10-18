@@ -107,7 +107,7 @@ func (um *UserManager) OnConfigChanged(newConfig *Config) error {
 
 // updateDatabaseUser 更新数据库中的用户信息
 func (um *UserManager) updateDatabaseUser(oldUsername, newUsername, newPassword string) error {
-	if database.Engine == nil {
+	if database.DB() == nil {
 		return fmt.Errorf("数据库引擎未初始化")
 	}
 
@@ -115,7 +115,7 @@ func (um *UserManager) updateDatabaseUser(oldUsername, newUsername, newPassword 
 	if oldUsername != newUsername {
 		// 检查新用户名是否已存在
 		var existingUser database.Users
-		exists, err := database.Engine.Where("username = ?", newUsername).Get(&existingUser)
+		exists, err := database.DB().Where("username = ?", newUsername).Get(&existingUser)
 		if err != nil {
 			return fmt.Errorf("查询新用户名失败: %v", err)
 		}
@@ -129,7 +129,7 @@ func (um *UserManager) updateDatabaseUser(oldUsername, newUsername, newPassword 
 				return fmt.Errorf("创建新用户失败: %v", err)
 			}
 
-			err = database.InsertData(database.Engine, newUser)
+			err = database.InsertData(database.DB(), newUser)
 			if err != nil {
 				return fmt.Errorf("插入新用户失败: %v", err)
 			}
@@ -139,7 +139,7 @@ func (um *UserManager) updateDatabaseUser(oldUsername, newUsername, newPassword 
 
 		// 删除旧用户（如果用户名不同）
 		if oldUsername != "" && oldUsername != newUsername {
-			_, err = database.Engine.Where("username = ?", oldUsername).Delete(&database.Users{})
+			_, err = database.DB().Where("username = ?", oldUsername).Delete(&database.Users{})
 			if err != nil {
 				log.Printf("⚠️ 删除旧用户失败: %v", err)
 			} else {
@@ -156,14 +156,14 @@ func (um *UserManager) updateDatabaseUser(oldUsername, newUsername, newPassword 
 
 	// 保留创建时间
 	var existingUser database.Users
-	exists, err := database.Engine.Where("username = ?", newUsername).Get(&existingUser)
+	exists, err := database.DB().Where("username = ?", newUsername).Get(&existingUser)
 	if err == nil && exists {
 		newUser.CreatedAt = existingUser.CreatedAt
 	} else {
 		newUser.CreatedAt = time.Now()
 	}
 
-	_, err = database.Engine.Where("username = ?", newUsername).Update(newUser)
+	_, err = database.DB().Where("username = ?", newUsername).Update(newUser)
 	if err != nil {
 		return fmt.Errorf("更新用户密码失败: %v", err)
 	}

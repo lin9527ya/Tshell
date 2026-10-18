@@ -50,30 +50,59 @@ database:
 | 连接调优 | WAL/PRAGMA 调优 | 无对应项 | 仅 SQLite 执行 |
 | 旧库结构修复 | 无主键表重建 / 驼峰列名 | 不适用（新库） | 仅 SQLite 执行 |
 
-**约定**：新增原生 SQL 时不要直接 `Engine.Exec("... ?", args)` —— PostgreSQL 会报
+**约定**：新增原生 SQL 时不要直接 `database.DB().Exec("... ?", args)` —— PostgreSQL 会报
 语法错误。改用 `database.ExecSQL` / `database.QueryStringSQL`；xorm 的
 `Where/Update/Insert` 构建器自己处理方言，不受影响。
 
-## 4. 备份
+## 4. 存储访问层（Store 接口）
+
+业务代码不再直接引用具体的 xorm 引擎，统一走 `database.DB()`：
+
+```go
+// pkg/database/store.go
+type Store interface {
+    xorm.Interface                      // Where/ID/Table/Insert/... 链式查询
+    NewSession() *xorm.Session
+    Sync2(beans ...interface{}) error
+    Sync(beans ...interface{}) error
+    IsTableExist(beanOrTableName interface{}) (bool, error)
+    Close() error
+    Ping() error
+    SetMaxOpenConns(int); SetMaxIdleConns(int); SetConnMaxLifetime(time.Duration)
+}
+
+database.DB() Store        // 未初始化时返回 nil（类型化 nil 陷阱已在实现里规避）
+database.DBStats()         // 连接池统计，供 /metrics 采集，不把 xorm 的 core.DB 类型带出去
+```
+
+- **为什么**：换后端/换 ORM/给访问点统一加日志、重试、指标时，改动落在
+  `pkg/database` 一处，而不是 45 个业务文件。
+- **回归守卫**：根包 `store_access_test.go` 会遍历非测试源码，一旦有业务代码重新写
+  `database.Engine` 就失败（`pkg/database` 内部与 `_test.go` 不受限）。
+- **边界**：`Store` 刻意保持 xorm 的 fluent 风格（`Where` 返回 `*xorm.Session`），
+  所以迁移是零行为变更的机械替换；领域方法（如按 UID 取客户端）逐步在
+  `pkg/database` 里沉淀，业务层优先用领域方法、其次用通用查询。
+
+## 5. 备份
 
 - SQLite：内置备份/恢复（VACUUM INTO，见 `docs/BACKUP_RESTORE.md`）。
 - PostgreSQL：**内置备份不启用**（`VACUUM INTO` 与文件替换是 SQLite 语义），
   `/api/backup/*` 返回 503。请使用 `pg_dump` / `pg_basebackup`，恢复用
   `pg_restore`/`psql` 并重启服务端。
 
-## 5. 迁移与限制
+## 6. 迁移与限制
 
 - **单实例约束不变**：切到 PostgreSQL 只是换存储，连接池/在线状态/会话锁/事件流/
   命令队列仍在进程内存，仍然只能单副本（见 `DEPLOYMENT.md`）。多副本需要共享状态
   外置 + leader 选举，未实现。
 - **没有数据迁移工具**：SQLite → PostgreSQL 需要手工导出/导入（表结构由 Sync2 重建，
   数据可用 `pgloader` 或脚本搬运）。属后续工作。
-- **SQL 仍分散在 pkg/api**：本次完成的是"方言隔离 + 后端可切换"，尚未抽出
-  repository 层（`pkg/api` 中的 xorm 调用仍直接使用全局 Engine）。
+- **SQL 仍分散在 pkg/api**：访问点已统一收口到 `database.DB()`（见第 4 节），
+  但查询语句本身仍写在各业务包里，尚未抽成领域方法（repository）。属后续工作。
 - 未覆盖：时间类型在 PG 上是 `timestamp`，SQLite 是 `DATETIME` 文本；跨后端备份
   文件不通用。
 
-## 6. 验证
+## 7. 验证
 
 - 单测（默认 SQLite）：`go test ./pkg/database/`
   —— 覆盖 `Rebind`（含字符串字面量里的 `?`）、方言 SQL 选择、列内省、序列重置。

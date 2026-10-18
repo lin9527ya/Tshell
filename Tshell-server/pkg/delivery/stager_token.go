@@ -36,7 +36,7 @@ func GenerateStagerToken(publicKey string, quota int, note string) (string, erro
 		Note:      note,
 		CreatedAt: now,
 	}
-	if _, err := database.Engine.Insert(rec); err != nil {
+	if _, err := database.DB().Insert(rec); err != nil {
 		return "", fmt.Errorf("存储令牌失败: %v", err)
 	}
 	logx.Infof("🔑 [STAGER-TOKEN] 已生成门禁令牌: key=%s quota=%d token=%s\n", publicKey, quota, tokenHex)
@@ -52,7 +52,7 @@ func ConsumeStagerToken(publicKey, token, clientIP string) bool {
 	}
 	// 先取记录
 	var rec database.StagerToken
-	has, err := database.Engine.Where("token = ?", token).Get(&rec)
+	has, err := database.DB().Where("token = ?", token).Get(&rec)
 	if err != nil || !has {
 		return false
 	}
@@ -66,7 +66,7 @@ func ConsumeStagerToken(publicKey, token, clientIP string) bool {
 	}
 	// 原子扣减（CAS：where used=当前值，防并发双消费）
 	now := time.Now().Format("2006-01-02 15:04:05")
-	updated, err := database.Engine.Where("id = ? AND used = ?", rec.ID, rec.Used).
+	updated, err := database.DB().Where("id = ? AND used = ?", rec.ID, rec.Used).
 		Update(&database.StagerToken{Used: rec.Used + 1, LastUsedAt: now, LastUsedIP: clientIP})
 	if err != nil || updated == 0 {
 		// 并发下另一请求已扣减 → 拒绝本次（配额语义：一次一密）
@@ -79,7 +79,7 @@ func ConsumeStagerToken(publicKey, token, clientIP string) bool {
 // GetStagerTokens 查询投递的令牌列表（用于管理展示）
 func GetStagerTokens(publicKey string) ([]database.StagerToken, error) {
 	var list []database.StagerToken
-	err := database.Engine.Where("public_key = ?", publicKey).Asc("id").Find(&list)
+	err := database.DB().Where("public_key = ?", publicKey).Asc("id").Find(&list)
 	if err != nil {
 		return nil, err
 	}

@@ -107,7 +107,7 @@ func (nm *NotificationManager) OnClientOnline(clientUID string) {
 func (nm *NotificationManager) sendClientOnlineNotification(clientUID string) {
 	// 获取客户端信息
 	var client database.Clients
-	exists, err := database.Engine.Where("uid = ?", clientUID).Get(&client)
+	exists, err := database.DB().Where("uid = ?", clientUID).Get(&client)
 	if err != nil || !exists {
 		logx.Infof("[ERROR] 获取客户端信息失败: %s, 错误: %v\n", clientUID, err)
 		return
@@ -392,11 +392,8 @@ func (nm *NotificationManager) StartCleanupRoutine() {
 		ticker := time.NewTicker(30 * time.Minute) // 每30分钟清理一次
 		defer ticker.Stop()
 
-		for {
-			select {
-			case <-ticker.C:
-				nm.CleanupOldNotifications()
-			}
+		for range ticker.C {
+			nm.CleanupOldNotifications()
 		}
 	}()
 }

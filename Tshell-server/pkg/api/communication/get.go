@@ -159,7 +159,7 @@ func GetHttpWithKeys(w http.ResponseWriter, r *http.Request, vkey, salt []byte) 
 	}
 
 	var client database.Clients
-	exsists, _ := database.Engine.Where("uid = ?", uid).Get(&client)
+	exsists, _ := database.DB().Where("uid = ?", uid).Get(&client)
 	if !exsists { // FirstBlood
 		// 立即为客户端生成会话密钥（确保与客户端同步；仅首次，轮询不得重复派生覆盖唯一化后的密钥）
 		if encrypt.GlobalKeyManager != nil {
@@ -231,9 +231,9 @@ func GetHttpWithKeys(w http.ResponseWriter, r *http.Request, vkey, salt []byte) 
 		// 从监听器配置中获取心跳参数
 		heartbeatTimeout, heartbeatInterval := database.GetListenerHeartbeatConfigByAddr(requestListenAddr(r), listenerType)
 
-		database.Engine.Insert(&database.Clients{Uid: uid, FirstStart: formattedTime, ExternalIP: externalIp, InternalIP: localIP, Username: UserName, Computer: hostName, Process: processName, Pid: strconv.Itoa(int(processID)), Address: address, Arch: arch, Note: "", Sleep: strconv.Itoa(connection.ResolveSleepSeconds(osArray, heartbeatInterval)), Online: "1", Color: "", Listener: listenerType, Os: clientOs, HeartbeatTimeout: heartbeatTimeout, HeartbeatInterval: heartbeatInterval})
-		database.Engine.Insert(&database.Shell{Uid: uid, ShellContent: ""})
-		database.Engine.Insert(&database.Notes{Uid: uid, Note: ""})
+		database.DB().Insert(&database.Clients{Uid: uid, FirstStart: formattedTime, ExternalIP: externalIp, InternalIP: localIP, Username: UserName, Computer: hostName, Process: processName, Pid: strconv.Itoa(int(processID)), Address: address, Arch: arch, Note: "", Sleep: strconv.Itoa(connection.ResolveSleepSeconds(osArray, heartbeatInterval)), Online: "1", Color: "", Listener: listenerType, Os: clientOs, HeartbeatTimeout: heartbeatTimeout, HeartbeatInterval: heartbeatInterval})
+		database.DB().Insert(&database.Shell{Uid: uid, ShellContent: ""})
+		database.DB().Insert(&database.Notes{Uid: uid, Note: ""})
 
 		// 触发客户端上线通知
 		if notificationManager := notification.GetNotificationManager(); notificationManager != nil {

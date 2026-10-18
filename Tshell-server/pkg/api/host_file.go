@@ -85,7 +85,7 @@ func HostFileDelivery(c *gin.Context) {
 		meta.URIPath = uriPath
 	}
 
-	if _, err := database.Engine.Insert(&meta); err != nil {
+	if _, err := database.DB().Insert(&meta); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "入库失败: " + err.Error()})
 		return
 	}
@@ -93,7 +93,7 @@ func HostFileDelivery(c *gin.Context) {
 	// 注册 Hub 并生成公开 URL(与 StartWebDelivery 同款流程)
 	delivery.GlobalHub.Register(meta, delivery.Payload{Full: data, FileName: fileName})
 	delivery.BuildPublicURLs(&meta, delivery.GlobalHub.MainPort())
-	database.Engine.ID(meta.ID).Cols("server_address").Update(&meta.ServerAddress)
+	database.DB().ID(meta.ID).Cols("server_address").Update(&meta.ServerAddress)
 
 	if audit.GlobalAuditLogger != nil {
 		audit.GlobalAuditLogger.Log(audit.LogLevelInfo, audit.CategoryAPI, "HOST_FILE",

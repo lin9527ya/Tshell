@@ -412,7 +412,7 @@ func (l *Listener) registerClient(metainfo []byte, clientIP string) string {
 
 	// 插入数据库
 	var client database.Clients
-	exists, _ := database.Engine.Where("uid = ?", uid).Get(&client)
+	exists, _ := database.DB().Where("uid = ?", uid).Get(&client)
 	if !exists {
 		processID := binary.BigEndian.Uint32(metainfo[:4])
 		flag := int(metainfo[4:5][0])
@@ -451,7 +451,7 @@ func (l *Listener) registerClient(metainfo []byte, clientIP string) string {
 		}
 
 		heartbeatTimeout, heartbeatInterval := database.GetListenerHeartbeatConfigByAddr(l.key, "dns")
-		_, insertErr := database.Engine.Insert(&database.Clients{
+		_, insertErr := database.DB().Insert(&database.Clients{
 			Uid: uid, FirstStart: time.Now().Format("2006-01-02 15:04:05"),
 			ExternalIP: clientIP, InternalIP: localIP,
 			Username: username, Computer: hostname, Process: procName,
@@ -462,8 +462,8 @@ func (l *Listener) registerClient(metainfo []byte, clientIP string) string {
 		if insertErr != nil {
 			logx.Warnf("⚠️ [DNS-METAINFO] 插入客户端失败 uid=%s: %v\n", uid, insertErr)
 		}
-		database.Engine.Insert(&database.Shell{Uid: uid, ShellContent: ""})
-		database.Engine.Insert(&database.Notes{Uid: uid, Note: ""})
+		database.DB().Insert(&database.Shell{Uid: uid, ShellContent: ""})
+		database.DB().Insert(&database.Notes{Uid: uid, Note: ""})
 	}
 	database.SetClientOnline(uid, "dns")
 
@@ -501,7 +501,7 @@ func (l *Listener) updateClientOnline(uid string) {
 	l.dnsClientsLock.Unlock()
 
 	if !ok {
-		exists, _ := database.Engine.Where("uid = ?", uid).Exist(&database.Clients{})
+		exists, _ := database.DB().Where("uid = ?", uid).Exist(&database.Clients{})
 		if !exists {
 			return
 		}

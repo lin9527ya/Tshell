@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"sync"
 	"time"
@@ -28,9 +27,9 @@ type JWTManager struct {
 	keyCreatedAt   time.Time
 	keyRotation    time.Duration
 	mu             sync.RWMutex
-	blacklist     map[string]time.Time // token黑名单
-	refreshTokens map[string]*RefreshToken
-	userBlacklist map[string]time.Time // 用户级别黑名单，用于撤销特定用户的所有令牌
+	blacklist      map[string]time.Time // token黑名单
+	refreshTokens  map[string]*RefreshToken
+	userBlacklist  map[string]time.Time // 用户级别黑名单，用于撤销特定用户的所有令牌
 }
 
 // RefreshToken 刷新令牌
@@ -63,9 +62,9 @@ const jwtStateFile = "./jwt_state.json"
 
 // jwtState 持久化快照结构
 type jwtState struct {
-	Blacklist     map[string]time.Time   `json:"blacklist"`
+	Blacklist     map[string]time.Time     `json:"blacklist"`
 	RefreshTokens map[string]*RefreshToken `json:"refresh_tokens"`
-	UserBlacklist map[string]time.Time   `json:"user_blacklist"`
+	UserBlacklist map[string]time.Time     `json:"user_blacklist"`
 }
 
 // loadJWTState 从磁盘加载持久化状态（调用方：InitJWTManager，此时无并发）
@@ -181,7 +180,7 @@ func (jm *JWTManager) generateAndSaveKeys(keySize int, privFile, pubFile string)
 		Bytes: privKeyBytes,
 	}
 
-	err = ioutil.WriteFile(privFile, pem.EncodeToMemory(privKeyPEM), 0600)
+	err = os.WriteFile(privFile, pem.EncodeToMemory(privKeyPEM), 0600)
 	if err != nil {
 		return fmt.Errorf("保存私钥文件失败: %v", err)
 	}
@@ -197,7 +196,7 @@ func (jm *JWTManager) generateAndSaveKeys(keySize int, privFile, pubFile string)
 		Bytes: pubKeyBytes,
 	}
 
-	err = ioutil.WriteFile(pubFile, pem.EncodeToMemory(pubKeyPEM), 0644)
+	err = os.WriteFile(pubFile, pem.EncodeToMemory(pubKeyPEM), 0644)
 	if err != nil {
 		return fmt.Errorf("保存公钥文件失败: %v", err)
 	}
@@ -208,7 +207,7 @@ func (jm *JWTManager) generateAndSaveKeys(keySize int, privFile, pubFile string)
 // loadKeysFromFile 从文件加载RSA密钥对
 func (jm *JWTManager) loadKeysFromFile(privFile, pubFile string) error {
 	// 加载私钥
-	privKeyData, err := ioutil.ReadFile(privFile)
+	privKeyData, err := os.ReadFile(privFile)
 	if err != nil {
 		return fmt.Errorf("读取私钥文件失败: %v", err)
 	}
@@ -248,9 +247,9 @@ func (jm *JWTManager) GenerateTokenPair(userID, username, deviceID string) (stri
 
 	// C13 RBAC：从数据库读取用户角色写入 Claims
 	role := "admin"
-	if database.Engine != nil {
+	if database.DB() != nil {
 		var user database.Users
-		if has, err := database.Engine.Where("username = ?", username).Get(&user); err == nil && has && user.Role != "" {
+		if has, err := database.DB().Where("username = ?", username).Get(&user); err == nil && has && user.Role != "" {
 			role = user.Role
 		}
 	}
@@ -370,9 +369,9 @@ func (jm *JWTManager) RefreshAccessToken(refreshTokenString string) (string, str
 	now := time.Now()
 	username := refreshToken.Username
 	role := ""
-	if database.Engine != nil {
+	if database.DB() != nil {
 		var user database.Users
-		if has, err := database.Engine.Where("username = ?", refreshToken.Username).Get(&user); err == nil && has && user.Role != "" {
+		if has, err := database.DB().Where("username = ?", refreshToken.Username).Get(&user); err == nil && has && user.Role != "" {
 			role = user.Role
 			username = user.Username
 		}

@@ -1056,9 +1056,9 @@ func InvalidateListenerKeyCache() {
 // GetListenerKeyConfigForForward 正向连接专用密钥查找：按监听器类型查库（不要求 status=1），
 // 未配置记录时回退到 GetListenerKeyConfig。正向客户端生成与派生都用它，保证两边密钥一致。
 func GetListenerKeyConfigForForward(listenerType string) ([]byte, []byte) {
-	if database.Engine != nil {
+	if database.DB() != nil {
 		var listener database.Listener
-		if has, _ := database.Engine.Where("type = ?", listenerType).Get(&listener); has {
+		if has, _ := database.DB().Where("type = ?", listenerType).Get(&listener); has {
 			if listener.VKey != "" || listener.EncryptionSalt != "" {
 				masterKey := make([]byte, 32)
 				copy(masterKey, []byte(listener.VKey))
@@ -1113,13 +1113,13 @@ func GetListenerKeyConfig(listenerType string) ([]byte, []byte) {
 	}
 
 	// 查询数据库中的监听器配置
-	if database.Engine == nil {
+	if database.DB() == nil {
 		logx.Warnf("⚠️ [KEY-CONFIG] 数据库未初始化，使用默认密钥配置\n")
 		return defaultMasterKey, defaultSalt
 	}
 
 	var listener database.Listener
-	has, err := database.Engine.Where("type = ? AND status = 1", listenerType).Get(&listener)
+	has, err := database.DB().Where("type = ? AND status = 1", listenerType).Get(&listener)
 	if err != nil {
 		logx.Warnf("⚠️ [KEY-CONFIG] 查询监听器配置失败: %v，使用默认密钥配置\n", err)
 		return defaultMasterKey, defaultSalt
@@ -1201,13 +1201,13 @@ func GetListenerKeyConfigByAddress(listenAddress string) ([]byte, []byte) {
 	}
 
 	// 查询数据库中的监听器配置
-	if database.Engine == nil {
+	if database.DB() == nil {
 		logx.Warnf("⚠️ [KEY-CONFIG] 数据库未初始化，使用默认密钥配置\n")
 		return defaultMasterKey, defaultSalt
 	}
 
 	var listener database.Listener
-	has, err := database.Engine.Where("connect_address = ?", listenAddress).Get(&listener)
+	has, err := database.DB().Where("connect_address = ?", listenAddress).Get(&listener)
 	if EnableKeyDebugLog {
 		logx.Debugf("🔍 [KEY-CONFIG] 查询数据库 - SQL: WHERE connect_address = '%s'\n", listenAddress)
 	}
@@ -1323,12 +1323,12 @@ func ValidateListenerKeyConfigForStart(vkey, salt string) error {
 
 // GetAllListenerKeyConfigs 获取所有监听器的密钥配置信息
 func GetAllListenerKeyConfigs() ([]map[string]interface{}, error) {
-	if database.Engine == nil {
+	if database.DB() == nil {
 		return nil, fmt.Errorf("数据库未初始化")
 	}
 
 	var listeners []database.Listener
-	err := database.Engine.Find(&listeners)
+	err := database.DB().Find(&listeners)
 	if err != nil {
 		return nil, fmt.Errorf("查询监听器列表失败: %v", err)
 	}
