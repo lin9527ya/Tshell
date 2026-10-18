@@ -11,6 +11,7 @@
 # 读取时按 gzip 魔数自动解压再 patch）。
 #
 # 用法： bash build_templates.sh
+#       TSHELL_TEMPLATE_ARCHES="linux amd64" TSHELL_SKIP_DLL=1 bash build_templates.sh  # CI 子集
 # 失败的架构（如 darwin 缺桩函数）保留旧二进制，不覆盖。
 set -u
 
@@ -53,6 +54,14 @@ PROTOS="http:http https:https kcp:kcp oss:oss tcp:tcp websocket:ws tcp_forward:t
 # - darwin 仅 amd64/arm64；windows 排除 arm（gopsutil 不支持）
 # - linux 9 架构全支持（含 mips*/loong64）
 ARCHES="darwin amd64 darwin arm64 linux 386 linux amd64 linux arm linux arm64 linux loong64 linux mips linux mips64 linux mips64le linux mipsle windows 386 windows amd64 windows arm64"
+
+# CI 用：门禁（编译/静态检查/单测/可复现构建）只需要模板树"存在"即可通过
+# //go:embed server/*，不需要全矩阵，故允许用环境变量缩小构建范围：
+#   TSHELL_TEMPLATE_ARCHES="linux amd64"  只构建指定 OS/架构对
+#   TSHELL_SKIP_DLL=1                     跳过 DLL（c-shared，需要 mingw）
+# 本地发布仍应不带这两个变量跑全量（13 协议 × 15 架构 + DLL）。
+ARCHES="${TSHELL_TEMPLATE_ARCHES:-$ARCHES}"
+SKIP_DLL="${TSHELL_SKIP_DLL:-0}"
 
 # gzip -9 压缩模板（就地覆盖同名文件：gzip -c 输出临时文件后 mv，
 # 避免 gzip -f 生成 file.gz 并删除原文件；服务端按魔数自动解压）
@@ -128,7 +137,9 @@ else
   CC_x86_64=""; CC_386=""
 fi
 
-if [ -n "$CC_x86_64" ]; then
+if [ "$SKIP_DLL" = "1" ]; then
+  echo "SKIP: TSHELL_SKIP_DLL=1，跳过 DLL 模板"
+elif [ -n "$CC_x86_64" ]; then
   dllOk=0; dllFail=0
   for pp in $PROTOS; do
     proto=${pp%%:*}; prefix=${pp##*:}

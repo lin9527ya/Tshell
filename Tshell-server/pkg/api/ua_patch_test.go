@@ -13,7 +13,9 @@ import (
 
 // TestUAPatchOnHTTPTemplate 对真实 http 模板做 UA patch,验证 Firefox UA 落位
 func TestUAPatchOnHTTPTemplate(t *testing.T) {
-	data, err := os.ReadFile("pkg/api/server/http/http_linux_amd64")
+	// 路径相对包目录（go test 的 cwd 是 pkg/api）：原写成 "pkg/api/server/..." 永远读不到，
+	// 该用例此前恒被 skip；模板缺失时（CI 未构建模板）仍然跳过。
+	data, err := os.ReadFile("server/http/http_linux_amd64")
 	if err != nil {
 		t.Skip("模板缺失")
 	}
