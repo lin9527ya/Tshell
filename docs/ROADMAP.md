@@ -225,10 +225,24 @@ go test -race ./Tshell-server/...     # 见 §4 回归基线（注意用外层�
 
 #### 3.7 领域 repository（把 SQL 收口）— **M**
 - **目标**：`pkg/api` 里不再有裸 SQL / xorm 链式查询，改成 `pkg/database` 的领域方法
-- **现状**：访问点已统一到 `database.DB()`（`Store` 接口），但查询语句仍散在各业务包
-- **入口**：`pkg/database/`（新增领域文件，如 `clients_store.go`）、`pkg/api/*.go`
-- **验收**：`pkg/api` 中 `database.DB()` 的直接调用集中到少数几个领域入口；
-  可加一个棘轮测试（类似 `store_access_test.go`）
+- **现状（2026-10-19 更新）**：✅ 已完成
+  - 业务代码里 `database.DB()` 的**直接查询从 233 处降到 0**（跨 24 个文件）
+  - 领域层三个文件：`domain_core.go`（监听器/客户端/备注/下载/命令历史/战利品）、
+    `domain_ops.go`（投递/访问日志/隧道/仪表盘/SOCKS5/任务/插件/stager 令牌）、
+    `domain_user.go`（账号 + MFA 三列集中列名）
+  - 统一哨兵错误 `ErrStoreUnavailable`：业务层用 `errors.Is` 区分环境问题与数据问题
+  - 棘轮测试 `store_access_test.go`：**上限 0**，业务代码再出现直接查库即 CI 红
+    （只统计非 `_test.go` —— 测试造数据直接读库是正当手段）。
+    只留两个例外：`DB() == nil` 就绪判定、`DB().NewSession()` 跨语句事务
+- **收口过程中修掉的真问题**（均有测试钉住）：
+  1. `report.go` 的 `Desc("i_d")`：该表主键列在标签里被钉成 `'id'`，`i_d` 不存在，
+     查询一直报错而调用方按 `err == nil` 跳过 —— 社会工程报告的"点击列表"**永远是空的**
+  2. 客户端删除的级联删除**漏了 loot 表**（两处实现一处删 4 张、一处删 3 张，
+     都会残留指向已删除 uid 的孤儿战利品行）→ 统一到 `PurgeByUID`
+  3. `UpdateAllCols` 一度从 `l.Id` 取主键，而调用方构造的更新结构体 Id 是零值
+     → 更新零行却返回成功（"保存了但没生效"）→ 改成 id 显式传参
+  4. 投递端口冲突的"四种地址变体拼接"从调用处的 SQL 字符串收进方法并加单测
+- **入口**：`pkg/database/domain_*.go`、`pkg/api/*.go`
 
 ### P2 —— 体验与整洁度 / 需要实机
 

@@ -117,7 +117,7 @@ func backfillPluginMeta(pluginDir, name string, info os.FileInfo) database.Plugi
 		return row
 	}
 	row.FileHash = hash
-	if _, err := database.DB().Insert(&row); err != nil {
+	if _, err := database.Plugins().Insert(&row); err != nil {
 		logx.Warnf("[PLUGIN-API] ⚠️ 补录元数据写库失败: %s: %v\n", name, err)
 		return row
 	}
@@ -175,7 +175,7 @@ func GetPlugins(c *gin.Context) {
 	}
 
 	var dbPlugins []database.Plugin
-	_ = database.DB().Find(&dbPlugins)
+	dbPlugins, _ = database.Plugins().List()
 	byName := make(map[string]database.Plugin, len(dbPlugins))
 	for _, p := range dbPlugins {
 		byName[p.Name] = p
@@ -257,8 +257,7 @@ func GetPluginDetails(c *gin.Context) {
 	}
 
 	// 与 /plugin/list 同口径：补上 DB 里的平台与哈希
-	var dbPlugin database.Plugin
-	if has, _ := database.DB().Where("name = ?", pluginName).Get(&dbPlugin); has {
+	if dbPlugin, has, _ := database.Plugins().GetByName(pluginName); has {
 		pluginInfo.Description = fmt.Sprintf("OS:%s Hash:%s",
 			displayOS(pluginName, dbPlugin.Os), shortHash(dbPlugin.FileHash))
 	}
@@ -299,7 +298,7 @@ func DownloadPlugin(c *gin.Context) {
 
 	// P5: 下载前校验文件完整性（与 DB 存储的 SHA256 比对，防篡改）
 	var dbPlugin database.Plugin
-	has, dbErr := database.DB().Where("name = ?", plugginName).Get(&dbPlugin)
+	dbPlugin, has, dbErr := database.Plugins().GetByName(plugginName)
 	if dbErr != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"status": 500, "message": "读取插件元数据失败: " + dbErr.Error()})
 		return
@@ -405,7 +404,7 @@ func UploadPlugin(c *gin.Context) {
 
 	// P1: 写入 DB（如已存在同名则更新）
 	var existing database.Plugin
-	has, _ := database.DB().Where("name = ?", filename).Get(&existing)
+	existing, has, _ := database.Plugins().GetByName(filename)
 	plugin := &database.Plugin{
 		Name:       filename,
 		Os:         osType,
@@ -417,10 +416,8 @@ func UploadPlugin(c *gin.Context) {
 	}
 	if has {
 		plugin.Id = existing.Id
-		database.DB().ID(existing.Id).Update(plugin)
-	} else {
-		database.DB().Insert(plugin)
 	}
+	_ = database.Plugins().Upsert(plugin)
 
 	c.JSON(http.StatusOK, gin.H{
 		"status":  200,
@@ -442,7 +439,7 @@ func DeletePlugin(c *gin.Context) {
 		return
 	}
 	// 删 DB
-	database.DB().Where("name = ?", pluginName).Delete(&database.Plugin{})
+	_, _ = database.Plugins().DeleteByName(pluginName)
 	// 删文件
 	pluginPath := filepath.Join(config.GetPluginDir(), pluginName)
 	os.Remove(pluginPath)

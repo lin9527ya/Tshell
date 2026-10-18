@@ -200,8 +200,8 @@ func GenServer(c *gin.Context) {
 		// 正向监听器：若记录不存在则创建，保证服务端会话密钥派生与客户端一致
 		if listenerType == "tcp_forward" || listenerType == "kcp_forward" || listenerType == "ws_forward" || listenerType == "http_forward" || listenerType == "https_forward" {
 			if database.DB() != nil {
-				if has, _ := database.DB().Where("connect_address = ?", connectAddress).Exist(&database.Listener{}); !has {
-					_, err := database.DB().Insert(&database.Listener{
+				if has, _ := database.Listeners().ExistsByConnectAddress(connectAddress); !has {
+					err := database.Listeners().Insert(&database.Listener{
 						Type:              listenerType,
 						ListenAddress:     connectAddress,
 						ConnectAddress:    connectAddress,
@@ -247,7 +247,7 @@ func GenServer(c *gin.Context) {
 			// 【修复】按地址匹配失败时回退按类型匹配（与服务端 first blood 的密钥来源完全一致），
 			// 避免客户端 patch 的密钥与服务端派生会话密钥不一致导致命令解密失败
 			var dbListener database.Listener
-			if has, _ := database.DB().Where("connect_address = ?", connectAddress).Get(&dbListener); has && (dbListener.VKey != "" || dbListener.EncryptionSalt != "") {
+			if _, has, _ := database.Listeners().FindByConnectOrListen(connectAddress); has {
 				masterKey = make([]byte, 32)
 				copy(masterKey, []byte(dbListener.VKey))
 				encryptionSalt = make([]byte, 16)
@@ -577,8 +577,7 @@ func utf16LE(s string) []byte {
 	return out
 }
 func ShowListener(c *gin.Context) {
-	var listeners []database.Listener
-	database.DB().Where("status = ?", 1).Find(&listeners)
+	listeners, _ := database.Listeners().ListOpen()
 
 	var result []string
 	for _, listener := range listeners {
@@ -592,8 +591,7 @@ func ShowListener(c *gin.Context) {
 // ShowListenerDetails 返回监听器的详细信息
 func ShowListenerDetails(c *gin.Context) {
 	// 直接查询所有活跃的监听器，包含ID
-	var listeners []database.Listener
-	database.DB().Where("status = ?", 1).Find(&listeners)
+	listeners, _ := database.Listeners().ListOpen()
 
 	type ListenerDetail struct {
 		ID             int64  `json:"id"`
@@ -689,7 +687,7 @@ func listenerProfileForPayload(listenerSpec string) *c2profile.Profile {
 		return c2profile.GetDefault()
 	}
 	var lis database.Listener
-	has, err := database.DB().Where("listen_address = ? OR connect_address = ?", addr, addr).Get(&lis)
+	lis, has, err := database.Listeners().FindByConnectOrListen(addr)
 	if err != nil || !has {
 		return c2profile.GetDefault()
 	}
@@ -807,7 +805,7 @@ func checkEndpointKeyConsistency(endpoints []string, masterKey, salt []byte) str
 		}
 		addr := parts[1]
 		var lis database.Listener
-		has, err := database.DB().Where("connect_address = ? OR listen_address = ?", addr, addr).Get(&lis)
+		lis, has, err := database.Listeners().FindByConnectOrListen(addr)
 		if err != nil || !has {
 			continue // 未注册的地址（重定向器/域前置）不校验
 		}

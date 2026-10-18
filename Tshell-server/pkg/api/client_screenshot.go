@@ -254,7 +254,7 @@ func ExecuteBin(c *gin.Context) {
 		finish(byteToSend)
 	case "inline-bin":
 		var u database.Clients
-		database.DB().Where("uid = ?", uid).Get(&u)
+		u, _, _ = database.Clients_().GetByUID(uid)
 
 		payload, err := godonut.GenShellcode(fileBytes, args, u.Arch)
 		if err != nil {

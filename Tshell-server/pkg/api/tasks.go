@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"xorm.io/xorm"
 )
 
 // ===== C14: 任务一等对象（DB 持久化：可查询 / 可取消 / 可审计 / 重启不丢） =====
@@ -67,7 +66,7 @@ func createTaskRows(uids []string, operator, kind, command string) (string, []*d
 			BatchID: batchID, UID: uid, Operator: operator, Kind: kind,
 			Command: command, Status: taskStatusDispatched, CreatedAt: now, CreatedUnix: now.Unix(),
 		}
-		if _, err := database.DB().Insert(task); err != nil {
+		if _, err := database.Tasks().Insert(task); err != nil {
 			logx.Warnf("[TASK] 任务落库失败 uid=%s: %v\n", uid, err)
 			continue
 		}
@@ -87,13 +86,9 @@ func finishTask(id int64, status, result, errMsg string) {
 	}
 	// 读一次取 kind/创建时间供指标用；终态判定仍由下面 UPDATE 的 WHERE 原子保证
 	var snapshot database.Task
-	hasSnapshot, _ := database.DB().ID(id).Get(&snapshot)
+	_, hasSnapshot, _ := database.Tasks().GetByID(id)
 
-	res, err := database.DB().Table(new(database.Task)).
-		Where("id = ? AND status = ?", id, taskStatusDispatched).
-		Update(map[string]interface{}{
-			"status": status, "result": result, "error": errMsg, "finished_at": time.Now(),
-		})
+	res, err := database.Tasks().CompleteIfDispatched(id, taskStatusDispatched, status, result, errMsg)
 	if err != nil {
 		logx.Warnf("[TASK] 更新任务终态失败 id=%d: %v\n", id, err)
 		return
@@ -112,8 +107,7 @@ func OnTaskOutput(uid, output string) {
 		return
 	}
 	var task database.Task
-	has, err := database.DB().Where("uid = ? AND status = ?", uid, taskStatusDispatched).
-		OrderBy("id").Get(&task)
+	task, has, err := database.Tasks().NextDispatched(uid, taskStatusDispatched)
 	if err != nil || !has {
 		return
 	}
@@ -206,7 +200,7 @@ func GetTaskRow(c *gin.Context) {
 		return
 	}
 	var task database.Task
-	has, err := database.DB().ID(id).Get(&task)
+	task, has, err := database.Tasks().GetByID(id)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询任务失败: " + err.Error()})
 		return
@@ -232,9 +226,7 @@ func OnDownloadEnd(uid, filePath, status string) {
 	}
 	// 同一 uid 同一路径可能重复下载：只收敛最早一条仍在 dispatched 的记录
 	var task database.Task
-	has, err := database.DB().Where("uid = ? AND kind = ? AND command = ? AND status = ?",
-		uid, "download", "download "+filePath, taskStatusDispatched).
-		OrderBy("id ASC").Get(&task)
+	task, has, err := database.Tasks().FindDispatchedDownload(uid, filePath, taskStatusDispatched)
 	if err != nil || !has {
 		return
 	}
@@ -253,7 +245,8 @@ func ListTasks(c *gin.Context) {
 		return
 	}
 	var rows []database.Task
-	if err := database.DB().OrderBy("id DESC").Limit(1000).Find(&rows); err != nil {
+	rows, err := database.Tasks().Recent(1000)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询任务失败: " + err.Error()})
 		return
 	}
@@ -305,27 +298,13 @@ func ListTaskRows(c *gin.Context) {
 	if size < 1 || size > 1000 {
 		size = 100
 	}
-	// xorm.Session 不能 Clone，条件构造抽成闭包，统计与查询各建一个 session
-	applyFilters := func() *xorm.Session {
-		sess := database.DB().Where("1=1")
-		if uid := strings.TrimSpace(c.Query("uid")); uid != "" {
-			sess = sess.And("uid = ?", uid)
-		}
-		if st := strings.TrimSpace(c.Query("status")); st != "" {
-			sess = sess.And("status = ?", st)
-		}
-		if kind := strings.TrimSpace(c.Query("kind")); kind != "" {
-			sess = sess.And("kind = ?", kind)
-		}
-		return sess
-	}
-	total, err := applyFilters().Count(new(database.Task))
+	list, total, err := database.Tasks().PageFiltered(
+		strings.TrimSpace(c.Query("uid")),
+		strings.TrimSpace(c.Query("status")),
+		strings.TrimSpace(c.Query("kind")),
+		(page-1)*size, size,
+	)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "统计任务失败: " + err.Error()})
-		return
-	}
-	var list []database.Task
-	if err := applyFilters().OrderBy("id DESC").Limit(size, (page-1)*size).Find(&list); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询任务失败: " + err.Error()})
 		return
 	}
@@ -347,9 +326,7 @@ func CancelTask(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的任务 ID"})
 		return
 	}
-	res, err := database.DB().Table(new(database.Task)).
-		Where("id = ? AND status = ?", id, taskStatusDispatched).
-		Update(map[string]interface{}{"status": taskStatusCancelled, "finished_at": time.Now()})
+	res, err := database.Tasks().CancelIfDispatched(id, taskStatusDispatched, taskStatusCancelled)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "取消失败: " + err.Error()})
 		return
@@ -372,18 +349,14 @@ func StartTaskCleanup() {
 			}
 			// 超时收敛：批量 UPDATE 拿不到逐条的 kind，指标按"条数"计入 unknown
 			// （这里只用于观察"有多少任务在滞留"，不参与按类型的吞吐分析）
-			if n, err := database.DB().Table(new(database.Task)).
-				Where("status = ? AND created_unix < ?", taskStatusDispatched, time.Now().Add(-taskStaleTimeout).Unix()).
-				Update(map[string]interface{}{"status": taskStatusTimeout, "finished_at": time.Now()}); err != nil {
+			if n, err := database.Tasks().MarkStaleAsTimeout(taskStatusDispatched, taskStatusTimeout, time.Now().Add(-taskStaleTimeout).Unix()); err != nil {
 				logx.Warnf("[TASK] 超时任务清理失败: %v\n", err)
 			} else if n > 0 {
 				for i := int64(0); i < n; i++ {
 					metrics.TaskFinished("unknown", taskStatusTimeout, 0)
 				}
 			}
-			if _, err := database.DB().
-				Where("status != ? AND created_unix < ?", taskStatusDispatched, time.Now().Add(-taskRetention).Unix()).
-				Delete(new(database.Task)); err != nil {
+			if _, err := database.Tasks().PurgeFinishedBefore(taskStatusDispatched, time.Now().Add(-taskRetention).Unix()); err != nil {
 				logx.Warnf("[TASK] 过期任务清理失败: %v\n", err)
 			}
 		}
@@ -400,7 +373,7 @@ func UpdateClientGroup(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "uid 必填"})
 		return
 	}
-	_, err := database.DB().Where("uid = ?", req.Uid).Update(&database.Clients{Group: req.Group})
+	_, err := database.Clients_().SetClientGroup(req.Uid, req.Group)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": errors.SanitizeError(err)})
 		return
@@ -448,9 +421,9 @@ func GetClientTaskQueue(c *gin.Context) {
 	records, lastPull, lastSeen := command.GlobalCmdHistory.Snapshot(uid)
 	queueLen := command.CommandQueues.QueueLen(uid)
 	c.JSON(http.StatusOK, gin.H{"status": 200, "data": gin.H{
-		"uid":         uid,
-		"queue_len":   queueLen,
-		"commands":    records,
+		"uid":          uid,
+		"queue_len":    queueLen,
+		"commands":     records,
 		"last_pull_at": lastPull.Format("2006-01-02 15:04:05"),
 		"last_seen_at": lastSeen.Format("2006-01-02 15:04:05"),
 	}})

@@ -52,7 +52,7 @@ func GetClientReport(c *gin.Context) {
 
 	// 1. Shell 历史
 	var shell database.Shell
-	database.DB().Where("uid = ?", uid).Get(&shell)
+	shell, _, _ = database.Shells().GetByUID(uid)
 	report.ShellHistory = shell.ShellContent
 
 	// 2. 会话录像列表
@@ -80,7 +80,7 @@ func GetClientReport(c *gin.Context) {
 	}
 
 	// 3. 下载记录
-	database.DB().Where("uid = ?", uid).Find(&report.Downloads)
+	report.Downloads, _ = database.DownloadsStore_().ListByUID(uid)
 
 	c.JSON(http.StatusOK, gin.H{"status": 200, "data": report})
 }
@@ -144,8 +144,7 @@ type IOCArtifact struct {
 func GetIOCReport(c *gin.Context) {
 	rep := IOCReport{GeneratedAt: time.Now().Format("2006-01-02 15:04:05"), Hosts: []IOCSession{}, ListenerAddresses: []string{}, LoginFailures: []string{}, BlockedIPs: []string{}, Artifacts: []IOCArtifact{}}
 
-	var clients []database.Clients
-	if err := database.DB().Find(&clients); err == nil {
+	if clients, err := database.Clients_().All(); err == nil {
 		for _, cl := range clients {
 			rep.Hosts = append(rep.Hosts, IOCSession{
 				UID: cl.Uid, Host: cl.Computer, User: cl.Username,
@@ -154,8 +153,7 @@ func GetIOCReport(c *gin.Context) {
 			})
 		}
 	}
-	var listeners []database.Listener
-	if err := database.DB().Find(&listeners); err == nil {
+	if listeners, err := database.Listeners().List(); err == nil {
 		seen := map[string]bool{}
 		for _, l := range listeners {
 			addr := l.ConnectAddress
@@ -169,8 +167,7 @@ func GetIOCReport(c *gin.Context) {
 			}
 		}
 	}
-	var downloads []database.Downloads
-	if err := database.DB().Find(&downloads); err == nil {
+	if downloads, err := database.DownloadsStore_().ListAll(); err == nil {
 		seen := map[string]bool{}
 		for _, d := range downloads {
 			if !seen[d.FileName] {
@@ -222,8 +219,7 @@ type SocialClick struct {
 func GetSocialReport(c *gin.Context) {
 	rep := SocialReport{GeneratedAt: time.Now().Format("2006-01-02 15:04:05"), Deliveries: []SocialDelivery{}, Clicks: []SocialClick{}}
 
-	var wds []database.WebDelivery
-	if err := database.DB().Find(&wds); err == nil {
+	if wds, err := database.Deliveries().List(); err == nil {
 		for _, w := range wds {
 			st := "关闭"
 			if w.Status == 1 {
@@ -234,8 +230,7 @@ func GetSocialReport(c *gin.Context) {
 			})
 		}
 	}
-	var logs []database.DeliveryAccessLog
-	if err := database.DB().Desc("i_d").Limit(500).Find(&logs); err == nil {
+	if logs, err := database.DeliveryLogs().Recent(500); err == nil {
 		ips := map[string]bool{}
 		for _, l := range logs {
 			rep.Clicks = append(rep.Clicks, SocialClick{
@@ -305,12 +300,11 @@ var ttpMap = map[string][2]string{
 func GetTTPReport(c *gin.Context) {
 	rep := TTPReport{GeneratedAt: time.Now().Format("2006-01-02 15:04:05"), PerSession: []TTPLine{}, Techniques: []TTPTechnique{}}
 
-	var clients []database.Clients
-	_ = database.DB().Find(&clients)
+	clients, _ := database.Clients_().All()
 	techniqueCount := map[string]int{}
 	for _, cl := range clients {
-		var sh database.Shell
-		if has, _ := database.DB().Where("uid = ?", cl.Uid).Get(&sh); !has {
+		sh, has, _ := database.Shells().GetByUID(cl.Uid)
+		if !has {
 			continue
 		}
 		for _, line := range splitShellLines(sh.ShellContent) {

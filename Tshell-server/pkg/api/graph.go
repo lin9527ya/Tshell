@@ -47,7 +47,7 @@ func GetGraphData(c *gin.Context) {
 
 	// 2. listener 节点 + server→listener 边
 	var listeners []database.Listener
-	database.DB().Find(&listeners)
+	listeners, _ = database.Listeners().List()
 	listenerSet := map[string]string{} // type → node id
 	for _, l := range listeners {
 		if l.Type == "" {
@@ -75,7 +75,7 @@ func GetGraphData(c *gin.Context) {
 
 	// 3. client 节点 + client→listener 边（按类型回退）
 	var clients []database.Clients
-	database.DB().Find(&clients)
+	clients, _ = database.Clients_().All()
 	for _, cl := range clients {
 		if cl.Uid == "" {
 			continue
@@ -111,7 +111,7 @@ func GetGraphData(c *gin.Context) {
 
 	// 4. tunnel 节点 + client→tunnel + tunnel→target 边
 	var tunnels []database.TunnelProxy
-	database.DB().Find(&tunnels)
+	tunnels, _ = database.Tunnels().List()
 	targetSet := map[string]string{}
 	for _, t := range tunnels {
 		tid := "tunnel_" + strconv.Itoa(int(t.ID))

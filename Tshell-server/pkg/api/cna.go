@@ -417,8 +417,8 @@ func cnaPick(row map[string]cna.Value, cols []string) map[string]cna.Value {
 }
 
 func cnaQueryBeacons(q string) []cna.Value {
-	var list []database.Clients
-	if err := database.DB().Find(&list); err != nil {
+	list, err := database.Clients_().All()
+	if err != nil {
 		return nil
 	}
 	cols := cnaSelectCols(q)
@@ -448,8 +448,8 @@ func cnaQueryBeacons(q string) []cna.Value {
 }
 
 func cnaQueryListeners(q string) []cna.Value {
-	var list []database.Listener
-	if err := database.DB().Find(&list); err != nil {
+	list, err := database.Listeners().List()
+	if err != nil {
 		return nil
 	}
 	cols := cnaSelectCols(q)
@@ -521,8 +521,8 @@ func normalizeArch(arch string) string {
 
 // pickListener 选择一个监听器构建 listener://address
 func pickListener() (string, error) {
-	var list []database.Listener
-	if err := database.DB().Find(&list); err != nil || len(list) == 0 {
+	list, err := database.Listeners().List()
+	if err != nil || len(list) == 0 {
 		return "", fmt.Errorf("无可用监听器，请先创建监听器")
 	}
 	// 优先启用中的监听器
@@ -550,8 +550,7 @@ func DefaultPublicHost() string {
 // ListListenerNames 监听器名列表
 func ListListenerNames() []cna.Value {
 	var out []cna.Value
-	var listeners []database.Listener
-	if err := database.DB().Find(&listeners); err == nil {
+	if listeners, err := database.Listeners().List(); err == nil {
 		for _, l := range listeners {
 			out = append(out, l.Type)
 		}

@@ -10,12 +10,12 @@ import (
 	"sync/atomic"
 	"time"
 
+	"BackendTemplate/pkg/utils/logx"
 	"github.com/gin-gonic/gin"
 	"github.com/shirou/gopsutil/v3/cpu"
 	"github.com/shirou/gopsutil/v3/disk"
 	"github.com/shirou/gopsutil/v3/mem"
 	"github.com/shirou/gopsutil/v3/net"
-	"BackendTemplate/pkg/utils/logx"
 )
 
 // DashboardStats 仪表盘统计数据
@@ -60,7 +60,7 @@ func GetDashboardStats(c *gin.Context) {
 	}
 
 	// P0-1A: 监听器数量（小表，单次 Count 保留）
-	listenerCount, err := database.DB().Where("status = ?", 1).Count(&database.Listener{})
+	listenerCount, err := database.Dashboard().OpenListenerCount()
 	if err != nil {
 		logx.Infof("获取监听器数据失败: %v\n", err)
 		stats.MonitorCount = 0
@@ -69,36 +69,20 @@ func GetDashboardStats(c *gin.Context) {
 	}
 
 	// P0-1A: 客户端总数 + 在线数合并为单次聚合查询（原 2 次全表扫描，5s 轮询放大）
-	// 失败回退为原 2 次 Count，保持可用性
-	type clientAgg struct {
-		Total  int64 `xorm:"total"`
-		Online int64 `xorm:"online"`
-	}
-	var agg clientAgg
-	_, aggErr := database.DB().SQL(
-		"SELECT COUNT(*) AS total, COALESCE(SUM(CASE WHEN online='1' THEN 1 ELSE 0 END),0) AS online FROM clients",
-	).Get(&agg)
+	//
+	// "聚合失败则退化为两次 Count" 这条回退已收进领域层
+	// （database.DashboardStore.ClientCounts）。原来调用方还有一份同样的回退代码，
+	// 与领域层那份并存只会两边漂移，已删。
+	totalN, onlineN, aggErr := database.Dashboard().ClientCounts()
 	if aggErr != nil {
-		logx.Infof("聚合查询 clients 失败，回退分步 Count: %v", aggErr)
-		onlineCount, e1 := database.DB().Where("online = ?", "1").Count(&database.Clients{})
-		if e1 != nil {
-			logx.Infof("获取在线客户端数据失败: %v", e1)
-			stats.ConnectionCount = 0
-			stats.OnlineUserCount = 0
-		} else {
-			stats.ConnectionCount = int(onlineCount)
-			stats.OnlineUserCount = int(onlineCount)
-		}
-		if allCount, e2 := database.DB().Count(&database.Clients{}); e2 != nil {
-			logx.Infof("获取客户端总数失败: %v", e2)
-			stats.UserCount = 0
-		} else {
-			stats.UserCount = int(allCount)
-		}
+		logx.Infof("统计 clients 失败（聚合与回退均失败）: %v", aggErr)
+		stats.UserCount = 0
+		stats.ConnectionCount = 0
+		stats.OnlineUserCount = 0
 	} else {
-		stats.UserCount = int(agg.Total)
-		stats.ConnectionCount = int(agg.Online)
-		stats.OnlineUserCount = int(agg.Online)
+		stats.UserCount = int(totalN)
+		stats.ConnectionCount = int(onlineN)
+		stats.OnlineUserCount = int(onlineN)
 	}
 
 	// 获取配置信息
@@ -108,7 +92,7 @@ func GetDashboardStats(c *gin.Context) {
 			LogLevel:    appConfig.Logging.Level,
 			LogFilePath: getAbsoluteLogPath(appConfig.Logging.AuditLogDir),
 			WebPort:     appConfig.Server.Port,
-			BasicAuth:   false, // 当前项目使用JWT认证，不是Basic认证
+			BasicAuth:   false,                         // 当前项目使用JWT认证，不是Basic认证
 			Version:     appConfig.Application.Version, // 从配置文件获取版本号
 		}
 	} else {

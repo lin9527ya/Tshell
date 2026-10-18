@@ -1,13 +1,14 @@
 package api
 
 import (
-	"BackendTemplate/pkg/database"
 	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
+	"BackendTemplate/pkg/database"
+	"BackendTemplate/pkg/errors"
 	"github.com/gin-gonic/gin"
 )
 
@@ -39,22 +40,15 @@ func ListLoot(c *gin.Context) {
 		size = 200
 	}
 
-	session := database.DB().Where("1=1")
-	if uid != "" {
-		session = session.And("uid = ?", uid)
+	if lootType != "" && lootType != "all" && !lootTypes[lootType] {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "type 非法"})
+		return
 	}
-	if lootType != "" && lootType != "all" {
-		if !lootTypes[lootType] {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "type 非法"})
-			return
-		}
-		session = session.And("type = ?", lootType)
+	items, total, err := database.LootStore_().PageFiltered(uid, lootType, (page-1)*size, size)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": errors.SanitizeError(err)})
+		return
 	}
-
-	var total int64
-	session.Table("loot").Count(&total)
-	var items []database.Loot
-	session.Table("loot").Desc("id").Limit(size, (page-1)*size).Find(&items)
 
 	c.JSON(http.StatusOK, gin.H{"status": http.StatusOK, "data": gin.H{
 		"list":  items,
@@ -83,7 +77,7 @@ func AddLoot(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "secret 与 note 至少填一项"})
 		return
 	}
-	if _, err := database.DB().Insert(&body); err != nil {
+	if _, err := database.LootStore_().Insert(&body); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "入库失败: " + err.Error()})
 		return
 	}
@@ -97,7 +91,7 @@ func DeleteLoot(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "id 非法"})
 		return
 	}
-	if _, err := database.DB().ID(id).Delete(&database.Loot{}); err != nil {
+	if _, err := database.LootStore_().DeleteByID(int64(id)); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "删除失败: " + err.Error()})
 		return
 	}
@@ -113,18 +107,11 @@ func AddLootIfNotEmpty(uid, lootType, user, realm, host, secret, note, source st
 		lootType = "note"
 	}
 	// 同一会话重复执行同一条提取命令（如 wifi 连跑两次）时避免重复入库
-	if has, _ := database.DB().Where(
-		"uid = ? AND type = ? AND host = ? AND secret = ? AND source = ?",
-		uid, lootType, host, secret, source,
-	).Get(&database.Loot{}); has {
-		return
-	}
 	item := database.Loot{
 		Uid: uid, Type: lootType, User: user, Realm: realm, Host: host,
 		Secret: secret, Note: note, Source: source,
-		CreatedAt: time.Now().Format("2006-01-02 15:04:05"),
 	}
-	if _, err := database.DB().Insert(&item); err != nil {
+	if _, err := database.LootStore_().AddAutoIngest(&item); err != nil {
 		// 静默: 自动入库失败不阻断命令回包主链路
 		return
 	}

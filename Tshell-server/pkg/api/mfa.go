@@ -52,8 +52,7 @@ func MFALoginHandler(c *gin.Context) {
 		return
 	}
 
-	var user database.Users
-	found, err := database.DB().Where("username = ?", claims.Username).Get(&user)
+	user, found, err := database.Users_().GetByName(claims.Username)
 	if err != nil {
 		errors.AbortWithError(c, errors.NewDatabaseError(err))
 		return
@@ -83,7 +82,7 @@ func MFALoginHandler(c *gin.Context) {
 	}
 	user.LastLogin = time.Now()
 	user.LoginAttempts = 0
-	if _, err := database.DB().Where("username = ?", user.Username).Update(&user); err != nil {
+	if _, err := database.Users_().UpdateFields(user.Username, &user); err != nil {
 		logx.Infof("警告：更新用户登录信息失败: %v\n", err)
 	}
 	issueSession(c, user.Username, deviceID, user.Role)
@@ -112,8 +111,7 @@ func verifyUserTOTPOrRecovery(user *database.Users, code string, c *gin.Context)
 		if err != nil {
 			return fmt.Errorf("保存恢复码状态失败")
 		}
-		if _, err := database.DB().Where("username = ?", user.Username).
-			Cols("mfa_recovery_hashes").Update(&database.Users{MFARecoveryHashes: string(encoded)}); err != nil {
+		if _, err := database.Users_().UpdateRecoveryHashes(user.Username, string(encoded)); err != nil {
 			return fmt.Errorf("保存恢复码状态失败")
 		}
 		user.MFARecoveryHashes = string(encoded)
@@ -296,8 +294,7 @@ func MFAConfirmHandler(c *gin.Context) {
 		return
 	}
 
-	if _, err := database.DB().Where("username = ?", username).Cols("mfa_secret_enc", "mfa_enabled", "mfa_recovery_hashes").
-		Update(&database.Users{MFASecretEnc: sealed, MFAEnabled: true, MFARecoveryHashes: string(encoded)}); err != nil {
+	if _, err := database.Users_().SetMFA(username, sealed, true, string(encoded)); err != nil {
 		errors.AbortWithError(c, errors.NewDatabaseError(err))
 		return
 	}
@@ -433,9 +430,7 @@ func MFAResetHandler(c *gin.Context) {
 
 // clearUserMFA 清空 MFA 三个字段
 func clearUserMFA(username string) error {
-	_, err := database.DB().Where("username = ?", username).
-		Cols("mfa_secret_enc", "mfa_enabled", "mfa_recovery_hashes").
-		Update(&database.Users{MFASecretEnc: "", MFAEnabled: false, MFARecoveryHashes: ""})
+	_, err := database.Users_().ClearMFA(username)
 	if err == nil {
 		resetMFAReplayGuard(username)
 	}
@@ -459,7 +454,7 @@ func loadUserByName(c *gin.Context, username string) (database.Users, bool) {
 		errors.AbortWithError(c, errors.NewError(errors.ErrCodeUnauthorized, "未登录"))
 		return user, false
 	}
-	found, err := database.DB().Where("username = ?", username).Get(&user)
+	user, found, err := database.Users_().GetByName(username)
 	if err != nil {
 		errors.AbortWithError(c, errors.NewDatabaseError(err))
 		return user, false

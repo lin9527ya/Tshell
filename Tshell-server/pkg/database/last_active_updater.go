@@ -14,9 +14,9 @@ type lastActiveUpdate struct {
 }
 
 const (
-	lastActiveQueueSize    = 4096
-	lastActiveFlushBatch   = 128
-	lastActiveFlushPeriod  = 500 * time.Millisecond
+	lastActiveQueueSize   = 4096
+	lastActiveFlushBatch  = 128
+	lastActiveFlushPeriod = 500 * time.Millisecond
 )
 
 var (

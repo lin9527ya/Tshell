@@ -186,10 +186,10 @@ func GetListenerKeyConfig(c *gin.Context) {
 		Status:  200,
 		Message: "获取监听器密钥配置成功",
 		Data: map[string]interface{}{
-			"listener_type":    listenerType,
-			"listen_address":   listenAddress,
+			"listener_type":     listenerType,
+			"listen_address":    listenAddress,
 			"master_key_length": len(masterKey),
-			"salt_length":      len(encryptionSalt),
+			"salt_length":       len(encryptionSalt),
 			"has_custom_config": len(masterKey) > 0 && len(encryptionSalt) > 0,
 		},
 	})
@@ -227,7 +227,7 @@ func GetAllListenerKeyConfigs(c *gin.Context) {
 // UpdateListenerKeyConfig 更新监听器密钥配置
 func UpdateListenerKeyConfig(c *gin.Context) {
 	type UpdateRequest struct {
-		ListenAddress   string `json:"listen_address" binding:"required"`
+		ListenAddress  string `json:"listen_address" binding:"required"`
 		VKey           string `json:"vkey"`
 		EncryptionSalt string `json:"encryption_salt"`
 	}
@@ -247,7 +247,7 @@ func UpdateListenerKeyConfig(c *gin.Context) {
 	// 【修复】支持只更新单字段：VKey 与 Salt 可单独更新（原实现要求同时非空）
 	// 先查出旧值，未提交的字段保留原值
 	var oldListener database.Listener
-	if oldHas, _ := database.DB().Where("listen_address = ?", req.ListenAddress).Get(&oldListener); oldHas {
+	if _, oldHas, _ := database.Listeners().GetByAddress(req.ListenAddress); oldHas {
 		if req.VKey == "" {
 			req.VKey = oldListener.VKey
 		}
@@ -275,8 +275,7 @@ func UpdateListenerKeyConfig(c *gin.Context) {
 	}
 
 	// 查找监听器
-	var listener database.Listener
-	has, err := database.DB().Where("listen_address = ?", req.ListenAddress).Get(&listener)
+	_, has, err := database.Listeners().GetByAddress(req.ListenAddress)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, KeyStatusResponse{
 			Status:  500,
@@ -294,9 +293,9 @@ func UpdateListenerKeyConfig(c *gin.Context) {
 	}
 
 	// 更新密钥配置（显式 Cols：防止 xorm 跳过零值字段导致清空密钥静默失效）
-	_, err = database.DB().Where("listen_address = ?", req.ListenAddress).
-		Cols("v_key", "encryption_salt").
-		Update(&database.Listener{
+	_, err = database.Listeners().UpdateColumnsByAddress(req.ListenAddress,
+		[]string{"v_key", "encryption_salt"},
+		&database.Listener{
 			VKey:           req.VKey,
 			EncryptionSalt: req.EncryptionSalt,
 		})
@@ -314,10 +313,10 @@ func UpdateListenerKeyConfig(c *gin.Context) {
 		Status:  200,
 		Message: "监听器密钥配置更新成功",
 		Data: map[string]interface{}{
-			"listen_address":   req.ListenAddress,
-			"vkey_length":     len(req.VKey),
-			"salt_length":     len(req.EncryptionSalt),
-			"updated_at":      time.Now(),
+			"listen_address": req.ListenAddress,
+			"vkey_length":    len(req.VKey),
+			"salt_length":    len(req.EncryptionSalt),
+			"updated_at":     time.Now(),
 		},
 	})
 }
@@ -350,9 +349,9 @@ func ResetListenerKeyConfig(c *gin.Context) {
 	// 否则重置后该监听器所有流量可被任何知道默认值的人解密）
 	newVKey, newSalt := encrypt.GenerateListenerKeyConfig()
 	// （显式 Cols：防止 xorm 跳过零值字段导致密钥未写入）
-	_, err := database.DB().Where("listen_address = ?", listenAddress).
-		Cols("v_key", "encryption_salt").
-		Update(&database.Listener{
+	_, err := database.Listeners().UpdateColumnsByAddress(listenAddress,
+		[]string{"v_key", "encryption_salt"},
+		&database.Listener{
 			VKey:           newVKey,
 			EncryptionSalt: newSalt,
 		})

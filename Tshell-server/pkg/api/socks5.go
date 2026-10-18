@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"BackendTemplate/pkg/utils/logx"
+	"github.com/gin-gonic/gin"
 )
 
 // 说明：本文件是旧版 SOCKS5 代理接口（/socks5/*，写入 database.Socks5 表）。新实现见
@@ -29,7 +29,7 @@ func Socks5List(c *gin.Context) {
 
 	// 获取所有SOCKS5代理记录
 	var socks5 []database.Socks5
-	err := database.DB().Find(&socks5)
+	socks5, err := database.Socks5s().List()
 	if err != nil {
 		log.Printf("[SOCKS5-API] ❌ 数据库查询失败: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "数据库查询失败"})
@@ -49,8 +49,8 @@ func Socks5List(c *gin.Context) {
 			"protocol":    s.Type,
 			"server_port": socks5Port,
 			"note":        s.Note,
-		"username":    s.UserName,
-		"password":    maskSecret(s.Password), // D45: 密码脱敏，避免明文泄露
+			"username":    s.UserName,
+			"password":    maskSecret(s.Password), // D45: 密码脱敏，避免明文泄露
 			"status":      s.Status,
 			"created_at":  s.CreatedAt.Format("2006-01-02 15:04:05"),
 			"updated_at":  s.UpdatedAt.Format("2006-01-02 15:04:05"),
@@ -161,7 +161,7 @@ func Socks5Start(c *gin.Context) {
 		UpdatedAt:      time.Now(),
 	}
 
-	_, err = database.DB().Insert(socks5Record)
+	_, err = database.Socks5s().Insert(socks5Record)
 	if err != nil {
 		log.Printf("[SOCKS5-API] ❌ 保存数据库失败: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"status": 500, "data": "数据库保存失败"})
@@ -172,7 +172,7 @@ func Socks5Start(c *gin.Context) {
 	randomPSK := proxy.GenerateRandomPSK()
 	if _, err := proxy.ReverseSocksServer(socks5Record.ConnectAddress, socksAddress, randomPSK, socks5Record.UserName, socks5Record.Password); err != nil {
 		// 同步绑定失败：回置状态，避免"显示运行中、实际没监听"
-		database.DB().ID(socks5Record.ID).Update(&database.Socks5{Status: 0, UpdatedAt: time.Now()})
+		_, _ = database.Socks5s().SetStatus(socks5Record.ID, 0)
 		c.JSON(http.StatusInternalServerError, gin.H{"status": 500, "data": err.Error()})
 		return
 	}
@@ -181,8 +181,7 @@ func Socks5Start(c *gin.Context) {
 	log.Printf("[SOCKS5-API] 🔍 查找客户端对应的监听器外网连接地址...")
 
 	// 查找客户端记录
-	var client database.Clients
-	has, err := database.DB().Where("uid = ?", socks5Body.ClientUID).Get(&client)
+	client, has, err := database.Clients_().GetByUID(socks5Body.ClientUID)
 	if err != nil {
 		log.Printf("[SOCKS5-API] ❌ 查找客户端记录失败: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"status": 500, "data": "查找客户端记录失败"})
@@ -195,8 +194,7 @@ func Socks5Start(c *gin.Context) {
 	}
 
 	// 查找监听器记录，获取外网连接地址
-	var listener database.Listener
-	has, err = database.DB().Where("type = ? AND status = ?", client.Listener, 1).Get(&listener)
+	listener, has, err := database.Listeners().OpenByType(client.Listener)
 	if err != nil {
 		log.Printf("[SOCKS5-API] ❌ 查找监听器记录失败: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"status": 500, "data": "查找监听器记录失败"})
@@ -257,7 +255,7 @@ func Socks5Open(c *gin.Context) {
 
 	// 查找代理记录
 	var socks5Record database.Socks5
-	has, err := database.DB().ID(requestBody.ID).Get(&socks5Record)
+	socks5Record, has, err := database.Socks5s().GetByID(int64(requestBody.ID))
 	if err != nil {
 		log.Printf("[SOCKS5-API] ❌ 数据库查询失败: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"status": 500, "data": "数据库查询失败"})
@@ -309,7 +307,7 @@ func Socks5Open(c *gin.Context) {
 	}
 
 	log.Printf("[SOCKS5-API] 💾 更新数据库状态为开启...")
-	affected, err := database.DB().ID(requestBody.ID).Update(&database.Socks5{Status: 1, UpdatedAt: time.Now()})
+	affected, err := database.Socks5s().SetStatus(int64(requestBody.ID), 1)
 	if err != nil {
 		log.Printf("[SOCKS5-API] ❌ 更新数据库失败: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"status": 500, "data": "数据库更新失败"})
@@ -321,7 +319,7 @@ func Socks5Open(c *gin.Context) {
 	randomPSK := proxy.GenerateRandomPSK()
 	if _, err := proxy.ReverseSocksServer(socks5Record.ConnectAddress, socksAddress, randomPSK, socks5Record.UserName, socks5Record.Password); err != nil {
 		// 同步绑定失败：回置状态，避免"显示运行中、实际没监听"
-		database.DB().ID(socks5Record.ID).Update(&database.Socks5{Status: 0, UpdatedAt: time.Now()})
+		_, _ = database.Socks5s().SetStatus(socks5Record.ID, 0)
 		c.JSON(http.StatusInternalServerError, gin.H{"status": 500, "data": err.Error()})
 		return
 	}
@@ -330,8 +328,7 @@ func Socks5Open(c *gin.Context) {
 	log.Printf("[SOCKS5-API] 🔍 查找客户端对应的监听器外网连接地址...")
 
 	// 查找客户端记录
-	var client database.Clients
-	has, err = database.DB().Where("uid = ?", socks5Record.UID).Get(&client)
+	client, has, err := database.Clients_().GetByUID(socks5Record.UID)
 	if err != nil {
 		log.Printf("[SOCKS5-API] ❌ 查找客户端记录失败: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"status": 500, "data": "查找客户端记录失败"})
@@ -344,8 +341,7 @@ func Socks5Open(c *gin.Context) {
 	}
 
 	// 查找监听器记录，获取外网连接地址
-	var listener database.Listener
-	has, err = database.DB().Where("type = ? AND status = ?", client.Listener, 1).Get(&listener)
+	listener, has, err := database.Listeners().OpenByType(client.Listener)
 	if err != nil {
 		log.Printf("[SOCKS5-API] ❌ 查找监听器记录失败: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"status": 500, "data": "查找监听器记录失败"})
@@ -402,7 +398,7 @@ func Socks5Close(c *gin.Context) {
 
 	// 查找代理记录
 	var socks5Record database.Socks5
-	has, err := database.DB().ID(requestBody.ID).Get(&socks5Record)
+	socks5Record, has, err := database.Socks5s().GetByID(int64(requestBody.ID))
 	if err != nil {
 		log.Printf("[SOCKS5-API] ❌ 数据库查询失败: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"status": 500, "data": "数据库查询失败"})
@@ -434,7 +430,7 @@ func Socks5Close(c *gin.Context) {
 	}
 
 	log.Printf("[SOCKS5-API] 💾 更新数据库状态为关闭...")
-	affected, err := database.DB().ID(requestBody.ID).Update(&database.Socks5{Status: 2, UpdatedAt: time.Now()})
+	affected, err := database.Socks5s().SetStatus(int64(requestBody.ID), 2)
 	if err != nil {
 		log.Printf("[SOCKS5-API] ❌ 更新数据库失败: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"status": 500, "data": "数据库更新失败"})
@@ -476,7 +472,7 @@ func Socks5Delete(c *gin.Context) {
 
 	// 查找代理记录
 	var socks5Record database.Socks5
-	has, err := database.DB().ID(requestBody.ID).Get(&socks5Record)
+	socks5Record, has, err := database.Socks5s().GetByID(int64(requestBody.ID))
 	if err != nil {
 		log.Printf("[SOCKS5-API] ❌ 数据库查询失败: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"status": 500, "data": "数据库查询失败"})
@@ -519,7 +515,7 @@ func Socks5Delete(c *gin.Context) {
 	}
 
 	log.Printf("[SOCKS5-API] 🗑️ 从数据库删除记录...")
-	affected, err := database.DB().ID(requestBody.ID).Delete(&database.Socks5{})
+	affected, err := database.Socks5s().DeleteByID(int64(requestBody.ID))
 	if err != nil {
 		log.Printf("[SOCKS5-API] ❌ 删除数据库记录失败: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"status": 500, "data": "数据库删除失败"})
@@ -559,7 +555,7 @@ func Socks5Update(c *gin.Context) {
 
 	// 查找代理记录
 	var socks5Record database.Socks5
-	has, err := database.DB().ID(requestBody.ID).Get(&socks5Record)
+	socks5Record, has, err := database.Socks5s().GetByID(int64(requestBody.ID))
 	if err != nil {
 		log.Printf("[SOCKS5-API] ❌ 数据库查询失败: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"status": 500, "error": "数据库查询失败"})
@@ -598,8 +594,7 @@ func Socks5Update(c *gin.Context) {
 	oldPort, _ := strconv.Atoi(socks5Record.Socks5port)
 	if requestBody.ServerPort != 0 && requestBody.ServerPort != oldPort {
 		// 检查新端口是否被占用（含 agent 端口 +1000）
-		var existingRecord database.Socks5
-		exists, err := database.DB().Where("socks5port = ? AND id != ?", strconv.Itoa(requestBody.ServerPort), requestBody.ID).Get(&existingRecord)
+		exists, err := database.Socks5s().PortInUse(strconv.Itoa(requestBody.ServerPort), int64(requestBody.ID))
 		if err != nil {
 			log.Printf("[SOCKS5-API] ❌ 检查端口占用失败: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"status": 500, "error": "检查端口占用失败"})
@@ -612,8 +607,7 @@ func Socks5Update(c *gin.Context) {
 		}
 		// Agent 端口冲突检测（ServerPort+1000）
 		agentPortNew := requestBody.ServerPort + 1000
-		var agentRecord database.Socks5
-		agentExists, err := database.DB().Where("socks5port = ? AND id != ?", strconv.Itoa(agentPortNew), requestBody.ID).Get(&agentRecord)
+		agentExists, err := database.Socks5s().PortInUse(strconv.Itoa(agentPortNew), int64(requestBody.ID))
 		if err == nil && agentExists {
 			log.Printf("[SOCKS5-API] ❌ Agent端口 %d 已被其他代理占用", agentPortNew)
 			c.JSON(http.StatusBadRequest, gin.H{"status": 400, "error": fmt.Sprintf("Agent端口%d已被占用", agentPortNew)})
@@ -650,7 +644,7 @@ func Socks5Update(c *gin.Context) {
 	}
 
 	// 执行更新
-	affected, err := database.DB().ID(requestBody.ID).Update(&updateData)
+	affected, err := database.Socks5s().UpdateAllCols(int64(requestBody.ID), &updateData)
 	if err != nil {
 		log.Printf("[SOCKS5-API] ❌ 更新数据库失败: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"status": 500, "error": "更新失败"})
@@ -696,7 +690,7 @@ func Socks5BatchDelete(c *gin.Context) {
 
 		// 查找代理记录
 		var socks5Record database.Socks5
-		has, err := database.DB().ID(id).Get(&socks5Record)
+		socks5Record, has, err := database.Socks5s().GetByID(int64(id))
 		if err != nil {
 			log.Printf("[SOCKS5-API] ❌ 数据库查询失败 ID: %d, 错误: %v", id, err)
 			failedCount++
@@ -739,7 +733,7 @@ func Socks5BatchDelete(c *gin.Context) {
 
 		// 从数据库删除记录
 		log.Printf("[SOCKS5-API] 🗑️ 从数据库删除记录 ID: %d", id)
-		affected, err := database.DB().ID(id).Delete(&database.Socks5{})
+		affected, err := database.Socks5s().DeleteByID(int64(id))
 		if err != nil {
 			log.Printf("[SOCKS5-API] ❌ 删除数据库记录失败 ID: %d, 错误: %v", id, err)
 			failedCount++
@@ -816,7 +810,8 @@ func maskSecret(s string) string {
 // 恢复后需在 UI 重新"开启"或等客户端在线时手动触发。在线客户端会收到重新下发的连接命令。
 func RestoreSocks5OnStartup() {
 	var records []database.Socks5
-	if err := database.DB().Where("status = ?", 1).Find(&records); err != nil {
+	records, err := database.Socks5s().ListByStatus(1)
+	if err != nil {
 		log.Printf("[SOCKS5-API] 恢复查询失败: %v", err)
 		return
 	}
@@ -830,7 +825,7 @@ func RestoreSocks5OnStartup() {
 		psk := proxy.GenerateRandomPSK()
 		if _, err := proxy.ReverseSocksServer(r.ConnectAddress, socksAddr, psk, r.UserName, r.Password); err != nil {
 			// 恢复失败：回置状态，避免重启后一直显示运行中而实际没监听
-			database.DB().ID(r.ID).Update(&database.Socks5{Status: 0, UpdatedAt: time.Now()})
+			_, _ = database.Socks5s().SetStatus(r.ID, 0)
 			log.Printf("[SOCKS5-API] ❌ 恢复失败（已置为停止）: 端口 %s, %v", r.Socks5port, err)
 			continue
 		}
@@ -842,10 +837,8 @@ func RestoreSocks5OnStartup() {
 		_, online := connection.ClientListenerType[r.UID]
 		connection.MuClientListenerType.Unlock()
 		if online {
-			var client database.Clients
-			if has, _ := database.DB().Where("uid = ?", r.UID).Get(&client); has {
-				var listener database.Listener
-				if has2, _ := database.DB().Where("type = ? AND status = ?", client.Listener, 1).Get(&listener); has2 && listener.ConnectAddress != "" {
+			if client, has, _ := database.Clients_().GetByUID(r.UID); has {
+				if listener, has2, _ := database.Listeners().OpenByType(client.Listener); has2 && listener.ConnectAddress != "" {
 					serverIP := strings.Split(listener.ConnectAddress, ":")[0]
 					if serverIP != "" {
 						sendcommand.SendCommand(r.UID, fmt.Sprintf("socks5 %s:%s|%s|false", serverIP, r.Socks5port, psk))

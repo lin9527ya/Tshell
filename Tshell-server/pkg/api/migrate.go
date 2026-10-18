@@ -62,7 +62,7 @@ func Migrate(c *gin.Context) {
 
 	// 1. 会话与监听器信息
 	var client database.Clients
-	has, err := database.DB().Where("uid = ?", body.Uid).Get(&client)
+	client, has, err := database.Clients_().GetByUID(body.Uid)
 	if err != nil || !has {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "会话不存在"})
 		return
@@ -172,11 +172,11 @@ func Migrate(c *gin.Context) {
 	}()
 
 	c.JSON(http.StatusOK, gin.H{"status": 200, "data": gin.H{
-		"uid":          body.Uid,
-		"pid":          body.Pid,
-		"tech":         body.Tech,
-		"bytes":        sent,
-		"chunks":       seq,
-		"note":         "新 beacon 将以新 PID 上线为新会话,原会话即将退出",
+		"uid":    body.Uid,
+		"pid":    body.Pid,
+		"tech":   body.Tech,
+		"bytes":  sent,
+		"chunks": seq,
+		"note":   "新 beacon 将以新 PID 上线为新会话,原会话即将退出",
 	}})
 }

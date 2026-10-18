@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"BackendTemplate/pkg/utils/logx"
+	"github.com/gin-gonic/gin"
 )
 
 // TunnelProxyRequest 隧道代理请求结构
@@ -44,19 +44,12 @@ func checkTunnelPortAvailable(port int, excludeTunnelID, excludeSocks5ID int64) 
 	// 用 xorm 的 In(column, args...)：Where("col IN (?)", slice) 在本版本不会展开切片，
 	// 会把整个切片当成单个参数交给驱动而报 "unsupported type"（错误若被忽略就会静默放行）。
 	// 这里同时显式返回查询错误：校验失败即视为占用（fail-closed）。
-	intArgs := make([]interface{}, len(conflict))
-	strArgs := make([]interface{}, len(conflict))
+	strPorts := make([]string, len(conflict))
 	for i, p := range conflict {
-		intArgs[i] = p
-		strArgs[i] = strconv.Itoa(p)
+		strPorts[i] = strconv.Itoa(p)
 	}
 
-	var tun database.TunnelProxy
-	q := database.DB().In("server_port", intArgs...)
-	if excludeTunnelID > 0 {
-		q = q.And("id != ?", excludeTunnelID)
-	}
-	has, err := q.Get(&tun)
+	tun, has, err := database.Tunnels().PortConflict(conflict, excludeTunnelID)
 	if err != nil {
 		return fmt.Errorf("检查端口占用失败: %w", err)
 	}
@@ -64,12 +57,7 @@ func checkTunnelPortAvailable(port int, excludeTunnelID, excludeSocks5ID int64) 
 		return fmt.Errorf("端口 %d 与已有隧道冲突（Agent 端口 = 端口+1000）：隧道 %d 占用 %d", port, tun.ID, tun.ServerPort)
 	}
 
-	var s5 database.Socks5
-	q2 := database.DB().In("socks5port", strArgs...)
-	if excludeSocks5ID > 0 {
-		q2 = q2.And("id != ?", excludeSocks5ID)
-	}
-	has, err = q2.Get(&s5)
+	s5, has, err := database.Socks5s().PortConflict(strPorts, excludeSocks5ID)
 	if err != nil {
 		return fmt.Errorf("检查端口占用失败: %w", err)
 	}
@@ -153,8 +141,7 @@ func CreateTunnelProxy(c *gin.Context) {
 	}
 
 	// 检查客户端是否存在且在线
-	var client database.Clients
-	exists, err := database.DB().Where("uid = ? AND online = '1'", req.ClientUID).Get(&client)
+	_, exists, err := database.Clients_().OnlineByUID(req.ClientUID)
 	if err != nil {
 		if audit.GlobalAuditLogger != nil {
 			audit.GlobalAuditLogger.LogWithContext(c, audit.LogLevelError, audit.CategoryAPI, "TUNNEL_PROXY_CREATE", "FAILURE", "查询客户端失败: "+err.Error(), nil)
@@ -171,8 +158,7 @@ func CreateTunnelProxy(c *gin.Context) {
 	}
 
 	// 检查端口是否已被占用
-	var existingTunnel database.TunnelProxy
-	exists, err = database.DB().Where("server_port = ?", req.ServerPort).Get(&existingTunnel)
+	exists, err = database.Tunnels().PortInUse(req.ServerPort, 0)
 	if err != nil {
 		if audit.GlobalAuditLogger != nil {
 			audit.GlobalAuditLogger.LogWithContext(c, audit.LogLevelError, audit.CategoryAPI, "TUNNEL_PROXY_CREATE", "FAILURE", "检查端口占用失败: "+err.Error(), nil)
@@ -209,7 +195,7 @@ func CreateTunnelProxy(c *gin.Context) {
 		UpdatedAt:     now,
 	}
 
-	_, err = database.DB().Insert(&tunnel)
+	_, err = database.Tunnels().Insert(&tunnel)
 	if err != nil {
 		if audit.GlobalAuditLogger != nil {
 			audit.GlobalAuditLogger.LogWithContext(c, audit.LogLevelError, audit.CategoryAPI, "TUNNEL_PROXY_CREATE", "FAILURE", "创建隧道代理失败: "+err.Error(), nil)
@@ -307,8 +293,7 @@ func GetTunnelProxyList(c *gin.Context) {
 	}
 	clientMap := make(map[string]database.Clients, len(clientUIDs))
 	if len(clientUIDs) > 0 {
-		var clients []database.Clients
-		if err := database.DB().In("uid", clientUIDs).Find(&clients); err == nil {
+		if clients, err := database.Clients_().GetByUIDs(clientUIDs); err == nil {
 			for _, cl := range clients {
 				clientMap[cl.Uid] = cl
 			}
@@ -385,9 +370,7 @@ func UpdateTunnelProxy(c *gin.Context) {
 		return
 	}
 
-	var tunnel database.TunnelProxy
-	tunnel.ID = id
-	exists, err := database.DB().Get(&tunnel)
+	tunnel, exists, err := database.Tunnels().GetByID(id)
 	if err != nil {
 		if audit.GlobalAuditLogger != nil {
 			audit.GlobalAuditLogger.LogWithContext(c, audit.LogLevelError, audit.CategoryAPI, "TUNNEL_PROXY_UPDATE", "FAILURE", "查询隧道代理失败: "+err.Error(), nil)
@@ -416,8 +399,7 @@ func UpdateTunnelProxy(c *gin.Context) {
 	}
 
 	if req.ServerPort != tunnel.ServerPort {
-		var existingTunnel database.TunnelProxy
-		exists, err = database.DB().Where("server_port = ? AND id != ?", req.ServerPort, id).Get(&existingTunnel)
+		exists, err = database.Tunnels().PortInUse(req.ServerPort, id)
 		if err != nil {
 			if audit.GlobalAuditLogger != nil {
 				audit.GlobalAuditLogger.LogWithContext(c, audit.LogLevelError, audit.CategoryAPI, "TUNNEL_PROXY_UPDATE", "FAILURE", "检查端口占用失败: "+err.Error(), nil)
@@ -442,18 +424,18 @@ func UpdateTunnelProxy(c *gin.Context) {
 	// 构建更新数据映射，确保字段正确映射
 	updateData := map[string]interface{}{
 		"client_uid":     req.ClientUID,
-		"protocol":        req.Protocol,
-		"server_port":     req.ServerPort,
-		"target_address":  req.TargetAddress,
-		"note":            req.Note,
-		"username":        req.Username,
-		"password":        req.Password,
-		"updated_at":      time.Now(),
+		"protocol":       req.Protocol,
+		"server_port":    req.ServerPort,
+		"target_address": req.TargetAddress,
+		"note":           req.Note,
+		"username":       req.Username,
+		"password":       req.Password,
+		"updated_at":     time.Now(),
 	}
 
 	// 使用ID作为唯一标识符进行更新，避免使用其他可能变更的字段
 	// 使用Where条件避免xorm的ID方法表引用问题
-	affected, err := database.DB().Table(&database.TunnelProxy{}).Where("id = ?", id).Update(updateData)
+	affected, err := database.Tunnels().UpdateMap(id, updateData)
 	if err != nil {
 		if audit.GlobalAuditLogger != nil {
 			audit.GlobalAuditLogger.LogWithContext(c, audit.LogLevelError, audit.CategoryAPI, "TUNNEL_PROXY_UPDATE", "FAILURE", "更新隧道代理失败: "+err.Error(), nil)
@@ -495,9 +477,7 @@ func DeleteTunnelProxy(c *gin.Context) {
 		return
 	}
 
-	var tunnel database.TunnelProxy
-	tunnel.ID = id
-	exists, err := database.DB().Get(&tunnel)
+	tunnel, exists, err := database.Tunnels().GetByID(id)
 	if err != nil {
 		if audit.GlobalAuditLogger != nil {
 			audit.GlobalAuditLogger.LogWithContext(c, audit.LogLevelError, audit.CategoryAPI, "TUNNEL_PROXY_DELETE", "FAILURE", "查询隧道代理失败: "+err.Error(), nil)
@@ -531,12 +511,12 @@ func DeleteTunnelProxy(c *gin.Context) {
 		}
 		// 更新状态为停止
 		tunnel.Status = 0
-		database.DB().ID(id).Update(&tunnel)
+		_, _ = database.Tunnels().UpdateAll(id, &tunnel)
 	} else {
 		logx.Infof("💫 [隧道删除] 隧道已停止，直接删除\n")
 	}
 
-	_, err = database.DB().ID(id).Delete(&database.TunnelProxy{})
+	_, err = database.Tunnels().DeleteByID(id)
 	if err != nil {
 		if audit.GlobalAuditLogger != nil {
 			audit.GlobalAuditLogger.LogWithContext(c, audit.LogLevelError, audit.CategoryAPI, "TUNNEL_PROXY_DELETE", "FAILURE", "删除隧道代理失败: "+err.Error(), nil)
@@ -567,9 +547,7 @@ func StartTunnelProxy(c *gin.Context) {
 		return
 	}
 
-	var tunnel database.TunnelProxy
-	tunnel.ID = id
-	exists, err := database.DB().Get(&tunnel)
+	tunnel, exists, err := database.Tunnels().GetByID(id)
 	if err != nil {
 		if audit.GlobalAuditLogger != nil {
 			audit.GlobalAuditLogger.LogWithContext(c, audit.LogLevelError, audit.CategoryAPI, "TUNNEL_PROXY_START", "FAILURE", "查询隧道代理失败: "+err.Error(), nil)
@@ -585,8 +563,7 @@ func StartTunnelProxy(c *gin.Context) {
 		return
 	}
 
-	var client database.Clients
-	exists, err = database.DB().Where("uid = ? AND online = '1'", tunnel.ClientUID).Get(&client)
+	_, exists, err = database.Clients_().OnlineByUID(tunnel.ClientUID)
 	if err != nil || !exists {
 		if audit.GlobalAuditLogger != nil {
 			audit.GlobalAuditLogger.LogWithContext(c, audit.LogLevelError, audit.CategoryAPI, "TUNNEL_PROXY_START", "FAILURE", "客户端离线", nil)
@@ -640,7 +617,7 @@ func StartTunnelProxy(c *gin.Context) {
 
 	tunnel.Status = 1
 	tunnel.UpdatedAt = time.Now()
-	affected, err := database.DB().ID(id).Cols("status", "updated_at").Update(&tunnel)
+	affected, err := database.Tunnels().UpdateColumns(id, []string{"status", "updated_at"}, &tunnel)
 	if err != nil {
 		if audit.GlobalAuditLogger != nil {
 			audit.GlobalAuditLogger.LogWithContext(c, audit.LogLevelError, audit.CategoryAPI, "TUNNEL_PROXY_START", "FAILURE", "更新状态失败: "+err.Error(), nil)
@@ -673,9 +650,7 @@ func StopTunnelProxy(c *gin.Context) {
 		return
 	}
 
-	var tunnel database.TunnelProxy
-	tunnel.ID = id
-	exists, err := database.DB().Get(&tunnel)
+	tunnel, exists, err := database.Tunnels().GetByID(id)
 	if err != nil {
 		if audit.GlobalAuditLogger != nil {
 			audit.GlobalAuditLogger.LogWithContext(c, audit.LogLevelError, audit.CategoryAPI, "TUNNEL_PROXY_STOP", "FAILURE", "查询隧道代理失败: "+err.Error(), nil)
@@ -710,7 +685,7 @@ func StopTunnelProxy(c *gin.Context) {
 
 	tunnel.Status = 0
 	tunnel.UpdatedAt = time.Now()
-	affected, err := database.DB().ID(id).Cols("status", "updated_at").Update(&tunnel)
+	affected, err := database.Tunnels().UpdateColumns(id, []string{"status", "updated_at"}, &tunnel)
 	if err != nil {
 		if audit.GlobalAuditLogger != nil {
 			audit.GlobalAuditLogger.LogWithContext(c, audit.LogLevelError, audit.CategoryAPI, "TUNNEL_PROXY_STOP", "FAILURE", "更新状态失败: "+err.Error(), nil)

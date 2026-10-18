@@ -55,7 +55,7 @@ func AddListener(c *gin.Context) {
 	// 精确匹配：原用 LIKE "%"+地址 做子串匹配，建 "0.0.0.0:808" 会撞上已存在的
 	// "0.0.0.0:8080"（地址里的 % / _ 还会被当通配符）。其余接口一律按
 	// listen_address 精确查库，故此处也必须按精确值判重。
-	if exists, _ := database.DB().Where("listen_address = ?", listener.ListenAddress).Exist(&database.Listener{}); exists {
+	if exists, _ := database.Listeners().ExistsByAddress(listener.ListenAddress); exists {
 		c.JSON(http.StatusOK, gin.H{"status": 400, "data": "Listener already exists"})
 		return
 	}
@@ -102,7 +102,7 @@ func AddListener(c *gin.Context) {
 		return
 	}
 
-	database.DB().Insert(&database.Listener{
+	if err := database.Listeners().Insert(&database.Listener{
 		Type:              listener.Type,
 		ListenAddress:     listener.ListenAddress,
 		ConnectAddress:    listener.ConnectAddress,
@@ -113,7 +113,10 @@ func AddListener(c *gin.Context) {
 		VKey:              listener.VKey,
 		EncryptionSalt:    listener.EncryptionSalt,
 		Profile:           profileName,
-	})
+	}); err != nil {
+		c.JSON(http.StatusOK, gin.H{"status": 500, "data": "保存监听器失败: " + err.Error()})
+		return
+	}
 	encrypt.InvalidateListenerKeyCache()
 	// D18: 业务审计
 	auditLogEvent("LISTENER_ADD", "SUCCESS", "新增监听器 "+listener.Type+"://"+listener.ListenAddress, map[string]interface{}{"type": listener.Type, "address": listener.ListenAddress})
@@ -193,13 +196,12 @@ func maskListenerForResponse(l database.Listener) listenerResponse {
 // 多实例时按类型查只能取到任意一行，迁移/注入会因此拿错地址与密钥；
 // 匹配不到再按类型兜底（取最新一条，与既有行为一致）。
 func listenerForClient(uid, listenerType string) (database.Listener, bool) {
-	var lis database.Listener
 	if addr, ok := sendcommand.GetListenerAddr(uid); ok && addr != "" {
-		if has, _ := database.DB().Where("connect_address = ? OR listen_address = ?", addr, addr).Get(&lis); has {
-			return lis, true
+		if got, has, _ := database.Listeners().FindByConnectOrListen(addr); has {
+			return got, true
 		}
 	}
-	has, _ := database.DB().Where("type = ?", listenerType).Desc("id").Get(&lis)
+	lis, has, _ := database.Listeners().LatestByType(listenerType)
 	return lis, has
 }
 
@@ -213,8 +215,8 @@ func resolveListenerAddress(submitted, wantField string) string {
 	if !isMaskedValue(submitted) || database.DB() == nil {
 		return submitted
 	}
-	var all []database.Listener
-	if err := database.DB().Find(&all); err != nil {
+	all, err := database.Listeners().List()
+	if err != nil {
 		return submitted
 	}
 	for _, l := range all {
@@ -231,7 +233,7 @@ func resolveListenerAddress(submitted, wantField string) string {
 
 func ListListener(c *gin.Context) {
 	var listeners []database.Listener
-	database.DB().Find(&listeners)
+	listeners, _ = database.Listeners().List()
 	// 只回脱敏预览：VKey/加密盐是会话密钥派生的根，oss 的 AK/SK 更是可直接复用的云凭证
 	result := make([]listenerResponse, 0, len(listeners))
 	for _, l := range listeners {
@@ -250,9 +252,9 @@ func OpenListener(c *gin.Context) {
 	// 前端从列表接口拿到的是脱敏地址，原样回传时先还原为库中真实地址
 	listener.ListenAddress = resolveListenerAddress(listener.ListenAddress, "listen")
 	var lis database.Listener
-	database.DB().Where("listen_address = ?", listener.ListenAddress).Get(&lis)
+	lis, _, _ = database.Listeners().GetByAddress(listener.ListenAddress)
 	if lis.Status == 2 {
-		database.DB().Where("listen_address = ?", listener.ListenAddress).Update(&database.Listener{Status: 1})
+		_ = database.Listeners().UpdateStatus(listener.ListenAddress, 1)
 
 		encrypt.InvalidateListenerKeyCache()
 		go handleOpenPort(lis.Type, listener.ListenAddress, lis.VKey, lis.EncryptionSalt, lis.Profile)
@@ -273,9 +275,9 @@ func CloseListener(c *gin.Context) {
 	}
 	listener.ListenAddress = resolveListenerAddress(listener.ListenAddress, "listen")
 	var lis database.Listener
-	database.DB().Where("listen_address = ?", listener.ListenAddress).Get(&lis)
+	lis, _, _ = database.Listeners().GetByAddress(listener.ListenAddress)
 	if lis.Status == 1 {
-		database.DB().Where("listen_address = ?", listener.ListenAddress).Update(&database.Listener{Status: 2})
+		_ = database.Listeners().UpdateStatus(listener.ListenAddress, 2)
 		encrypt.InvalidateListenerKeyCache()
 		if err := handleClosePort(lis.Type, lis.ListenAddress); err != nil {
 			auditLogEvent("LISTENER_CLOSE", "FAILED", "关闭监听器 "+lis.Type+"://"+listener.ListenAddress+": "+err.Error(), nil)
@@ -299,14 +301,14 @@ func DeleteListener(c *gin.Context) {
 	}
 	listener.ListenAddress = resolveListenerAddress(listener.ListenAddress, "listen")
 	var lis database.Listener
-	database.DB().Where("listen_address = ?", listener.ListenAddress).Get(&lis)
+	lis, _, _ = database.Listeners().GetByAddress(listener.ListenAddress)
 	if lis.Status == 1 {
 		// 关闭失败不阻断删除：状态已置为已停止，记录删掉后句柄也无需再持有
 		if err := handleClosePort(lis.Type, lis.ListenAddress); err != nil {
 			logx.Warnf("⚠️ [监听器] 删除前关闭 %s://%s 失败: %v\n", lis.Type, lis.ListenAddress, err)
 		}
 	}
-	database.DB().Where("listen_address = ?", listener.ListenAddress).Delete(&database.Listener{})
+	_, _ = database.Listeners().Delete(listener.ListenAddress)
 	encrypt.InvalidateListenerKeyCache()
 	auditLogEvent("LISTENER_DELETE", "SUCCESS", "删除监听器 "+lis.Type+"://"+listener.ListenAddress, nil)
 	c.JSON(http.StatusOK, gin.H{"status": 200, "data": "Listener deleted"})
@@ -379,7 +381,7 @@ func UpdateListener(c *gin.Context) {
 	// 首先获取当前监听器的状态，确保更新时不改变状态
 	var currentListener database.Listener
 	// 使用ID查询当前监听器信息
-	has, err := database.DB().ID(listener.Id).Get(&currentListener)
+	currentListener, has, err := database.Listeners().GetByID(listener.Id)
 	if err != nil {
 		log.Printf("❌ [监听器更新] 查询当前监听器信息失败: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"status": 500, "data": "查询当前监听器信息失败: " + err.Error()})
@@ -450,7 +452,7 @@ func UpdateListener(c *gin.Context) {
 	// 使用ID更新记录，而不是listenAddress
 	// 【零值修复】AllCols 显式写入全部字段：请求即完整配置，空字符串也须落库
 	// （默认零值跳过会导致清空 Note/密钥等字段静默失效）
-	affected, err := database.DB().ID(listener.Id).AllCols().Update(updateData)
+	affected, err := database.Listeners().UpdateAllCols(listener.Id, updateData)
 	if err != nil {
 		log.Printf("❌ [监听器更新] 更新监听器失败: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"status": 500, "data": "更新监听器失败: " + err.Error()})
@@ -504,7 +506,7 @@ func BatchDeleteListeners(c *gin.Context) {
 
 		// 查找监听器记录
 		var listener database.Listener
-		has, err := database.DB().Where("listen_address = ?", address).Get(&listener)
+		listener, has, err := database.Listeners().GetByAddress(address)
 		if err != nil {
 			log.Printf("[LISTENER-API] ❌ 数据库查询失败 地址: %s, 错误: %v", address, err)
 			failedCount++
@@ -530,7 +532,7 @@ func BatchDeleteListeners(c *gin.Context) {
 
 		// 从数据库删除监听器记录
 		log.Printf("[LISTENER-API] 🗑️ 从数据库删除监听器记录 地址: %s", address)
-		affected, err := database.DB().Where("listen_address = ?", address).Delete(&database.Listener{})
+		affected, err := database.Listeners().Delete(address)
 		if err != nil {
 			log.Printf("[LISTENER-API] ❌ 删除数据库记录失败 地址: %s, 错误: %v", address, err)
 			failedCount++
@@ -634,7 +636,7 @@ func isForwardListenerType(listenerType string) bool {
 // 各启动失败分支（J4 拒绝、端口绑定失败、证书生成失败、HTTP(S) 服务起不来）统一走这里。
 func markListenerStartFailed(listenerType, listenerAddress, reason string) {
 	if database.DB() != nil {
-		database.DB().Where("listen_address = ?", listenerAddress).Update(&database.Listener{Status: 2})
+		_ = database.Listeners().UpdateStatus(listenerAddress, 2)
 		encrypt.InvalidateListenerKeyCache()
 	}
 	logx.Errorf("❌ [监听器] %s://%s 启动失败，状态已回置为已停止：%s\n", listenerType, listenerAddress, reason)
@@ -806,8 +808,7 @@ func handleOpenPort(listenerType string, listenerAddress string, vkey string, sa
 		}
 		if certFile == "" || keyFile == "" {
 			var sanHosts []string
-			var lis database.Listener
-			if has, _ := database.DB().Where("listen_address = ?", listenerAddress).Get(&lis); has && lis.ConnectAddress != "" {
+			if lis, has, _ := database.Listeners().GetByAddress(listenerAddress); has && lis.ConnectAddress != "" {
 				// connect_address 形如 host:port 或 host（取 host 部分作 SAN）
 				ca := strings.Split(lis.ConnectAddress, ":")
 				sanHosts = append(sanHosts, ca[0])
@@ -908,8 +909,7 @@ func handleOpenPort(listenerType string, listenerAddress string, vkey string, sa
 		// 密钥与手动连接、客户端生成同源：记录配了自定义密钥就用它，否则两端一致地使用正向
 		// 占位符默认值（见 encrypt.GetListenerKeyConfigForForward）。
 		target := listenerAddress
-		var flis database.Listener
-		if has, _ := database.DB().Where("listen_address = ?", listenerAddress).Get(&flis); has && flis.ConnectAddress != "" {
+		if flis, has, _ := database.Listeners().GetByAddress(listenerAddress); has && flis.ConnectAddress != "" {
 			target = flis.ConnectAddress
 		}
 		fmk, fsl := encrypt.GetListenerKeyConfigForForward(listenerType)
@@ -1052,7 +1052,7 @@ func cleanupClientsForListener(listenerType string, listenerAddress string) {
 	// 再由 connOnListener 按本端端口筛掉同类型其他监听器的客户端。
 	// 无持久连接的协议（http/oss/dns）取不到本端地址，无法判定归属，仍按类型处理。
 	var clients []database.Clients
-	database.DB().Where("listener = ? AND online = '1'", listenerType).Find(&clients)
+	clients, _ = database.Clients_().OnlineByListener(listenerType)
 
 	cleanupCount := 0
 	for _, client := range clients {
@@ -1197,7 +1197,7 @@ func RestartListener(c *gin.Context) {
 	}
 	listener.ListenAddress = resolveListenerAddress(listener.ListenAddress, "listen")
 	var lis database.Listener
-	has, _ := database.DB().Where("listen_address = ?", listener.ListenAddress).Get(&lis)
+	lis, has, _ := database.Listeners().GetByAddress(listener.ListenAddress)
 	if !has {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "监听器不存在"})
 		return
@@ -1206,7 +1206,7 @@ func RestartListener(c *gin.Context) {
 	// 运行中则先关停。句柄缺失（异常退出残留）时 handleClosePort 只记日志不报错，
 	// 故无需再探活——原先的 listenerHandleAlive 只是为了规避它写响应造成的双写。
 	if lis.Status == 1 {
-		database.DB().Where("listen_address = ?", lis.ListenAddress).Update(&database.Listener{Status: 2})
+		_ = database.Listeners().UpdateStatus(lis.ListenAddress, 2)
 		encrypt.InvalidateListenerKeyCache()
 		if err := handleClosePort(lis.Type, lis.ListenAddress); err != nil {
 			logx.Warnf("⚠️ [监听器重启] %s://%s 关闭阶段失败（仍继续重启）: %v\n", lis.Type, lis.ListenAddress, err)
@@ -1214,7 +1214,7 @@ func RestartListener(c *gin.Context) {
 	}
 
 	// 重新启动(handleOpenPort 内含 J4 默认密钥拒绝与 panic 防护)
-	database.DB().Where("listen_address = ?", lis.ListenAddress).Update(&database.Listener{Status: 1})
+	_ = database.Listeners().UpdateStatus(lis.ListenAddress, 1)
 	encrypt.InvalidateListenerKeyCache()
 	go handleOpenPort(lis.Type, lis.ListenAddress, lis.VKey, lis.EncryptionSalt, lis.Profile)
 	auditLogEvent("LISTENER_RESTART", "SUCCESS", "重启监听器 "+lis.Type+"://"+lis.ListenAddress, nil)

@@ -131,12 +131,11 @@ func GetClients(c *gin.Context) {
 		size = 100
 	}
 
-	total, _ := database.DB().Count(&database.Clients{})
+	total, _ := database.Clients_().Count()
 
-	var clientData []database.Clients
 	// 【P2-1】按 ID 降序分页：数据变动时翻页稳定，最新客户端在前
 	// （原无 OrderBy 依赖 SQLite rowid 序，插删后翻页重复/遗漏）
-	err := database.DB().Desc("id").Limit(size, (page-1)*size).Find(&clientData)
+	clientData, err := database.Clients_().Page((page-1)*size, size)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": errors.SanitizeError(err)})
 		return
@@ -347,8 +346,7 @@ func GetNote(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	var Note database.Notes
-	database.DB().Where("uid = ?", noteBody.Uid).Get(&Note)
+	Note, _, _ := database.NotesStore_().GetByUID(noteBody.Uid)
 	c.JSON(http.StatusOK, gin.H{"status": http.StatusOK, "data": Note.Note})
 }
 
@@ -365,21 +363,9 @@ func SaveNote(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "uid 不能为空"})
 		return
 	}
-	// Upsert：记录不存在则 Insert（原实现只 Update，对无记录客户端备注静默丢失）
-	var Note database.Notes
-	has, err := database.DB().Where("uid = ?", noteBody.Uid).Get(&Note)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询备注失败"})
-		return
-	}
-	Note.Uid = noteBody.Uid
-	Note.Note = noteBody.NoteContent
-	if has {
-		_, err = database.DB().Where("uid = ?", noteBody.Uid).Update(&Note)
-	} else {
-		_, err = database.DB().Insert(&Note)
-	}
-	if err != nil {
+	// Upsert 收口到领域层：原来的"先查再决定 Update/Insert"写在调用方，
+	// 一旦有人只写 Update 分支，无记录客户端的备注就会静默丢失。
+	if err := database.NotesStore_().Upsert(noteBody.Uid, noteBody.NoteContent); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存备注失败"})
 		return
 	}
@@ -397,13 +383,11 @@ func ExitClient(c *gin.Context) {
 
 	go func() {
 		var client database.Clients
-		database.DB().Where("uid = ?", clientBody.Uid).Get(&client)
+		client, _, _ = database.Clients_().GetByUID(clientBody.Uid)
 		duration, _ := time.ParseDuration(client.Sleep + "s")
 		time.Sleep(duration)
-		database.DB().Where("uid = ?", clientBody.Uid).Delete(new(database.Clients))
-		database.DB().Where("uid = ?", clientBody.Uid).Delete(new(database.Downloads))
-		database.DB().Where("uid = ?", clientBody.Uid).Delete(new(database.Notes))
-		database.DB().Where("uid = ?", clientBody.Uid).Delete(new(database.Shell))
+		// 级联删除走领域层唯一出口：收口前这里漏删 loot（战利品会永远挂在已删除的 uid 上）
+		database.Clients_().PurgeByUID(clientBody.Uid)
 		command.ClearUidFileBrowser(clientBody.Uid)
 	}()
 
@@ -421,7 +405,7 @@ func AddUidNote(c *gin.Context) {
 	}
 
 	// 【零值修复】xorm 默认跳过零值字段，显式 Cols 保证清空 note 也能生效
-	database.DB().Where("uid = ?", noteBody.Uid).Cols("note").Update(&database.Clients{Note: noteBody.Note})
+	_, _ = database.Clients_().UpdateColumns(noteBody.Uid, []string{"note"}, &database.Clients{Note: noteBody.Note})
 	c.JSON(http.StatusOK, gin.H{"status": http.StatusOK})
 }
 
@@ -447,7 +431,7 @@ func EditSleep(c *gin.Context) {
 		}
 		normalized = strconv.Itoa(sec)
 	}
-	database.DB().Where("uid = ?", sleepBody.Uid).Cols("sleep").Update(&database.Clients{Sleep: normalized})
+	_, _ = database.Clients_().UpdateColumns(sleepBody.Uid, []string{"sleep"}, &database.Clients{Sleep: normalized})
 	sendcommand.SendCommand(sleepBody.Uid, "sleep "+normalized)
 
 	// 同步离线检测器的休眠间隔，防止 sleep 调整后在线客户端被误判离线
@@ -470,7 +454,7 @@ func EditColor(c *gin.Context) {
 		return
 	}
 	// 【零值修复】xorm 默认跳过零值字段，显式 Cols 保证清空 color 也能生效
-	database.DB().Where("uid = ?", colorBody.Uid).Cols("color").Update(&database.Clients{Color: colorBody.Color})
+	_, _ = database.Clients_().UpdateColumns(colorBody.Uid, []string{"color"}, &database.Clients{Color: colorBody.Color})
 	c.JSON(http.StatusOK, gin.H{"status": http.StatusOK})
 }
 
@@ -492,7 +476,7 @@ func BatchDeleteClients(c *gin.Context) {
 
 	// 【优化】批量在线状态一次查询；DB 删除放入单个事务（4 张表 × N 次写合并为一次提交）
 	var onlineClients []database.Clients
-	database.DB().In("uid", requestBody.UIDs).Where("online = ?", "1").Find(&onlineClients)
+	onlineClients, _ = database.Clients_().OnlineByUIDs(requestBody.UIDs)
 	for _, c := range onlineClients {
 		sendcommand.SendCommand(c.Uid, "exit")
 	}
@@ -562,7 +546,7 @@ func ResetClientId(c *gin.Context) {
 
 	// 当前最大ID（若无客户端则为0）
 	var maxID int64
-	database.DB().SQL("SELECT COALESCE(MAX(id), 0) FROM clients").Get(&maxID)
+	maxID, _ = database.Clients_().MaxID()
 
 	// 自增序列重置：SQLite 走 sqlite_sequence，PostgreSQL 走 setval（见 database.ResetAutoIncrement）
 	if err := database.ResetAutoIncrement("clients", maxID); err != nil {

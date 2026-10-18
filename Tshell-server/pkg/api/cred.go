@@ -145,11 +145,7 @@ func ListCredArtifacts(c *gin.Context) {
 	pending := cred.Global.Pending(uid)
 	artifacts := make([]database.Loot, 0)
 	if database.DB() != nil {
-		session := database.DB().In("source", cred.Kinds)
-		if uid != "" {
-			session = session.And("uid = ?", uid)
-		}
-		_ = session.Desc("id").Limit(200).Find(&artifacts)
+		artifacts, _ = database.LootStore_().ListBySources(cred.Kinds, uid, 200)
 	}
 
 	c.JSON(http.StatusOK, gin.H{"status": http.StatusOK, "data": gin.H{
