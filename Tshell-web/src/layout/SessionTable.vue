@@ -2,44 +2,44 @@
   <div class="session-table-container cs-font-ui">
     <!-- Search / Count Toolbar(常驻;接原 searchKey 死代码,Ctrl+F 聚焦) -->
     <div class="cs-session-toolbar">
-      <span class="cs-session-title">{{ isZh ? '会话列表' : 'Sessions' }}</span>
+      <span class="cs-session-title">{{ i18nStore.tl('会话列表', 'Sessions') }}</span>
       <div class="cs-session-search-wrap">
         <input
           ref="searchInputRef"
           v-model="searchKey"
           class="cs-session-search"
-          :placeholder="isZh ? '过滤会话(IP/主机/用户/备注...)' : 'Filter sessions (IP/host/user/note...)'"
+          :placeholder="i18nStore.tl('过滤会话(IP/主机/用户/备注...)', 'Filter sessions (IP/host/user/note...)')"
           spellcheck="false"
         />
-        <span v-if="searchKey" class="cs-session-search-clear" :title="isZh ? '清空过滤' : 'Clear'" @click="searchKey = ''">✕</span>
+        <span v-if="searchKey" class="cs-session-search-clear" :title="i18nStore.tl('清空过滤', 'Clear')" @click="searchKey = ''">✕</span>
       </div>
-      <span class="cs-session-count" :title="isZh ? '匹配/总数' : 'matched / total'">
+      <span class="cs-session-count" :title="i18nStore.tl('匹配/总数', 'matched / total')">
         {{ filteredClients.length }}/{{ clientsStore.clientsList.length }}
       </span>
 
       <!-- 凭据/战利品库入口：/loot 在路由表里是 menu:false，此前全仓没有任何跳转入口，
            只能手输 URL 打开（命令产出自动入库的 WiFi 密码也在这里查看） -->
-      <button class="cs-btn cs-btn-xs" @click="openLoot">{{ isZh ? '凭据库' : 'Credentials' }}</button>
+      <button class="cs-btn cs-btn-xs" @click="openLoot">{{ i18nStore.tl('凭据库', 'Credentials') }}</button>
 
       <!-- 批量态（vshell：勾选后操作出现在页头工具条，不再用浮动条） -->
       <template v-if="batchUids.length">
-        <span class="batch-count">{{ isZh ? `已选 ${batchUids.length} 个会话` : `${batchUids.length} selected` }}</span>
+        <span class="batch-count">{{ i18nStore.tl(`已选 ${batchUids.length} 个会话`, `${batchUids.length} selected`) }}</span>
         <div class="batch-input-wrap">
           <input
             v-model="batchCommandInput"
             class="batch-cmd-input cs-font-mono"
-            :placeholder="isZh ? '批量下发命令 (回车发送)...' : 'Batch command (Enter to send)...'"
+            :placeholder="i18nStore.tl('批量下发命令 (回车发送)...', 'Batch command (Enter to send)...')"
             spellcheck="false"
             @keydown.enter="sendBatchCommand"
           />
           <button class="cs-btn cs-btn-xs cs-btn-primary" :disabled="!batchCommandInput.trim() || batchSending" @click="sendBatchCommand">
-            {{ batchSending ? (isZh ? '下发中...' : 'Sending...') : (isZh ? '下发' : 'Send') }}
+            {{ batchSending ? (i18nStore.tl('下发中...', 'Sending...')) : (i18nStore.tl('下发', 'Send')) }}
           </button>
         </div>
-        <button class="cs-btn cs-btn-xs" @click="batchSetGroup">{{ isZh ? '批量分组' : 'Set Group' }}</button>
-        <button class="cs-btn cs-btn-xs" @click="openBatchTasks">{{ isZh ? '任务中心' : 'Tasks' }}</button>
-        <button class="cs-btn cs-btn-xs" :disabled="!hasOfflineSelected" @click="cleanupOfflineBatch">{{ isZh ? '清理离线' : 'Clean Offline' }}</button>
-        <button class="cs-btn cs-btn-xs" @click="clearTableSelection">{{ isZh ? '取消选择' : 'Clear' }}</button>
+        <button class="cs-btn cs-btn-xs" @click="batchSetGroup">{{ i18nStore.tl('批量分组', 'Set Group') }}</button>
+        <button class="cs-btn cs-btn-xs" @click="openBatchTasks">{{ i18nStore.tl('任务中心', 'Tasks') }}</button>
+        <button class="cs-btn cs-btn-xs" :disabled="!hasOfflineSelected" @click="cleanupOfflineBatch">{{ i18nStore.tl('清理离线', 'Clean Offline') }}</button>
+        <button class="cs-btn cs-btn-xs" @click="clearTableSelection">{{ i18nStore.tl('取消选择', 'Clear') }}</button>
       </template>
     </div>
 
@@ -123,7 +123,7 @@
           show-overflow-tooltip
         >
           <template #default="{ row }">
-            <span class="cs-cell-text">{{ row.Address || (row.InternalIP === '127.0.0.1' ? (isZh ? '本机地址' : 'Local') : row.InternalIP) }}</span>
+            <span class="cs-cell-text">{{ row.Address || (row.InternalIP === '127.0.0.1' ? (i18nStore.tl('本机地址', 'Local')) : row.InternalIP) }}</span>
           </template>
         </el-table-column>
 
@@ -237,7 +237,7 @@
         >
           <template #default="{ row }">
             <span class="vs-online-tag" :class="row.Online ? 'is-online' : 'is-offline'">
-              {{ row.Online ? (isZh ? '在线' : 'ON') : (isZh ? '离线' : 'OFF') }}
+              {{ row.Online ? (i18nStore.tl('在线', 'ON')) : (i18nStore.tl('离线', 'OFF')) }}
             </span>
             <span class="cs-cell-last cs-font-mono" :class="{ stale: !row.Online }">
               {{ formatLastActive(row) }}
@@ -258,36 +258,36 @@
         </el-table-column>
 
         <!-- 操作（vshell：行内链接 + 更多下拉，替代 CS 右键菜单） -->
-        <el-table-column :label="isZh ? '操作' : 'Actions'" width="220" fixed="right">
+        <el-table-column :label="i18nStore.tl('操作', 'Actions')" width="220" fixed="right">
           <template #default="{ row }">
             <div class="row-actions">
-              <a class="row-link" @click="gotoClient(row.Uid, 'console')">{{ isZh ? '主机管理' : 'Manage' }}</a>
-              <a class="row-link" @click="gotoClient(row.Uid, 'files')">{{ isZh ? '文件' : 'Files' }}</a>
+              <a class="row-link" @click="gotoClient(row.Uid, 'console')">{{ i18nStore.tl('主机管理', 'Manage') }}</a>
+              <a class="row-link" @click="gotoClient(row.Uid, 'files')">{{ i18nStore.tl('文件', 'Files') }}</a>
               <el-dropdown trigger="click" @command="(c: string) => onRowCmd(c, row)">
-                <a class="row-link">{{ isZh ? '更多' : 'More' }} ▾</a>
+                <a class="row-link">{{ i18nStore.tl('更多', 'More') }} ▾</a>
                 <template #dropdown>
                   <el-dropdown-menu>
                     <el-dropdown-item v-if="!collabStore.lockOf(row.Uid)" command="lock">
-                      {{ isZh ? '占用会话（协作）' : 'Lock Session' }}
+                      {{ i18nStore.tl('占用会话（协作）', 'Lock Session') }}
                     </el-dropdown-item>
                     <el-dropdown-item v-else-if="collabStore.lockOf(row.Uid)?.owner === userStore.username" command="unlock">
-                      {{ isZh ? '释放会话' : 'Release Session' }}
+                      {{ i18nStore.tl('释放会话', 'Release Session') }}
                     </el-dropdown-item>
                     <el-dropdown-item v-else disabled>
-                      {{ isZh ? '已被 ' + collabStore.lockOf(row.Uid)?.owner + ' 占用' : 'Locked by ' + collabStore.lockOf(row.Uid)?.owner }}
+                      {{ i18nStore.tl('已被 ' + collabStore.lockOf(row.Uid)?.owner + ' 占用', 'Locked by ' + collabStore.lockOf(row.Uid)?.owner) }}
                     </el-dropdown-item>
-                    <el-dropdown-item command="note" divided>{{ isZh ? '备注' : 'Note' }}</el-dropdown-item>
-                    <el-dropdown-item command="sleep">{{ isZh ? '回连间隔' : 'Sleep' }}</el-dropdown-item>
-                    <el-dropdown-item command="group">{{ isZh ? '设置分组' : 'Set Group' }}</el-dropdown-item>
-                    <el-dropdown-item command="alive">{{ isZh ? '检查存活' : 'Check Alive' }}</el-dropdown-item>
+                    <el-dropdown-item command="note" divided>{{ i18nStore.tl('备注', 'Note') }}</el-dropdown-item>
+                    <el-dropdown-item command="sleep">{{ i18nStore.tl('回连间隔', 'Sleep') }}</el-dropdown-item>
+                    <el-dropdown-item command="group">{{ i18nStore.tl('设置分组', 'Set Group') }}</el-dropdown-item>
+                    <el-dropdown-item command="alive">{{ i18nStore.tl('检查存活', 'Check Alive') }}</el-dropdown-item>
                     <el-dropdown-item v-if="isWindowsSession(row)" command="cred" divided>
-                      {{ isZh ? '凭据获取' : 'Credential Access' }}
+                      {{ i18nStore.tl('凭据获取', 'Credential Access') }}
                     </el-dropdown-item>
-                    <el-dropdown-item command="clientReport">{{ isZh ? '会话报告' : 'Session Report' }}</el-dropdown-item>
-                    <el-dropdown-item command="migrate" divided>{{ isZh ? '进程迁移' : 'Migrate' }}</el-dropdown-item>
-                    <el-dropdown-item command="disconnect">{{ isZh ? '断开连接' : 'Disconnect' }}</el-dropdown-item>
-                    <el-dropdown-item command="remove">{{ isZh ? '删除进程文件' : 'Delete Process File' }}</el-dropdown-item>
-                    <el-dropdown-item command="cleanup">{{ isZh ? '清理会话记录' : 'Clean Session Record' }}</el-dropdown-item>
+                    <el-dropdown-item command="clientReport">{{ i18nStore.tl('会话报告', 'Session Report') }}</el-dropdown-item>
+                    <el-dropdown-item command="migrate" divided>{{ i18nStore.tl('进程迁移', 'Migrate') }}</el-dropdown-item>
+                    <el-dropdown-item command="disconnect">{{ i18nStore.tl('断开连接', 'Disconnect') }}</el-dropdown-item>
+                    <el-dropdown-item command="remove">{{ i18nStore.tl('删除进程文件', 'Delete Process File') }}</el-dropdown-item>
+                    <el-dropdown-item command="cleanup">{{ i18nStore.tl('清理会话记录', 'Clean Session Record') }}</el-dropdown-item>
                   </el-dropdown-menu>
                 </template>
               </el-dropdown>

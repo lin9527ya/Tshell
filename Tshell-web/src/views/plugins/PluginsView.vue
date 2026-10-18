@@ -3,10 +3,10 @@
   <!-- 页签：插件 / 脚本（vshell：同域功能并页） -->
   <div class="plug-tabs">
     <div class="plug-tab" :class="{ active: view === 'plugins' }" @click="view = 'plugins'">
-      {{ isZh ? '插件运行' : 'Plugins' }}
+      {{ i18nStore.tl('插件运行', 'Plugins') }}
     </div>
     <div class="plug-tab" :class="{ active: view === 'scripts' }" @click="view = 'scripts'">
-      {{ isZh ? '脚本 (CNA)' : 'Scripts (CNA)' }}
+      {{ i18nStore.tl('脚本 (CNA)', 'Scripts (CNA)') }}
     </div>
   </div>
 
@@ -14,26 +14,26 @@
   <!-- 工具条：左侧标题/计数，右侧操作 -->
   <div class="plug-toolbar">
     <div class="plug-title-group">
-      <span class="plug-title">{{ isZh ? '内存执行与插件模块' : 'Memory Execution & Plugins' }}</span>
-      <span class="plug-count">({{ plugins.length }} {{ isZh ? '个插件可用' : 'plugins available' }})</span>
+      <span class="plug-title">{{ i18nStore.tl('内存执行与插件模块', 'Memory Execution & Plugins') }}</span>
+      <span class="plug-count">({{ plugins.length }} {{ i18nStore.tl('个插件可用', 'plugins available') }})</span>
     </div>
 
     <div class="plug-spacer" />
 
     <button class="cs-btn cs-btn-primary" @click="showUploadDialog = true">
-      {{ isZh ? '上传插件' : 'Upload Plugin' }}
+      {{ i18nStore.tl('上传插件', 'Upload Plugin') }}
     </button>
     <button class="cs-btn" @click="refreshPlugins">
-      {{ isZh ? '刷新' : 'Refresh' }}
+      {{ i18nStore.tl('刷新', 'Refresh') }}
     </button>
   </div>
 
   <div class="plugin-card">
     <el-form :model="pluginForm" label-width="120px" class="plugin-form">
-      <el-form-item :label="isZh ? '选择客户端' : 'Select Client'" required>
+      <el-form-item :label="i18nStore.tl('选择客户端', 'Select Client')" required>
         <el-select
           v-model="pluginForm.clientUid"
-          :placeholder="isZh ? '请选择已上线的客户端' : 'Select an online client'"
+          :placeholder="i18nStore.tl('请选择已上线的客户端', 'Select an online client')"
           class="full-width"
         >
           <el-option
@@ -46,7 +46,7 @@
       </el-form-item>
 
       <!-- Windows内存执行模式选择 -->
-      <el-form-item :label="isZh ? '执行模式' : 'Execution Mode'">
+      <el-form-item :label="i18nStore.tl('执行模式', 'Execution Mode')">
         <div class="execution-mode-buttons">
           <el-button
             :type="executionMode === 'execute-assembly' ? 'primary' : 'default'"
@@ -54,7 +54,7 @@
             :disabled="!isWindowsClient"
             class="mode-button"
           >
-            {{ isZh ? 'Execute Assembly(.NET程序内存执行)' : 'Execute Assembly (.NET in-memory)' }}
+            {{ i18nStore.tl('Execute Assembly(.NET程序内存执行)', 'Execute Assembly (.NET in-memory)') }}
           </el-button>
           <el-button
             :type="executionMode === 'inline-bin' ? 'primary' : 'default'"
@@ -62,7 +62,7 @@
             :disabled="!isWindowsClient"
             class="mode-button"
           >
-            {{ isZh ? 'Inline Bin(其他exe程序内存执行)' : 'Inline Bin (other exe in-memory)' }}
+            {{ i18nStore.tl('Inline Bin(其他exe程序内存执行)', 'Inline Bin (other exe in-memory)') }}
           </el-button>
           <el-button
             :type="executionMode === 'shellcode-inject' ? 'primary' : 'default'"
@@ -70,7 +70,7 @@
             :disabled="!isWindowsClient"
             class="mode-button"
           >
-            {{ isZh ? 'shellcode执行(执行shellcode,上线其他C2等)' : 'Shellcode (run shellcode, stage other C2)' }}
+            {{ i18nStore.tl('shellcode执行(执行shellcode,上线其他C2等)', 'Shellcode (run shellcode, stage other C2)') }}
           </el-button>
           <el-button
             :type="executionMode === 'script' ? 'primary' : 'default'"
@@ -78,7 +78,7 @@
             :disabled="isWindowsClient"
             class="mode-button"
           >
-            {{ isZh ? 'Script(Linux脚本内存执行)' : 'Script (Linux script in-memory)' }}
+            {{ i18nStore.tl('Script(Linux脚本内存执行)', 'Script (Linux script in-memory)') }}
           </el-button>
           <el-button
             :type="executionMode === 'binary' ? 'primary' : 'default'"
@@ -86,7 +86,7 @@
             :disabled="isWindowsClient"
             class="mode-button"
           >
-            {{ isZh ? 'Binary(Linux二进制执行)' : 'Binary (Linux binary exec)' }}
+            {{ i18nStore.tl('Binary(Linux二进制执行)', 'Binary (Linux binary exec)') }}
           </el-button>
           <el-button
             :type="executionMode === 'bof' ? 'primary' : 'default'"
@@ -94,30 +94,30 @@
             :disabled="!isWindowsClient"
             class="mode-button"
           >
-            {{ isZh ? 'BOF(COFF内存执行)' : 'BOF (COFF in-memory)' }}
+            {{ i18nStore.tl('BOF(COFF内存执行)', 'BOF (COFF in-memory)') }}
           </el-button>
           <el-button
             :type="executionMode === 'exec-file' ? 'primary' : 'default'"
             @click="setExecutionMode('exec-file')"
             class="mode-button"
           >
-            {{ isZh ? 'Exec File(临时文件执行,支持Go/Rust PE)' : 'Exec File (temp file exec, Go/Rust PE)' }}
+            {{ i18nStore.tl('Exec File(临时文件执行,支持Go/Rust PE)', 'Exec File (temp file exec, Go/Rust PE)') }}
           </el-button>
         </div>
         <el-alert v-if="!isWindowsClient && pluginForm.clientUid" type="info" :closable="false" show-icon style="margin-top: 8px;">
-          {{ isZh ? 'Linux 客户端：使用 Script 或 Binary 模式执行插件' : 'Linux client: use Script or Binary mode' }}
+          {{ i18nStore.tl('Linux 客户端：使用 Script 或 Binary 模式执行插件', 'Linux client: use Script or Binary mode') }}
         </el-alert>
         <el-alert v-if="isWindowsClient && pluginForm.clientUid" type="warning" :closable="false" show-icon style="margin-top: 8px;">
-          {{ isZh ? 'Windows 客户端：使用 Execute Assembly / Inline Bin / Shellcode / BOF 模式' : 'Windows client: use Execute Assembly / Inline Bin / Shellcode / BOF' }}
+          {{ i18nStore.tl('Windows 客户端：使用 Execute Assembly / Inline Bin / Shellcode / BOF 模式', 'Windows client: use Execute Assembly / Inline Bin / Shellcode / BOF') }}
         </el-alert>
         <el-alert v-if="!pluginForm.clientUid" type="info" :closable="false" show-icon style="margin-top: 8px;">
-          {{ isZh ? '请先选择客户端' : 'Select a client first' }}
+          {{ i18nStore.tl('请先选择客户端', 'Select a client first') }}
         </el-alert>
       </el-form-item>
 
-      <el-form-item :label="isZh ? '选择插件' : 'Select Plugin'" required>
+      <el-form-item :label="i18nStore.tl('选择插件', 'Select Plugin')" required>
         <div class="plugin-select-row">
-          <el-select v-model="pluginForm.selectedPlugin" :placeholder="isZh ? '请选择插件' : 'Select a plugin'" class="full-width" @change="handlePluginChange">
+          <el-select v-model="pluginForm.selectedPlugin" :placeholder="i18nStore.tl('请选择插件', 'Select a plugin')" class="full-width" @change="handlePluginChange">
             <el-option
               v-for="plugin in plugins"
               :key="plugin.name || plugin.Name"
@@ -130,49 +130,49 @@
             type="danger"
             :icon="Delete"
             @click="handleDeletePlugin"
-          >{{ isZh ? '删除插件' : 'Delete Plugin' }}</el-button>
+          >{{ i18nStore.tl('删除插件', 'Delete Plugin') }}</el-button>
         </div>
       </el-form-item>
 
       <!-- 插件详情（后端 /plugin/details/:pluginName，1:1 CS 信息条） -->
-      <el-form-item v-if="pluginForm.selectedPlugin" :label="isZh ? '插件详情' : 'Plugin Details'">
+      <el-form-item v-if="pluginForm.selectedPlugin" :label="i18nStore.tl('插件详情', 'Plugin Details')">
         <div class="plugin-detail-strip cs-font-ui">
           <div v-if="pluginDetailsLoading" class="pd-loading">
-            {{ isZh ? '加载详情中...' : 'Loading plugin details...' }}
+            {{ i18nStore.tl('加载详情中...', 'Loading plugin details...') }}
           </div>
           <template v-else-if="pluginDetails">
             <div class="pd-cell">
-              <span class="pd-label">{{ isZh ? '名称' : 'Name' }}</span>
+              <span class="pd-label">{{ i18nStore.tl('名称', 'Name') }}</span>
               <span class="pd-value mono">{{ pluginDetails.name || pluginForm.selectedPlugin }}</span>
             </div>
             <div class="pd-cell">
-              <span class="pd-label">{{ isZh ? '类型' : 'Type' }}</span>
+              <span class="pd-label">{{ i18nStore.tl('类型', 'Type') }}</span>
               <span class="pd-value">{{ pluginDetails.type || pluginDetails.Type || '-' }}</span>
             </div>
             <div class="pd-cell">
-              <span class="pd-label">{{ isZh ? '大小' : 'Size' }}</span>
+              <span class="pd-label">{{ i18nStore.tl('大小', 'Size') }}</span>
               <span class="pd-value mono">{{ formatFileSize(pluginDetails.size ?? pluginDetails.Size ?? 0) }}</span>
             </div>
             <div class="pd-cell">
-              <span class="pd-label">{{ isZh ? '修改时间' : 'Modified' }}</span>
+              <span class="pd-label">{{ i18nStore.tl('修改时间', 'Modified') }}</span>
               <span class="pd-value mono">{{ pluginDetails.last_modified || pluginDetails.LastModified || '-' }}</span>
             </div>
             <div class="pd-cell">
-              <span class="pd-label">{{ isZh ? '描述' : 'Description' }}</span>
+              <span class="pd-label">{{ i18nStore.tl('描述', 'Description') }}</span>
               <span class="pd-value">{{ pluginDetails.description || pluginDetails.Description || '-' }}</span>
             </div>
             <button class="cs-btn cs-btn-xs" @click="downloadPluginFile">
-              {{ isZh ? '下载' : 'Download' }}
+              {{ i18nStore.tl('下载', 'Download') }}
             </button>
           </template>
-          <div v-else class="pd-empty">{{ isZh ? '未能获取插件详情' : 'Plugin details unavailable' }}</div>
+          <div v-else class="pd-empty">{{ i18nStore.tl('未能获取插件详情', 'Plugin details unavailable') }}</div>
         </div>
       </el-form-item>
 
-      <el-form-item :label="isZh ? '参数' : 'Arguments'">
+      <el-form-item :label="i18nStore.tl('参数', 'Arguments')">
         <el-input
           v-model="pluginForm.arguments"
-          :placeholder="isZh ? '请输入参数，例如：-h 192.168.0.0' : 'Enter arguments, e.g. -h 192.168.0.0'"
+          :placeholder="i18nStore.tl('请输入参数，例如：-h 192.168.0.0', 'Enter arguments, e.g. -h 192.168.0.0')"
           class="full-width"
         />
       </el-form-item>
@@ -180,13 +180,13 @@
       <!-- 插件输出区域 -->
       <div class="output-section">
         <div class="output-header">
-          <h4 class="output-title">📜 {{ isZh ? '执行输出' : 'Execution Output' }}</h4>
+          <h4 class="output-title">📜 {{ i18nStore.tl('执行输出', 'Execution Output') }}</h4>
           <div class="output-controls">
             <el-button-group>
-              <el-button @click="clearOutput" icon="Delete" :title="isZh ? '清空输出' : 'Clear Output'">{{ isZh ? '清空' : 'Clear' }}</el-button>
-              <el-button @click="copyOutput" icon="CopyDocument" :title="isZh ? '复制全部' : 'Copy All'">{{ isZh ? '复制' : 'Copy' }}</el-button>
-              <el-button @click="exportOutput" icon="Download" :title="isZh ? '导出日志' : 'Export Log'">{{ isZh ? '导出' : 'Export' }}</el-button>
-              <el-button @click="refreshShellContent" icon="Refresh" :title="isZh ? '手动刷新' : 'Manual Refresh'" :disabled="!pluginForm.clientUid">{{ isZh ? '刷新' : 'Refresh' }}</el-button>
+              <el-button @click="clearOutput" icon="Delete" :title="i18nStore.tl('清空输出', 'Clear Output')">{{ i18nStore.tl('清空', 'Clear') }}</el-button>
+              <el-button @click="copyOutput" icon="CopyDocument" :title="i18nStore.tl('复制全部', 'Copy All')">{{ i18nStore.tl('复制', 'Copy') }}</el-button>
+              <el-button @click="exportOutput" icon="Download" :title="i18nStore.tl('导出日志', 'Export Log')">{{ i18nStore.tl('导出', 'Export') }}</el-button>
+              <el-button @click="refreshShellContent" icon="Refresh" :title="i18nStore.tl('手动刷新', 'Manual Refresh')" :disabled="!pluginForm.clientUid">{{ i18nStore.tl('刷新', 'Refresh') }}</el-button>
             </el-button-group>
 
             <button
@@ -194,8 +194,8 @@
               @click="executePlugin"
               :disabled="!pluginForm.clientUid || !pluginForm.selectedPlugin || !executionMode || pollingInterval !== null"
             >
-              <span v-if="pollingInterval">{{ isZh ? '执行中...' : 'Executing...' }}</span>
-              <span v-else>{{ isZh ? '执行' : 'Execute' }} ({{ getExecutionModeText() }})</span>
+              <span v-if="pollingInterval">{{ i18nStore.tl('执行中...', 'Executing...') }}</span>
+              <span v-else>{{ i18nStore.tl('执行', 'Execute') }} ({{ getExecutionModeText() }})</span>
             </button>
 
             <button
@@ -203,7 +203,7 @@
               class="cs-btn cs-btn-danger"
               @click="stopPolling"
             >
-              {{ isZh ? '停止轮询' : 'Stop Polling' }}
+              {{ i18nStore.tl('停止轮询', 'Stop Polling') }}
             </button>
           </div>
         </div>
@@ -235,27 +235,27 @@
     </div>
     
     <!-- 上传文件模态框 -->
-    <el-dialog v-model="showUploadDialog" :title="isZh ? '上传插件' : 'Upload Plugin'" width="700px" :close-on-click-modal="false">
+    <el-dialog v-model="showUploadDialog" :title="i18nStore.tl('上传插件', 'Upload Plugin')" width="700px" :close-on-click-modal="false">
       <div class="upload-dialog-content">
         <div class="upload-info-banner">
           <el-icon class="info-icon"><InfoFilled /></el-icon>
-          {{ isZh ? '支持exe,net,elf,dll,so,dylib格式，单个文件不超过50MB，最多只能同时上传6个文件' : 'Supports exe, net, elf, dll, so, dylib. Max 50MB per file, up to 6 files at once.' }}
-          <el-button type="primary" class="select-file-btn" @click="selectFiles">{{ isZh ? '选择文件' : 'Select Files' }}</el-button>
+          {{ i18nStore.tl('支持exe,net,elf,dll,so,dylib格式，单个文件不超过50MB，最多只能同时上传6个文件', 'Supports exe, net, elf, dll, so, dylib. Max 50MB per file, up to 6 files at once.') }}
+          <el-button type="primary" class="select-file-btn" @click="selectFiles">{{ i18nStore.tl('选择文件', 'Select Files') }}</el-button>
         </div>
 
         <!-- 文件列表区域 -->
         <div class="file-list-area">
           <div class="file-list-header">
-            <div class="header-col thumbnail">{{ isZh ? '缩略图' : 'Preview' }}</div>
-            <div class="header-col filename">{{ isZh ? '文件名' : 'File Name' }}</div>
-            <div class="header-col filesize">{{ isZh ? '文件大小' : 'Size' }}</div>
-            <div class="header-col status">{{ isZh ? '状态' : 'Status' }}</div>
-            <div class="header-col operation">{{ isZh ? '操作' : 'Actions' }}</div>
+            <div class="header-col thumbnail">{{ i18nStore.tl('缩略图', 'Preview') }}</div>
+            <div class="header-col filename">{{ i18nStore.tl('文件名', 'File Name') }}</div>
+            <div class="header-col filesize">{{ i18nStore.tl('文件大小', 'Size') }}</div>
+            <div class="header-col status">{{ i18nStore.tl('状态', 'Status') }}</div>
+            <div class="header-col operation">{{ i18nStore.tl('操作', 'Actions') }}</div>
           </div>
 
           <div class="file-list-body">
             <div v-if="fileList.length === 0" class="empty-file-list">
-              {{ isZh ? '暂无文件' : 'No files' }}
+              {{ i18nStore.tl('暂无文件', 'No files') }}
             </div>
             <div v-for="(file, index) in fileList" :key="index" class="file-item">
               <div class="file-col thumbnail">
@@ -263,9 +263,9 @@
               </div>
               <div class="file-col filename">{{ file.name }}</div>
               <div class="file-col filesize">{{ formatFileSize(file.size) }}</div>
-              <div class="file-col status">{{ isZh ? '待上传' : 'Pending' }}</div>
+              <div class="file-col status">{{ i18nStore.tl('待上传', 'Pending') }}</div>
               <div class="file-col operation">
-                <el-button type="text" @click="removeFile(index)">{{ isZh ? '删除' : 'Remove' }}</el-button>
+                <el-button type="text" @click="removeFile(index)">{{ i18nStore.tl('删除', 'Remove') }}</el-button>
               </div>
             </div>
           </div>
@@ -284,8 +284,8 @@
       
       <template #footer>
         <div class="upload-dialog-footer">
-          <el-button @click="closeUploadDialog">{{ isZh ? '关闭' : 'Close' }}</el-button>
-          <el-button type="primary" @click="submitUpload">{{ isZh ? '开始上传' : 'Start Upload' }}</el-button>
+          <el-button @click="closeUploadDialog">{{ i18nStore.tl('关闭', 'Close') }}</el-button>
+          <el-button type="primary" @click="submitUpload">{{ i18nStore.tl('开始上传', 'Start Upload') }}</el-button>
         </div>
       </template>
     </el-dialog>

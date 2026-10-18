@@ -3,17 +3,17 @@
     <!-- 工具条：页面级操作 -->
     <div class="cfg-toolbar">
       <div class="cfg-title-group">
-        <span class="cfg-title">{{ isZh ? '服务配置' : 'Server Configuration' }}</span>
-        <span class="cfg-status" :class="loaded ? 'online' : 'offline'">{{ loaded ? (isZh ? '已加载' : 'Loaded') : (isZh ? '加载中...' : 'Loading...') }}</span>
+        <span class="cfg-title">{{ i18nStore.tl('服务配置', 'Server Configuration') }}</span>
+        <span class="cfg-status" :class="loaded ? 'online' : 'offline'">{{ loaded ? (i18nStore.tl('已加载', 'Loaded')) : (i18nStore.tl('加载中...', 'Loading...')) }}</span>
       </div>
 
       <div class="cfg-spacer" />
 
-      <button class="cs-btn" @click="handleEnvVars">{{ isZh ? '环境变量' : 'Env Vars' }}</button>
-      <button class="cs-btn" @click="handleSchema">{{ isZh ? '配置结构' : 'Schema' }}</button>
-      <button class="cs-btn" @click="handleHelp">{{ isZh ? '帮助' : 'Help' }}</button>
-      <button class="cs-btn" @click="handleExport">{{ isZh ? '导出' : 'Export' }}</button>
-      <button class="cs-btn" :disabled="loading" @click="fetchConfig">{{ isZh ? '刷新' : 'Refresh' }}</button>
+      <button class="cs-btn" @click="handleEnvVars">{{ i18nStore.tl('环境变量', 'Env Vars') }}</button>
+      <button class="cs-btn" @click="handleSchema">{{ i18nStore.tl('配置结构', 'Schema') }}</button>
+      <button class="cs-btn" @click="handleHelp">{{ i18nStore.tl('帮助', 'Help') }}</button>
+      <button class="cs-btn" @click="handleExport">{{ i18nStore.tl('导出', 'Export') }}</button>
+      <button class="cs-btn" :disabled="loading" @click="fetchConfig">{{ i18nStore.tl('刷新', 'Refresh') }}</button>
     </div>
 
     <!-- Master-Detail Body -->
@@ -26,7 +26,7 @@
           @click="selectSection('all')"
         >
           <span class="nav-icon">📄</span>
-          <span class="nav-label">{{ isZh ? '全部配置' : 'All Sections' }}</span>
+          <span class="nav-label">{{ i18nStore.tl('全部配置', 'All Sections') }}</span>
         </div>
         <div
           v-for="section in sectionNames"
@@ -37,7 +37,7 @@
         >
           <span class="nav-icon">{{ sectionIcon(section) }}</span>
           <span class="nav-label">{{ sectionLabel(section) }}</span>
-          <span v-if="SUPPORTED_SECTIONS.includes(section)" class="nav-badge">{{ isZh ? '可编辑' : 'editable' }}</span>
+          <span v-if="SUPPORTED_SECTIONS.includes(section)" class="nav-badge">{{ i18nStore.tl('可编辑', 'editable') }}</span>
         </div>
       </div>
 
@@ -45,26 +45,26 @@
       <div class="cfg-content" v-loading="loading">
         <div class="cfg-panel-header">
           <div class="cfg-panel-heading">
-            <span class="panel-title">{{ selectedSection === 'all' ? (isZh ? '完整 JSON 配置' : 'Full JSON Configuration') : (isZh ? `配置段：${sectionLabel(selectedSection)}` : `Section: ${selectedSection}`) }}</span>
+            <span class="panel-title">{{ selectedSection === 'all' ? (i18nStore.tl('完整 JSON 配置', 'Full JSON Configuration')) : (i18nStore.tl(`配置段：${sectionLabel(selectedSection)}`, `Section: ${selectedSection}`)) }}</span>
             <span class="panel-hint">
               {{ selectedSection === 'all'
-                ? (isZh ? '在线保存当前仅写入 server / security / logging 三个配置段' : 'Online save currently only writes server / security / logging sections')
+                ? (i18nStore.tl('在线保存当前仅写入 server / security / logging 三个配置段', 'Online save currently only writes server / security / logging sections'))
                 : SUPPORTED_SECTIONS.includes(selectedSection)
-                  ? (isZh ? '该配置段支持在线保存' : 'This section supports online save')
-                  : (isZh ? '该配置段暂不支持在线保存，请修改 config.yaml 后 Reload' : 'This section is read-only online. Edit config.yaml and Reload instead.') }}
+                  ? (i18nStore.tl('该配置段支持在线保存', 'This section supports online save'))
+                  : (i18nStore.tl('该配置段暂不支持在线保存，请修改 config.yaml 后 Reload', 'This section is read-only online. Edit config.yaml and Reload instead.')) }}
             </span>
           </div>
 
           <div class="cfg-panel-actions">
-            <button v-if="selectedSection !== 'all'" class="cs-btn" @click="syncSectionText">{{ isZh ? '重新加载配置段 JSON' : 'Reload Section JSON' }}</button>
+            <button v-if="selectedSection !== 'all'" class="cs-btn" @click="syncSectionText">{{ i18nStore.tl('重新加载配置段 JSON', 'Reload Section JSON') }}</button>
             <button class="cs-btn" :disabled="reloading" @click="handleReload">
-              {{ reloading ? (isZh ? '重载中...' : 'Reloading...') : (isZh ? '重载' : 'Reload') }}
+              {{ reloading ? (i18nStore.tl('重载中...', 'Reloading...')) : (i18nStore.tl('重载', 'Reload')) }}
             </button>
             <button class="cs-btn" :disabled="validating" @click="handleValidate">
-              {{ validating ? (isZh ? '校验中...' : 'Validating...') : (isZh ? '校验' : 'Validate') }}
+              {{ validating ? (i18nStore.tl('校验中...', 'Validating...')) : (i18nStore.tl('校验', 'Validate')) }}
             </button>
             <button class="cs-btn cs-btn-primary" :disabled="saving" @click="handleSave">
-              {{ saving ? (isZh ? '保存中...' : 'Saving...') : (isZh ? '保存' : 'Save') }}
+              {{ saving ? (i18nStore.tl('保存中...', 'Saving...')) : (i18nStore.tl('保存', 'Save')) }}
             </button>
           </div>
         </div>
@@ -78,33 +78,33 @@
     </div>
 
     <!-- Schema Dialog -->
-    <el-dialog v-model="schemaDialogVisible" :title="isZh ? '配置结构说明' : 'Configuration Schema'" width="640px" append-to-body class="cs-dialog">
+    <el-dialog v-model="schemaDialogVisible" :title="i18nStore.tl('配置结构说明', 'Configuration Schema')" width="640px" append-to-body class="cs-dialog">
       <textarea v-model="schemaText" class="cfg-json-editor cs-font-mono" spellcheck="false" style="height: 360px" />
       <template #footer>
         <div class="cs-dialog-footer">
-          <button class="cs-btn" @click="schemaDialogVisible = false">{{ isZh ? '关闭' : 'Close' }}</button>
+          <button class="cs-btn" @click="schemaDialogVisible = false">{{ i18nStore.tl('关闭', 'Close') }}</button>
         </div>
       </template>
     </el-dialog>
 
     <!-- Environment Variables Dialog -->
-    <el-dialog v-model="envDialogVisible" :title="isZh ? '环境变量说明' : 'Environment Variable Reference'" width="640px" append-to-body class="cs-dialog">
+    <el-dialog v-model="envDialogVisible" :title="i18nStore.tl('环境变量说明', 'Environment Variable Reference')" width="640px" append-to-body class="cs-dialog">
       <div class="env-table-wrap">
         <el-table :data="envRows" height="360px" class="cs-session-table">
           <template #empty>
-            <EmptyState variant="inline" :title="isZh ? '暂无环境变量' : 'No environment variables'" />
+            <EmptyState variant="inline" :title="i18nStore.tl('暂无环境变量', 'No environment variables')" />
           </template>
-          <el-table-column prop="key" :label="isZh ? '环境变量' : 'Variable'" min-width="220" show-overflow-tooltip>
+          <el-table-column prop="key" :label="i18nStore.tl('环境变量', 'Variable')" min-width="220" show-overflow-tooltip>
             <template #default="{ row }">
               <span class="cs-font-mono">{{ row.key }}</span>
             </template>
           </el-table-column>
-          <el-table-column prop="desc" :label="isZh ? '说明' : 'Description'" min-width="260" show-overflow-tooltip />
+          <el-table-column prop="desc" :label="i18nStore.tl('说明', 'Description')" min-width="260" show-overflow-tooltip />
         </el-table>
       </div>
       <template #footer>
         <div class="cs-dialog-footer">
-          <button class="cs-btn" @click="envDialogVisible = false">{{ isZh ? '关闭' : 'Close' }}</button>
+          <button class="cs-btn" @click="envDialogVisible = false">{{ i18nStore.tl('关闭', 'Close') }}</button>
         </div>
       </template>
     </el-dialog>

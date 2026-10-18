@@ -3,28 +3,28 @@
     <!-- 工具条：左侧标题/状态，右侧操作按钮 -->
     <div class="ha-toolbar">
       <div class="ha-title-group">
-        <span class="ha-title">{{ isZh ? '隐藏访问网关' : 'Stealth Access Gateway' }}</span>
+        <span class="ha-title">{{ i18nStore.tl('隐藏访问网关', 'Stealth Access Gateway') }}</span>
         <span class="ha-status" :class="form.enabled ? 'online' : 'offline'">
-          {{ form.enabled ? (isZh ? '隐藏伪装已开启' : 'Stealth Cloaking Active') : (isZh ? '直接访问（已禁用）' : 'Direct Access (Disabled)') }}
+          {{ form.enabled ? (i18nStore.tl('隐藏伪装已开启', 'Stealth Cloaking Active')) : (i18nStore.tl('直接访问（已禁用）', 'Direct Access (Disabled)')) }}
         </span>
       </div>
 
       <div class="ha-spacer" />
 
       <button class="cs-btn" @click="handleHelp">
-        {{ isZh ? '帮助' : 'Help' }}
+        {{ i18nStore.tl('帮助', 'Help') }}
       </button>
 
       <button class="cs-btn" @click="handleRegenerateKey">
-        {{ isZh ? '重新生成密钥' : 'Regenerate Secret Key' }}
+        {{ i18nStore.tl('重新生成密钥', 'Regenerate Secret Key') }}
       </button>
 
       <button class="cs-btn" :disabled="loading" @click="fetchStatus">
-        {{ isZh ? '刷新' : 'Refresh' }}
+        {{ i18nStore.tl('刷新', 'Refresh') }}
       </button>
 
       <button class="cs-btn cs-btn-primary" :disabled="saving" @click="handleSave">
-        {{ saving ? (isZh ? '保存中...' : 'Saving...') : (isZh ? '应用配置' : 'Apply Config') }}
+        {{ saving ? (i18nStore.tl('保存中...', 'Saving...')) : (i18nStore.tl('应用配置', 'Apply Config')) }}
       </button>
     </div>
 
@@ -32,35 +32,35 @@
     <div class="ha-body" v-loading="loading">
       <div class="ha-card">
         <div class="ha-card-header">
-          <span class="card-title">{{ isZh ? '隐藏访问与蜜罐伪装' : 'Stealth Access & Honey Entry Cloaking' }}</span>
+          <span class="card-title">{{ i18nStore.tl('隐藏访问与蜜罐伪装', 'Stealth Access & Honey Entry Cloaking') }}</span>
         </div>
 
         <div class="ha-card-body">
           <p class="card-desc">
-            {{ isZh ? '通过动态蜜罐令牌与诱饵反向代理路径，隐藏 Team Server 登录入口和 Beacon C2 监听器端点。' : 'Obfuscates Team Server login and Beacon C2 listener endpoints behind dynamic honey tokens and decoy reverse-proxy paths.' }}
+            {{ i18nStore.tl('通过动态蜜罐令牌与诱饵反向代理路径，隐藏 Team Server 登录入口和 Beacon C2 监听器端点。', 'Obfuscates Team Server login and Beacon C2 listener endpoints behind dynamic honey tokens and decoy reverse-proxy paths.') }}
           </p>
 
           <div class="cs-form-container">
             <div class="cs-form-row">
-              <label class="cs-form-label">{{ isZh ? '启用隐藏访问伪装' : 'Enable Stealth Access Cloaking' }}:</label>
+              <label class="cs-form-label">{{ i18nStore.tl('启用隐藏访问伪装', 'Enable Stealth Access Cloaking') }}:</label>
               <el-switch v-model="form.enabled" />
             </div>
 
             <div class="cs-form-row">
-              <label class="cs-form-label">{{ isZh ? '访问密钥' : 'Secret Access Key' }}:</label>
+              <label class="cs-form-label">{{ i18nStore.tl('访问密钥', 'Secret Access Key') }}:</label>
               <div class="input-with-btn">
                 <el-input
                   v-model="form.secret_key"
-                  :placeholder="isZh ? '加密访问密钥' : 'Cryptographic secret key'"
+                  :placeholder="i18nStore.tl('加密访问密钥', 'Cryptographic secret key')"
                   show-password
                   class="cs-input-mono"
                 />
-                <button class="cs-btn" @click="handleRegenerateKey">{{ isZh ? '重新生成' : 'Regenerate' }}</button>
+                <button class="cs-btn" @click="handleRegenerateKey">{{ i18nStore.tl('重新生成', 'Regenerate') }}</button>
               </div>
             </div>
 
             <div class="cs-form-row">
-              <label class="cs-form-label">{{ isZh ? '允许的隐藏入口路径' : 'Allowed Access Paths' }}:</label>
+              <label class="cs-form-label">{{ i18nStore.tl('允许的隐藏入口路径', 'Allowed Access Paths') }}:</label>
               <div class="ha-field">
                 <el-input
                   v-model="pathsText"
@@ -69,33 +69,33 @@
                   placeholder="/api/v1/telemetry&#10;/gateway/health&#10;/static/assets/bundle.js"
                   class="cs-input-mono"
                 />
-                <span class="cs-hint">{{ isZh ? '多个隐藏入口路径请使用换行分隔。' : 'Separate multiple stealth entry paths by newlines.' }}</span>
+                <span class="cs-hint">{{ i18nStore.tl('多个隐藏入口路径请使用换行分隔。', 'Separate multiple stealth entry paths by newlines.') }}</span>
               </div>
             </div>
 
             <div class="cs-form-row">
-              <label class="cs-form-label">{{ isZh ? '验证参数名' : 'Query Param Tokens' }}:</label>
+              <label class="cs-form-label">{{ i18nStore.tl('验证参数名', 'Query Param Tokens') }}:</label>
               <div class="ha-field">
                 <el-input
                   v-model="paramsText"
                   placeholder="sec_token, _k, auth_sig"
                   class="cs-input-mono"
                 />
-                <span class="cs-hint">{{ isZh ? '网关校验的多个令牌参数，使用逗号分隔。' : 'Comma separated token parameters checked by gateway.' }}</span>
+                <span class="cs-hint">{{ i18nStore.tl('网关校验的多个令牌参数，使用逗号分隔。', 'Comma separated token parameters checked by gateway.') }}</span>
               </div>
             </div>
 
             <div class="cs-form-row">
-              <label class="cs-form-label">{{ isZh ? '会话有效期（分钟）' : 'Stealth Session TTL in Minutes' }}:</label>
+              <label class="cs-form-label">{{ i18nStore.tl('会话有效期（分钟）', 'Stealth Session TTL in Minutes') }}:</label>
               <el-input-number v-model="form.session_ttl" :min="5" :max="1440" style="width: 140px" />
             </div>
 
             <div class="ha-action-row">
               <span class="ha-action-desc">
-                {{ isZh ? '清空后，当前所有未认证的隐藏访问会话将立即失效。' : 'Existing unauthenticated stealth sessions are invalidated immediately.' }}
+                {{ i18nStore.tl('清空后，当前所有未认证的隐藏访问会话将立即失效。', 'Existing unauthenticated stealth sessions are invalidated immediately.') }}
               </span>
               <button class="cs-btn cs-btn-danger" @click="handleClearSessions">
-                {{ isZh ? '清空所有活动隐藏会话' : 'Flush All Active Stealth Sessions' }}
+                {{ i18nStore.tl('清空所有活动隐藏会话', 'Flush All Active Stealth Sessions') }}
               </button>
             </div>
           </div>

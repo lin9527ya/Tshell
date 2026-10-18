@@ -3,93 +3,93 @@
     <!-- 工具条：左侧标题/计数，右侧操作 -->
     <div class="wd-toolbar">
       <div class="wd-title-group">
-        <span class="wd-title">{{ isZh ? '站点管理与 Web 投递' : 'Hosted Sites & Payloads' }}</span>
-        <span class="wd-count">({{ tableData.length }} {{ isZh ? '个活跃站点' : 'sites active' }})</span>
+        <span class="wd-title">{{ i18nStore.tl('站点管理与 Web 投递', 'Hosted Sites & Payloads') }}</span>
+        <span class="wd-count">({{ tableData.length }} {{ i18nStore.tl('个活跃站点', 'sites active') }})</span>
       </div>
 
       <div class="wd-spacer" />
 
       <button class="cs-btn cs-btn-primary" @click="openCreate">
-        {{ isZh ? '新增投递 / 站点' : 'New Delivery / Site' }}
+        {{ i18nStore.tl('新增投递 / 站点', 'New Delivery / Site') }}
       </button>
       <button class="cs-btn" @click="openCloneSite">
-        {{ isZh ? '克隆站点' : 'Clone Site' }}
+        {{ i18nStore.tl('克隆站点', 'Clone Site') }}
       </button>
       <button class="cs-btn" @click="openHostFile">
-        {{ isZh ? '文件托管' : 'Host File' }}
+        {{ i18nStore.tl('文件托管', 'Host File') }}
       </button>
       <button class="cs-btn" :disabled="!selectedRow" @click="selectedRow && copyUrl(selectedRow)">
-        {{ isZh ? '复制 URL' : 'Copy URL' }}
+        {{ i18nStore.tl('复制 URL', 'Copy URL') }}
       </button>
       <button class="cs-btn" :disabled="!selectedRow || statusOf(selectedRow) === 1" @click="selectedRow && handleOpen(selectedRow)">
-        {{ isZh ? '启动' : 'Launch' }}
+        {{ i18nStore.tl('启动', 'Launch') }}
       </button>
       <button class="cs-btn" :disabled="!selectedRow || statusOf(selectedRow) === 2" @click="selectedRow && handleClose(selectedRow)">
-        {{ isZh ? '停止' : 'Kill / Stop' }}
+        {{ i18nStore.tl('停止', 'Kill / Stop') }}
       </button>
       <button class="cs-btn cs-btn-danger" :disabled="!selectedRow" @click="selectedRow && handleDelete(selectedRow)">
-        {{ isZh ? '删除' : 'Remove' }}
+        {{ i18nStore.tl('删除', 'Remove') }}
       </button>
       <button class="cs-btn" @click="handleHelp">
-        {{ isZh ? '帮助' : 'Help' }}
+        {{ i18nStore.tl('帮助', 'Help') }}
       </button>
       <button class="cs-btn" @click="getWebDeliveryList">
-        {{ isZh ? '刷新' : 'Refresh' }}
+        {{ i18nStore.tl('刷新', 'Refresh') }}
       </button>
     </div>
 
     <div class="wd-table-wrap">
     <el-table :data="tableData" row-key="id" height="100%" @selection-change="handleSelectionChange">
       <template #empty>
-        <EmptyState icon="🌐" variant="inline" :title="isZh ? '暂无 Web 投递记录' : 'No Web Deliveries'" />
+        <EmptyState icon="🌐" variant="inline" :title="i18nStore.tl('暂无 Web 投递记录', 'No Web Deliveries')" />
       </template>
       <el-table-column type="selection" width="40" :reserve-selection="true" />
       <el-table-column type="expand" width="34">
         <template #default="{ row }">
           <div class="wd-expand-detail cs-font-ui">
             <div class="wd-detail-grid">
-              <div class="wd-detail-item"><b>{{ isZh ? '绑定模式' : 'Bind Mode' }}:</b> {{ modeOf(row) }}</div>
-              <div class="wd-detail-item"><b>{{ isZh ? '公网主机' : 'Public Host' }}:</b> {{ field(row, 'PublicHost', 'public_host') || '-' }}</div>
+              <div class="wd-detail-item"><b>{{ i18nStore.tl('绑定模式', 'Bind Mode') }}:</b> {{ modeOf(row) }}</div>
+              <div class="wd-detail-item"><b>{{ i18nStore.tl('公网主机', 'Public Host') }}:</b> {{ field(row, 'PublicHost', 'public_host') || '-' }}</div>
               <div class="wd-detail-item"><b>Scheme:</b> {{ field(row, 'PublicScheme', 'public_scheme') || '-' }}</div>
-              <div class="wd-detail-item"><b>{{ isZh ? '路径前缀' : 'Base Path' }}:</b> {{ field(row, 'BasePath', 'base_path') || '-' }}</div>
+              <div class="wd-detail-item"><b>{{ i18nStore.tl('路径前缀', 'Base Path') }}:</b> {{ field(row, 'BasePath', 'base_path') || '-' }}</div>
               <div class="wd-detail-item"><b>URI:</b> {{ field(row, 'URIPath', 'uri_path') || '-' }}</div>
               <div class="wd-detail-item"><b>Content-Type:</b> {{ field(row, 'ContentType', 'content_type') || '-' }}</div>
-              <div class="wd-detail-item"><b>{{ isZh ? 'Stager 内容类型' : 'Stage CT' }}:</b> {{ field(row, 'StageContentType', 'stage_content_type') || '-' }}</div>
-              <div class="wd-detail-item"><b>{{ isZh ? '访问令牌' : 'Access Token' }}:</b> {{ field(row, 'AccessToken', 'access_token') || '-' }}</div>
-              <div class="wd-detail-item"><b>{{ isZh ? 'UA 白名单' : 'UA Allow' }}:</b> {{ field(row, 'UAAllow', 'ua_allow') || '-' }}</div>
-              <div class="wd-detail-item"><b>{{ isZh ? '最大下载次数' : 'Max Downloads' }}:</b> {{ field(row, 'MaxDownloads', 'max_downloads') || 0 }}</div>
-              <div class="wd-detail-item"><b>{{ isZh ? '一次性链接' : 'One Time' }}:</b> {{ boolOf(row, 'OneTime', 'one_time') ? (isZh ? '是' : 'Yes') : (isZh ? '否' : 'No') }}</div>
-              <div class="wd-detail-item"><b>{{ isZh ? '命中次数' : 'Hit Count' }}:</b> {{ field(row, 'HitCount', 'hit_count') || 0 }}</div>
-              <div class="wd-detail-item"><b>{{ isZh ? 'Stager 构建次数' : 'Stager Build Count' }}:</b> {{ field(row, 'BuildCount', 'build_count') || 0 }}</div>
-              <div class="wd-detail-item"><b>{{ isZh ? '最后命中 IP' : 'Last Hit IP' }}:</b> {{ field(row, 'LastHitIP', 'last_hit_ip') || '-' }}</div>
-              <div class="wd-detail-item"><b>{{ isZh ? '最后命中时间' : 'Last Hit At' }}:</b> {{ field(row, 'LastHitAt', 'last_hit_at') || '-' }}</div>
-              <div class="wd-detail-item"><b>{{ isZh ? '备注' : 'Note' }}:</b> {{ field(row, 'Note', 'note') || '-' }}</div>
+              <div class="wd-detail-item"><b>{{ i18nStore.tl('Stager 内容类型', 'Stage CT') }}:</b> {{ field(row, 'StageContentType', 'stage_content_type') || '-' }}</div>
+              <div class="wd-detail-item"><b>{{ i18nStore.tl('访问令牌', 'Access Token') }}:</b> {{ field(row, 'AccessToken', 'access_token') || '-' }}</div>
+              <div class="wd-detail-item"><b>{{ i18nStore.tl('UA 白名单', 'UA Allow') }}:</b> {{ field(row, 'UAAllow', 'ua_allow') || '-' }}</div>
+              <div class="wd-detail-item"><b>{{ i18nStore.tl('最大下载次数', 'Max Downloads') }}:</b> {{ field(row, 'MaxDownloads', 'max_downloads') || 0 }}</div>
+              <div class="wd-detail-item"><b>{{ i18nStore.tl('一次性链接', 'One Time') }}:</b> {{ boolOf(row, 'OneTime', 'one_time') ? (i18nStore.tl('是', 'Yes')) : (i18nStore.tl('否', 'No')) }}</div>
+              <div class="wd-detail-item"><b>{{ i18nStore.tl('命中次数', 'Hit Count') }}:</b> {{ field(row, 'HitCount', 'hit_count') || 0 }}</div>
+              <div class="wd-detail-item"><b>{{ i18nStore.tl('Stager 构建次数', 'Stager Build Count') }}:</b> {{ field(row, 'BuildCount', 'build_count') || 0 }}</div>
+              <div class="wd-detail-item"><b>{{ i18nStore.tl('最后命中 IP', 'Last Hit IP') }}:</b> {{ field(row, 'LastHitIP', 'last_hit_ip') || '-' }}</div>
+              <div class="wd-detail-item"><b>{{ i18nStore.tl('最后命中时间', 'Last Hit At') }}:</b> {{ field(row, 'LastHitAt', 'last_hit_at') || '-' }}</div>
+              <div class="wd-detail-item"><b>{{ i18nStore.tl('备注', 'Note') }}:</b> {{ field(row, 'Note', 'note') || '-' }}</div>
             </div>
           </div>
         </template>
       </el-table-column>
-      <el-table-column :label="isZh ? '模式' : 'Mode'" width="100">
+      <el-table-column :label="i18nStore.tl('模式', 'Mode')" width="100">
         <template #default="{ row }">
           <el-tag :type="modeOf(row) === 'dedicated' ? 'warning' : 'success'" size="small">
             {{ modeOf(row) }}
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column :label="isZh ? '密钥 / 端口' : 'Key / Port'" min-width="140">
+      <el-table-column :label="i18nStore.tl('密钥 / 端口', 'Key / Port')" min-width="140">
         <template #default="{ row }">
           <div class="mono">{{ rowKey(row) || '-' }}</div>
-          <div class="sub" v-if="rowPort(row)">{{ isZh ? '端口' : 'port' }}: {{ rowPort(row) }}</div>
+          <div class="sub" v-if="rowPort(row)">{{ i18nStore.tl('端口', 'port') }}: {{ rowPort(row) }}</div>
         </template>
       </el-table-column>
-      <el-table-column :label="isZh ? '监听器' : 'Listener'" min-width="160" show-overflow-tooltip>
+      <el-table-column :label="i18nStore.tl('监听器', 'Listener')" min-width="160" show-overflow-tooltip>
         <template #default="{ row }">{{ field(row, 'ListenerConfig', 'listener_config') }}</template>
       </el-table-column>
-      <el-table-column :label="isZh ? '目标' : 'Target'" width="130">
+      <el-table-column :label="i18nStore.tl('目标', 'Target')" width="130">
         <template #default="{ row }">
           {{ field(row, 'OS', 'os') }}_{{ field(row, 'Arch', 'arch') }}
         </template>
       </el-table-column>
-      <el-table-column :label="isZh ? '命中' : 'Hits'" width="90">
+      <el-table-column :label="i18nStore.tl('命中', 'Hits')" width="90">
         <template #default="{ row }">
           {{ field(row, 'HitCount', 'hit_count') || 0 }}
           <div class="sub" v-if="field(row, 'LastHitIP', 'last_hit_ip')">
@@ -97,45 +97,45 @@
           </div>
         </template>
       </el-table-column>
-      <el-table-column :label="isZh ? '状态' : 'Status'" width="90">
+      <el-table-column :label="i18nStore.tl('状态', 'Status')" width="90">
         <template #default="{ row }">
           <el-tag :type="statusOf(row) === 1 ? 'success' : 'danger'" size="small">
-            {{ statusOf(row) === 1 ? (isZh ? '开启' : 'On') : (isZh ? '关闭' : 'Off') }}
+            {{ statusOf(row) === 1 ? (i18nStore.tl('开启', 'On')) : (i18nStore.tl('关闭', 'Off')) }}
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column :label="isZh ? '操作' : 'Actions'" width="220" fixed="right" align="center">
+      <el-table-column :label="i18nStore.tl('操作', 'Actions')" width="220" fixed="right" align="center">
         <template #default="{ row }">
           <div class="wd-action-row">
             <button
               class="cs-btn cs-btn-xs cs-btn-primary"
               :disabled="statusOf(row) === 2"
-              :title="isZh ? '查看上线命令' : 'Show Commands'"
+              :title="i18nStore.tl('查看上线命令', 'Show Commands')"
               @click="showCommands(row)"
             >
-              {{ isZh ? '上线命令' : 'Commands' }}
+              {{ i18nStore.tl('上线命令', 'Commands') }}
             </button>
             <button
               class="cs-btn cs-btn-xs"
-              :title="isZh ? '复制投递 URL' : 'Copy Delivery URL'"
+              :title="i18nStore.tl('复制投递 URL', 'Copy Delivery URL')"
               @click="copyUrl(row)"
             >
-              {{ isZh ? '复制URL' : 'Copy' }}
+              {{ i18nStore.tl('复制URL', 'Copy') }}
             </button>
             <el-dropdown trigger="click" @command="(cmd: string) => handleMoreAction(cmd, row)">
-              <button class="cs-btn cs-btn-xs" :title="isZh ? '更多操作' : 'More Actions'">
+              <button class="cs-btn cs-btn-xs" :title="i18nStore.tl('更多操作', 'More Actions')">
                 ⋮
               </button>
               <template #dropdown>
                 <el-dropdown-menu class="cs-menu-popper">
-                  <el-dropdown-item v-if="statusOf(row) !== 1" command="open">{{ isZh ? '开启服务' : 'Start' }}</el-dropdown-item>
-                  <el-dropdown-item v-if="statusOf(row) === 1" command="close">{{ isZh ? '关闭服务' : 'Stop' }}</el-dropdown-item>
-                  <el-dropdown-item command="tokens">{{ isZh ? '门禁令牌' : 'Access Tokens' }}</el-dropdown-item>
-                  <el-dropdown-item command="logs">{{ isZh ? '访问日志' : 'Logs' }}</el-dropdown-item>
+                  <el-dropdown-item v-if="statusOf(row) !== 1" command="open">{{ i18nStore.tl('开启服务', 'Start') }}</el-dropdown-item>
+                  <el-dropdown-item v-if="statusOf(row) === 1" command="close">{{ i18nStore.tl('关闭服务', 'Stop') }}</el-dropdown-item>
+                  <el-dropdown-item command="tokens">{{ i18nStore.tl('门禁令牌', 'Access Tokens') }}</el-dropdown-item>
+                  <el-dropdown-item command="logs">{{ i18nStore.tl('访问日志', 'Logs') }}</el-dropdown-item>
                   <el-dropdown-item v-if="field(row, 'OS', 'os') === 'windows' && statusOf(row) === 1" command="shellcode">Shellcode</el-dropdown-item>
-                  <el-dropdown-item v-if="statusOf(row) === 1" command="dynamic">{{ isZh ? '动态 Stager' : 'Dynamic Stager' }}</el-dropdown-item>
-                  <el-dropdown-item v-if="statusOf(row) === 1" command="script">{{ isZh ? '脚本载荷' : 'Script Payload' }}</el-dropdown-item>
-                  <el-dropdown-item command="delete" divided class="text-danger">{{ isZh ? '删除' : 'Delete' }}</el-dropdown-item>
+                  <el-dropdown-item v-if="statusOf(row) === 1" command="dynamic">{{ i18nStore.tl('动态 Stager', 'Dynamic Stager') }}</el-dropdown-item>
+                  <el-dropdown-item v-if="statusOf(row) === 1" command="script">{{ i18nStore.tl('脚本载荷', 'Script Payload') }}</el-dropdown-item>
+                  <el-dropdown-item command="delete" divided class="text-danger">{{ i18nStore.tl('删除', 'Delete') }}</el-dropdown-item>
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
@@ -146,32 +146,32 @@
     </div>
 
     <!-- 创建 Delivery Hub -->
-    <el-dialog v-model="dialogVisible" :title="isZh ? '配置 Delivery Hub' : 'Configure Delivery Hub'" width="720px" destroy-on-close>
+    <el-dialog v-model="dialogVisible" :title="i18nStore.tl('配置 Delivery Hub', 'Configure Delivery Hub')" width="720px" destroy-on-close>
       <el-form :model="formData" label-width="130px">
-        <el-form-item :label="isZh ? '绑定模式' : 'Bind Mode'">
+        <el-form-item :label="i18nStore.tl('绑定模式', 'Bind Mode')">
           <el-radio-group v-model="formData.bindMode">
-            <el-radio label="shared">{{ isZh ? 'shared（主端口 /d/key，推荐）' : 'shared (main port /d/key, recommended)' }}</el-radio>
-            <el-radio label="dedicated">{{ isZh ? 'dedicated（独立端口）' : 'dedicated (separate port)' }}</el-radio>
+            <el-radio label="shared">{{ i18nStore.tl('shared（主端口 /d/key，推荐）', 'shared (main port /d/key, recommended)') }}</el-radio>
+            <el-radio label="dedicated">{{ i18nStore.tl('dedicated（独立端口）', 'dedicated (separate port)') }}</el-radio>
           </el-radio-group>
         </el-form-item>
-        <el-form-item :label="isZh ? '监听器' : 'Listener'" required>
+        <el-form-item :label="i18nStore.tl('监听器', 'Listener')" required>
           <el-select
             v-model="formData.listener"
-            :placeholder="isZh ? '选择监听器' : 'Select a listener'"
+            :placeholder="i18nStore.tl('选择监听器', 'Select a listener')"
             style="width:100%"
             @visible-change="handleDropdown"
           >
             <el-option v-for="item in options" :key="item" :label="item" :value="item" />
           </el-select>
         </el-form-item>
-        <el-form-item :label="isZh ? '操作系统' : 'OS'" required>
+        <el-form-item :label="i18nStore.tl('操作系统', 'OS')" required>
           <el-radio-group v-model="formData.os" @change="onOSChange">
             <el-radio label="windows">windows</el-radio>
             <el-radio label="linux">linux</el-radio>
             <el-radio label="darwin">darwin</el-radio>
           </el-radio-group>
         </el-form-item>
-        <el-form-item :label="isZh ? '架构' : 'Arch'" required>
+        <el-form-item :label="i18nStore.tl('架构', 'Arch')" required>
           <el-radio-group v-model="formData.arch">
             <el-radio label="amd64">amd64</el-radio>
             <el-radio label="386">386</el-radio>
@@ -179,58 +179,58 @@
             <el-radio label="arm">arm</el-radio>
           </el-radio-group>
         </el-form-item>
-        <el-form-item :label="isZh ? '上线口令' : 'Exec Key'">
-          <el-input v-model="formData.pass" show-password :placeholder="isZh ? '反沙箱启动口令 / Exec Key' : 'Anti-sandbox exec key'" />
+        <el-form-item :label="i18nStore.tl('上线口令', 'Exec Key')">
+          <el-input v-model="formData.pass" show-password :placeholder="i18nStore.tl('反沙箱启动口令 / Exec Key', 'Anti-sandbox exec key')" />
         </el-form-item>
-        <el-form-item :label="isZh ? '文件名' : 'File Name'">
-          <el-input v-model="formData.filename" :placeholder="isZh ? '托管文件名，如 svchost.exe' : 'Hosted file name, e.g. svchost.exe'" />
+        <el-form-item :label="i18nStore.tl('文件名', 'File Name')">
+          <el-input v-model="formData.filename" :placeholder="i18nStore.tl('托管文件名，如 svchost.exe', 'Hosted file name, e.g. svchost.exe')" />
         </el-form-item>
-        <el-form-item v-if="formData.os === 'windows'" :label="isZh ? '载荷格式' : 'Payload Format'">
+        <el-form-item v-if="formData.os === 'windows'" :label="i18nStore.tl('载荷格式', 'Payload Format')">
           <el-radio-group v-model="formData.payloadFormat" @change="onFormatChange">
-            <el-radio label="exe">{{ isZh ? 'exe（可执行文件）' : 'exe (executable)' }}</el-radio>
-            <el-radio label="dll">{{ isZh ? 'dll（rundll32 / regsvr32 加载）' : 'dll (loaded via rundll32 / regsvr32)' }}</el-radio>
+            <el-radio label="exe">{{ i18nStore.tl('exe（可执行文件）', 'exe (executable)') }}</el-radio>
+            <el-radio label="dll">{{ i18nStore.tl('dll（rundll32 / regsvr32 加载）', 'dll (loaded via rundll32 / regsvr32)') }}</el-radio>
           </el-radio-group>
           <span class="hint" v-if="formData.payloadFormat === 'dll'">
-            {{ isZh ? 'rundll32.exe client.dll,Run 或 regsvr32.exe client.dll 加载' : 'Load with rundll32.exe client.dll,Run or regsvr32.exe client.dll' }}
+            {{ i18nStore.tl('rundll32.exe client.dll,Run 或 regsvr32.exe client.dll 加载', 'Load with rundll32.exe client.dll,Run or regsvr32.exe client.dll') }}
           </span>
         </el-form-item>
-        <el-form-item :label="isZh ? '保存文件名' : 'Save As'">
-          <el-input v-model="formData.saveFilename" :placeholder="isZh ? '目标机落地文件名' : 'File name written on target'" />
+        <el-form-item :label="i18nStore.tl('保存文件名', 'Save As')">
+          <el-input v-model="formData.saveFilename" :placeholder="i18nStore.tl('目标机落地文件名', 'File name written on target')" />
         </el-form-item>
-        <el-form-item :label="isZh ? '下载路径' : 'Download Path'">
+        <el-form-item :label="i18nStore.tl('下载路径', 'Download Path')">
           <el-input v-model="formData.downloadPath" />
         </el-form-item>
-        <el-form-item v-if="formData.bindMode === 'dedicated'" :label="isZh ? '独立端口' : 'Dedicated Port'" required>
-          <el-input v-model="formData.port" :placeholder="isZh ? '如 8000' : 'e.g. 8000'" />
+        <el-form-item v-if="formData.bindMode === 'dedicated'" :label="i18nStore.tl('独立端口', 'Dedicated Port')" required>
+          <el-input v-model="formData.port" :placeholder="i18nStore.tl('如 8000', 'e.g. 8000')" />
         </el-form-item>
 
-        <el-divider content-position="left">{{ isZh ? '伪装与公开地址' : 'Masquerade & Public Address' }}</el-divider>
-        <el-form-item :label="isZh ? '公网主机' : 'Public Host'">
-          <el-input v-model="formData.publicHost" :placeholder="isZh ? '留空自动推断，如 1.2.3.4:8089' : 'Leave empty to auto-detect, e.g. 1.2.3.4:8089'" />
+        <el-divider content-position="left">{{ i18nStore.tl('伪装与公开地址', 'Masquerade & Public Address') }}</el-divider>
+        <el-form-item :label="i18nStore.tl('公网主机', 'Public Host')">
+          <el-input v-model="formData.publicHost" :placeholder="i18nStore.tl('留空自动推断，如 1.2.3.4:8089', 'Leave empty to auto-detect, e.g. 1.2.3.4:8089')" />
         </el-form-item>
-        <el-form-item :label="isZh ? '协议' : 'Scheme'">
+        <el-form-item :label="i18nStore.tl('协议', 'Scheme')">
           <el-radio-group v-model="formData.publicScheme">
-            <el-radio label="">{{ isZh ? '默认' : 'Default' }}</el-radio>
+            <el-radio label="">{{ i18nStore.tl('默认', 'Default') }}</el-radio>
             <el-radio label="http">http</el-radio>
             <el-radio label="https">https</el-radio>
           </el-radio-group>
-          <span class="hint">{{ isZh ? '接 CDN 时选 https；空则用 config delivery.default_scheme' : 'Use https behind a CDN; empty falls back to config delivery.default_scheme' }}</span>
+          <span class="hint">{{ i18nStore.tl('接 CDN 时选 https；空则用 config delivery.default_scheme', 'Use https behind a CDN; empty falls back to config delivery.default_scheme') }}</span>
         </el-form-item>
-        <el-form-item :label="isZh ? '路径前缀' : 'Base Path'">
-          <el-input v-model="formData.basePath" :placeholder="isZh ? 'CDN 路径前缀，如 /static 或留空' : 'CDN path prefix, e.g. /static, or leave empty'" />
+        <el-form-item :label="i18nStore.tl('路径前缀', 'Base Path')">
+          <el-input v-model="formData.basePath" :placeholder="i18nStore.tl('CDN 路径前缀，如 /static 或留空', 'CDN path prefix, e.g. /static, or leave empty')" />
         </el-form-item>
-        <el-form-item :label="isZh ? 'URL 预览' : 'URL Preview'">
+        <el-form-item :label="i18nStore.tl('URL 预览', 'URL Preview')">
           <div class="url-box" v-if="previewUrls">
-            <div><b>{{ isZh ? '完整' : 'Full' }}:</b> <code>{{ previewUrls.full }}</code></div>
-            <div v-if="previewUrls.stager"><b>{{ isZh ? '分阶段' : 'Stager' }}:</b> <code>{{ previewUrls.stager }}</code></div>
-            <div v-if="previewUrls.shellcode"><b>{{ isZh ? 'Shellcode' : 'SC' }}:</b> <code>{{ previewUrls.shellcode }}</code></div>
+            <div><b>{{ i18nStore.tl('完整', 'Full') }}:</b> <code>{{ previewUrls.full }}</code></div>
+            <div v-if="previewUrls.stager"><b>{{ i18nStore.tl('分阶段', 'Stager') }}:</b> <code>{{ previewUrls.stager }}</code></div>
+            <div v-if="previewUrls.shellcode"><b>{{ i18nStore.tl('Shellcode', 'SC') }}:</b> <code>{{ previewUrls.shellcode }}</code></div>
           </div>
-          <el-button @click="doPreviewUrls" style="margin-top:6px">{{ isZh ? '刷新预览' : 'Refresh Preview' }}</el-button>
+          <el-button @click="doPreviewUrls" style="margin-top:6px">{{ i18nStore.tl('刷新预览', 'Refresh Preview') }}</el-button>
         </el-form-item>
-        <el-form-item :label="isZh ? 'URI 路径' : 'URI Path'">
-          <el-input v-model="formData.uriPath" :placeholder="isZh ? '可选伪装路径；空则用随机 key' : 'Optional decoy path; random key if empty'" />
+        <el-form-item :label="i18nStore.tl('URI 路径', 'URI Path')">
+          <el-input v-model="formData.uriPath" :placeholder="i18nStore.tl('可选伪装路径；空则用随机 key', 'Optional decoy path; random key if empty')" />
         </el-form-item>
-        <el-form-item :label="isZh ? '内容类型' : 'Content-Type'">
+        <el-form-item :label="i18nStore.tl('内容类型', 'Content-Type')">
           <el-select v-model="formData.contentType" filterable allow-create style="width:100%">
             <el-option label="application/octet-stream" value="application/octet-stream" />
             <el-option label="application/javascript" value="application/javascript" />
@@ -239,7 +239,7 @@
             <el-option label="text/css" value="text/css" />
           </el-select>
         </el-form-item>
-        <el-form-item :label="isZh ? 'Stager 内容类型' : 'Stage CT'">
+        <el-form-item :label="i18nStore.tl('Stager 内容类型', 'Stage CT')">
           <el-select v-model="formData.stageContentType" filterable allow-create style="width:100%">
             <el-option label="font/woff" value="font/woff" />
             <el-option label="font/woff2" value="font/woff2" />
@@ -247,78 +247,78 @@
           </el-select>
         </el-form-item>
 
-        <el-divider content-position="left">{{ isZh ? '防护' : 'Protection' }}</el-divider>
-        <el-form-item :label="isZh ? '访问令牌' : 'Access Token'">
+        <el-divider content-position="left">{{ i18nStore.tl('防护', 'Protection') }}</el-divider>
+        <el-form-item :label="i18nStore.tl('访问令牌', 'Access Token')">
           <el-input
             v-model="formData.accessToken"
-            :placeholder="isZh ? '可选；请求需 ?t=token 或 Header X-Delivery-Token' : 'Optional; request needs ?t=token or X-Delivery-Token header'"
+            :placeholder="i18nStore.tl('可选；请求需 ?t=token 或 Header X-Delivery-Token', 'Optional; request needs ?t=token or X-Delivery-Token header')"
           />
         </el-form-item>
-        <el-form-item :label="isZh ? 'UA 白名单' : 'UA Allowlist'">
-          <el-input v-model="formData.uaAllow" :placeholder="isZh ? '逗号分隔子串，如 curl,Wget,PowerShell' : 'Comma-separated substrings, e.g. curl,Wget,PowerShell'" />
+        <el-form-item :label="i18nStore.tl('UA 白名单', 'UA Allowlist')">
+          <el-input v-model="formData.uaAllow" :placeholder="i18nStore.tl('逗号分隔子串，如 curl,Wget,PowerShell', 'Comma-separated substrings, e.g. curl,Wget,PowerShell')" />
         </el-form-item>
-        <el-form-item :label="isZh ? '最大下载次数' : 'Max Downloads'">
+        <el-form-item :label="i18nStore.tl('最大下载次数', 'Max Downloads')">
           <el-input-number v-model="formData.maxDownloads" :min="0" />
-          <span class="hint">{{ isZh ? '0 = 不限制' : '0 = unlimited' }}</span>
+          <span class="hint">{{ i18nStore.tl('0 = 不限制', '0 = unlimited') }}</span>
         </el-form-item>
-        <el-form-item :label="isZh ? '一次性链接' : 'One-Time Link'">
+        <el-form-item :label="i18nStore.tl('一次性链接', 'One-Time Link')">
           <el-switch v-model="formData.oneTime" />
         </el-form-item>
-        <el-form-item :label="isZh ? '构建 Stager' : 'Build Stager'">
+        <el-form-item :label="i18nStore.tl('构建 Stager', 'Build Stager')">
           <el-switch v-model="formData.buildStager" />
-          <span class="hint">{{ isZh ? '需要服务端 Go 工具链' : 'Requires Go toolchain on server' }}</span>
+          <span class="hint">{{ i18nStore.tl('需要服务端 Go 工具链', 'Requires Go toolchain on server') }}</span>
         </el-form-item>
-        <el-form-item :label="isZh ? '备注' : 'Note'">
+        <el-form-item :label="i18nStore.tl('备注', 'Note')">
           <el-input v-model="formData.note" />
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="dialogVisible = false">{{ isZh ? '取消' : 'Cancel' }}</el-button>
-        <el-button type="primary" :loading="creating" @click="handleCreate">{{ isZh ? '创建并启动' : 'Create & Start' }}</el-button>
+        <el-button @click="dialogVisible = false">{{ i18nStore.tl('取消', 'Cancel') }}</el-button>
+        <el-button type="primary" :loading="creating" @click="handleCreate">{{ i18nStore.tl('创建并启动', 'Create & Start') }}</el-button>
       </template>
     </el-dialog>
 
     <!-- 上线命令矩阵 -->
-    <el-dialog v-model="commandDialogVisible" :title="isZh ? '上线命令矩阵' : 'Payload Command Matrix'" width="860px">
+    <el-dialog v-model="commandDialogVisible" :title="i18nStore.tl('上线命令矩阵', 'Payload Command Matrix')" width="860px">
       <div v-if="commandUrls" class="url-box mb-12">
         <div>
-          <b>{{ isZh ? '完整' : 'Full' }}:</b> <code>{{ commandUrls.full }}</code>
-          <el-button link type="primary" @click="copyText(commandUrls.full)">{{ isZh ? '复制' : 'Copy' }}</el-button>
+          <b>{{ i18nStore.tl('完整', 'Full') }}:</b> <code>{{ commandUrls.full }}</code>
+          <el-button link type="primary" @click="copyText(commandUrls.full)">{{ i18nStore.tl('复制', 'Copy') }}</el-button>
         </div>
         <div v-if="commandUrls.stager">
-          <b>{{ isZh ? '分阶段' : 'Stager' }}:</b> <code>{{ commandUrls.stager }}</code>
-          <el-button link type="primary" @click="copyText(commandUrls.stager)">{{ isZh ? '复制' : 'Copy' }}</el-button>
+          <b>{{ i18nStore.tl('分阶段', 'Stager') }}:</b> <code>{{ commandUrls.stager }}</code>
+          <el-button link type="primary" @click="copyText(commandUrls.stager)">{{ i18nStore.tl('复制', 'Copy') }}</el-button>
         </div>
         <div v-if="commandUrls.shellcode">
-          <b>{{ isZh ? 'Shellcode/WOFF' : 'SC/WOFF' }}:</b> <code>{{ commandUrls.shellcode }}</code>
-          <el-button link type="primary" @click="copyText(commandUrls.shellcode)">{{ isZh ? '复制' : 'Copy' }}</el-button>
+          <b>{{ i18nStore.tl('Shellcode/WOFF', 'SC/WOFF') }}:</b> <code>{{ commandUrls.shellcode }}</code>
+          <el-button link type="primary" @click="copyText(commandUrls.shellcode)">{{ i18nStore.tl('复制', 'Copy') }}</el-button>
         </div>
       </div>
       <el-table :data="commandList" max-height="480">
-        <el-table-column prop="name" :label="isZh ? '名称' : 'Name'" width="180" />
+        <el-table-column prop="name" :label="i18nStore.tl('名称', 'Name')" width="180" />
         <el-table-column prop="os" label="OS" width="90" />
-        <el-table-column prop="description" :label="isZh ? '说明' : 'Description'" width="180" show-overflow-tooltip />
-        <el-table-column prop="code" :label="isZh ? '命令' : 'Command'" min-width="320">
+        <el-table-column prop="description" :label="i18nStore.tl('说明', 'Description')" width="180" show-overflow-tooltip />
+        <el-table-column prop="code" :label="i18nStore.tl('命令', 'Command')" min-width="320">
           <template #default="{ row }">
             <code class="cmd">{{ row.code }}</code>
           </template>
         </el-table-column>
         <el-table-column label="" width="80">
           <template #default="{ row }">
-            <el-button type="primary" @click="copyText(row.code)">{{ isZh ? '复制' : 'Copy' }}</el-button>
+            <el-button type="primary" @click="copyText(row.code)">{{ i18nStore.tl('复制', 'Copy') }}</el-button>
           </template>
         </el-table-column>
       </el-table>
     </el-dialog>
 
     <!-- 访问日志 -->
-    <el-dialog v-model="logsDialogVisible" :title="isZh ? '投递访问日志' : 'Delivery Access Logs'" width="900px">
+    <el-dialog v-model="logsDialogVisible" :title="i18nStore.tl('投递访问日志', 'Delivery Access Logs')" width="900px">
       <el-table :data="accessLogs" max-height="500">
-        <el-table-column prop="created_at" :label="isZh ? '时间' : 'Time'" width="170" />
-        <el-table-column prop="resource" :label="isZh ? '资源' : 'Resource'" width="90" />
+        <el-table-column prop="created_at" :label="i18nStore.tl('时间', 'Time')" width="170" />
+        <el-table-column prop="resource" :label="i18nStore.tl('资源', 'Resource')" width="90" />
         <el-table-column prop="client_ip" label="IP" width="130" />
-        <el-table-column prop="status_code" :label="isZh ? '状态' : 'Status'" width="80" />
-        <el-table-column prop="bytes_sent" :label="isZh ? '字节' : 'Bytes'" width="100" />
+        <el-table-column prop="status_code" :label="i18nStore.tl('状态', 'Status')" width="80" />
+        <el-table-column prop="bytes_sent" :label="i18nStore.tl('字节', 'Bytes')" width="100" />
         <el-table-column prop="user_agent" label="UA" min-width="240" show-overflow-tooltip />
       </el-table>
     </el-dialog>
@@ -326,25 +326,25 @@
     <!-- StageShellcode（兼容旧接口，port 使用 ListeningPort） -->
     <el-dialog v-model="dialogVisible2" title="StageShellcode">
       <el-form :model="selectedFormat" label-width="120px">
-        <el-form-item :label="isZh ? '输出格式' : 'Output Format'">
+        <el-form-item :label="i18nStore.tl('输出格式', 'Output Format')">
           <el-select v-model="selectedFormat.format">
-            <el-option :label="isZh ? '十六进制 (hex)' : 'Hex'" value="hex" />
-            <el-option :label="isZh ? 'C 数组 (c)' : 'C Array'" value="c" />
-            <el-option :label="isZh ? '二进制 (bin)' : 'Binary'" value="bin" />
-            <el-option :label="isZh ? '原始二进制 (raw)' : 'Raw Binary'" value="raw" />
-            <el-option :label="isZh ? '可执行 (exe)' : 'Executable'" value="exe" />
+            <el-option :label="i18nStore.tl('十六进制 (hex)', 'Hex')" value="hex" />
+            <el-option :label="i18nStore.tl('C 数组 (c)', 'C Array')" value="c" />
+            <el-option :label="i18nStore.tl('二进制 (bin)', 'Binary')" value="bin" />
+            <el-option :label="i18nStore.tl('原始二进制 (raw)', 'Raw Binary')" value="raw" />
+            <el-option :label="i18nStore.tl('可执行 (exe)', 'Executable')" value="exe" />
           </el-select>
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" @click="handleStageShellcode">{{ isZh ? '生成' : 'Generate' }}</el-button>
+          <el-button type="primary" @click="handleStageShellcode">{{ i18nStore.tl('生成', 'Generate') }}</el-button>
         </el-form-item>
       </el-form>
     </el-dialog>
 
     <!-- 动态 Stager（兼容旧接口，port 使用 ListeningPort） -->
-    <el-dialog v-model="dialogVisible3" :title="isZh ? '动态 Stager 生成' : 'Dynamic Stager Generation'" width="640px">
+    <el-dialog v-model="dialogVisible3" :title="i18nStore.tl('动态 Stager 生成', 'Dynamic Stager Generation')" width="640px">
       <el-form :model="dynamicStagerForm" label-width="120px">
-        <el-form-item :label="isZh ? '格式' : 'Format'">
+        <el-form-item :label="i18nStore.tl('格式', 'Format')">
           <el-select v-model="dynamicStagerForm.format">
             <el-option label="exe" value="exe" />
             <el-option label="elf" value="elf" />
@@ -354,115 +354,115 @@
             <el-option label="c" value="c" />
           </el-select>
         </el-form-item>
-        <el-form-item :label="isZh ? '反调试' : 'Anti-Debug'">
+        <el-form-item :label="i18nStore.tl('反调试', 'Anti-Debug')">
           <el-switch v-model="dynamicStagerForm.anti_debug" />
         </el-form-item>
-        <el-form-item :label="isZh ? '混淆' : 'Obfuscation'">
+        <el-form-item :label="i18nStore.tl('混淆', 'Obfuscation')">
           <el-switch v-model="dynamicStagerForm.obfuscation" />
         </el-form-item>
         <el-form-item label="User-Agent">
-          <el-input v-model="dynamicStagerForm.user_agent" :placeholder="isZh ? '留空随机' : 'Empty = random'" />
+          <el-input v-model="dynamicStagerForm.user_agent" :placeholder="i18nStore.tl('留空随机', 'Empty = random')" />
         </el-form-item>
-        <el-form-item :label="isZh ? '轻量模式' : 'Lightweight'">
+        <el-form-item :label="i18nStore.tl('轻量模式', 'Lightweight')">
           <el-switch v-model="dynamicStagerForm.lightweight" />
         </el-form-item>
         <!-- Stager 构建信息（后端 /shellcode/stager-info?port=...） -->
-        <el-form-item :label="isZh ? '构建信息' : 'Build Info'">
+        <el-form-item :label="i18nStore.tl('构建信息', 'Build Info')">
           <div class="stager-info-box">
-            <div v-if="stagerInfoLoading" class="si-loading">{{ isZh ? '加载中...' : 'Loading...' }}</div>
+            <div v-if="stagerInfoLoading" class="si-loading">{{ i18nStore.tl('加载中...', 'Loading...') }}</div>
             <template v-else-if="stagerInfo">
-              <div><b>{{ isZh ? '端口' : 'Port' }}:</b> {{ stagerInfo.port || port }}</div>
-              <div><b>{{ isZh ? '目标' : 'Target' }}:</b> {{ stagerInfo.os }}_{{ stagerInfo.arch }}</div>
+              <div><b>{{ i18nStore.tl('端口', 'Port') }}:</b> {{ stagerInfo.port || port }}</div>
+              <div><b>{{ i18nStore.tl('目标', 'Target') }}:</b> {{ stagerInfo.os }}_{{ stagerInfo.arch }}</div>
               <div><b>URL:</b> {{ stagerInfo.server_url || '-' }}</div>
-              <div><b>{{ isZh ? '最后构建' : 'Last Build' }}:</b> {{ stagerInfo.last_build || '-' }}</div>
-              <div><b>{{ isZh ? '构建次数' : 'Build Count' }}:</b> {{ stagerInfo.build_count || 0 }}</div>
+              <div><b>{{ i18nStore.tl('最后构建', 'Last Build') }}:</b> {{ stagerInfo.last_build || '-' }}</div>
+              <div><b>{{ i18nStore.tl('构建次数', 'Build Count') }}:</b> {{ stagerInfo.build_count || 0 }}</div>
             </template>
-            <div v-else class="si-empty">{{ isZh ? '选择 WebDelivery 后点击【查询构建信息】' : 'Select a WebDelivery and query build info' }}</div>
+            <div v-else class="si-empty">{{ i18nStore.tl('选择 WebDelivery 后点击【查询构建信息】', 'Select a WebDelivery and query build info') }}</div>
           </div>
-          <el-button :loading="stagerInfoLoading" @click="fetchStagerBuildInfo">{{ isZh ? '查询构建信息' : 'Query Build Info' }}</el-button>
+          <el-button :loading="stagerInfoLoading" @click="fetchStagerBuildInfo">{{ i18nStore.tl('查询构建信息', 'Query Build Info') }}</el-button>
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" :loading="dynamicGenerating" @click="handleDynamicStager">{{ isZh ? '生成' : 'Generate' }}</el-button>
+          <el-button type="primary" :loading="dynamicGenerating" @click="handleDynamicStager">{{ i18nStore.tl('生成', 'Generate') }}</el-button>
         </el-form-item>
       </el-form>
     </el-dialog>
 
     <!-- 脚本载荷（按客户端 OS：Windows=ps1/vbs/bat/hta；Linux=sh） -->
-    <el-dialog v-model="scriptDialogVisible" :title="isZh ? '脚本载荷' : 'Script Payload'" width="720px">
+    <el-dialog v-model="scriptDialogVisible" :title="i18nStore.tl('脚本载荷', 'Script Payload')" width="720px">
       <el-form label-width="130px">
-        <el-form-item :label="isZh ? '形态' : 'Mode'">
+        <el-form-item :label="i18nStore.tl('形态', 'Mode')">
           <el-radio-group v-model="scriptMode">
-            <el-radio label="url">{{ isZh ? '引用 URL（下载 /full 后执行）' : 'Reference URL (download /full then run)' }}</el-radio>
-            <el-radio label="embed">{{ isZh ? '内嵌 base64（ps1 / bat / sh 支持）' : 'Embedded base64 (ps1 / bat / sh)' }}</el-radio>
+            <el-radio label="url">{{ i18nStore.tl('引用 URL（下载 /full 后执行）', 'Reference URL (download /full then run)') }}</el-radio>
+            <el-radio label="embed">{{ i18nStore.tl('内嵌 base64（ps1 / bat / sh 支持）', 'Embedded base64 (ps1 / bat / sh)') }}</el-radio>
           </el-radio-group>
         </el-form-item>
         <div v-if="scriptRows.length" class="url-box">
           <div v-for="s in scriptRows" :key="s.kind" style="margin-bottom: 8px">
             <b>{{ s.kind.toUpperCase() }}:</b> <code>{{ s.url }}</code>
-            <el-button link type="primary" @click="copyText(s.url)">{{ isZh ? '复制' : 'Copy' }}</el-button>
+            <el-button link type="primary" @click="copyText(s.url)">{{ i18nStore.tl('复制', 'Copy') }}</el-button>
           </div>
         </div>
         <el-alert
           type="info"
           :closable="false"
-          :title="isZh ? '脚本运行时自动下载完整载荷并执行；embed 形态内嵌载荷字节，无需外部请求。' : 'The script downloads the full payload at run time; the embed mode inlines the payload bytes with no external request.'"
+          :title="i18nStore.tl('脚本运行时自动下载完整载荷并执行；embed 形态内嵌载荷字节，无需外部请求。', 'The script downloads the full payload at run time; the embed mode inlines the payload bytes with no external request.')"
         />
       </el-form>
     </el-dialog>
 
     <!-- 门禁令牌（防盗门）：StagerToken 配额管理 -->
-    <el-dialog v-model="tokenDialogVisible" :title="isZh ? '门禁令牌' : 'Access Tokens'" width="720px">
+    <el-dialog v-model="tokenDialogVisible" :title="i18nStore.tl('门禁令牌', 'Access Tokens')" width="720px">
       <div style="margin-bottom: 12px">
         <el-alert
           type="warning"
           :closable="false"
           show-icon
-          :title="isZh ? '为每个 Stager 生成独立令牌（带使用配额，一次一密）。Stager 下载时携带 X-Delivery-Token 头，配额用完即返回 404。' : 'Issues a unique token per Stager with a usage quota. The Stager sends it in the X-Delivery-Token header; once the quota is used up the server returns 404.'"
+          :title="i18nStore.tl('为每个 Stager 生成独立令牌（带使用配额，一次一密）。Stager 下载时携带 X-Delivery-Token 头，配额用完即返回 404。', 'Issues a unique token per Stager with a usage quota. The Stager sends it in the X-Delivery-Token header; once the quota is used up the server returns 404.')"
         />
       </div>
       <el-table :data="tokenRows">
-        <el-table-column prop="token" :label="isZh ? '令牌' : 'Token'" min-width="160">
+        <el-table-column prop="token" :label="i18nStore.tl('令牌', 'Token')" min-width="160">
           <template #default="{ row }"><code>{{ row.token }}</code></template>
         </el-table-column>
-        <el-table-column :label="isZh ? '配额' : 'Quota'" width="110">
+        <el-table-column :label="i18nStore.tl('配额', 'Quota')" width="110">
           <template #default="{ row }">{{ row.used }}/{{ row.quota }}</template>
         </el-table-column>
-        <el-table-column prop="note" :label="isZh ? '备注' : 'Note'" min-width="120">
+        <el-table-column prop="note" :label="i18nStore.tl('备注', 'Note')" min-width="120">
           <template #default="{ row }">{{ row.note || '-' }}</template>
         </el-table-column>
-        <el-table-column prop="last_used_ip" :label="isZh ? '最后使用 IP' : 'Last Used IP'" min-width="120">
+        <el-table-column prop="last_used_ip" :label="i18nStore.tl('最后使用 IP', 'Last Used IP')" min-width="120">
           <template #default="{ row }">{{ row.last_used_ip || '-' }}</template>
         </el-table-column>
-        <el-table-column :label="isZh ? '操作' : 'Actions'" width="90">
+        <el-table-column :label="i18nStore.tl('操作', 'Actions')" width="90">
           <template #default="{ row }">
-            <el-button type="danger" link @click="deleteToken(row)">{{ isZh ? '删除' : 'Delete' }}</el-button>
+            <el-button type="danger" link @click="deleteToken(row)">{{ i18nStore.tl('删除', 'Delete') }}</el-button>
           </template>
         </el-table-column>
       </el-table>
       <template #footer>
-        <el-button @click="openTokenCreate">{{ isZh ? '生成新令牌' : 'New Token' }}</el-button>
-        <el-button type="primary" @click="tokenDialogVisible = false">{{ isZh ? '关闭' : 'Close' }}</el-button>
+        <el-button @click="openTokenCreate">{{ i18nStore.tl('生成新令牌', 'New Token') }}</el-button>
+        <el-button type="primary" @click="tokenDialogVisible = false">{{ i18nStore.tl('关闭', 'Close') }}</el-button>
       </template>
     </el-dialog>
 
     <!-- 生成令牌 -->
-    <el-dialog v-model="tokenCreateVisible" :title="isZh ? '生成门禁令牌' : 'Generate Access Token'" width="460px">
+    <el-dialog v-model="tokenCreateVisible" :title="i18nStore.tl('生成门禁令牌', 'Generate Access Token')" width="460px">
       <el-form label-width="90px">
-        <el-form-item :label="isZh ? '配额' : 'Quota'">
+        <el-form-item :label="i18nStore.tl('配额', 'Quota')">
           <el-input-number v-model="tokenQuota" :min="1" :max="100" />
-          <span class="hint">{{ isZh ? '允许下载次数（默认 3）' : 'Allowed downloads (default 3)' }}</span>
+          <span class="hint">{{ i18nStore.tl('允许下载次数（默认 3）', 'Allowed downloads (default 3)') }}</span>
         </el-form-item>
-        <el-form-item :label="isZh ? '备注' : 'Note'">
-          <el-input v-model="tokenNote" :placeholder="isZh ? '如：Stager-Win-x64-钓鱼' : 'e.g. Stager-Win-x64-phish'" />
+        <el-form-item :label="i18nStore.tl('备注', 'Note')">
+          <el-input v-model="tokenNote" :placeholder="i18nStore.tl('如：Stager-Win-x64-钓鱼', 'e.g. Stager-Win-x64-phish')" />
         </el-form-item>
-        <el-form-item v-if="tokenCreated" :label="isZh ? '生成结果' : 'Result'">
+        <el-form-item v-if="tokenCreated" :label="i18nStore.tl('生成结果', 'Result')">
           <div style="width: 100%">
             <div class="url-box" style="word-break: break-all">
               <code>{{ tokenCreated.token }}</code>
             </div>
             <div class="url-box" style="margin-top: 6px; word-break: break-all">
               <code>X-Delivery-Token: {{ tokenCreated.token }}</code>
-              <el-button link type="primary" @click="copyText('X-Delivery-Token: ' + tokenCreated.token)">{{ isZh ? '复制' : 'Copy' }}</el-button>
+              <el-button link type="primary" @click="copyText('X-Delivery-Token: ' + tokenCreated.token)">{{ i18nStore.tl('复制', 'Copy') }}</el-button>
             </div>
             <div class="url-box" style="margin-top: 6px; word-break: break-all">
               <code>{{ tokenCreated.curl }}</code>
@@ -471,8 +471,8 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="tokenCreateVisible = false">{{ isZh ? '关闭' : 'Close' }}</el-button>
-        <el-button type="primary" :loading="tokenCreating" @click="createToken">{{ isZh ? '生成' : 'Generate' }}</el-button>
+        <el-button @click="tokenCreateVisible = false">{{ i18nStore.tl('关闭', 'Close') }}</el-button>
+        <el-button type="primary" :loading="tokenCreating" @click="createToken">{{ i18nStore.tl('生成', 'Generate') }}</el-button>
       </template>
     </el-dialog>
 

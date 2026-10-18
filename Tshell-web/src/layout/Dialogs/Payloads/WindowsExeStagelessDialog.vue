@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     v-model="visible"
-    :title="isZh ? 'Windows 可执行程序 (无阶段)' : 'Windows Executable (Stageless)'"
+    :title="i18nStore.tl('Windows 可执行程序 (无阶段)', 'Windows Executable (Stageless)')"
     width="780px"
     append-to-body
     class="cs-dialog"
@@ -9,22 +9,22 @@
   >
     <div class="cs-dialog-body">
       <div class="cs-dialog-desc">
-        {{ isZh ? '生成无阶段 Windows 客户端载荷（完整 beacon 单文件，经后端 GenServer 模板 patch），无需分阶段拉取。' : 'Generates a stageless Windows beacon payload (single full beacon file, patched by backend GenServer) — no staging required.' }}
+        {{ i18nStore.tl('生成无阶段 Windows 客户端载荷（完整 beacon 单文件，经后端 GenServer 模板 patch），无需分阶段拉取。', 'Generates a stageless Windows beacon payload (single full beacon file, patched by backend GenServer) — no staging required.') }}
       </div>
 
       <div class="cs-form-row">
-        <label class="cs-form-label">{{ isZh ? '监听器:' : 'Listener:' }}</label>
+        <label class="cs-form-label">{{ i18nStore.tl('监听器:', 'Listener:') }}</label>
         <div class="cs-input-with-btn">
           <el-input v-model="form.listener" size="small" placeholder="tcp://1.2.3.4:8080" class="cs-form-input" />
-          <button class="cs-picker-btn" :title="isZh ? '选择监听器' : 'Choose a listener'" @click="showPicker = true">...</button>
+          <button class="cs-picker-btn" :title="i18nStore.tl('选择监听器', 'Choose a listener')" @click="showPicker = true">...</button>
         </div>
       </div>
 
       <div class="cs-form-row">
-        <label class="cs-form-label">{{ isZh ? '输出格式:' : 'Output:' }}</label>
+        <label class="cs-form-label">{{ i18nStore.tl('输出格式:', 'Output:') }}</label>
         <el-select v-model="form.output" size="small" class="cs-form-input">
-          <el-option :label="isZh ? 'Windows EXE（可执行文件）' : 'Windows EXE'" value="exe" />
-          <el-option :label="isZh ? 'Windows DLL（rundll32/regsvr32 加载）' : 'Windows DLL'" value="dll" />
+          <el-option :label="i18nStore.tl('Windows EXE（可执行文件）', 'Windows EXE')" value="exe" />
+          <el-option :label="i18nStore.tl('Windows DLL（rundll32/regsvr32 加载）', 'Windows DLL')" value="dll" />
         </el-select>
       </div>
 
@@ -32,45 +32,43 @@
         <label class="cs-form-label">x64:</label>
         <label class="cs-checkbox-wrap">
           <input type="checkbox" v-model="form.x64" />
-          <span>{{ isZh ? '使用 64 位 (amd64) 载荷' : 'Use x64 (amd64) payload' }}</span>
+          <span>{{ i18nStore.tl('使用 64 位 (amd64) 载荷', 'Use x64 (amd64) payload') }}</span>
         </label>
       </div>
 
       <div class="cs-form-row">
-        <label class="cs-form-label">{{ isZh ? '上线密码:' : 'Pass:' }}</label>
-        <el-input v-model="form.pass" size="small" :placeholder="isZh ? '客户端启动上线密码（可选）' : 'Beacon startup password (optional)'" class="cs-form-input" />
+        <label class="cs-form-label">{{ i18nStore.tl('上线密码:', 'Pass:') }}</label>
+        <el-input v-model="form.pass" size="small" :placeholder="i18nStore.tl('客户端启动上线密码（可选）', 'Beacon startup password (optional)')" class="cs-form-input" />
 
       <div class="cs-form-row">
-        <label class="cs-form-label">{{ isZh ? '多传输端点:' : 'Multi-transport:' }}</label>
+        <label class="cs-form-label">{{ i18nStore.tl('多传输端点:', 'Multi-transport:') }}</label>
         <el-input
           v-model="form.endpoints"
           size="small"
           class="cs-form-input"
-          :placeholder="isZh ? '可选，逗号分隔：tcp://1.2.3.4:443,https://cdn.example.com/api' : 'optional, comma-separated: tcp://1.2.3.4:443,https://cdn.example.com/api'"
+          :placeholder="i18nStore.tl('可选，逗号分隔：tcp://1.2.3.4:443,https://cdn.example.com/api', 'optional, comma-separated: tcp://1.2.3.4:443,https://cdn.example.com/api')"
         />
       </div>
       <div v-if="form.endpoints.trim()" class="cs-form-hint">
-        {{ isZh
-          ? '客户端会按顺序尝试这些端点，某个连不上时自动切到下一个（可跨传输类型）。所有端点必须使用与所选监听器相同的 VKey/盐。'
-          : 'The beacon tries these endpoints in order and falls back to the next on failure (may switch transport type). All endpoints must share the selected listener\'s VKey/salt.' }}
+        {{ i18nStore.tl('客户端会按顺序尝试这些端点，某个连不上时自动切到下一个（可跨传输类型）。所有端点必须使用与所选监听器相同的 VKey/盐。', 'The beacon tries these endpoints in order and falls back to the next on failure (may switch transport type). All endpoints must share the selected listener\'s VKey/salt.') }}
       </div>
       </div>
 
       <!-- 高级配置（OPSEC 编译期） -->
       <el-collapse v-model="advOpen" class="cs-adv-collapse">
-        <el-collapse-item :title="isZh ? '高级配置（OPSEC）' : 'Advanced (OPSEC)'" name="adv">
+        <el-collapse-item :title="i18nStore.tl('高级配置（OPSEC）', 'Advanced (OPSEC)')" name="adv">
           <div class="cs-adv-grid">
             <div class="cs-form-row">
-              <label class="cs-form-label">{{ isZh ? '重连基础延迟' : 'Reconnect delay' }}</label>
+              <label class="cs-form-label">{{ i18nStore.tl('重连基础延迟', 'Reconnect delay') }}</label>
               <el-input v-model.number="form.reconnectBaseDelay" size="small" type="number" min="1" max="60" style="width: 90px" />
               <span class="cs-adv-unit">s（1-60）</span>
             </div>
             <div class="cs-form-row">
-              <label class="cs-form-label">{{ isZh ? '最大重试' : 'Max retries' }}</label>
+              <label class="cs-form-label">{{ i18nStore.tl('最大重试', 'Max retries') }}</label>
               <el-input v-model.number="form.reconnectMaxRetries" size="small" type="number" min="5" max="200" style="width: 90px" />
             </div>
             <div class="cs-form-row">
-              <label class="cs-form-label">{{ isZh ? '注入默认技术' : 'Inject tech' }}</label>
+              <label class="cs-form-label">{{ i18nStore.tl('注入默认技术', 'Inject tech') }}</label>
               <el-select v-model="form.injectTech" size="small" style="width: 150px">
                 <el-option label="auto（隐蔽链）" value="auto" />
                 <el-option label="NtCreateThreadEx" value="ntc" />
@@ -79,42 +77,42 @@
               </el-select>
             </div>
             <div class="cs-form-row">
-              <label class="cs-form-label">{{ isZh ? 'ETW 补丁' : 'ETW patch' }}</label>
+              <label class="cs-form-label">{{ i18nStore.tl('ETW 补丁', 'ETW patch') }}</label>
               <el-switch v-model="form.etwPatch" size="small" />
-              <span class="cs-adv-unit" style="color: var(--cs-warning)">{{ isZh ? '⚠️ 需虚拟机测试, 关键进程禁用' : '⚠️ VM only, critical PIDs blocked' }}</span>
+              <span class="cs-adv-unit" style="color: var(--cs-warning)">{{ i18nStore.tl('⚠️ 需虚拟机测试, 关键进程禁用', '⚠️ VM only, critical PIDs blocked') }}</span>
             </div>
             <div class="cs-form-row">
-              <label class="cs-form-label">{{ isZh ? 'AMSI 绕过' : 'AMSI bypass' }}</label>
+              <label class="cs-form-label">{{ i18nStore.tl('AMSI 绕过', 'AMSI bypass') }}</label>
               <el-switch v-model="form.amsiBypass" size="small" />
-              <span class="cs-adv-unit" style="color: var(--cs-warning)">{{ isZh ? '⚠️ 需虚拟机测试' : '⚠️ VM only' }}</span>
+              <span class="cs-adv-unit" style="color: var(--cs-warning)">{{ i18nStore.tl('⚠️ 需虚拟机测试', '⚠️ VM only') }}</span>
             </div>
             <div class="cs-form-row">
-              <label class="cs-form-label">{{ isZh ? 'Syscall 模式' : 'Syscall mode' }}</label>
+              <label class="cs-form-label">{{ i18nStore.tl('Syscall 模式', 'Syscall mode') }}</label>
               <el-select v-model="form.syscallMode" size="small" style="width: 150px">
-                <el-option :label="isZh ? '常规 ntdll 调用' : 'Normal (ntdll)'" value="none" />
-                <el-option :label="isZh ? '直接 syscall (仅x64)' : 'Direct syscall (x64)'" value="direct" />
-                <el-option :label="isZh ? '间接 syscall (仅x64)' : 'Indirect syscall (x64)'" value="indirect" />
+                <el-option :label="i18nStore.tl('常规 ntdll 调用', 'Normal (ntdll)')" value="none" />
+                <el-option :label="i18nStore.tl('直接 syscall (仅x64)', 'Direct syscall (x64)')" value="direct" />
+                <el-option :label="i18nStore.tl('间接 syscall (仅x64)', 'Indirect syscall (x64)')" value="indirect" />
               </el-select>
             </div>
             <div class="cs-form-row">
-              <label class="cs-form-label">{{ isZh ? '上线自动删自身文件' : 'Auto-delete on start' }}</label>
+              <label class="cs-form-label">{{ i18nStore.tl('上线自动删自身文件', 'Auto-delete on start') }}</label>
               <el-switch v-model="form.autoDelete" size="small" />
-              <span class="cs-adv-unit">{{ isZh ? '改名后立即删除自身(进程保持在线)' : 'unlink self after rename (stay online)' }}</span>
+              <span class="cs-adv-unit">{{ i18nStore.tl('改名后立即删除自身(进程保持在线)', 'unlink self after rename (stay online)') }}</span>
             </div>
             <div class="cs-form-row">
-              <label class="cs-form-label">{{ isZh ? '伪装修饰名' : 'Masquerade' }}</label>
-              <el-input v-model="form.masqueradeName" size="small" style="width: 130px" :placeholder="isZh ? '留空自动生成' : 'auto if empty'" />
-              <span class="cs-adv-unit">{{ isZh ? '持久化/管道/文件前缀' : 'persist/pipe/file prefix' }}</span>
+              <label class="cs-form-label">{{ i18nStore.tl('伪装修饰名', 'Masquerade') }}</label>
+              <el-input v-model="form.masqueradeName" size="small" style="width: 130px" :placeholder="i18nStore.tl('留空自动生成', 'auto if empty')" />
+              <span class="cs-adv-unit">{{ i18nStore.tl('持久化/管道/文件前缀', 'persist/pipe/file prefix') }}</span>
             </div>
             <div class="cs-form-row">
               <label class="cs-checkbox-wrap" style="width: auto">
                 <input type="checkbox" v-model="form.quietMode" />
-                <span>{{ isZh ? '静默模式（无调试输出）' : 'Quiet mode (no debug output)' }}</span>
+                <span>{{ i18nStore.tl('静默模式（无调试输出）', 'Quiet mode (no debug output)') }}</span>
               </label>
             </div>
           </div>
           <div class="cs-adv-hint">
-            {{ isZh ? 'OPSEC 提示：上线密码通过命令行参数传入（进程命令行可见）；不设密码则无参数启动更隐蔽。' : 'OPSEC: the beacon password is passed via command-line (visible in process args); no password means parameter-less launch (more stealthy).' }}
+            {{ i18nStore.tl('OPSEC 提示：上线密码通过命令行参数传入（进程命令行可见）；不设密码则无参数启动更隐蔽。', 'OPSEC: the beacon password is passed via command-line (visible in process args); no password means parameter-less launch (more stealthy).') }}
           </div>
         </el-collapse-item>
       </el-collapse>
@@ -123,15 +121,15 @@
     <template #footer>
       <div class="cs-dialog-footer-center">
         <button class="cs-btn cs-btn-primary" :disabled="generating || !form.listener" @click="handleGenerate">
-          {{ generating ? (isZh ? '生成中...' : 'Generating...') : (isZh ? '生成' : 'Generate') }}
+          {{ generating ? (i18nStore.tl('生成中...', 'Generating...')) : (i18nStore.tl('生成', 'Generate')) }}
         </button>
-        <button class="cs-btn" @click="handleHelp">{{ isZh ? '帮助' : 'Help' }}</button>
+        <button class="cs-btn" @click="handleHelp">{{ i18nStore.tl('帮助', 'Help') }}</button>
       </div>
     </template>
 
     <ChoosePayloadDialog
       v-model="showPicker"
-      :title="isZh ? '选择监听器' : 'Choose a listener'"
+      :title="i18nStore.tl('选择监听器', 'Choose a listener')"
       @choose="onChooseListener"
     />
   </el-dialog>

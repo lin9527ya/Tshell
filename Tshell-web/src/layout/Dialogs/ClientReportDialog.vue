@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     v-model="visible"
-    :title="isZh ? '会话操作报告' : 'Session Report'"
+    :title="i18nStore.tl('会话操作报告', 'Session Report')"
     width="720px"
     :close-on-click-modal="false"
     append-to-body
@@ -11,15 +11,15 @@
       <div v-loading="loading" class="report-wrap">
         <template v-if="report">
           <div class="report-meta">
-            <span class="dialog-label">{{ isZh ? '会话:' : 'Session:' }}</span>
+            <span class="dialog-label">{{ i18nStore.tl('会话:', 'Session:') }}</span>
             <span class="dialog-val cs-font-mono">{{ report.uid }}</span>
-            <span class="dialog-label report-meta-gap">{{ isZh ? '生成时间:' : 'Generated:' }}</span>
+            <span class="dialog-label report-meta-gap">{{ i18nStore.tl('生成时间:', 'Generated:') }}</span>
             <span class="dialog-val cs-font-mono">{{ report.generated_at }}</span>
           </div>
 
           <!-- 会话录像 -->
           <div class="report-section">
-            <div class="report-section-title">{{ isZh ? '会话录像 (Session Logs)' : 'Session Logs' }}</div>
+            <div class="report-section-title">{{ i18nStore.tl('会话录像 (Session Logs)', 'Session Logs') }}</div>
             <div v-if="report.session_logs && report.session_logs.length" class="report-log-list">
               <div v-for="log in report.session_logs" :key="log.file" class="report-log-row cs-font-mono">
                 <span class="log-file">{{ log.file }}</span>
@@ -31,16 +31,16 @@
                   :disabled="downloadingFile === log.file"
                   @click="downloadLog(log.file)"
                 >
-                  {{ downloadingFile === log.file ? (isZh ? '下载中...' : 'Downloading...') : (isZh ? '下载' : 'Download') }}
+                  {{ downloadingFile === log.file ? (i18nStore.tl('下载中...', 'Downloading...')) : (i18nStore.tl('下载', 'Download')) }}
                 </button>
               </div>
             </div>
-            <div v-else class="report-empty">{{ isZh ? '暂无会话录像' : 'No session logs' }}</div>
+            <div v-else class="report-empty">{{ i18nStore.tl('暂无会话录像', 'No session logs') }}</div>
           </div>
 
           <!-- 下载记录 -->
           <div class="report-section">
-            <div class="report-section-title">{{ isZh ? '下载记录 (Downloads)' : 'Download History' }}</div>
+            <div class="report-section-title">{{ i18nStore.tl('下载记录 (Downloads)', 'Download History') }}</div>
             <div v-if="report.downloads && report.downloads.length" class="report-log-list">
               <div v-for="(d, idx) in report.downloads" :key="idx" class="report-log-row cs-font-mono">
                 <span class="log-file">{{ d.file_name }}</span>
@@ -48,25 +48,25 @@
                 <span class="log-time">{{ d.file_path }}</span>
               </div>
             </div>
-            <div v-else class="report-empty">{{ isZh ? '暂无下载记录' : 'No download history' }}</div>
+            <div v-else class="report-empty">{{ i18nStore.tl('暂无下载记录', 'No download history') }}</div>
           </div>
 
           <!-- Shell 历史 -->
           <div class="report-section">
-            <div class="report-section-title">{{ isZh ? 'Shell 历史' : 'Shell History' }}</div>
-            <pre class="report-shell cs-font-mono">{{ report.shell_history || (isZh ? '（空）' : '(empty)') }}</pre>
+            <div class="report-section-title">{{ i18nStore.tl('Shell 历史', 'Shell History') }}</div>
+            <pre class="report-shell cs-font-mono">{{ report.shell_history || (i18nStore.tl('（空）', '(empty)')) }}</pre>
           </div>
         </template>
 
         <div v-else-if="!loading" class="report-empty">
-          {{ isZh ? '无法获取报告，请检查会话是否有效' : 'Failed to load report' }}
+          {{ i18nStore.tl('无法获取报告，请检查会话是否有效', 'Failed to load report') }}
         </div>
       </div>
     </div>
 
     <template #footer>
       <div class="cs-dialog-footer">
-        <button class="cs-btn" @click="close">{{ isZh ? '关闭' : 'Close' }}</button>
+        <button class="cs-btn" @click="close">{{ i18nStore.tl('关闭', 'Close') }}</button>
       </div>
     </template>
   </el-dialog>

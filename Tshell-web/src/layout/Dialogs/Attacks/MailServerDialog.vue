@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     v-model="visible"
-    :title="isZh ? '邮件服务器配置' : 'Mail Server'"
+    :title="i18nStore.tl('邮件服务器配置', 'Mail Server')"
     width="380px"
     append-to-body
     class="cs-dialog"
@@ -9,32 +9,32 @@
   >
     <div class="cs-dialog-body">
       <div class="cs-form-row">
-        <label class="cs-form-label">{{ isZh ? 'SMTP 主机:' : 'SMTP Host:' }}</label>
+        <label class="cs-form-label">{{ i18nStore.tl('SMTP 主机:', 'SMTP Host:') }}</label>
         <el-input v-model="form.host" size="small" placeholder="smtp.domain.com" class="cs-form-input" />
       </div>
 
       <div class="cs-form-row">
-        <label class="cs-form-label">{{ isZh ? 'SMTP 端口:' : 'SMTP Port:' }}</label>
+        <label class="cs-form-label">{{ i18nStore.tl('SMTP 端口:', 'SMTP Port:') }}</label>
         <el-input v-model="form.port" size="small" placeholder="25" class="cs-form-input" />
       </div>
 
       <div class="cs-form-row">
-        <label class="cs-form-label">{{ isZh ? '用户名:' : 'Username:' }}</label>
+        <label class="cs-form-label">{{ i18nStore.tl('用户名:', 'Username:') }}</label>
         <el-input v-model="form.username" size="small" class="cs-form-input" />
       </div>
 
       <div class="cs-form-row">
-        <label class="cs-form-label">{{ isZh ? '密码:' : 'Password:' }}</label>
+        <label class="cs-form-label">{{ i18nStore.tl('密码:', 'Password:') }}</label>
         <el-input v-model="form.password" type="password" size="small" class="cs-form-input" />
       </div>
 
       <div class="cs-form-row">
-        <label class="cs-form-label">{{ isZh ? '随机延时:' : 'Random Delay:' }}</label>
+        <label class="cs-form-label">{{ i18nStore.tl('随机延时:', 'Random Delay:') }}</label>
         <el-input v-model="form.delay" size="small" placeholder="0" class="cs-form-input" />
       </div>
 
       <div class="cs-form-row">
-        <label class="cs-form-label">{{ isZh ? '连接加密:' : 'Connection:' }}</label>
+        <label class="cs-form-label">{{ i18nStore.tl('连接加密:', 'Connection:') }}</label>
         <el-select v-model="form.connection" size="small" class="cs-form-input">
           <el-option label="Plain" value="Plain" />
           <el-option label="SSL" value="SSL" />
@@ -45,7 +45,7 @@
 
     <template #footer>
       <div class="cs-dialog-footer-center">
-        <button class="cs-btn cs-btn-primary" @click="handleSet">{{ isZh ? '保存' : 'Set' }}</button>
+        <button class="cs-btn cs-btn-primary" @click="handleSet">{{ i18nStore.tl('保存', 'Set') }}</button>
       </div>
     </template>
   </el-dialog>

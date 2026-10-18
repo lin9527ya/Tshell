@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     v-model="visible"
-    :title="isZh ? '正向连接客户端' : 'Forward Connect Client'"
+    :title="i18nStore.tl('正向连接客户端', 'Forward Connect Client')"
     width="520px"
     append-to-body
     class="cs-dialog"
@@ -9,7 +9,7 @@
   >
     <div class="cs-dialog-body cs-font-ui">
       <div class="cs-form-row">
-        <label class="cs-form-label">{{ isZh ? '连接方式' : 'Connection Method' }}:</label>
+        <label class="cs-form-label">{{ i18nStore.tl('连接方式', 'Connection Method') }}:</label>
         <el-select v-model="form.connectionMethod" size="small" class="cs-form-input">
           <el-option label="TCP" value="TCP" />
           <el-option label="KCP/UDP" value="KCP/UDP" />
@@ -19,20 +19,20 @@
         </el-select>
       </div>
       <div class="cs-form-row">
-        <label class="cs-form-label">{{ isZh ? 'IP / 域名' : 'IP / Domain' }}:</label>
-        <el-input v-model="form.ipAddress" class="cs-form-input" :placeholder="isZh ? '正向客户端监听 IP 或域名' : 'Forward client listener IP / domain'" />
+        <label class="cs-form-label">{{ i18nStore.tl('IP / 域名', 'IP / Domain') }}:</label>
+        <el-input v-model="form.ipAddress" class="cs-form-input" :placeholder="i18nStore.tl('正向客户端监听 IP 或域名', 'Forward client listener IP / domain')" />
       </div>
       <div class="cs-form-row">
-        <label class="cs-form-label">{{ isZh ? '端口' : 'Port' }}:</label>
+        <label class="cs-form-label">{{ i18nStore.tl('端口', 'Port') }}:</label>
         <el-input v-model="form.port" class="cs-form-input" placeholder="8080" />
       </div>
       <div class="cs-form-row">
         <label class="cs-form-label">VKey:</label>
-        <el-input v-model="form.vkey" class="cs-form-input" show-password :placeholder="isZh ? '可选，会话密钥' : 'Optional session key'" />
+        <el-input v-model="form.vkey" class="cs-form-input" show-password :placeholder="i18nStore.tl('可选，会话密钥', 'Optional session key')" />
       </div>
       <div class="cs-form-row">
-        <label class="cs-form-label">{{ isZh ? '加密盐' : 'Encryption Salt' }}:</label>
-        <el-input v-model="form.encryptionSalt" class="cs-form-input" show-password :placeholder="isZh ? '可选，流量加密盐' : 'Optional traffic salt'" />
+        <label class="cs-form-label">{{ i18nStore.tl('加密盐', 'Encryption Salt') }}:</label>
+        <el-input v-model="form.encryptionSalt" class="cs-form-input" show-password :placeholder="i18nStore.tl('可选，流量加密盐', 'Optional traffic salt')" />
       </div>
       <div class="cs-form-row">
         <label class="cs-form-label">eBPF:</label>
@@ -41,8 +41,8 @@
     </div>
     <template #footer>
       <div class="cs-dialog-footer-center">
-        <button class="cs-btn cs-btn-primary" @click="handleConnect">{{ isZh ? '连接' : 'Connect' }}</button>
-        <button class="cs-btn" @click="visible = false">{{ isZh ? '取消' : 'Cancel' }}</button>
+        <button class="cs-btn cs-btn-primary" @click="handleConnect">{{ i18nStore.tl('连接', 'Connect') }}</button>
+        <button class="cs-btn" @click="visible = false">{{ i18nStore.tl('取消', 'Cancel') }}</button>
       </div>
     </template>
   </el-dialog>

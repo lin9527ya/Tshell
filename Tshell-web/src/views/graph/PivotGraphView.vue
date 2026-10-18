@@ -1,15 +1,15 @@
 <template>
   <div class="pg-root">
     <div class="pg-head">
-      <span class="pg-title">{{ isZh ? '拓扑网络图' : 'Pivot Graph' }}</span>
-      <span class="pg-sub">{{ isZh ? '服务端 → 监听器 → 客户端 → 隧道 → 目标' : 'Server → Listener → Client → Tunnel → Target' }}</span>
+      <span class="pg-title">{{ i18nStore.tl('拓扑网络图', 'Pivot Graph') }}</span>
+      <span class="pg-sub">{{ i18nStore.tl('服务端 → 监听器 → 客户端 → 隧道 → 目标', 'Server → Listener → Client → Tunnel → Target') }}</span>
       <div class="pg-actions">
         <span class="pg-stat">
-          {{ isZh ? '节点' : 'Nodes' }} {{ layout.nodes.length }} ·
-          {{ isZh ? '在线' : 'Online' }} {{ onlineCount }} / {{ clientCount }}
+          {{ i18nStore.tl('节点', 'Nodes') }} {{ layout.nodes.length }} ·
+          {{ i18nStore.tl('在线', 'Online') }} {{ onlineCount }} / {{ clientCount }}
         </span>
         <button class="cs-btn cs-btn-xs" :disabled="loading" @click="load">
-          {{ loading ? (isZh ? '刷新中…' : 'Loading…') : (isZh ? '刷新' : 'Refresh') }}
+          {{ loading ? (i18nStore.tl('刷新中…', 'Loading…')) : (i18nStore.tl('刷新', 'Refresh')) }}
         </button>
       </div>
     </div>
@@ -18,18 +18,18 @@
     <div class="pg-legend">
       <span v-for="t in legendTypes" :key="t" class="pg-legend-item">
         <i class="pg-dot" :style="{ background: TYPE_COLORS[t] }"></i>
-        {{ isZh ? TYPE_LABELS[t]?.zh : TYPE_LABELS[t]?.en }}
+        {{ i18nStore.tl(TYPE_LABELS[t]?.zh || t, TYPE_LABELS[t]?.en || t) }}
       </span>
       <span class="pg-legend-item">
         <i class="pg-dot pg-dot-offline"></i>
-        {{ isZh ? '离线客户端（灰色虚线）' : 'Offline client (dashed)' }}
+        {{ i18nStore.tl('离线客户端（灰色虚线）', 'Offline client (dashed)') }}
       </span>
     </div>
 
     <div v-if="error" class="pg-error">{{ error }}</div>
 
     <div v-else-if="!loading && layout.nodes.length === 0" class="pg-empty">
-      {{ isZh ? '暂无拓扑数据：先创建监听器并让客户端上线' : 'No topology data yet: create a listener and bring a client online' }}
+      {{ i18nStore.tl('暂无拓扑数据：先创建监听器并让客户端上线', 'No topology data yet: create a listener and bring a client online') }}
     </div>
 
     <div v-else class="pg-canvas" @click.self="selected = null">
@@ -38,7 +38,7 @@
         :height="layout.height"
         :viewBox="`0 0 ${layout.width} ${layout.height}`"
         role="img"
-        :aria-label="isZh ? '拓扑网络图' : 'Pivot graph'"
+        :aria-label="i18nStore.tl('拓扑网络图', 'Pivot graph')"
       >
         <!-- 边先画，节点压在上面 -->
         <g class="pg-edges">
@@ -84,12 +84,15 @@
       <div class="pg-detail-head">
         <strong>{{ selectedNode.label }}</strong>
         <span class="pg-detail-type">
-          {{ isZh ? TYPE_LABELS[selectedNode.type]?.zh || selectedNode.type : TYPE_LABELS[selectedNode.type]?.en || selectedNode.type }}
+          {{ i18nStore.tl(
+            TYPE_LABELS[selectedNode.type]?.zh || selectedNode.type,
+            TYPE_LABELS[selectedNode.type]?.en || selectedNode.type,
+          ) }}
         </span>
         <span v-if="selectedNode.type === 'client'" :class="['pg-badge', isOnline(selectedNode) ? 'pg-badge-on' : 'pg-badge-off']">
-          {{ isOnline(selectedNode) ? (isZh ? '在线' : 'Online') : (isZh ? '离线' : 'Offline') }}
+          {{ isOnline(selectedNode) ? (i18nStore.tl('在线', 'Online')) : (i18nStore.tl('离线', 'Offline')) }}
         </span>
-        <button class="cs-btn cs-btn-xs" @click="selected = null">{{ isZh ? '关闭' : 'Close' }}</button>
+        <button class="cs-btn cs-btn-xs" @click="selected = null">{{ i18nStore.tl('关闭', 'Close') }}</button>
       </div>
       <div v-if="selectedNode.sub_label" class="pg-detail-sub">{{ selectedNode.sub_label }}</div>
       <table v-if="metaRows.length" class="pg-meta">
@@ -132,7 +135,6 @@ import {
 } from './layout'
 
 const i18nStore = useI18nStore()
-const isZh = computed(() => i18nStore.isZh)
 
 const nodes = ref<GraphNode[]>([])
 const edges = ref<GraphEdge[]>([])
@@ -176,8 +178,11 @@ async function load() {
     // /graph/data 是 operatorOnly：auditor 拿到 403 属正常，不该弹全局报错
     // （请求层已对该 URL 特判静默）。这里给出页面内提示而不是空白页。
     const msg = (e as { response?: { status?: number } })?.response?.status === 403
-      ? (isZh.value ? '当前角色无权查看拓扑图（需要 operator 及以上）' : 'Your role cannot view the pivot graph (operator+)')
-      : (isZh.value ? '加载拓扑数据失败' : 'Failed to load topology data')
+      ? i18nStore.tl(
+          '当前角色无权查看拓扑图（需要 operator 及以上）',
+          'Your role cannot view the pivot graph (operator+)',
+        )
+      : i18nStore.tl('加载拓扑数据失败', 'Failed to load topology data')
     error.value = msg
     nodes.value = []
     edges.value = []

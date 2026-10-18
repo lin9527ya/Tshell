@@ -8,13 +8,13 @@
         :class="{ active: t.key === tab }"
         @click="switchTo(t.key)"
       >
-        {{ isZh ? t.zh : t.en }}
+        {{ i18nStore.tl(t.zh, t.en) }}
       </div>
     </div>
     <div class="st-body">
       <!-- 服务配置页签：页面级 C2 扩展配置入口（局部弹窗） -->
       <div v-if="tab === 'config'" class="st-subbar">
-        <button class="cs-btn" @click="showC2Profile = true">{{ isZh ? 'C2 扩展配置' : 'C2 Profile' }}</button>
+        <button class="cs-btn" @click="showC2Profile = true">{{ i18nStore.tl('C2 扩展配置', 'C2 Profile') }}</button>
       </div>
       <KeepAlive>
         <component v-if="comp" :is="comp" :key="tab" />

@@ -2,16 +2,16 @@
   <div class="bk-page cs-font-ui">
     <div class="bk-toolbar">
       <div class="bk-title-group">
-        <span class="bk-title">{{ isZh ? '数据库备份' : 'Database Backup' }}</span>
-        <span class="bk-meta">{{ dir }} · {{ isZh ? `保留 ${keep} 份` : `keep ${keep}` }}</span>
+        <span class="bk-title">{{ i18nStore.tl('数据库备份', 'Database Backup') }}</span>
+        <span class="bk-meta">{{ dir }} · {{ i18nStore.tl(`保留 ${keep} 份`, `keep ${keep}`) }}</span>
       </div>
       <div class="bk-spacer" />
-      <button class="cs-btn" :disabled="loading" @click="fetchList">{{ isZh ? '刷新' : 'Refresh' }}</button>
+      <button class="cs-btn" :disabled="loading" @click="fetchList">{{ i18nStore.tl('刷新', 'Refresh') }}</button>
       <button class="cs-btn cs-btn-primary" :disabled="creating" @click="createBackup">
-        {{ creating ? (isZh ? '备份中…' : 'Backing up…') : (isZh ? '立即备份' : 'Backup Now') }}
+        {{ creating ? (i18nStore.tl('备份中…', 'Backing up…')) : (i18nStore.tl('立即备份', 'Backup Now')) }}
       </button>
       <label class="cs-btn bk-import">
-        {{ isZh ? '导入备份' : 'Import' }}
+        {{ i18nStore.tl('导入备份', 'Import') }}
         <input type="file" accept=".db" hidden @change="onImport" />
       </label>
     </div>
@@ -33,42 +33,42 @@
 
     <div class="bk-table-wrap">
       <el-table :data="list" row-key="name" size="small" height="100%" v-loading="loading" class="cs-session-table">
-        <el-table-column prop="name" :label="isZh ? '备份文件' : 'File'" min-width="240" show-overflow-tooltip>
+        <el-table-column prop="name" :label="i18nStore.tl('备份文件', 'File')" min-width="240" show-overflow-tooltip>
           <template #default="{ row }">
             <span class="cs-font-mono">{{ row.name }}</span>
           </template>
         </el-table-column>
-        <el-table-column :label="isZh ? '大小' : 'Size'" width="100" align="right">
+        <el-table-column :label="i18nStore.tl('大小', 'Size')" width="100" align="right">
           <template #default="{ row }">
             <span class="cs-font-mono text-dim">{{ formatSize(row.size) }}</span>
           </template>
         </el-table-column>
-        <el-table-column :label="isZh ? '创建时间' : 'Created'" width="170">
+        <el-table-column :label="i18nStore.tl('创建时间', 'Created')" width="170">
           <template #default="{ row }">
             <span class="cs-font-mono text-dim">{{ formatTime(row.created_at) }}</span>
           </template>
         </el-table-column>
-        <el-table-column :label="isZh ? '校验' : 'Verified'" width="100" align="center">
+        <el-table-column :label="i18nStore.tl('校验', 'Verified')" width="100" align="center">
           <template #default="{ row }">
             <el-tag :type="row.verified ? 'success' : 'danger'" size="small">
-              {{ row.verified ? (isZh ? '已校验' : 'Verified') : (isZh ? '未校验' : 'Unverified') }}
+              {{ row.verified ? (i18nStore.tl('已校验', 'Verified')) : (i18nStore.tl('未校验', 'Unverified')) }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="note" :label="isZh ? '备注' : 'Note'" min-width="140" show-overflow-tooltip>
+        <el-table-column prop="note" :label="i18nStore.tl('备注', 'Note')" min-width="140" show-overflow-tooltip>
           <template #default="{ row }">
             <span class="cs-cell-text">{{ row.note || '-' }}</span>
           </template>
         </el-table-column>
-        <el-table-column :label="isZh ? '操作' : 'Actions'" width="150" fixed="right" align="center">
+        <el-table-column :label="i18nStore.tl('操作', 'Actions')" width="150" fixed="right" align="center">
           <template #default="{ row }">
-            <a class="row-link" @click="download(row)">{{ isZh ? '下载' : 'Download' }}</a>
-            <a class="row-link bk-danger" @click="remove(row)">{{ isZh ? '删除' : 'Delete' }}</a>
+            <a class="row-link" @click="download(row)">{{ i18nStore.tl('下载', 'Download') }}</a>
+            <a class="row-link bk-danger" @click="remove(row)">{{ i18nStore.tl('删除', 'Delete') }}</a>
           </template>
         </el-table-column>
       </el-table>
 
-      <EmptyState v-if="!list.length && !loading" variant="overlay" :title="isZh ? '暂无备份' : 'No backups yet'" />
+      <EmptyState v-if="!list.length && !loading" variant="overlay" :title="i18nStore.tl('暂无备份', 'No backups yet')" />
     </div>
   </div>
 </template>

@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     v-model="visible"
-    :title="isZh ? '设置回连间隔' : 'Beacon Sleep Configuration'"
+    :title="i18nStore.tl('设置回连间隔', 'Beacon Sleep Configuration')"
     width="440px"
     :close-on-click-modal="false"
     append-to-body
@@ -9,22 +9,22 @@
   >
     <div class="cs-dialog-body">
       <div class="dialog-row">
-        <label class="dialog-label">{{ isZh ? '目标客户端:' : 'Target:' }}</label>
+        <label class="dialog-label">{{ i18nStore.tl('目标客户端:', 'Target:') }}</label>
         <span class="dialog-val">{{ clientLabel }}</span>
       </div>
       <div class="dialog-grid">
         <div class="dialog-field">
-          <label class="dialog-label">{{ isZh ? '回连间隔（秒）:' : 'Sleep Time (seconds):' }}</label>
+          <label class="dialog-label">{{ i18nStore.tl('回连间隔（秒）:', 'Sleep Time (seconds):') }}</label>
           <el-input-number v-model="sleepSec" :min="0" :max="86400" style="width: 100%" />
         </div>
         <div class="dialog-field">
-          <label class="dialog-label">{{ isZh ? '波动范围 (%):' : 'Jitter (%):' }}</label>
+          <label class="dialog-label">{{ i18nStore.tl('波动范围 (%):', 'Jitter (%):') }}</label>
           <el-input-number v-model="jitter" :min="0" :max="99" style="width: 100%" />
         </div>
       </div>
       <div class="quick-presets">
-        <span class="preset-label">{{ isZh ? '快捷预设:' : 'Quick Presets:' }}</span>
-        <button class="preset-btn" @click="setPreset(0, 0)">{{ isZh ? '实时交互 (0s)' : 'Interactive (0s)' }}</button>
+        <span class="preset-label">{{ i18nStore.tl('快捷预设:', 'Quick Presets:') }}</span>
+        <button class="preset-btn" @click="setPreset(0, 0)">{{ i18nStore.tl('实时交互 (0s)', 'Interactive (0s)') }}</button>
         <button class="preset-btn" @click="setPreset(5, 10)">5s (10%)</button>
         <button class="preset-btn" @click="setPreset(60, 20)">1m (20%)</button>
         <button class="preset-btn" @click="setPreset(300, 30)">5m (30%)</button>
@@ -32,8 +32,8 @@
     </div>
     <template #footer>
       <div class="cs-dialog-footer">
-        <button class="cs-btn cs-btn-primary" @click="applySleep">{{ isZh ? '应用间隔' : 'Set Sleep' }}</button>
-        <button class="cs-btn" @click="close">{{ isZh ? '取消' : 'Cancel' }}</button>
+        <button class="cs-btn cs-btn-primary" @click="applySleep">{{ i18nStore.tl('应用间隔', 'Set Sleep') }}</button>
+        <button class="cs-btn" @click="close">{{ i18nStore.tl('取消', 'Cancel') }}</button>
       </div>
     </template>
   </el-dialog>
@@ -59,7 +59,6 @@ const visible = computed({
 
 const clientsStore = useClientsStore()
 const i18nStore = useI18nStore()
-const isZh = computed(() => i18nStore.isZh)
 
 const uid = computed(() => props.uid)
 const sleepSec = ref(5)

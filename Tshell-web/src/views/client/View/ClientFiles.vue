@@ -7,13 +7,13 @@
         <div class="fm-sidebar-header">
           <span class="fm-sidebar-title">
             <el-icon class="folder-gold"><Folder /></el-icon>
-            {{ isZh ? '文件系统' : 'Filesystem' }}
+            {{ i18nStore.tl('文件系统', 'Filesystem') }}
           </span>
           <div class="fm-tree-btns">
-            <button class="ic-btn" :title="isZh ? '展开全部目录' : 'Expand All'" @click.stop="expandAllTree">
+            <button class="ic-btn" :title="i18nStore.tl('展开全部目录', 'Expand All')" @click.stop="expandAllTree">
               <el-icon><FolderOpened /></el-icon>
             </button>
-            <button class="ic-btn" :title="isZh ? '折叠全部目录' : 'Collapse All'" @click.stop="collapseAllTree">
+            <button class="ic-btn" :title="i18nStore.tl('折叠全部目录', 'Collapse All')" @click.stop="collapseAllTree">
               <el-icon><Fold /></el-icon>
             </button>
           </div>
@@ -22,7 +22,7 @@
         <div class="fm-tree-search-wrap">
           <el-input
             v-model="treeSearchText"
-            :placeholder="isZh ? '搜索目录...' : 'Filter directories...'"
+            :placeholder="i18nStore.tl('搜索目录...', 'Filter directories...')"
             :prefix-icon="Search"
             clearable
             class="fm-search-input"
@@ -67,13 +67,13 @@
         <div class="fm-toolbar">
           <!-- 导航按键 -->
           <div class="fm-nav-group">
-            <button class="ic-btn" :title="isZh ? '刷新目录' : 'Refresh'" @click="refreshCurrentFolder">
+            <button class="ic-btn" :title="i18nStore.tl('刷新目录', 'Refresh')" @click="refreshCurrentFolder">
               <el-icon><Refresh /></el-icon>
             </button>
-            <button class="ic-btn" :title="isZh ? '磁盘驱动器 / 根目录' : 'Drives / Home'" @click="goClientHome">
+            <button class="ic-btn" :title="i18nStore.tl('磁盘驱动器 / 根目录', 'Drives / Home')" @click="goClientHome">
               <el-icon><HomeFilled /></el-icon>
             </button>
-            <button class="ic-btn" :disabled="!canGoUp" :title="isZh ? '上一级目录' : 'Up'" @click="goUpLevel">
+            <button class="ic-btn" :disabled="!canGoUp" :title="i18nStore.tl('上一级目录', 'Up')" @click="goUpLevel">
               <el-icon><Top /></el-icon>
             </button>
           </div>
@@ -82,19 +82,19 @@
           <div class="fm-path-container">
             <div v-if="!isPathEditMode" class="fm-breadcrumbs-bar cs-font-mono" @click="isPathEditMode = true">
               <el-icon class="folder-gold fm-path-icon"><FolderOpened /></el-icon>
-              <span class="crumb-root" :title="isZh ? '点击返回根目录' : 'Root'" @click.stop="goClientHome">/</span>
+              <span class="crumb-root" :title="i18nStore.tl('点击返回根目录', 'Root')" @click.stop="goClientHome">/</span>
               <template v-for="seg in pathSegments" :key="seg.fullPath">
                 <span class="crumb-sep">/</span>
                 <span class="crumb-item" :title="seg.fullPath" @click.stop="jumpToSegment(seg.fullPath)">{{ seg.name }}</span>
               </template>
-              <el-icon class="crumb-edit-icon" :title="isZh ? '点击手动输入路径' : 'Click to type path'"><Edit /></el-icon>
+              <el-icon class="crumb-edit-icon" :title="i18nStore.tl('点击手动输入路径', 'Click to type path')"><Edit /></el-icon>
             </div>
             <el-input
               v-else
               ref="pathInputRef"
               v-model="currentPath"
               class="fm-path-el-input cs-font-mono"
-              :placeholder="isZh ? '输入文件路径，按回车或点击前往切换目录...' : 'Enter file path and press Enter...'"
+              :placeholder="i18nStore.tl('输入文件路径，按回车或点击前往切换目录...', 'Enter file path and press Enter...')"
               clearable
               @blur="isPathEditMode = false"
               @keydown.enter="navigateToInputPath(); isPathEditMode = false"
@@ -105,7 +105,7 @@
               </template>
               <template #append>
                 <button class="cs-btn cs-btn-primary cs-btn-xs fm-go-btn" @click="navigateToInputPath(); isPathEditMode = false">
-                  {{ isZh ? '前往' : 'Go' }}
+                  {{ i18nStore.tl('前往', 'Go') }}
                 </button>
               </template>
             </el-input>
@@ -115,7 +115,7 @@
           <div class="fm-filter-wrap">
             <el-input
               v-model="tableSearchKeyword"
-              :placeholder="isZh ? '过滤当前列表,回车递归搜索' : 'Filter list, Enter to search deep'"
+              :placeholder="i18nStore.tl('过滤当前列表,回车递归搜索', 'Filter list, Enter to search deep')"
               :prefix-icon="Search"
               clearable
               class="fm-table-search"
@@ -133,19 +133,19 @@
           <div class="fm-quick-actions">
             <button class="cs-btn cs-btn-primary" @click="createNewFolder">
               <el-icon><FolderAdd /></el-icon>
-              <span>{{ isZh ? '新建文件夹' : 'New Folder' }}</span>
+              <span>{{ i18nStore.tl('新建文件夹', 'New Folder') }}</span>
             </button>
             <button class="cs-btn cs-btn-primary" @click="createNewFile">
               <el-icon><DocumentAdd /></el-icon>
-              <span>{{ isZh ? '新建文件' : 'New File' }}</span>
+              <span>{{ i18nStore.tl('新建文件', 'New File') }}</span>
             </button>
             <button class="cs-btn cs-btn-primary" @click="showUploadDialog">
               <el-icon><Upload /></el-icon>
-              <span>{{ isZh ? '上传文件' : 'Upload' }}</span>
+              <span>{{ i18nStore.tl('上传文件', 'Upload') }}</span>
             </button>
             <button class="cs-btn" @click="showWgetDialog">
               <el-icon><Download /></el-icon>
-              <span>{{ isZh ? 'wget 下载' : 'wget File' }}</span>
+              <span>{{ i18nStore.tl('wget 下载', 'wget File') }}</span>
             </button>
           </div>
         </div>
@@ -153,28 +153,28 @@
         <!-- 操作条（vshell：操作集中在表格上方，取代原底部按钮行） -->
         <div class="fm-action-bar">
           <button class="cs-btn" @click="fetchDrives">
-            {{ isZh ? '驱动器 (Drives)' : 'Drives' }}
+            {{ i18nStore.tl('驱动器 (Drives)', 'Drives') }}
           </button>
           <button class="cs-btn" :disabled="selectedFiles.length === 0" @click="handleFileView()">
-            {{ isZh ? '查看/编辑 (View)' : 'View' }}
+            {{ i18nStore.tl('查看/编辑 (View)', 'View') }}
           </button>
           <button class="cs-btn" :disabled="selectedFiles.length === 0" @click="handleFileDownload()">
-            {{ isZh ? '下载 (Download)' : 'Download' }}
+            {{ i18nStore.tl('下载 (Download)', 'Download') }}
           </button>
           <button class="cs-btn" :disabled="selectedFiles.length === 0" @click="handleFileExecute()">
-            {{ isZh ? '执行 (Execute)...' : 'Execute...' }}
+            {{ i18nStore.tl('执行 (Execute)...', 'Execute...') }}
           </button>
           <button class="cs-btn cs-btn-danger" :disabled="selectedFiles.length === 0" @click="deleteSelectedFiles">
-            {{ isZh ? '删除 (Delete)' : 'Delete' }}
+            {{ i18nStore.tl('删除 (Delete)', 'Delete') }}
           </button>
           <button class="cs-btn" @click="handleHelp">
-            {{ isZh ? '帮助 (Help)' : 'Help' }}
+            {{ i18nStore.tl('帮助 (Help)', 'Help') }}
           </button>
 
           <div class="fm-spacer" />
 
           <span class="fm-status-info">
-            {{ isZh ? `共 ${filteredFiles.length} 项 | 路径: ${currentPath || '/'}` : `${filteredFiles.length} items | ${currentPath || '/'}` }}
+            {{ i18nStore.tl(`共 ${filteredFiles.length} 项 | 路径: ${currentPath || '/'}`, `${filteredFiles.length} items | ${currentPath || '/'}`) }}
           </span>
         </div>
 
@@ -196,7 +196,7 @@
           >
             <el-table-column type="selection" width="38" align="center" :reserve-selection="true" />
 
-            <el-table-column prop="name" :label="isZh ? '文件名' : 'Name'" min-width="160" sortable show-overflow-tooltip>
+            <el-table-column prop="name" :label="i18nStore.tl('文件名', 'Name')" min-width="160" sortable show-overflow-tooltip>
               <template #default="{ row }">
                 <div class="fm-file-cell">
                   <el-icon class="fm-item-icon" :class="getFileIconClass(row)">
@@ -208,7 +208,7 @@
               </template>
             </el-table-column>
 
-            <el-table-column prop="size" :label="isZh ? '大小' : 'Size'" width="115" sortable align="right">
+            <el-table-column prop="size" :label="i18nStore.tl('大小', 'Size')" width="115" sortable align="right">
               <template #default="{ row }">
                 <span class="fm-size-text cs-font-mono" :class="{ 'is-dir': row.type === 'D' }">
                   {{ row.type === 'D' ? '<DIR>' : formatFileSize(row.size) }}
@@ -216,13 +216,13 @@
               </template>
             </el-table-column>
 
-            <el-table-column prop="modifiedTime" :label="isZh ? '修改时间' : 'Modified Date'" width="230" sortable align="center">
+            <el-table-column prop="modifiedTime" :label="i18nStore.tl('修改时间', 'Modified Date')" width="230" sortable align="center">
               <template #default="{ row }">
                 <span class="cs-font-mono text-dim fm-time-text">{{ formatDateTime(row) }}</span>
               </template>
             </el-table-column>
 
-            <el-table-column prop="permissions" :label="isZh ? '权限' : 'Mode'" width="145" align="center">
+            <el-table-column prop="permissions" :label="i18nStore.tl('权限', 'Mode')" width="145" align="center">
               <template #default="{ row }">
                 <span class="cs-font-mono text-dim fm-perm-text">{{ formatPermissions(row.permissions) }}</span>
               </template>
@@ -231,8 +231,8 @@
             <template #empty>
               <div class="fm-empty">
                 <el-icon class="fm-empty-icon"><FolderOpened /></el-icon>
-                <div class="fm-empty-title">{{ isZh ? '当前目录无文件或尚未加载' : 'Directory Empty or Not Loaded' }}</div>
-                <div class="fm-empty-desc">{{ isZh ? '点击【刷新】或在上方输入路径加载目标文件系统。' : 'Click Refresh or enter a path above to browse the target filesystem.' }}</div>
+                <div class="fm-empty-title">{{ i18nStore.tl('当前目录无文件或尚未加载', 'Directory Empty or Not Loaded') }}</div>
+                <div class="fm-empty-desc">{{ i18nStore.tl('点击【刷新】或在上方输入路径加载目标文件系统。', 'Click Refresh or enter a path above to browse the target filesystem.') }}</div>
               </div>
             </template>
           </el-table>
@@ -260,52 +260,52 @@
         @contextmenu.prevent
       >
         <div class="ctx-item" @click="handleFileView(contextMenuItem)">
-          <span class="ctx-text">{{ contextMenuItem?.type === 'D' ? (isZh ? '进入目录 (O)' : 'Open (O)') : (isZh ? '查看 / 编辑文件 (V)' : 'View / Edit (V)') }}</span>
+          <span class="ctx-text">{{ contextMenuItem?.type === 'D' ? (i18nStore.tl('进入目录 (O)', 'Open (O)')) : (i18nStore.tl('查看 / 编辑文件 (V)', 'View / Edit (V)')) }}</span>
         </div>
         <div v-if="contextMenuItem?.type !== 'D'" class="ctx-item" @click="handleFileDownload(contextMenuItem)">
-          <span class="ctx-text">{{ isZh ? '下载文件 (D)' : 'Download (D)' }}</span>
+          <span class="ctx-text">{{ i18nStore.tl('下载文件 (D)', 'Download (D)') }}</span>
         </div>
         <div v-if="contextMenuItem?.type !== 'D'" class="ctx-item" @click="handleFileExecute(contextMenuItem)">
-          <span class="ctx-text">{{ isZh ? '执行文件 (E)...' : 'Execute (E)...' }}</span>
+          <span class="ctx-text">{{ i18nStore.tl('执行文件 (E)...', 'Execute (E)...') }}</span>
         </div>
         <div class="ctx-item" @click="renameItem(contextMenuItem)">
-          <span class="ctx-text">{{ isZh ? '重命名 (R)...' : 'Rename (R)...' }}</span>
+          <span class="ctx-text">{{ i18nStore.tl('重命名 (R)...', 'Rename (R)...') }}</span>
         </div>
         <div class="ctx-item" @click="copyItem(contextMenuItem)">
-          <span class="ctx-text">{{ isZh ? '复制到 (C)...' : 'Copy (C)...' }}</span>
+          <span class="ctx-text">{{ i18nStore.tl('复制到 (C)...', 'Copy (C)...') }}</span>
         </div>
         <div class="ctx-item" @click="moveItem(contextMenuItem)">
-          <span class="ctx-text">{{ isZh ? '移动到 (M)...' : 'Move (M)...' }}</span>
+          <span class="ctx-text">{{ i18nStore.tl('移动到 (M)...', 'Move (M)...') }}</span>
         </div>
         <div class="ctx-item" @click="copyPath(contextMenuItem)">
-          <span class="ctx-text">{{ isZh ? '拷贝完整路径 (P)' : 'Copy Path (P)' }}</span>
+          <span class="ctx-text">{{ i18nStore.tl('拷贝完整路径 (P)', 'Copy Path (P)') }}</span>
         </div>
         <div class="ctx-item" @click="modifyTime(contextMenuItem)">
-          <span class="ctx-text">{{ isZh ? '修改时间 (T)...' : 'Touch (T)...' }}</span>
+          <span class="ctx-text">{{ i18nStore.tl('修改时间 (T)...', 'Touch (T)...') }}</span>
         </div>
         <div class="ctx-divider" />
         <div class="ctx-item" @click="createNewFile">
-          <span class="ctx-text">{{ isZh ? '新建文件 (N)...' : 'New File (N)...' }}</span>
+          <span class="ctx-text">{{ i18nStore.tl('新建文件 (N)...', 'New File (N)...') }}</span>
         </div>
         <div class="ctx-item" @click="makeDirItem">
-          <span class="ctx-text">{{ isZh ? '新建文件夹 (F)...' : 'Make Directory (F)...' }}</span>
+          <span class="ctx-text">{{ i18nStore.tl('新建文件夹 (F)...', 'Make Directory (F)...') }}</span>
         </div>
         <div class="ctx-item" @click="uploadToHere">
-          <span class="ctx-text">{{ isZh ? '上传文件到此目录 (U)...' : 'Upload Here (U)...' }}</span>
+          <span class="ctx-text">{{ i18nStore.tl('上传文件到此目录 (U)...', 'Upload Here (U)...') }}</span>
         </div>
         <div class="ctx-item" @click="refreshCurrentFolder">
-          <span class="ctx-text">{{ isZh ? '刷新当前目录 (R)' : 'Refresh (R)' }}</span>
+          <span class="ctx-text">{{ i18nStore.tl('刷新当前目录 (R)', 'Refresh (R)') }}</span>
         </div>
         <div class="ctx-divider" />
         <div class="ctx-item" @click="hideItem(contextMenuItem)">
-          <span class="ctx-text">{{ isZh ? '隐藏此项' : 'Hide' }}</span>
+          <span class="ctx-text">{{ i18nStore.tl('隐藏此项', 'Hide') }}</span>
         </div>
         <div class="ctx-item" @click="unhideItem(contextMenuItem)">
-          <span class="ctx-text">{{ isZh ? '取消隐藏' : 'Unhide' }}</span>
+          <span class="ctx-text">{{ i18nStore.tl('取消隐藏', 'Unhide') }}</span>
         </div>
         <div class="ctx-divider" />
         <div class="ctx-item ctx-danger" @click="deleteItem(contextMenuItem)">
-          <span class="ctx-text">{{ isZh ? '删除 (Del)' : 'Delete (Del)' }}</span>
+          <span class="ctx-text">{{ i18nStore.tl('删除 (Del)', 'Delete (Del)') }}</span>
         </div>
       </div>
     </Teleport>
@@ -313,7 +313,7 @@
     <!-- 文件查看与编辑对话框 -->
     <el-dialog
       v-model="editDialogVisible"
-      :title="`${isZh ? '文件查看/编辑: ' : 'Edit File: '}${editingFile?.name || ''}`"
+      :title="`${i18nStore.tl('文件查看/编辑: ', 'Edit File: ')}${editingFile?.name || ''}`"
       width="820px"
       :close-on-click-modal="false"
       class="cs-dialog"
@@ -321,8 +321,8 @@
     >
       <div class="cs-dialog-body cs-font-ui" v-loading="editLoading">
         <div class="fm-editor-meta">
-          <span><b>{{ isZh ? '路径: ' : 'Path: ' }}</b><code class="cs-font-mono">{{ editingFile?.path }}</code></span>
-          <span><b>{{ isZh ? '大小: ' : 'Size: ' }}</b>{{ formatFileSize(editingFile?.size) }}</span>
+          <span><b>{{ i18nStore.tl('路径: ', 'Path: ') }}</b><code class="cs-font-mono">{{ editingFile?.path }}</code></span>
+          <span><b>{{ i18nStore.tl('大小: ', 'Size: ') }}</b>{{ formatFileSize(editingFile?.size) }}</span>
         </div>
         <div class="fm-editor-box">
           <div ref="editorLineNumbers" class="fm-editor-lines cs-font-mono">
@@ -334,7 +334,7 @@
             wrap="off"
             class="fm-editor-textarea cs-font-mono"
             spellcheck="false"
-            :placeholder="isZh ? '文件内容为空...' : 'File is empty...'"
+            :placeholder="i18nStore.tl('文件内容为空...', 'File is empty...')"
             @scroll="syncEditorScroll"
             @input="updateEditorLineNumbers"
           ></textarea>
@@ -342,9 +342,9 @@
       </div>
       <template #footer>
         <div class="cs-dialog-footer-center">
-          <button class="cs-btn cs-btn-primary" :disabled="editLoading" @click="saveFile">{{ isZh ? '保存 (Save)' : 'Save' }}</button>
-          <button class="cs-btn" @click="refreshEditContent">{{ isZh ? '重新读取' : 'Reload' }}</button>
-          <button class="cs-btn" @click="editDialogVisible = false">{{ isZh ? '关闭' : 'Close' }}</button>
+          <button class="cs-btn cs-btn-primary" :disabled="editLoading" @click="saveFile">{{ i18nStore.tl('保存 (Save)', 'Save') }}</button>
+          <button class="cs-btn" @click="refreshEditContent">{{ i18nStore.tl('重新读取', 'Reload') }}</button>
+          <button class="cs-btn" @click="editDialogVisible = false">{{ i18nStore.tl('关闭', 'Close') }}</button>
         </div>
       </template>
     </el-dialog>
@@ -352,7 +352,7 @@
     <!-- 执行文件对话框 -->
     <el-dialog
       v-model="executeDialogVisible"
-      :title="isZh ? '执行文件 (Execute)' : 'Execute File'"
+      :title="i18nStore.tl('执行文件 (Execute)', 'Execute File')"
       width="480px"
       :close-on-click-modal="false"
       class="cs-dialog"
@@ -360,25 +360,25 @@
     >
       <div class="cs-dialog-body cs-font-ui">
         <div class="cs-dialog-desc">
-          {{ isZh ? '向目标 Beacon 下发执行指令，在宿主操作系统上调用运行指定程序。' : 'Task beacon to execute the selected binary/script on the target.' }}
+          {{ i18nStore.tl('向目标 Beacon 下发执行指令，在宿主操作系统上调用运行指定程序。', 'Task beacon to execute the selected binary/script on the target.') }}
         </div>
         <div class="cs-form-row">
-          <label class="cs-form-label">{{ isZh ? '程序路径:' : 'Program:' }}</label>
+          <label class="cs-form-label">{{ i18nStore.tl('程序路径:', 'Program:') }}</label>
           <div class="cs-form-input-wrap">
             <el-input v-model="executeForm.path" readonly />
           </div>
         </div>
         <div class="cs-form-row">
-          <label class="cs-form-label">{{ isZh ? '运行参数:' : 'Arguments:' }}</label>
+          <label class="cs-form-label">{{ i18nStore.tl('运行参数:', 'Arguments:') }}</label>
           <div class="cs-form-input-wrap">
-            <el-input v-model="executeForm.args" :placeholder="isZh ? '命令行参数（可选）' : 'CLI arguments (optional)'" />
+            <el-input v-model="executeForm.args" :placeholder="i18nStore.tl('命令行参数（可选）', 'CLI arguments (optional)')" />
           </div>
         </div>
       </div>
       <template #footer>
         <div class="cs-dialog-footer-center">
-          <button class="cs-btn cs-btn-primary" @click="submitExecute">{{ isZh ? '执行' : 'Execute' }}</button>
-          <button class="cs-btn" @click="executeDialogVisible = false">{{ isZh ? '取消' : 'Cancel' }}</button>
+          <button class="cs-btn cs-btn-primary" @click="submitExecute">{{ i18nStore.tl('执行', 'Execute') }}</button>
+          <button class="cs-btn" @click="executeDialogVisible = false">{{ i18nStore.tl('取消', 'Cancel') }}</button>
         </div>
       </template>
     </el-dialog>
@@ -386,7 +386,7 @@
     <!-- 文件上传对话框 -->
     <el-dialog
       v-model="uploadDialogVisible"
-      :title="isZh ? '上传文件到目标机器' : 'Upload Files to Target'"
+      :title="i18nStore.tl('上传文件到目标机器', 'Upload Files to Target')"
       width="560px"
       :close-on-click-modal="false"
       class="cs-dialog"
@@ -394,7 +394,7 @@
     >
       <div class="cs-dialog-body cs-font-ui">
         <div class="fm-upload-path-hint">
-          <b>{{ isZh ? '目标目录: ' : 'Target Dir: ' }}</b>
+          <b>{{ i18nStore.tl('目标目录: ', 'Target Dir: ') }}</b>
           <code class="cs-font-mono">{{ currentPath || '/' }}</code>
         </div>
         <el-upload
@@ -407,23 +407,23 @@
           class="fm-upload-dragger"
         >
           <el-icon class="el-icon--upload"><Upload /></el-icon>
-          <div class="el-upload__text">{{ isZh ? '将文件拖到此处，或点击选择' : 'Drop files here or click to select' }}</div>
+          <div class="el-upload__text">{{ i18nStore.tl('将文件拖到此处，或点击选择', 'Drop files here or click to select') }}</div>
         </el-upload>
 
         <div v-if="uploadFileList.length > 0" class="fm-upload-list">
           <div v-for="(f, i) in uploadFileList" :key="i" class="fm-upload-item">
             <span class="fm-upload-name">{{ f.name }}</span>
             <span class="fm-upload-size cs-font-mono">{{ formatUploadFileSize(f.size) }}</span>
-            <button class="cs-btn cs-btn-xs cs-btn-danger" @click="uploadFileList.splice(i, 1)">{{ isZh ? '移除' : 'Remove' }}</button>
+            <button class="cs-btn cs-btn-xs cs-btn-danger" @click="uploadFileList.splice(i, 1)">{{ i18nStore.tl('移除', 'Remove') }}</button>
           </div>
         </div>
       </div>
       <template #footer>
         <div class="cs-dialog-footer-center">
           <button class="cs-btn cs-btn-primary" :disabled="uploadFileList.length === 0" @click="startUpload">
-            {{ isZh ? '开始上传' : 'Upload' }}
+            {{ i18nStore.tl('开始上传', 'Upload') }}
           </button>
-          <button class="cs-btn" @click="closeUploadDialog">{{ isZh ? '取消' : 'Cancel' }}</button>
+          <button class="cs-btn" @click="closeUploadDialog">{{ i18nStore.tl('取消', 'Cancel') }}</button>
         </div>
       </template>
     </el-dialog>
@@ -431,7 +431,7 @@
     <!-- wget 远程下载对话框 -->
     <el-dialog
       v-model="wgetDialogVisible"
-      :title="isZh ? 'wget 远程下载到目标机' : 'wget Download File'"
+      :title="i18nStore.tl('wget 远程下载到目标机', 'wget Download File')"
       width="500px"
       :close-on-click-modal="false"
       class="cs-dialog"
@@ -445,7 +445,7 @@
           </div>
         </div>
         <div class="cs-form-row">
-          <label class="cs-form-label">{{ isZh ? '保存路径:' : 'Save Path:' }}</label>
+          <label class="cs-form-label">{{ i18nStore.tl('保存路径:', 'Save Path:') }}</label>
           <div class="cs-form-input-wrap">
             <el-input v-model="wgetForm.path" :placeholder="currentPath" />
           </div>
@@ -453,8 +453,8 @@
       </div>
       <template #footer>
         <div class="cs-dialog-footer-center">
-          <button class="cs-btn cs-btn-primary" :disabled="!wgetForm.url" @click="executeWget">{{ isZh ? '下载' : 'Download' }}</button>
-          <button class="cs-btn" @click="wgetDialogVisible = false">{{ isZh ? '取消' : 'Cancel' }}</button>
+          <button class="cs-btn cs-btn-primary" :disabled="!wgetForm.url" @click="executeWget">{{ i18nStore.tl('下载', 'Download') }}</button>
+          <button class="cs-btn" @click="wgetDialogVisible = false">{{ i18nStore.tl('取消', 'Cancel') }}</button>
         </div>
       </template>
     </el-dialog>
@@ -462,7 +462,7 @@
     <!-- 下载进度对话框 -->
     <el-dialog
       v-model="downloadDialogVisible"
-      :title="isZh ? '文件下载进度' : 'Download Progress'"
+      :title="i18nStore.tl('文件下载进度', 'Download Progress')"
       @close="stopDownloadPoll"
       width="480px"
       :close-on-click-modal="false"
@@ -471,7 +471,7 @@
     >
       <div class="cs-dialog-body cs-font-ui">
         <div class="fm-dl-file">
-          <b>{{ isZh ? '下载文件: ' : 'File: ' }}</b><code>{{ currentDownloadFile?.name }}</code>
+          <b>{{ i18nStore.tl('下载文件: ', 'File: ') }}</b><code>{{ currentDownloadFile?.name }}</code>
         </div>
         <el-progress
           :percentage="downloadProgress"
@@ -479,15 +479,15 @@
           :stroke-width="12"
         />
         <div v-if="downloadSpeed" class="fm-dl-speed">
-          {{ isZh ? `下载速度: ${downloadSpeed}` : `Speed: ${downloadSpeed}` }}
+          {{ i18nStore.tl(`下载速度: ${downloadSpeed}`, `Speed: ${downloadSpeed}`) }}
         </div>
       </div>
       <template #footer>
         <div class="cs-dialog-footer-center">
           <button v-if="downloadStatus === 'success'" class="cs-btn cs-btn-primary" @click="openDownloadFolder">
-            {{ isZh ? '保存到本地' : 'Save Locally' }}
+            {{ i18nStore.tl('保存到本地', 'Save Locally') }}
           </button>
-          <button class="cs-btn" @click="downloadDialogVisible = false">{{ isZh ? '关闭' : 'Close' }}</button>
+          <button class="cs-btn" @click="downloadDialogVisible = false">{{ i18nStore.tl('关闭', 'Close') }}</button>
         </div>
       </template>
     </el-dialog>
@@ -495,21 +495,21 @@
     <!-- 帮助对话框 -->
     <el-dialog
       v-model="helpDialogVisible"
-      :title="isZh ? '文件管理帮助' : 'File Browser Help'"
+      :title="i18nStore.tl('文件管理帮助', 'File Browser Help')"
       width="460px"
       :close-on-click-modal="true"
       class="cs-dialog"
       append-to-body
     >
       <div class="cs-dialog-body cs-font-ui fm-help-body">
-        <p><b>{{ isZh ? '刷新列表 (List):' : 'List:' }}</b> {{ isZh ? '获取并展示当前目录的所有文件与子目录。' : 'Query and list files in current directory.' }}</p>
-        <p><b>{{ isZh ? '驱动器 (Drives):' : 'Drives:' }}</b> {{ isZh ? '列出目标系统的所有盘符与挂载点。' : 'Query all logical drives and mount points.' }}</p>
-        <p><b>{{ isZh ? '上传/下载 (Upload/Download):' : 'Upload/Download:' }}</b> {{ isZh ? '在操作机与被控主机之间安全传输文件。' : 'Transfer files between server and beacon.' }}</p>
-        <p><b>{{ isZh ? '执行 (Execute):' : 'Execute:' }}</b> {{ isZh ? '在被控主机后台运行指定的程序或脚本。' : 'Execute program on target system.' }}</p>
+        <p><b>{{ i18nStore.tl('刷新列表 (List):', 'List:') }}</b> {{ i18nStore.tl('获取并展示当前目录的所有文件与子目录。', 'Query and list files in current directory.') }}</p>
+        <p><b>{{ i18nStore.tl('驱动器 (Drives):', 'Drives:') }}</b> {{ i18nStore.tl('列出目标系统的所有盘符与挂载点。', 'Query all logical drives and mount points.') }}</p>
+        <p><b>{{ i18nStore.tl('上传/下载 (Upload/Download):', 'Upload/Download:') }}</b> {{ i18nStore.tl('在操作机与被控主机之间安全传输文件。', 'Transfer files between server and beacon.') }}</p>
+        <p><b>{{ i18nStore.tl('执行 (Execute):', 'Execute:') }}</b> {{ i18nStore.tl('在被控主机后台运行指定的程序或脚本。', 'Execute program on target system.') }}</p>
       </div>
       <template #footer>
         <div class="cs-dialog-footer-center">
-          <button class="cs-btn cs-btn-primary" @click="helpDialogVisible = false">{{ isZh ? '确定' : 'OK' }}</button>
+          <button class="cs-btn cs-btn-primary" @click="helpDialogVisible = false">{{ i18nStore.tl('确定', 'OK') }}</button>
         </div>
       </template>
     </el-dialog>

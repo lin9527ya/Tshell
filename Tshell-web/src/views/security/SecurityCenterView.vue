@@ -3,25 +3,25 @@
     <!-- 工具条：左侧标题，右侧操作 -->
     <div class="sc-toolbar">
       <div class="sc-title-group">
-        <span class="sc-title">{{ isZh ? '安全中心' : 'Security Center' }}</span>
+        <span class="sc-title">{{ i18nStore.tl('安全中心', 'Security Center') }}</span>
         <span class="sc-stats">
-          ({{ whitelist.length }} {{ isZh ? '个白名单' : 'whitelisted' }} / {{ blockedIPs.length }} {{ isZh ? '个封禁' : 'blocked' }})
+          ({{ whitelist.length }} {{ i18nStore.tl('个白名单', 'whitelisted') }} / {{ blockedIPs.length }} {{ i18nStore.tl('个封禁', 'blocked') }})
         </span>
       </div>
 
       <div class="sc-spacer" />
 
       <button class="cs-btn cs-btn-primary" @click="showAddWhitelistDialog = true">
-        {{ isZh ? '添加白名单 IP' : 'Add Whitelist IP' }}
+        {{ i18nStore.tl('添加白名单 IP', 'Add Whitelist IP') }}
       </button>
       <button class="cs-btn" :disabled="!selectedBlockedRow" @click="selectedBlockedRow && handleUnblock(selectedBlockedRow)">
-        {{ isZh ? '解除封禁' : 'Unblock IP' }}
+        {{ i18nStore.tl('解除封禁', 'Unblock IP') }}
       </button>
       <button class="cs-btn" @click="handleHelp">
-        {{ isZh ? '帮助' : 'Help' }}
+        {{ i18nStore.tl('帮助', 'Help') }}
       </button>
       <button class="cs-btn" :disabled="loading" @click="fetchData">
-        {{ isZh ? '刷新' : 'Refresh' }}
+        {{ i18nStore.tl('刷新', 'Refresh') }}
       </button>
     </div>
 
@@ -46,8 +46,8 @@
         <!-- 1. IP 白名单 (IP Whitelist) -->
         <div v-if="currentTab === 'whitelist'" class="sc-panel">
           <div class="sc-panel-header">
-            <span class="panel-title">{{ isZh ? '可信 IP 白名单' : 'Trusted IP Whitelist' }}</span>
-            <button class="cs-btn cs-btn-primary" @click="showAddWhitelistDialog = true">{{ isZh ? '添加 IP / CIDR' : 'Add IP / CIDR' }}</button>
+            <span class="panel-title">{{ i18nStore.tl('可信 IP 白名单', 'Trusted IP Whitelist') }}</span>
+            <button class="cs-btn cs-btn-primary" @click="showAddWhitelistDialog = true">{{ i18nStore.tl('添加 IP / CIDR', 'Add IP / CIDR') }}</button>
           </div>
           <div class="sc-table-wrap">
             <el-table
@@ -57,16 +57,16 @@
               class="cs-session-table"
               @current-change="(r: any) => selectedWhitelistRow = r"
             >
-              <el-table-column prop="ip" :label="isZh ? 'IP 地址 / 网段' : 'IP Address / Network'" min-width="220" sortable show-overflow-tooltip>
+              <el-table-column prop="ip" :label="i18nStore.tl('IP 地址 / 网段', 'IP Address / Network')" min-width="220" sortable show-overflow-tooltip>
                 <template #default="{ row }">
                   <span class="cs-font-mono font-bold">{{ row.ip }}</span>
                 </template>
               </el-table-column>
-              <el-table-column prop="network" :label="isZh ? '子网掩码' : 'Subnet Mask'" width="160" show-overflow-tooltip />
-              <el-table-column prop="created_at" :label="isZh ? '添加时间' : 'Added When'" width="180" show-overflow-tooltip />
-              <el-table-column :label="isZh ? '操作' : 'Actions'" width="110" align="center">
+              <el-table-column prop="network" :label="i18nStore.tl('子网掩码', 'Subnet Mask')" width="160" show-overflow-tooltip />
+              <el-table-column prop="created_at" :label="i18nStore.tl('添加时间', 'Added When')" width="180" show-overflow-tooltip />
+              <el-table-column :label="i18nStore.tl('操作', 'Actions')" width="110" align="center">
                 <template #default="{ row }">
-                  <button class="cs-btn cs-btn-xs cs-btn-danger" @click="handleRemoveWhitelist(row)">{{ isZh ? '移除' : 'Remove' }}</button>
+                  <button class="cs-btn cs-btn-xs cs-btn-danger" @click="handleRemoveWhitelist(row)">{{ i18nStore.tl('移除', 'Remove') }}</button>
                 </template>
               </el-table-column>
             </el-table>
@@ -76,9 +76,9 @@
         <!-- 2. 封禁 IP (Blocked IPs) -->
         <div v-else-if="currentTab === 'blocked'" class="sc-panel">
           <div class="sc-panel-header">
-            <span class="panel-title">{{ isZh ? '恶意封禁 IP 防御列表' : 'Blocked IP Defense List' }}</span>
+            <span class="panel-title">{{ i18nStore.tl('恶意封禁 IP 防御列表', 'Blocked IP Defense List') }}</span>
             <button class="cs-btn cs-btn-danger" :disabled="!selectedBlockedRow" @click="selectedBlockedRow && handleUnblock(selectedBlockedRow)">
-              {{ isZh ? '解除选中封禁' : 'Unblock Selected' }}
+              {{ i18nStore.tl('解除选中封禁', 'Unblock Selected') }}
             </button>
           </div>
           <div class="sc-table-wrap">
@@ -89,25 +89,25 @@
               class="cs-session-table"
               @current-change="(r: any) => selectedBlockedRow = r"
             >
-              <el-table-column prop="ip" :label="isZh ? '封禁 IP' : 'Blocked IP'" min-width="200" sortable show-overflow-tooltip>
+              <el-table-column prop="ip" :label="i18nStore.tl('封禁 IP', 'Blocked IP')" min-width="200" sortable show-overflow-tooltip>
                 <template #default="{ row }">
                   <span class="cs-font-mono text-danger font-bold">{{ row.ip }}</span>
                 </template>
               </el-table-column>
-              <el-table-column prop="reason" :label="isZh ? '封禁原因' : 'Block Reason'" min-width="180" show-overflow-tooltip />
-              <el-table-column prop="blocked_at" :label="isZh ? '封禁时间' : 'Blocked At'" width="170" show-overflow-tooltip>
+              <el-table-column prop="reason" :label="i18nStore.tl('封禁原因', 'Block Reason')" min-width="180" show-overflow-tooltip />
+              <el-table-column prop="blocked_at" :label="i18nStore.tl('封禁时间', 'Blocked At')" width="170" show-overflow-tooltip>
                 <template #default="{ row }">
                   <span class="cs-font-mono">{{ row.blocked_at || '-' }}</span>
                 </template>
               </el-table-column>
-              <el-table-column prop="attempts" :label="isZh ? '失败尝试' : 'Attempts'" width="90" align="right" sortable>
+              <el-table-column prop="attempts" :label="i18nStore.tl('失败尝试', 'Attempts')" width="90" align="right" sortable>
                 <template #default="{ row }">
                   <span class="cs-font-mono">{{ row.attempts ?? '-' }}</span>
                 </template>
               </el-table-column>
-              <el-table-column :label="isZh ? '操作' : 'Actions'" width="110" align="center">
+              <el-table-column :label="i18nStore.tl('操作', 'Actions')" width="110" align="center">
                 <template #default="{ row }">
-                  <button class="cs-btn cs-btn-xs" @click="handleUnblock(row)">{{ isZh ? '解除封禁' : 'Unblock' }}</button>
+                  <button class="cs-btn cs-btn-xs" @click="handleUnblock(row)">{{ i18nStore.tl('解除封禁', 'Unblock') }}</button>
                 </template>
               </el-table-column>
             </el-table>
@@ -117,24 +117,24 @@
         <!-- 3. 限流与防爆破策略 (Rate Limiting) -->
         <div v-else-if="currentTab === 'rate_limit'" class="sc-panel">
           <div class="sc-panel-header">
-            <span class="panel-title">{{ isZh ? '防爆破与请求限流策略' : 'Anti-Bruteforce & Rate Limiting Policy' }}</span>
-            <button class="cs-btn cs-btn-primary" @click="handleSaveRateLimit">{{ isZh ? '保存策略' : 'Save Policy' }}</button>
+            <span class="panel-title">{{ i18nStore.tl('防爆破与请求限流策略', 'Anti-Bruteforce & Rate Limiting Policy') }}</span>
+            <button class="cs-btn cs-btn-primary" @click="handleSaveRateLimit">{{ i18nStore.tl('保存策略', 'Save Policy') }}</button>
           </div>
 
           <div class="sc-panel-body">
             <div class="cs-form-container">
               <div class="cs-form-row">
-                <label class="cs-form-label">{{ isZh ? '登录防爆破阈值（次/分钟）' : 'Login Max Attempts / min' }}:</label>
+                <label class="cs-form-label">{{ i18nStore.tl('登录防爆破阈值（次/分钟）', 'Login Max Attempts / min') }}:</label>
                 <el-input-number v-model="rateLimitForm.login_rate_limit" :min="1" :max="100" />
               </div>
 
               <div class="cs-form-row">
-                <label class="cs-form-label">{{ isZh ? 'API 限流阈值（次/分钟）' : 'API Max Requests / min' }}:</label>
+                <label class="cs-form-label">{{ i18nStore.tl('API 限流阈值（次/分钟）', 'API Max Requests / min') }}:</label>
                 <el-input-number v-model="rateLimitForm.api_rate_limit" :min="10" :max="1000" />
               </div>
 
               <div class="cs-form-row">
-                <label class="cs-form-label">{{ isZh ? '自动封禁时长（分钟）' : 'Auto Block Duration in Minutes' }}:</label>
+                <label class="cs-form-label">{{ i18nStore.tl('自动封禁时长（分钟）', 'Auto Block Duration in Minutes') }}:</label>
                 <el-input-number v-model="rateLimitForm.block_duration" :min="1" :max="1440" />
               </div>
             </div>
@@ -144,26 +144,26 @@
         <!-- 4. 实时防御统计 (Realtime Stats) -->
         <div v-else-if="currentTab === 'stats'" class="sc-panel">
           <div class="sc-panel-header">
-            <span class="panel-title">{{ isZh ? '实时威胁防御指标' : 'Realtime Threat Defense Metrics' }}</span>
+            <span class="panel-title">{{ i18nStore.tl('实时威胁防御指标', 'Realtime Threat Defense Metrics') }}</span>
           </div>
 
           <div class="sc-panel-body">
             <div class="sc-stats-grid">
               <div class="stat-card">
                 <div class="stat-num">{{ stats.total_blocked || blockedIPs.length }}</div>
-                <div class="stat-lbl">{{ isZh ? '已封禁攻击总数' : 'Total Blocked Attacks' }}</div>
+                <div class="stat-lbl">{{ i18nStore.tl('已封禁攻击总数', 'Total Blocked Attacks') }}</div>
               </div>
               <div class="stat-card">
                 <div class="stat-num">{{ stats.whitelist_count || whitelist.length }}</div>
-                <div class="stat-lbl">{{ isZh ? '白名单条目数' : 'Active Whitelist Entries' }}</div>
+                <div class="stat-lbl">{{ i18nStore.tl('白名单条目数', 'Active Whitelist Entries') }}</div>
               </div>
               <div class="stat-card">
                 <div class="stat-num">{{ stats.active_defense || 'ON' }}</div>
-                <div class="stat-lbl">{{ isZh ? 'WAF 与限流状态' : 'WAF & Rate Limiter State' }}</div>
+                <div class="stat-lbl">{{ i18nStore.tl('WAF 与限流状态', 'WAF & Rate Limiter State') }}</div>
               </div>
               <div class="stat-card">
                 <div class="stat-num">{{ stats.rate_limit_hits || 0 }}</div>
-                <div class="stat-lbl">{{ isZh ? '被限流请求数' : 'Rate Limit Throttled Requests' }}</div>
+                <div class="stat-lbl">{{ i18nStore.tl('被限流请求数', 'Rate Limit Throttled Requests') }}</div>
               </div>
             </div>
           </div>
@@ -172,11 +172,11 @@
         <!-- 5. 近 1 小时实时访问 IP（后端 /security/realtime-stats，5s 自动刷新） -->
         <div v-else class="sc-panel">
           <div class="sc-panel-header">
-            <span class="panel-title">{{ isZh ? '近 1 小时活跃访问 IP' : 'Active Access IPs (Last 1 Hour)' }}</span>
+            <span class="panel-title">{{ i18nStore.tl('近 1 小时活跃访问 IP', 'Active Access IPs (Last 1 Hour)') }}</span>
             <div class="sc-header-actions">
-              <span class="sc-rt-hint">{{ realtimeStats.timestamp || (isZh ? '等待数据...' : 'Awaiting data...') }}</span>
+              <span class="sc-rt-hint">{{ realtimeStats.timestamp || (i18nStore.tl('等待数据...', 'Awaiting data...')) }}</span>
               <button class="cs-btn" :disabled="realtimeLoading" @click="fetchRealtimeStats">
-                {{ isZh ? '立即刷新' : 'Refresh Now' }}
+                {{ i18nStore.tl('立即刷新', 'Refresh Now') }}
               </button>
             </div>
           </div>
@@ -185,11 +185,11 @@
             <div class="sc-rt-stats">
               <div class="stat-card">
                 <div class="stat-num">{{ realtimeStats.total_active ?? 0 }}</div>
-                <div class="stat-lbl">{{ isZh ? '最近活跃来源数' : 'Recent Active Sources' }}</div>
+                <div class="stat-lbl">{{ i18nStore.tl('最近活跃来源数', 'Recent Active Sources') }}</div>
               </div>
               <div class="stat-card">
                 <div class="stat-num">{{ realtimeStats.timeframe || 'last 1 hour' }}</div>
-                <div class="stat-lbl">{{ isZh ? '统计时间窗' : 'Timeframe' }}</div>
+                <div class="stat-lbl">{{ i18nStore.tl('统计时间窗', 'Timeframe') }}</div>
               </div>
             </div>
           </div>
@@ -203,17 +203,17 @@
               v-loading="realtimeLoading"
             >
               <el-table-column type="index" label="#" width="50" align="center" />
-              <el-table-column prop="ip" :label="isZh ? '来源 IP' : 'Source IP'" min-width="220" sortable>
+              <el-table-column prop="ip" :label="i18nStore.tl('来源 IP', 'Source IP')" min-width="220" sortable>
                 <template #default="{ row }">
                   <span class="cs-font-mono font-bold">{{ row.ip }}</span>
                 </template>
               </el-table-column>
-              <el-table-column prop="count" :label="isZh ? '请求次数' : 'Requests'" width="120" align="right" sortable>
+              <el-table-column prop="count" :label="i18nStore.tl('请求次数', 'Requests')" width="120" align="right" sortable>
                 <template #default="{ row }">
                   <span class="cs-font-mono">{{ row.count ?? row.request_count ?? '-' }}</span>
                 </template>
               </el-table-column>
-              <el-table-column prop="last_seen" :label="isZh ? '最后活跃' : 'Last Seen'" width="180" sortable>
+              <el-table-column prop="last_seen" :label="i18nStore.tl('最后活跃', 'Last Seen')" width="180" sortable>
                 <template #default="{ row }">
                   <span class="cs-font-mono">{{ row.last_seen || row.last_active || '-' }}</span>
                 </template>
@@ -225,15 +225,15 @@
     </div>
 
     <!-- Add Whitelist Dialog -->
-    <el-dialog v-model="showAddWhitelistDialog" :title="isZh ? '添加 IP 白名单' : 'Add IP Whitelist'" width="420px" class="cs-dialog" append-to-body>
+    <el-dialog v-model="showAddWhitelistDialog" :title="i18nStore.tl('添加 IP 白名单', 'Add IP Whitelist')" width="420px" class="cs-dialog" append-to-body>
       <div class="cs-form-row">
-        <label class="cs-form-label">{{ isZh ? 'IP 地址 / CIDR' : 'IP Address / CIDR' }}:</label>
-        <el-input v-model="newWhitelistIP" :placeholder="isZh ? '例如 192.168.1.100 或 10.0.0.0/24' : 'e.g. 192.168.1.100 or 10.0.0.0/24'" />
+        <label class="cs-form-label">{{ i18nStore.tl('IP 地址 / CIDR', 'IP Address / CIDR') }}:</label>
+        <el-input v-model="newWhitelistIP" :placeholder="i18nStore.tl('例如 192.168.1.100 或 10.0.0.0/24', 'e.g. 192.168.1.100 or 10.0.0.0/24')" />
       </div>
       <template #footer>
         <div class="cs-dialog-footer">
-          <button class="cs-btn cs-btn-primary" @click="handleAddWhitelist">{{ isZh ? '添加' : 'Add' }}</button>
-          <button class="cs-btn" @click="showAddWhitelistDialog = false">{{ isZh ? '取消' : 'Cancel' }}</button>
+          <button class="cs-btn cs-btn-primary" @click="handleAddWhitelist">{{ i18nStore.tl('添加', 'Add') }}</button>
+          <button class="cs-btn" @click="showAddWhitelistDialog = false">{{ i18nStore.tl('取消', 'Cancel') }}</button>
         </div>
       </template>
     </el-dialog>

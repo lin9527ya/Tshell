@@ -5,35 +5,35 @@
         <div class="ab-logo">⚡</div>
         <div class="ab-meta">
           <div class="ab-name">Tshell</div>
-          <div class="ab-sub">{{ isZh ? '跨平台协同指挥与控制平台（开发版）' : 'Tshell C2 Multi-Platform Edition (Dev Build)' }}</div>
+          <div class="ab-sub">{{ i18nStore.tl('跨平台协同指挥与控制平台（开发版）', 'Tshell C2 Multi-Platform Edition (Dev Build)') }}</div>
         </div>
       </div>
 
       <div class="ab-body">
         <div class="ab-row">
-          <span class="row-k">{{ isZh ? '许可证授权' : 'License' }}</span>
-          <span class="row-v">{{ isZh ? '开发版（无授权声明）' : 'Dev build (no license claim)' }}</span>
+          <span class="row-k">{{ i18nStore.tl('许可证授权', 'License') }}</span>
+          <span class="row-v">{{ i18nStore.tl('开发版（无授权声明）', 'Dev build (no license claim)') }}</span>
         </div>
         <div class="ab-row">
-          <span class="row-k">{{ isZh ? '团队服务器' : 'TeamServer' }}</span>
+          <span class="row-k">{{ i18nStore.tl('团队服务器', 'TeamServer') }}</span>
           <span class="row-v">{{ hostInfo }}</span>
         </div>
         <div class="ab-row">
-          <span class="row-k">{{ isZh ? '操作员' : 'Operator' }}</span>
+          <span class="row-k">{{ i18nStore.tl('操作员', 'Operator') }}</span>
           <span class="row-v">{{ userStore.username || 'admin' }} ({{ userStore.roles || 'SuperAdmin' }})</span>
         </div>
         <div class="ab-row">
-          <span class="row-k">{{ isZh ? '支持协议' : 'Supported Protocols' }}</span>
+          <span class="row-k">{{ i18nStore.tl('支持协议', 'Supported Protocols') }}</span>
           <span class="row-v">TCP, WebSocket, HTTP, HTTPS, KCP, OSS, DNS</span>
         </div>
         <div class="ab-row">
-          <span class="row-k">{{ isZh ? '功能模块' : 'Modules' }}</span>
-          <span class="row-v">{{ isZh ? 'Beacon 会话, 隧道代理, Web 投递, 进程注入, SOCKS5' : 'Beacon, Tunnels, Web Delivery, Process Inject, SOCKS5' }}</span>
+          <span class="row-k">{{ i18nStore.tl('功能模块', 'Modules') }}</span>
+          <span class="row-v">{{ i18nStore.tl('Beacon 会话, 隧道代理, Web 投递, 进程注入, SOCKS5', 'Beacon, Tunnels, Web Delivery, Process Inject, SOCKS5') }}</span>
         </div>
       </div>
 
       <div class="ab-note">
-        {{ isZh ? 'Tshell 专为红队战术推演、跨平台命令控制与实战攻防设计。' : 'Tshell is a cross-platform command & control platform for adversary simulation and red team operations.' }}
+        {{ i18nStore.tl('Tshell 专为红队战术推演、跨平台命令控制与实战攻防设计。', 'Tshell is a cross-platform command & control platform for adversary simulation and red team operations.') }}
       </div>
     </div>
   </div>
@@ -48,7 +48,6 @@ defineOptions({ name: 'About' })
 
 const userStore = useUserStore()
 const i18nStore = useI18nStore()
-const isZh = computed(() => i18nStore.isZh)
 const hostInfo = computed(() => `${window.location.protocol}//${window.location.host}`)
 </script>
 

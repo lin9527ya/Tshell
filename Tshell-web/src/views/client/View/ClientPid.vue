@@ -4,8 +4,8 @@
     <div class="pv-toolbar">
       <div class="pv-title-group">
         <el-icon class="pv-title-icon"><Cpu /></el-icon>
-        <span class="pv-title">{{ isZh ? '进程管理: ' : 'Processes: ' }}{{ hostDisplay }}</span>
-        <span class="pv-count">({{ isZh ? `共 ${filteredList.length} 个进程` : `${filteredList.length} processes` }})</span>
+        <span class="pv-title">{{ i18nStore.tl('进程管理: ', 'Processes: ') }}{{ hostDisplay }}</span>
+        <span class="pv-count">({{ i18nStore.tl(`共 ${filteredList.length} 个进程`, `${filteredList.length} processes`) }})</span>
       </div>
 
       <!-- View Mode Toggle (Tree vs Flat) -->
@@ -13,20 +13,20 @@
         <button
           class="pv-mode-btn"
           :class="{ active: viewMode === 'tree' }"
-          :title="isZh ? '按父子进程层级展示' : 'Process Tree View'"
+          :title="i18nStore.tl('按父子进程层级展示', 'Process Tree View')"
           @click="viewMode = 'tree'"
         >
           <el-icon><Operation /></el-icon>
-          <span>{{ isZh ? '进程树' : 'Tree' }}</span>
+          <span>{{ i18nStore.tl('进程树', 'Tree') }}</span>
         </button>
         <button
           class="pv-mode-btn"
           :class="{ active: viewMode === 'flat' }"
-          :title="isZh ? '平铺展示全部进程' : 'Flat Table View'"
+          :title="i18nStore.tl('平铺展示全部进程', 'Flat Table View')"
           @click="viewMode = 'flat'"
         >
           <el-icon><Menu /></el-icon>
-          <span>{{ isZh ? '平铺列表' : 'Flat' }}</span>
+          <span>{{ i18nStore.tl('平铺列表', 'Flat') }}</span>
         </button>
       </div>
 
@@ -37,7 +37,7 @@
           :class="{ active: filterCategory === 'all' }"
           @click="filterCategory = 'all'"
         >
-          {{ isZh ? '全部' : 'All' }} ({{ processList.length }})
+          {{ i18nStore.tl('全部', 'All') }} ({{ processList.length }})
         </button>
         <button
           v-if="detectedAvCount > 0"
@@ -45,21 +45,21 @@
           :class="{ active: filterCategory === 'av' }"
           @click="filterCategory = 'av'"
         >
-          🛡️ {{ isZh ? '安全防护' : 'AV/EDR' }} ({{ detectedAvCount }})
+          🛡️ {{ i18nStore.tl('安全防护', 'AV/EDR') }} ({{ detectedAvCount }})
         </button>
         <button
           class="pv-pill pv-pill-beacon"
           :class="{ active: filterCategory === 'beacon' }"
           @click="filterCategory = 'beacon'"
         >
-          ⭐ {{ isZh ? '当前Beacon' : 'Self' }}
+          ⭐ {{ i18nStore.tl('当前Beacon', 'Self') }}
         </button>
         <button
           class="pv-pill pv-pill-admin"
           :class="{ active: filterCategory === 'admin' }"
           @click="filterCategory = 'admin'"
         >
-          👑 {{ isZh ? '高权限' : 'Elevated' }}
+          👑 {{ i18nStore.tl('高权限', 'Elevated') }}
         </button>
       </div>
 
@@ -67,39 +67,39 @@
 
       <el-input
         v-model="searchKeyword"
-        :placeholder="isZh ? '过滤进程名、用户、PID、杀软...' : 'Filter name, user, PID, AV...'"
+        :placeholder="i18nStore.tl('过滤进程名、用户、PID、杀软...', 'Filter name, user, PID, AV...')"
         clearable
         class="pv-search-input"
       />
 
       <button class="cs-btn" :disabled="loading" @click="fetchProcessList">
         <el-icon :class="{ 'is-loading': loading }"><Refresh /></el-icon>
-        <span>{{ isZh ? '刷新' : 'Refresh' }}</span>
+        <span>{{ i18nStore.tl('刷新', 'Refresh') }}</span>
       </button>
     </div>
 
     <!-- 操作条（vshell：操作集中在内容上方，取代原底部按钮行） -->
     <div class="pv-action-bar">
       <button class="cs-btn cs-btn-primary" :disabled="!selectedRow" @click="handleInject">
-        {{ isZh ? '进程注入 (Inject)' : 'Inject' }}
+        {{ i18nStore.tl('进程注入 (Inject)', 'Inject') }}
       </button>
       <button class="cs-btn" :disabled="!selectedRow" @click="handleStealToken">
-        {{ isZh ? '窃取令牌 (Token)' : 'Steal Token' }}
+        {{ i18nStore.tl('窃取令牌 (Token)', 'Steal Token') }}
       </button>
       <button class="cs-btn" :disabled="!selectedRow" @click="handleScreenshot">
-        {{ isZh ? '屏幕截图' : 'Screenshot' }}
+        {{ i18nStore.tl('屏幕截图', 'Screenshot') }}
       </button>
       <button class="cs-btn cs-btn-danger" :disabled="!selectedRow" @click="handleKill">
-        {{ isZh ? '结束进程 (Kill)' : 'Kill' }}
+        {{ i18nStore.tl('结束进程 (Kill)', 'Kill') }}
       </button>
       <button class="cs-btn" @click="handleHelp">
-        {{ isZh ? '帮助' : 'Help' }}
+        {{ i18nStore.tl('帮助', 'Help') }}
       </button>
 
       <div class="pv-spacer" />
 
       <span class="pv-status-info">
-        {{ isZh ? `当前选中: ${selectedRow ? `${selectedRow.Name} (PID: ${selectedRow.PID})` : '无'}` : `Selected: ${selectedRow ? `${selectedRow.Name} (${selectedRow.PID})` : 'None'}` }}
+        {{ i18nStore.tl(`当前选中: ${selectedRow ? `${selectedRow.Name} (PID: ${selectedRow.PID})` : '无'}`, `Selected: ${selectedRow ? `${selectedRow.Name} (${selectedRow.PID})` : 'None'}`) }}
       </span>
     </div>
 
@@ -120,7 +120,7 @@
         @current-change="onCurrentChange"
         @row-dblclick="handleInject"
       >
-        <el-table-column prop="Name" :label="isZh ? '进程名' : 'Name'" min-width="260" show-overflow-tooltip>
+        <el-table-column prop="Name" :label="i18nStore.tl('进程名', 'Name')" min-width="260" show-overflow-tooltip>
           <template #default="{ row }">
             <div class="proc-name-cell">
               <span class="proc-name" :class="{ 'is-current': isCurrentBeaconPid(row.PID), 'is-av': !!getAvInfo(row.Name) }">
@@ -129,7 +129,7 @@
 
               <!-- Self Beacon Tag -->
               <span v-if="isCurrentBeaconPid(row.PID)" class="beacon-self-tag">
-                ⭐ {{ isZh ? '当前 Beacon' : 'Self Beacon' }}
+                ⭐ {{ i18nStore.tl('当前 Beacon', 'Self Beacon') }}
               </span>
 
               <!-- AV / EDR Shield Tag -->
@@ -154,7 +154,7 @@
           </template>
         </el-table-column>
 
-        <el-table-column prop="Arch" :label="isZh ? '架构' : 'Arch'" width="85" sortable align="center">
+        <el-table-column prop="Arch" :label="i18nStore.tl('架构', 'Arch')" width="85" sortable align="center">
           <template #default="{ row }">
             <span class="arch-badge" :class="row.Arch === 'x64' ? 'arch-64' : 'arch-86'">
               {{ row.Arch || 'x64' }}
@@ -162,7 +162,7 @@
           </template>
         </el-table-column>
 
-        <el-table-column prop="User" :label="isZh ? '运行用户 / 权限' : 'User / Privilege'" min-width="200" sortable show-overflow-tooltip>
+        <el-table-column prop="User" :label="i18nStore.tl('运行用户 / 权限', 'User / Privilege')" min-width="200" sortable show-overflow-tooltip>
           <template #default="{ row }">
             <div class="user-info-cell">
               <span v-if="isAdminUser(row.User)" class="priv-badge priv-system">👑 SYSTEM</span>
@@ -175,9 +175,9 @@
           </template>
         </el-table-column>
 
-        <el-table-column prop="ProcessInfo" :label="isZh ? '会话 / 详细信息' : 'Session / Details'" min-width="200" sortable show-overflow-tooltip>
+        <el-table-column prop="ProcessInfo" :label="i18nStore.tl('会话 / 详细信息', 'Session / Details')" min-width="200" sortable show-overflow-tooltip>
           <template #default="{ row }">
-            <span class="text-dim cs-font-mono">{{ row.ProcessInfo || (isZh ? '会话 1' : 'Session 1') }}</span>
+            <span class="text-dim cs-font-mono">{{ row.ProcessInfo || (i18nStore.tl('会话 1', 'Session 1')) }}</span>
           </template>
         </el-table-column>
 
@@ -185,8 +185,8 @@
           <EmptyState
             icon="⚙️"
             variant="inline"
-            :title="isZh ? '暂无进程数据' : 'No Process Data'"
-            :desc="isZh ? '点击右上角「刷新」向当前 Beacon 下发进程列表查询任务。' : 'Click [ Refresh ] to query processes.'"
+            :title="i18nStore.tl('暂无进程数据', 'No Process Data')"
+            :desc="i18nStore.tl('点击右上角「刷新」向当前 Beacon 下发进程列表查询任务。', 'Click [ Refresh ] to query processes.')"
           />
         </template>
       </el-table>
@@ -196,7 +196,7 @@
     <!-- Process Inject Dialog (Native CS Process Inject Modal) -->
     <el-dialog
       v-model="injectDialogVisible"
-      :title="isZh ? '进程注入 / 迁移 (Process Inject)' : 'Process Inject / Migrate'"
+      :title="i18nStore.tl('进程注入 / 迁移 (Process Inject)', 'Process Inject / Migrate')"
       width="560px"
       :close-on-click-modal="false"
       append-to-body
@@ -204,59 +204,59 @@
     >
       <div class="cs-dialog-body cs-font-ui">
         <div class="cs-dialog-desc">
-          {{ isZh ? '向目标进程注入 Shellcode 或完整 Beacon 载荷；注入后新会话将以该目标进程身份隐蔽上线。' : 'Inject shellcode or stageless beacon into target process. The new session runs as this process.' }}
+          {{ i18nStore.tl('向目标进程注入 Shellcode 或完整 Beacon 载荷；注入后新会话将以该目标进程身份隐蔽上线。', 'Inject shellcode or stageless beacon into target process. The new session runs as this process.') }}
         </div>
 
         <div class="cs-form-row">
-          <label class="cs-form-label">{{ isZh ? '目标进程:' : 'Target Proc:' }}</label>
+          <label class="cs-form-label">{{ i18nStore.tl('目标进程:', 'Target Proc:') }}</label>
           <div class="cs-form-input-wrap">
             <el-input :model-value="`${selectedRow?.Name || 'Process'} (PID: ${selectedRow?.PID || '?'}, ${selectedRow?.Arch || 'x64'}, ${selectedRow?.User || '-'})`" readonly />
           </div>
         </div>
 
         <div class="cs-form-row">
-          <label class="cs-form-label">{{ isZh ? '注入模式:' : 'Inject Mode:' }}</label>
+          <label class="cs-form-label">{{ i18nStore.tl('注入模式:', 'Inject Mode:') }}</label>
           <div class="cs-form-input-wrap">
             <el-radio-group v-model="injectForm.type">
-              <el-radio-button label="listener">{{ isZh ? '生成监听器载荷 (上线新会话)' : 'Listener Payload' }}</el-radio-button>
-              <el-radio-button label="custom">{{ isZh ? '自定义 Shellcode 文件' : 'Custom Shellcode' }}</el-radio-button>
+              <el-radio-button label="listener">{{ i18nStore.tl('生成监听器载荷 (上线新会话)', 'Listener Payload') }}</el-radio-button>
+              <el-radio-button label="custom">{{ i18nStore.tl('自定义 Shellcode 文件', 'Custom Shellcode') }}</el-radio-button>
             </el-radio-group>
           </div>
         </div>
 
         <template v-if="injectForm.type === 'listener'">
           <div class="cs-form-row">
-            <label class="cs-form-label">{{ isZh ? '监听器:' : 'Listener:' }}</label>
+            <label class="cs-form-label">{{ i18nStore.tl('监听器:', 'Listener:') }}</label>
             <div class="cs-form-input-wrap">
-              <el-select v-model="injectForm.listener" style="width: 100%" :placeholder="isZh ? '选择监听器' : 'Select listener'" @visible-change="onListenerDropdown">
+              <el-select v-model="injectForm.listener" style="width: 100%" :placeholder="i18nStore.tl('选择监听器', 'Select listener')" @visible-change="onListenerDropdown">
                 <el-option v-for="l in listenerOptions" :key="l.name" :label="l.name" :value="l.name" />
               </el-select>
             </div>
           </div>
           <div class="cs-form-row">
-            <label class="cs-form-label">{{ isZh ? '上线密码:' : 'Pass:' }}</label>
+            <label class="cs-form-label">{{ i18nStore.tl('上线密码:', 'Pass:') }}</label>
             <div class="cs-form-input-wrap">
-              <el-input v-model="injectForm.pass" :placeholder="isZh ? '注入载荷不支持口令参数(反射加载无命令行)' : 'Pass is ignored for injected payload (no CLI args)'" />
+              <el-input v-model="injectForm.pass" :placeholder="i18nStore.tl('注入载荷不支持口令参数(反射加载无命令行)', 'Pass is ignored for injected payload (no CLI args)')" />
             </div>
           </div>
         </template>
 
         <template v-else>
           <div class="cs-form-row">
-            <label class="cs-form-label">{{ isZh ? 'Shellcode 文件:' : 'Raw File:' }}</label>
+            <label class="cs-form-label">{{ i18nStore.tl('Shellcode 文件:', 'Raw File:') }}</label>
             <div class="cs-form-input-wrap" style="display: flex; gap: 8px;">
-              <el-input :model-value="customFileName || (isZh ? '未选择文件' : 'No file selected')" readonly />
-              <button class="cs-btn cs-btn-xs" @click="selectCustomFile">{{ isZh ? '选择文件...' : 'Browse...' }}</button>
+              <el-input :model-value="customFileName || (i18nStore.tl('未选择文件', 'No file selected'))" readonly />
+              <button class="cs-btn cs-btn-xs" @click="selectCustomFile">{{ i18nStore.tl('选择文件...', 'Browse...') }}</button>
               <input ref="customFileInput" type="file" style="display: none" accept=".bin,.raw,.dat,*" @change="onCustomFileChange" />
             </div>
           </div>
         </template>
 
         <div class="cs-form-row">
-          <label class="cs-form-label">{{ isZh ? '注入技术:' : 'Technique:' }}</label>
+          <label class="cs-form-label">{{ i18nStore.tl('注入技术:', 'Technique:') }}</label>
           <div class="cs-form-input-wrap">
             <el-select v-model="injectForm.tech" style="width: 100%">
-              <el-option :label="isZh ? 'auto（隐蔽注入链，推荐）' : 'auto (stealth chain, recommended)'" value="auto" />
+              <el-option :label="i18nStore.tl('auto（隐蔽注入链，推荐）', 'auto (stealth chain, recommended)')" value="auto" />
               <el-option label="NtCreateThreadEx (ntc)" value="ntc" />
               <el-option label="QueueUserAPC (apc)" value="apc" />
               <el-option label="CreateRemoteThread (crt)" value="crt" />
@@ -268,9 +268,9 @@
       <template #footer>
         <div class="cs-dialog-footer-center">
           <button class="cs-btn cs-btn-primary" :disabled="injectBusy || (injectForm.type === 'listener' && !injectForm.listener) || (injectForm.type === 'custom' && !customFile)" @click="submitProcessInject">
-            {{ injectBusy ? (isZh ? '注入中...' : 'Injecting...') : (isZh ? '执行注入' : 'Inject') }}
+            {{ injectBusy ? (i18nStore.tl('注入中...', 'Injecting...')) : (i18nStore.tl('执行注入', 'Inject')) }}
           </button>
-          <button class="cs-btn" @click="injectDialogVisible = false">{{ isZh ? '取消' : 'Cancel' }}</button>
+          <button class="cs-btn" @click="injectDialogVisible = false">{{ i18nStore.tl('取消', 'Cancel') }}</button>
         </div>
       </template>
     </el-dialog>
@@ -278,22 +278,22 @@
     <!-- Process Browser Help Dialog -->
     <el-dialog
       v-model="helpDialogVisible"
-      :title="isZh ? '进程管理帮助' : 'Process Browser Help'"
+      :title="i18nStore.tl('进程管理帮助', 'Process Browser Help')"
       width="500px"
       :close-on-click-modal="true"
       append-to-body
       class="cs-dialog"
     >
       <div class="cs-dialog-body cs-font-ui pv-help-body">
-        <p><b>{{ isZh ? '进程树 (Tree View):' : 'Tree View:' }}</b> {{ isZh ? '清晰展示父进程(PPID)与子进程(PID)衍生关系，快速排查异常进程链。' : 'Displays PPID->PID hierarchy to inspect execution chains.' }}</p>
-        <p><b>{{ isZh ? '杀软识别 (AV Detection):' : 'AV Detection:' }}</b> {{ isZh ? '自动匹配常见安全防御软件（360、Defender、火绒、CrowdStrike 等）并高亮标记。' : 'Automatically highlights detected AV/EDR security software.' }}</p>
-        <p><b>{{ isZh ? '结束进程 (Kill):' : 'Kill:' }}</b> {{ isZh ? '向目标 Beacon 下发任务终止指定 PID 的进程。' : 'Task beacon to kill the specified process by PID.' }}</p>
-        <p><b>{{ isZh ? '进程注入 (Inject):' : 'Inject:' }}</b> {{ isZh ? '将无阶段 Shellcode 注入目标进程（如 explorer.exe），使新会话在该进程内运行并上线。' : 'Inject stageless shellcode into a target process to spawn a new beacon under that process.' }}</p>
-        <p><b>{{ isZh ? '窃取令牌 (Steal Token):' : 'Steal Token:' }}</b> {{ isZh ? '窃取目标进程的主访问安全令牌，使后续所有操作在该用户上下文中执行。' : 'Steal the primary access token from the process to impersonate its user.' }}</p>
+        <p><b>{{ i18nStore.tl('进程树 (Tree View):', 'Tree View:') }}</b> {{ i18nStore.tl('清晰展示父进程(PPID)与子进程(PID)衍生关系，快速排查异常进程链。', 'Displays PPID->PID hierarchy to inspect execution chains.') }}</p>
+        <p><b>{{ i18nStore.tl('杀软识别 (AV Detection):', 'AV Detection:') }}</b> {{ i18nStore.tl('自动匹配常见安全防御软件（360、Defender、火绒、CrowdStrike 等）并高亮标记。', 'Automatically highlights detected AV/EDR security software.') }}</p>
+        <p><b>{{ i18nStore.tl('结束进程 (Kill):', 'Kill:') }}</b> {{ i18nStore.tl('向目标 Beacon 下发任务终止指定 PID 的进程。', 'Task beacon to kill the specified process by PID.') }}</p>
+        <p><b>{{ i18nStore.tl('进程注入 (Inject):', 'Inject:') }}</b> {{ i18nStore.tl('将无阶段 Shellcode 注入目标进程（如 explorer.exe），使新会话在该进程内运行并上线。', 'Inject stageless shellcode into a target process to spawn a new beacon under that process.') }}</p>
+        <p><b>{{ i18nStore.tl('窃取令牌 (Steal Token):', 'Steal Token:') }}</b> {{ i18nStore.tl('窃取目标进程的主访问安全令牌，使后续所有操作在该用户上下文中执行。', 'Steal the primary access token from the process to impersonate its user.') }}</p>
       </div>
       <template #footer>
         <div class="cs-dialog-footer-center">
-          <button class="cs-btn cs-btn-primary" @click="helpDialogVisible = false">{{ isZh ? '确定' : 'OK' }}</button>
+          <button class="cs-btn cs-btn-primary" @click="helpDialogVisible = false">{{ i18nStore.tl('确定', 'OK') }}</button>
         </div>
       </template>
     </el-dialog>

@@ -3,28 +3,28 @@
     <!-- 工具条：左侧标题/状态，右侧操作 -->
     <div class="km-toolbar">
       <div class="km-title-group">
-        <span class="km-title">{{ isZh ? '密钥管理与通知协同' : 'Key Management & Alerts' }}</span>
+        <span class="km-title">{{ i18nStore.tl('密钥管理与通知协同', 'Key Management & Alerts') }}</span>
         <span class="km-status" :class="notifConfig.enable ? 'online' : 'offline'">
-          {{ notifConfig.enable ? (isZh ? '通知已开启' : 'Alerts Enabled') : (isZh ? '通知已禁用' : 'Alerts Disabled') }}
+          {{ notifConfig.enable ? (i18nStore.tl('通知已开启', 'Alerts Enabled')) : (i18nStore.tl('通知已禁用', 'Alerts Disabled')) }}
         </span>
       </div>
 
       <div class="km-spacer" />
 
       <button class="cs-btn" @click="handleHelp">
-        {{ isZh ? '帮助' : 'Help' }}
+        {{ i18nStore.tl('帮助', 'Help') }}
       </button>
 
       <button class="cs-btn" :disabled="loading" @click="fetchConfigs">
-        {{ isZh ? '刷新' : 'Refresh' }}
+        {{ i18nStore.tl('刷新', 'Refresh') }}
       </button>
 
       <button class="cs-btn" :disabled="testing" @click="handleTestNotification">
-        {{ testing ? (isZh ? '发送测试中...' : 'Sending Test...') : (isZh ? '测试通知' : 'Test Notification') }}
+        {{ testing ? (i18nStore.tl('发送测试中...', 'Sending Test...')) : (i18nStore.tl('测试通知', 'Test Notification')) }}
       </button>
 
       <button class="cs-btn cs-btn-primary" :disabled="saving" @click="handleSaveConfig">
-        {{ saving ? (isZh ? '保存中...' : 'Saving...') : (isZh ? '保存配置' : 'Save Configuration') }}
+        {{ saving ? (i18nStore.tl('保存中...', 'Saving...')) : (i18nStore.tl('保存配置', 'Save Configuration')) }}
       </button>
     </div>
 
@@ -50,21 +50,21 @@
         <!-- 1. 钉钉机器人 (DingTalk) -->
         <div v-if="currentTab === 'dingtalk'" class="km-panel">
           <div class="km-panel-header">
-            <span class="km-panel-title">{{ isZh ? '钉钉机器人协同配置' : 'DingTalk Alert Bot Configuration' }}</span>
+            <span class="km-panel-title">{{ i18nStore.tl('钉钉机器人协同配置', 'DingTalk Alert Bot Configuration') }}</span>
           </div>
           <div class="km-panel-body">
             <p class="km-panel-desc">
-              {{ isZh ? '当新 Beacon 会话上线或执行高危命令时，实时推送通知到指定钉钉群。' : 'Sends real-time push notifications to designated DingTalk group when new Beacon sessions come online or high-risk commands are executed.' }}
+              {{ i18nStore.tl('当新 Beacon 会话上线或执行高危命令时，实时推送通知到指定钉钉群。', 'Sends real-time push notifications to designated DingTalk group when new Beacon sessions come online or high-risk commands are executed.') }}
             </p>
 
             <div class="cs-form-container">
               <div class="cs-form-row">
-                <label class="cs-form-label">{{ isZh ? '启用钉钉' : 'Enable DingTalk' }}:</label>
+                <label class="cs-form-label">{{ i18nStore.tl('启用钉钉', 'Enable DingTalk') }}:</label>
                 <el-switch v-model="notifConfig.dingtalk.enable" />
               </div>
 
               <div class="cs-form-row">
-                <label class="cs-form-label">{{ isZh ? 'Webhook Token / Access Token' : 'Webhook Token / Access Token' }}:</label>
+                <label class="cs-form-label">{{ i18nStore.tl('Webhook Token / Access Token', 'Webhook Token / Access Token') }}:</label>
                 <el-input
                   v-model="notifConfig.dingtalk.token"
                   placeholder="e.g. 7c9a6f7b8c..."
@@ -74,7 +74,7 @@
               </div>
 
               <div class="cs-form-row">
-                <label class="cs-form-label">{{ isZh ? '签名密钥（SEC...）' : 'Sign Secret (SEC...)' }}:</label>
+                <label class="cs-form-label">{{ i18nStore.tl('签名密钥（SEC...）', 'Sign Secret (SEC...)') }}:</label>
                 <el-input
                   v-model="notifConfig.dingtalk.secret"
                   placeholder="e.g. SEC1234567..."
@@ -84,7 +84,7 @@
               </div>
 
               <div class="cs-form-row">
-                <label class="cs-form-label">{{ isZh ? '安全关键词' : 'Security Keyword' }}:</label>
+                <label class="cs-form-label">{{ i18nStore.tl('安全关键词', 'Security Keyword') }}:</label>
                 <el-input
                   v-model="notifConfig.dingtalk.keyword"
                   placeholder="e.g. Beacon / Tshell"
@@ -98,21 +98,21 @@
         <!-- 2. 飞书机器人 (Feishu) -->
         <div v-else-if="currentTab === 'feishu'" class="km-panel">
           <div class="km-panel-header">
-            <span class="km-panel-title">{{ isZh ? '飞书机器人协同配置' : 'Feishu / Lark Alert Bot Configuration' }}</span>
+            <span class="km-panel-title">{{ i18nStore.tl('飞书机器人协同配置', 'Feishu / Lark Alert Bot Configuration') }}</span>
           </div>
           <div class="km-panel-body">
             <p class="km-panel-desc">
-              {{ isZh ? '接入飞书自定义机器人 Webhook，用于事件推送告警、交互卡片和会话跟踪。' : 'Integrate with Feishu Custom Bot Webhook for event push alerts, interactive cards, and session tracking.' }}
+              {{ i18nStore.tl('接入飞书自定义机器人 Webhook，用于事件推送告警、交互卡片和会话跟踪。', 'Integrate with Feishu Custom Bot Webhook for event push alerts, interactive cards, and session tracking.') }}
             </p>
 
             <div class="cs-form-container">
               <div class="cs-form-row">
-                <label class="cs-form-label">{{ isZh ? '启用飞书' : 'Enable Feishu' }}:</label>
+                <label class="cs-form-label">{{ i18nStore.tl('启用飞书', 'Enable Feishu') }}:</label>
                 <el-switch v-model="notifConfig.feishu.enable" />
               </div>
 
               <div class="cs-form-row">
-                <label class="cs-form-label">{{ isZh ? '自定义机器人 Webhook URL' : 'Custom Bot Webhook URL' }}:</label>
+                <label class="cs-form-label">{{ i18nStore.tl('自定义机器人 Webhook URL', 'Custom Bot Webhook URL') }}:</label>
                 <el-input
                   v-model="notifConfig.feishu.webhook"
                   placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/..."
@@ -121,17 +121,17 @@
               </div>
 
               <div class="cs-form-row">
-                <label class="cs-form-label">{{ isZh ? '签名校验密钥' : 'Verification Secret' }}:</label>
+                <label class="cs-form-label">{{ i18nStore.tl('签名校验密钥', 'Verification Secret') }}:</label>
                 <el-input
                   v-model="notifConfig.feishu.secret"
-                  :placeholder="isZh ? '可选飞书 Webhook 签名密钥' : 'Optional Feishu webhook signing secret'"
+                  :placeholder="i18nStore.tl('可选飞书 Webhook 签名密钥', 'Optional Feishu webhook signing secret')"
                   show-password
                   class="cs-input-mono"
                 />
               </div>
 
               <div class="cs-form-row">
-                <label class="cs-form-label">{{ isZh ? '触发关键词（可选）' : 'Trigger Keyword' }}:</label>
+                <label class="cs-form-label">{{ i18nStore.tl('触发关键词（可选）', 'Trigger Keyword') }}:</label>
                 <el-input
                   v-model="notifConfig.feishu.keyword"
                   placeholder="e.g. Tshell"
@@ -145,21 +145,21 @@
         <!-- 3. 企业微信 (WeCom) -->
         <div v-else-if="currentTab === 'wecom'" class="km-panel">
           <div class="km-panel-header">
-            <span class="km-panel-title">{{ isZh ? '企业微信机器人协同配置' : 'WeCom Bot Configuration' }}</span>
+            <span class="km-panel-title">{{ i18nStore.tl('企业微信机器人协同配置', 'WeCom Bot Configuration') }}</span>
           </div>
           <div class="km-panel-body">
             <p class="km-panel-desc">
-              {{ isZh ? '将 Markdown 和文本告警推送到企业微信安全应急响应频道。' : 'Push markdown and text alerts to enterprise WeChat security incident response channels.' }}
+              {{ i18nStore.tl('将 Markdown 和文本告警推送到企业微信安全应急响应频道。', 'Push markdown and text alerts to enterprise WeChat security incident response channels.') }}
             </p>
 
             <div class="cs-form-container">
               <div class="cs-form-row">
-                <label class="cs-form-label">{{ isZh ? '启用企业微信' : 'Enable WeCom' }}:</label>
+                <label class="cs-form-label">{{ i18nStore.tl('启用企业微信', 'Enable WeCom') }}:</label>
                 <el-switch v-model="notifConfig.wecom.enable" />
               </div>
 
               <div class="cs-form-row">
-                <label class="cs-form-label">{{ isZh ? 'Webhook Key（key=...）' : 'Webhook Key (key=...)' }}:</label>
+                <label class="cs-form-label">{{ i18nStore.tl('Webhook Key（key=...）', 'Webhook Key (key=...)') }}:</label>
                 <el-input
                   v-model="notifConfig.wecom.wx_key"
                   placeholder="e.g. 693axxx-xxxx-xxxx-xxxx-xxxxxxxx"
@@ -174,11 +174,11 @@
         <!-- 4. 监听器加密密钥与加密盐 (Listener Crypto Keys) -->
         <div v-else-if="currentTab === 'listener_keys'" class="km-panel">
           <div class="km-panel-header">
-            <span class="km-panel-title">{{ isZh ? '监听器通信密钥（VKey 与加密盐）' : 'Listener VKeys & Cryptographic Salts' }}</span>
+            <span class="km-panel-title">{{ i18nStore.tl('监听器通信密钥（VKey 与加密盐）', 'Listener VKeys & Cryptographic Salts') }}</span>
           </div>
           <div class="km-panel-body km-panel-body--flush">
             <p class="km-panel-desc km-panel-desc--padded">
-              {{ isZh ? '管理每个监听器实例的共享验证密钥（VKey）与 AES/ChaCha20 加密盐。' : 'Manage shared secret verification keys (VKey) and AES/ChaCha20 encryption salts per Listener instance.' }}
+              {{ i18nStore.tl('管理每个监听器实例的共享验证密钥（VKey）与 AES/ChaCha20 加密盐。', 'Manage shared secret verification keys (VKey) and AES/ChaCha20 encryption salts per Listener instance.') }}
             </p>
 
             <div class="km-table-wrap">
@@ -189,22 +189,22 @@
                 class="cs-session-table"
                 v-loading="loadingKeys"
               >
-                <el-table-column prop="listen_address" :label="isZh ? '监听地址' : 'Listen Address'" width="200" sortable show-overflow-tooltip />
-                <el-table-column prop="vkey" :label="isZh ? '验证密钥（VKey）' : 'Verification Key (VKey)'" min-width="220" show-overflow-tooltip>
+                <el-table-column prop="listen_address" :label="i18nStore.tl('监听地址', 'Listen Address')" width="200" sortable show-overflow-tooltip />
+                <el-table-column prop="vkey" :label="i18nStore.tl('验证密钥（VKey）', 'Verification Key (VKey)')" min-width="220" show-overflow-tooltip>
                   <template #default="{ row }">
-                    <span class="cs-font-mono">{{ row.vkey || (isZh ? '默认_VKEY' : 'DEFAULT_VKEY') }}</span>
+                    <span class="cs-font-mono">{{ row.vkey || (i18nStore.tl('默认_VKEY', 'DEFAULT_VKEY')) }}</span>
                   </template>
                 </el-table-column>
-                <el-table-column prop="encryption_salt" :label="isZh ? '加密盐' : 'Encryption Salt'" width="160" show-overflow-tooltip>
+                <el-table-column prop="encryption_salt" :label="i18nStore.tl('加密盐', 'Encryption Salt')" width="160" show-overflow-tooltip>
                   <template #default="{ row }">
-                    <span class="cs-font-mono">{{ row.encryption_salt || (isZh ? '默认_SALT' : 'DEFAULT_SALT') }}</span>
+                    <span class="cs-font-mono">{{ row.encryption_salt || (i18nStore.tl('默认_SALT', 'DEFAULT_SALT')) }}</span>
                   </template>
                 </el-table-column>
-                <el-table-column :label="isZh ? '操作' : 'Actions'" width="200" align="center">
+                <el-table-column :label="i18nStore.tl('操作', 'Actions')" width="200" align="center">
                   <template #default="{ row }">
-                    <button class="cs-btn cs-btn-xs" @click="handleResetKey(row)">{{ isZh ? '重置' : 'Reset' }}</button>
-                    <button class="cs-btn cs-btn-xs cs-btn-primary" style="margin-left: 4px" @click="handleEditKey(row)">{{ isZh ? '编辑' : 'Edit' }}</button>
-                    <button class="cs-btn cs-btn-xs" style="margin-left: 4px" @click="handleViewKeyDetail(row)">{{ isZh ? '详情' : 'Info' }}</button>
+                    <button class="cs-btn cs-btn-xs" @click="handleResetKey(row)">{{ i18nStore.tl('重置', 'Reset') }}</button>
+                    <button class="cs-btn cs-btn-xs cs-btn-primary" style="margin-left: 4px" @click="handleEditKey(row)">{{ i18nStore.tl('编辑', 'Edit') }}</button>
+                    <button class="cs-btn cs-btn-xs" style="margin-left: 4px" @click="handleViewKeyDetail(row)">{{ i18nStore.tl('详情', 'Info') }}</button>
                   </template>
                 </el-table-column>
               </el-table>
@@ -215,55 +215,55 @@
         <!-- 5. 会话密钥状态 / 轮换 / 健康检查（后端 /key-management/key-status|rotate|health-check|metrics） -->
         <div v-else-if="currentTab === 'session_keys'" class="km-panel">
           <div class="km-panel-header">
-            <span class="km-panel-title">{{ isZh ? '会话密钥状态与轮换' : 'Session Key State & Rotation' }}</span>
+            <span class="km-panel-title">{{ i18nStore.tl('会话密钥状态与轮换', 'Session Key State & Rotation') }}</span>
           </div>
           <div class="km-panel-body">
             <p class="km-panel-desc">
-              {{ isZh ? '查看每个 Beacon 会话的当前/上一/下一密钥，手动强制轮换、下发健康检查，并调整自动轮换参数。' : 'Inspect current/previous/next keys per beacon session, force rotation, dispatch health checks, and tune automatic rotation.' }}
+              {{ i18nStore.tl('查看每个 Beacon 会话的当前/上一/下一密钥，手动强制轮换、下发健康检查，并调整自动轮换参数。', 'Inspect current/previous/next keys per beacon session, force rotation, dispatch health checks, and tune automatic rotation.') }}
             </p>
 
             <!-- 密钥系统指标卡 -->
             <div class="km-metrics-grid">
               <div class="km-metric-card">
                 <div class="km-metric-num">{{ keyMetrics.total_sessions ?? 0 }}</div>
-                <div class="km-metric-lbl">{{ isZh ? '密钥会话总数' : 'Total Key Sessions' }}</div>
+                <div class="km-metric-lbl">{{ i18nStore.tl('密钥会话总数', 'Total Key Sessions') }}</div>
               </div>
               <div class="km-metric-card">
                 <div class="km-metric-num">{{ keyMetrics.active_sessions ?? 0 }}</div>
-                <div class="km-metric-lbl">{{ isZh ? '活跃密钥' : 'Active Keys' }}</div>
+                <div class="km-metric-lbl">{{ i18nStore.tl('活跃密钥', 'Active Keys') }}</div>
               </div>
               <div class="km-metric-card">
                 <div class="km-metric-num">{{ keyMetrics.expired_sessions ?? 0 }}</div>
-                <div class="km-metric-lbl">{{ isZh ? '已过期密钥' : 'Expired Keys' }}</div>
+                <div class="km-metric-lbl">{{ i18nStore.tl('已过期密钥', 'Expired Keys') }}</div>
               </div>
               <div class="km-metric-card">
                 <div class="km-metric-num">{{ keyMetrics.sessions_with_next ?? 0 }}</div>
-                <div class="km-metric-lbl">{{ isZh ? '待切换（Next Key）' : 'Pending Switch (Next)' }}</div>
+                <div class="km-metric-lbl">{{ i18nStore.tl('待切换（Next Key）', 'Pending Switch (Next)') }}</div>
               </div>
               <div class="km-metric-card">
                 <div class="km-metric-num mono">{{ keyMetrics.overlap_duration || '-' }}</div>
-                <div class="km-metric-lbl">{{ isZh ? '新旧密钥重叠期' : 'Overlap Duration' }}</div>
+                <div class="km-metric-lbl">{{ i18nStore.tl('新旧密钥重叠期', 'Overlap Duration') }}</div>
               </div>
               <div class="km-metric-card">
                 <div class="km-metric-num" :class="keyMetrics.rotation_enabled ? 'text-online' : 'text-danger'">
                   {{ keyMetrics.rotation_enabled ? 'ON' : 'OFF' }}
                 </div>
-                <div class="km-metric-lbl">{{ isZh ? '自动轮换状态' : 'Auto Rotation State' }}</div>
+                <div class="km-metric-lbl">{{ i18nStore.tl('自动轮换状态', 'Auto Rotation State') }}</div>
               </div>
             </div>
 
             <!-- 轮换参数 -->
             <div class="km-rotation-config">
               <div class="cs-form-row">
-                <label class="cs-form-label">{{ isZh ? '自动轮换' : 'Auto Rotation' }}:</label>
+                <label class="cs-form-label">{{ i18nStore.tl('自动轮换', 'Auto Rotation') }}:</label>
                 <el-switch v-model="rotationForm.rotation_enabled" />
               </div>
               <div class="cs-form-row">
-                <label class="cs-form-label">{{ isZh ? '重叠期（小时）' : 'Overlap (Hours)' }}:</label>
+                <label class="cs-form-label">{{ i18nStore.tl('重叠期（小时）', 'Overlap (Hours)') }}:</label>
                 <el-input-number v-model="rotationForm.overlap_duration_hours" :min="1" :max="168" />
               </div>
               <button class="cs-btn cs-btn-primary" :disabled="savingRotation" @click="handleSaveRotationConfig">
-                {{ savingRotation ? (isZh ? '保存中...' : 'Saving...') : (isZh ? '应用轮换配置' : 'Apply Rotation Config') }}
+                {{ savingRotation ? (i18nStore.tl('保存中...', 'Saving...')) : (i18nStore.tl('应用轮换配置', 'Apply Rotation Config')) }}
               </button>
             </div>
 
@@ -276,17 +276,17 @@
                 v-loading="loadingSessionKeys"
                 @current-change="(r: any) => selectedKeyRow = r"
               >
-                <el-table-column prop="client_id" :label="isZh ? '客户端 UID' : 'Client UID'" min-width="160" show-overflow-tooltip>
+                <el-table-column prop="client_id" :label="i18nStore.tl('客户端 UID', 'Client UID')" min-width="160" show-overflow-tooltip>
                   <template #default="{ row }">
                     <span class="cs-font-mono font-bold">{{ row.client_id }}</span>
                   </template>
                 </el-table-column>
-                <el-table-column prop="exists" :label="isZh ? '状态' : 'State'" width="90" align="center">
+                <el-table-column prop="exists" :label="i18nStore.tl('状态', 'State')" width="90" align="center">
                   <template #default="{ row }">
                     <span :class="row.exists ? 'text-online' : 'text-danger'">{{ row.exists ? 'ACTIVE' : 'NONE' }}</span>
                   </template>
                 </el-table-column>
-                <el-table-column :label="isZh ? '当前密钥' : 'Current Key'" min-width="200" show-overflow-tooltip>
+                <el-table-column :label="i18nStore.tl('当前密钥', 'Current Key')" min-width="200" show-overflow-tooltip>
                   <template #default="{ row }">
                     <span v-if="row.current_key" class="cs-font-mono">
                       v{{ row.current_key.version }} / {{ row.current_key.key_id || '-' }}
@@ -294,27 +294,27 @@
                     <span v-else class="text-dim">-</span>
                   </template>
                 </el-table-column>
-                <el-table-column :label="isZh ? '到期时间' : 'Expires At'" width="180" show-overflow-tooltip>
+                <el-table-column :label="i18nStore.tl('到期时间', 'Expires At')" width="180" show-overflow-tooltip>
                   <template #default="{ row }">
                     <span class="cs-font-mono">{{ row.current_key?.expires_at || '-' }}</span>
                   </template>
                 </el-table-column>
-                <el-table-column :label="isZh ? '剩余有效期' : 'Time To Expiry'" width="130" show-overflow-tooltip>
+                <el-table-column :label="i18nStore.tl('剩余有效期', 'Time To Expiry')" width="130" show-overflow-tooltip>
                   <template #default="{ row }">
                     <span class="cs-font-mono">{{ row.current_key?.time_to_expiry || '-' }}</span>
                   </template>
                 </el-table-column>
-                <el-table-column :label="isZh ? 'Next / Previous' : 'Next / Previous'" width="120" align="center">
+                <el-table-column :label="i18nStore.tl('Next / Previous', 'Next / Previous')" width="120" align="center">
                   <template #default="{ row }">
                     <span class="cs-font-mono">
                       {{ row.next_key ? 'N' : '-' }} / {{ row.previous_key ? 'P' : '-' }}
                     </span>
                   </template>
                 </el-table-column>
-                <el-table-column :label="isZh ? '操作' : 'Actions'" width="170" align="center">
+                <el-table-column :label="i18nStore.tl('操作', 'Actions')" width="170" align="center">
                   <template #default="{ row }">
                     <button class="cs-btn cs-btn-xs" :disabled="!row.exists" @click="handleForceRotate(row)">
-                      {{ isZh ? '强制轮换' : 'Rotate' }}
+                      {{ i18nStore.tl('强制轮换', 'Rotate') }}
                     </button>
                   </template>
                 </el-table-column>

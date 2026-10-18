@@ -3,26 +3,26 @@
     <!-- 工具条：左侧标题/计数，右侧搜索与操作 -->
     <div class="um-toolbar">
       <div class="um-title-group">
-        <span class="um-title">{{ isZh ? '用户管理' : 'User Management' }}</span>
-        <span class="um-count">({{ total }} {{ isZh ? '个用户' : 'users' }})</span>
+        <span class="um-title">{{ i18nStore.tl('用户管理', 'User Management') }}</span>
+        <span class="um-count">({{ total }} {{ i18nStore.tl('个用户', 'users') }})</span>
       </div>
 
       <div class="um-spacer" />
 
       <el-input
         v-model="searchKey"
-        :placeholder="isZh ? '过滤用户名...' : 'Filter username...'"
+        :placeholder="i18nStore.tl('过滤用户名...', 'Filter username...')"
         clearable
         class="um-search"
         @keyup.enter="fetchUsers"
       />
 
-      <button class="cs-btn cs-btn-primary" @click="openAddDialog">{{ isZh ? '添加用户' : 'Add User' }}</button>
-      <button class="cs-btn" :disabled="!selectedRow" @click="selectedRow && openEditDialog(selectedRow)">{{ isZh ? '编辑' : 'Edit' }}</button>
-      <button class="cs-btn cs-btn-danger" :disabled="!selectedRow" @click="selectedRow && handleDelete(selectedRow)">{{ isZh ? '删除' : 'Delete' }}</button>
-      <button class="cs-btn" @click="handleHelp">{{ isZh ? '帮助' : 'Help' }}</button>
-      <button class="cs-btn" @click="openChangePasswordDialog">{{ isZh ? '修改我的密码' : 'Change My Password' }}</button>
-      <button class="cs-btn" :disabled="loading" @click="fetchUsers">{{ isZh ? '刷新' : 'Refresh' }}</button>
+      <button class="cs-btn cs-btn-primary" @click="openAddDialog">{{ i18nStore.tl('添加用户', 'Add User') }}</button>
+      <button class="cs-btn" :disabled="!selectedRow" @click="selectedRow && openEditDialog(selectedRow)">{{ i18nStore.tl('编辑', 'Edit') }}</button>
+      <button class="cs-btn cs-btn-danger" :disabled="!selectedRow" @click="selectedRow && handleDelete(selectedRow)">{{ i18nStore.tl('删除', 'Delete') }}</button>
+      <button class="cs-btn" @click="handleHelp">{{ i18nStore.tl('帮助', 'Help') }}</button>
+      <button class="cs-btn" @click="openChangePasswordDialog">{{ i18nStore.tl('修改我的密码', 'Change My Password') }}</button>
+      <button class="cs-btn" :disabled="loading" @click="fetchUsers">{{ i18nStore.tl('刷新', 'Refresh') }}</button>
     </div>
 
     <!-- Users Table -->
@@ -35,27 +35,27 @@
         class="cs-session-table"
         @current-change="(r: any) => (selectedRow = r)"
       >
-        <el-table-column prop="username" :label="isZh ? '用户名' : 'Username'" min-width="160" sortable show-overflow-tooltip>
+        <el-table-column prop="username" :label="i18nStore.tl('用户名', 'Username')" min-width="160" sortable show-overflow-tooltip>
           <template #default="{ row }">
             <span class="cs-font-mono font-bold">{{ row.username }}</span>
           </template>
         </el-table-column>
-        <el-table-column :label="isZh ? '角色' : 'Role'" width="140" sortable align="center">
+        <el-table-column :label="i18nStore.tl('角色', 'Role')" width="140" sortable align="center">
           <template #default="{ row }">
             <el-tag size="small" :type="roleTagType(row.role)">{{ roleLabel(row.role) }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column :label="isZh ? '锁定' : 'Locked'" width="100" align="center">
+        <el-table-column :label="i18nStore.tl('锁定', 'Locked')" width="100" align="center">
           <template #default="{ row }">
-            <span :class="row.locked ? 'text-danger' : 'text-ok'">{{ row.locked ? (isZh ? '是' : 'Yes') : (isZh ? '否' : 'No') }}</span>
+            <span :class="row.locked ? 'text-danger' : 'text-ok'">{{ row.locked ? (i18nStore.tl('是', 'Yes')) : (i18nStore.tl('否', 'No')) }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="created_at" :label="isZh ? '创建时间' : 'Created At'" width="180" sortable show-overflow-tooltip />
-        <el-table-column prop="last_login" :label="isZh ? '最后登录' : 'Last Login'" width="180" sortable show-overflow-tooltip />
-        <el-table-column :label="isZh ? '操作' : 'Actions'" width="200" fixed="right" align="center">
+        <el-table-column prop="created_at" :label="i18nStore.tl('创建时间', 'Created At')" width="180" sortable show-overflow-tooltip />
+        <el-table-column prop="last_login" :label="i18nStore.tl('最后登录', 'Last Login')" width="180" sortable show-overflow-tooltip />
+        <el-table-column :label="i18nStore.tl('操作', 'Actions')" width="200" fixed="right" align="center">
           <template #default="{ row }">
-            <button class="cs-btn cs-btn-xs" @click="openEditDialog(row)">{{ isZh ? '编辑' : 'Edit' }}</button>
-            <button class="cs-btn cs-btn-xs cs-btn-danger" style="margin-left: 4px" @click="handleDelete(row)">{{ isZh ? '删除' : 'Delete' }}</button>
+            <button class="cs-btn cs-btn-xs" @click="openEditDialog(row)">{{ i18nStore.tl('编辑', 'Edit') }}</button>
+            <button class="cs-btn cs-btn-xs cs-btn-danger" style="margin-left: 4px" @click="handleDelete(row)">{{ i18nStore.tl('删除', 'Delete') }}</button>
           </template>
         </el-table-column>
       </el-table>
@@ -63,79 +63,79 @@
       <EmptyState
         v-if="!users.length && !loading"
         icon="👤"
-        :title="isZh ? '暂无用户' : 'No users found'"
+        :title="i18nStore.tl('暂无用户', 'No users found')"
       />
     </div>
 
     <!-- Add User Dialog -->
-    <el-dialog v-model="addDialogVisible" :title="isZh ? '添加用户' : 'Add User'" width="440px" append-to-body class="cs-dialog">
+    <el-dialog v-model="addDialogVisible" :title="i18nStore.tl('添加用户', 'Add User')" width="440px" append-to-body class="cs-dialog">
       <div class="cs-form-container">
         <div class="cs-form-row">
-          <label class="cs-form-label">{{ isZh ? '用户名' : 'Username' }}:</label>
-          <el-input v-model="addForm.username" :placeholder="isZh ? '新用户名' : 'New operator name'" />
+          <label class="cs-form-label">{{ i18nStore.tl('用户名', 'Username') }}:</label>
+          <el-input v-model="addForm.username" :placeholder="i18nStore.tl('新用户名', 'New operator name')" />
         </div>
         <div class="cs-form-row">
-          <label class="cs-form-label">{{ isZh ? '密码' : 'Password' }}:</label>
-          <el-input v-model="addForm.password" type="password" show-password :placeholder="isZh ? '强密码' : 'Strong password'" />
+          <label class="cs-form-label">{{ i18nStore.tl('密码', 'Password') }}:</label>
+          <el-input v-model="addForm.password" type="password" show-password :placeholder="i18nStore.tl('强密码', 'Strong password')" />
         </div>
         <div class="cs-form-row">
-          <label class="cs-form-label">{{ isZh ? '角色' : 'Role' }}:</label>
+          <label class="cs-form-label">{{ i18nStore.tl('角色', 'Role') }}:</label>
           <el-select v-model="addForm.role" style="width: 100%">
-            <el-option :label="isZh ? '管理员' : 'admin'" value="admin" />
-            <el-option :label="isZh ? '操作员' : 'operator'" value="operator" />
-            <el-option :label="isZh ? '审计员' : 'auditor'" value="auditor" />
+            <el-option :label="i18nStore.tl('管理员', 'admin')" value="admin" />
+            <el-option :label="i18nStore.tl('操作员', 'operator')" value="operator" />
+            <el-option :label="i18nStore.tl('审计员', 'auditor')" value="auditor" />
           </el-select>
         </div>
       </div>
       <template #footer>
         <div class="cs-dialog-footer">
-          <button class="cs-btn cs-btn-primary" @click="handleAdd">{{ isZh ? '创建' : 'Create' }}</button>
-          <button class="cs-btn" @click="addDialogVisible = false">{{ isZh ? '取消' : 'Cancel' }}</button>
+          <button class="cs-btn cs-btn-primary" @click="handleAdd">{{ i18nStore.tl('创建', 'Create') }}</button>
+          <button class="cs-btn" @click="addDialogVisible = false">{{ i18nStore.tl('取消', 'Cancel') }}</button>
         </div>
       </template>
     </el-dialog>
 
     <!-- Reset Password Dialog -->
-    <el-dialog v-model="resetDialogVisible" :title="isZh ? '编辑用户密码' : 'Edit User Password'" width="440px" append-to-body class="cs-dialog">
+    <el-dialog v-model="resetDialogVisible" :title="i18nStore.tl('编辑用户密码', 'Edit User Password')" width="440px" append-to-body class="cs-dialog">
       <div class="cs-form-container">
         <div class="cs-form-row">
-          <label class="cs-form-label">{{ isZh ? '用户名' : 'Username' }}:</label>
+          <label class="cs-form-label">{{ i18nStore.tl('用户名', 'Username') }}:</label>
           <el-input :model-value="resetForm.username" disabled />
         </div>
         <div class="cs-form-row">
-          <label class="cs-form-label">{{ isZh ? '新密码' : 'New Password' }}:</label>
-          <el-input v-model="resetForm.password" type="password" show-password :placeholder="isZh ? '新强密码' : 'New strong password'" />
+          <label class="cs-form-label">{{ i18nStore.tl('新密码', 'New Password') }}:</label>
+          <el-input v-model="resetForm.password" type="password" show-password :placeholder="i18nStore.tl('新强密码', 'New strong password')" />
         </div>
       </div>
       <template #footer>
         <div class="cs-dialog-footer">
-          <button class="cs-btn cs-btn-primary" @click="handleReset">{{ isZh ? '重置' : 'Reset' }}</button>
-          <button class="cs-btn" @click="resetDialogVisible = false">{{ isZh ? '取消' : 'Cancel' }}</button>
+          <button class="cs-btn cs-btn-primary" @click="handleReset">{{ i18nStore.tl('重置', 'Reset') }}</button>
+          <button class="cs-btn" @click="resetDialogVisible = false">{{ i18nStore.tl('取消', 'Cancel') }}</button>
         </div>
       </template>
     </el-dialog>
     <!-- Change My Password Dialog -->
-    <el-dialog v-model="changePwdDialogVisible" :title="isZh ? '修改我的密码' : 'Change My Password'" width="440px" append-to-body class="cs-dialog">
+    <el-dialog v-model="changePwdDialogVisible" :title="i18nStore.tl('修改我的密码', 'Change My Password')" width="440px" append-to-body class="cs-dialog">
       <div class="cs-form-container">
         <div class="cs-form-row">
-          <label class="cs-form-label">{{ isZh ? '旧密码' : 'Old Password' }}:</label>
-          <el-input v-model="changePwdForm.old_password" type="password" show-password :placeholder="isZh ? '当前登录密码' : 'Current password'" />
+          <label class="cs-form-label">{{ i18nStore.tl('旧密码', 'Old Password') }}:</label>
+          <el-input v-model="changePwdForm.old_password" type="password" show-password :placeholder="i18nStore.tl('当前登录密码', 'Current password')" />
         </div>
         <div class="cs-form-row">
-          <label class="cs-form-label">{{ isZh ? '新密码' : 'New Password' }}:</label>
-          <el-input v-model="changePwdForm.new_password" type="password" show-password :placeholder="isZh ? '新强密码' : 'New strong password'" />
+          <label class="cs-form-label">{{ i18nStore.tl('新密码', 'New Password') }}:</label>
+          <el-input v-model="changePwdForm.new_password" type="password" show-password :placeholder="i18nStore.tl('新强密码', 'New strong password')" />
         </div>
         <div class="cs-form-row">
-          <label class="cs-form-label">{{ isZh ? '确认新密码' : 'Confirm' }}:</label>
-          <el-input v-model="changePwdForm.confirm" type="password" show-password :placeholder="isZh ? '再次输入新密码' : 'Repeat new password'" />
+          <label class="cs-form-label">{{ i18nStore.tl('确认新密码', 'Confirm') }}:</label>
+          <el-input v-model="changePwdForm.confirm" type="password" show-password :placeholder="i18nStore.tl('再次输入新密码', 'Repeat new password')" />
         </div>
       </div>
       <template #footer>
         <div class="cs-dialog-footer">
           <button class="cs-btn cs-btn-primary" :disabled="changingPwd" @click="handleChangePassword">
-            {{ changingPwd ? (isZh ? '提交中...' : 'Submitting...') : (isZh ? '确认修改' : 'Change') }}
+            {{ changingPwd ? (i18nStore.tl('提交中...', 'Submitting...')) : (i18nStore.tl('确认修改', 'Change')) }}
           </button>
-          <button class="cs-btn" @click="changePwdDialogVisible = false">{{ isZh ? '取消' : 'Cancel' }}</button>
+          <button class="cs-btn" @click="changePwdDialogVisible = false">{{ i18nStore.tl('取消', 'Cancel') }}</button>
         </div>
       </template>
     </el-dialog>

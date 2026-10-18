@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     v-model="visible"
-    :title="isZh ? 'C2 扩展配置画像编辑器' : 'Malleable C2 Profile Editor'"
+    :title="i18nStore.tl('C2 扩展配置画像编辑器', 'Malleable C2 Profile Editor')"
     width="720px"
     :close-on-click-modal="false"
     append-to-body
@@ -10,13 +10,13 @@
     <div class="cs-profile-container cs-font-ui">
       <!-- Toolbar -->
       <div class="profile-toolbar">
-        <span class="profile-title">{{ isZh ? '画像: ' : 'Profile: ' }}</span>
+        <span class="profile-title">{{ i18nStore.tl('画像: ', 'Profile: ') }}</span>
         <el-select v-model="profileName" size="small" style="width: 160px" @visible-change="onProfileListOpen">
           <el-option v-for="n in profileNames" :key="n" :label="n" :value="n" />
         </el-select>
         <div class="profile-spacer" />
-        <button class="cs-btn" @click="loadProfile">{{ isZh ? '加载' : 'Load' }}</button>
-        <button class="cs-btn" @click="testProfile">{{ isZh ? '语法校验' : 'Lint / Verify' }}</button>
+        <button class="cs-btn" @click="loadProfile">{{ i18nStore.tl('加载', 'Load') }}</button>
+        <button class="cs-btn" @click="testProfile">{{ i18nStore.tl('语法校验', 'Lint / Verify') }}</button>
       </div>
 
       <!-- Editor Textarea -->
@@ -25,15 +25,15 @@
           v-model="profileContent"
           class="cs-profile-textarea cs-font-mono"
           spellcheck="false"
-          :placeholder="isZh ? '# Tshell C2 扩展通信画像配置...' : '# C2 profile definition...'"
+          :placeholder="i18nStore.tl('# Tshell C2 扩展通信画像配置...', '# C2 profile definition...')"
         />
       </div>
     </div>
 
     <template #footer>
       <div class="cs-dialog-footer">
-        <button class="cs-btn cs-btn-primary" @click="saveProfile">{{ isZh ? '保存画像' : 'Save Profile' }}</button>
-        <button class="cs-btn" @click="close">{{ isZh ? '关闭' : 'Close' }}</button>
+        <button class="cs-btn cs-btn-primary" @click="saveProfile">{{ i18nStore.tl('保存画像', 'Save Profile') }}</button>
+        <button class="cs-btn" @click="close">{{ i18nStore.tl('关闭', 'Close') }}</button>
       </div>
     </template>
   </el-dialog>

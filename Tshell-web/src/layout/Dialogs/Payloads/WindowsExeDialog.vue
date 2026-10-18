@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     v-model="visible"
-    :title="isZh ? 'Windows 分阶段可执行程序' : 'Windows Executable (Staged)'"
+    :title="i18nStore.tl('Windows 分阶段可执行程序', 'Windows Executable (Staged)')"
     width="700px"
     append-to-body
     class="cs-dialog"
@@ -9,16 +9,16 @@
   >
     <div class="cs-dialog-body">
       <div class="cs-dialog-desc">
-        {{ isZh ? '生成 Windows 分阶段可执行程序（stager EXE，运行后从 WebDelivery 拉取完整载荷执行）。架构由所选投递决定。' : 'Generates a staged Windows executable (stager EXE that pulls and runs the full payload from a WebDelivery). Architecture follows the selected delivery.' }}
+        {{ i18nStore.tl('生成 Windows 分阶段可执行程序（stager EXE，运行后从 WebDelivery 拉取完整载荷执行）。架构由所选投递决定。', 'Generates a staged Windows executable (stager EXE that pulls and runs the full payload from a WebDelivery). Architecture follows the selected delivery.') }}
       </div>
 
       <div class="cs-form-row">
-        <label class="cs-form-label">{{ isZh ? 'WebDelivery:' : 'Web Delivery:' }}</label>
+        <label class="cs-form-label">{{ i18nStore.tl('WebDelivery:', 'Web Delivery:') }}</label>
         <el-select
           v-model="form.deliveryPort"
           size="small"
           class="cs-form-input"
-          :placeholder="isZh ? '选择 WebDelivery 投递' : 'Select a WebDelivery'"
+          :placeholder="i18nStore.tl('选择 WebDelivery 投递', 'Select a WebDelivery')"
           @visible-change="onDropdown"
         >
           <el-option
@@ -31,17 +31,17 @@
       </div>
 
       <div class="cs-form-row">
-        <label class="cs-form-label">{{ isZh ? '上线密码:' : 'Pass:' }}</label>
-        <el-input v-model="form.pass" size="small" :placeholder="isZh ? '客户端启动上线密码（可选）' : 'Beacon startup password (optional)'" class="cs-form-input" />
+        <label class="cs-form-label">{{ i18nStore.tl('上线密码:', 'Pass:') }}</label>
+        <el-input v-model="form.pass" size="small" :placeholder="i18nStore.tl('客户端启动上线密码（可选）', 'Beacon startup password (optional)')" class="cs-form-input" />
       </div>
     </div>
 
     <template #footer>
       <div class="cs-dialog-footer-center">
         <button class="cs-btn cs-btn-primary" :disabled="generating || !form.deliveryPort" @click="handleGenerate">
-          {{ generating ? (isZh ? '生成中...' : 'Generating...') : (isZh ? '生成' : 'Generate') }}
+          {{ generating ? (i18nStore.tl('生成中...', 'Generating...')) : (i18nStore.tl('生成', 'Generate')) }}
         </button>
-        <button class="cs-btn" @click="handleHelp">{{ isZh ? '帮助' : 'Help' }}</button>
+        <button class="cs-btn" @click="handleHelp">{{ i18nStore.tl('帮助', 'Help') }}</button>
       </div>
     </template>
   </el-dialog>

@@ -4,8 +4,8 @@
     <div class="cv-toolbar">
       <div class="cv-title-group">
         <el-icon class="cv-title-icon"><Key /></el-icon>
-        <span class="cv-title">{{ isZh ? '密码凭据保险箱' : 'Credentials Vault' }}</span>
-        <span class="cv-count">({{ filteredList.length }} {{ isZh ? '条凭证' : 'credentials' }})</span>
+        <span class="cv-title">{{ i18nStore.tl('密码凭据保险箱', 'Credentials Vault') }}</span>
+        <span class="cv-count">({{ filteredList.length }} {{ i18nStore.tl('条凭证', 'credentials') }})</span>
       </div>
 
       <!-- Quick Filter Pills -->
@@ -15,72 +15,72 @@
           :class="{ active: typeFilter === 'all' }"
           @click="typeFilter = 'all'"
         >
-          {{ isZh ? '全部' : 'All' }}
+          {{ i18nStore.tl('全部', 'All') }}
         </button>
         <button
           class="cv-pill"
           :class="{ active: typeFilter === 'pwd' }"
           @click="typeFilter = 'pwd'"
         >
-          {{ isZh ? '明文密码' : 'Passwords' }}
+          {{ i18nStore.tl('明文密码', 'Passwords') }}
         </button>
         <button
           class="cv-pill"
           :class="{ active: typeFilter === 'hash' }"
           @click="typeFilter = 'hash'"
         >
-          {{ isZh ? 'NTLM / 哈希' : 'Hashes' }}
+          {{ i18nStore.tl('NTLM / 哈希', 'Hashes') }}
         </button>
         <button
           class="cv-pill"
           :class="{ active: typeFilter === 'domain' }"
           @click="typeFilter = 'domain'"
         >
-          {{ isZh ? '域账号' : 'Domain' }}
+          {{ i18nStore.tl('域账号', 'Domain') }}
         </button>
       </div>
 
       <div class="cv-spacer" />
 
       <button class="cs-btn" @click="toggleShowPasswords">
-        {{ showPasswords ? (isZh ? '隐藏明文' : 'Hide Passwords') : (isZh ? '显示明文' : 'Show Passwords') }}
+        {{ showPasswords ? (i18nStore.tl('隐藏明文', 'Hide Passwords')) : (i18nStore.tl('显示明文', 'Show Passwords')) }}
       </button>
 
       <el-input
         v-model="searchKey"
-        :placeholder="isZh ? '过滤用户、域、主机、哈希、备注...' : 'Filter user, realm, host, hash...'"
+        :placeholder="i18nStore.tl('过滤用户、域、主机、哈希、备注...', 'Filter user, realm, host, hash...')"
         size="small"
         clearable
         class="cv-search-input"
       />
 
       <button class="cs-btn cs-btn-primary" @click="openAddDialog">
-        {{ isZh ? '添加凭证' : 'Add' }}
+        {{ i18nStore.tl('添加凭证', 'Add') }}
       </button>
       <button class="cs-btn" :disabled="!selectedRow" @click="openEditDialog">
-        {{ isZh ? '编辑凭据' : 'Edit' }}
+        {{ i18nStore.tl('编辑凭据', 'Edit') }}
       </button>
       <button class="cs-btn" :disabled="!selectedRow || !selectedRow.password" @click="copySelectedPassword">
-        {{ isZh ? '复制密码' : 'Copy Pwd' }}
+        {{ i18nStore.tl('复制密码', 'Copy Pwd') }}
       </button>
       <button class="cs-btn" :disabled="!selectedRow || !selectedRow.hash" @click="copySelectedHash">
-        {{ isZh ? '复制哈希' : 'Copy Hash' }}
+        {{ i18nStore.tl('复制哈希', 'Copy Hash') }}
       </button>
       <button class="cs-btn" :disabled="!credsStore.credentials.length" @click="exportData">
-        {{ isZh ? '导出凭证' : 'Export' }}
+        {{ i18nStore.tl('导出凭证', 'Export') }}
       </button>
       <button class="cs-btn cs-btn-danger" :disabled="!selectedRow" @click="deleteSelected">
-        {{ isZh ? '删除选中' : 'Delete' }}
+        {{ i18nStore.tl('删除选中', 'Delete') }}
       </button>
       <button class="cs-btn cs-btn-danger" :disabled="!credsStore.credentials.length" @click="clearAll">
-        {{ isZh ? '清空全部' : 'Clear All' }}
+        {{ i18nStore.tl('清空全部', 'Clear All') }}
       </button>
       <button class="cs-btn" @click="showHelp">
-        {{ isZh ? '帮助' : 'Help' }}
+        {{ i18nStore.tl('帮助', 'Help') }}
       </button>
       <button class="cs-btn" @click="refresh">
         <el-icon><Refresh /></el-icon>
-        <span>{{ isZh ? '刷新' : 'Refresh' }}</span>
+        <span>{{ i18nStore.tl('刷新', 'Refresh') }}</span>
       </button>
     </div>
 
@@ -100,57 +100,57 @@
       >
         <el-table-column type="selection" width="38" align="center" :reserve-selection="true" />
 
-        <el-table-column prop="realm" :label="isZh ? '域 / Realm' : 'Realm / Domain'" width="160" sortable show-overflow-tooltip>
+        <el-table-column prop="realm" :label="i18nStore.tl('域 / Realm', 'Realm / Domain')" width="160" sortable show-overflow-tooltip>
           <template #default="{ row }">
             <span class="cs-font-mono font-bold text-bright">{{ row.realm || '-' }}</span>
           </template>
         </el-table-column>
 
-        <el-table-column prop="user" :label="isZh ? '用户名' : 'User'" width="160" sortable show-overflow-tooltip>
+        <el-table-column prop="user" :label="i18nStore.tl('用户名', 'User')" width="160" sortable show-overflow-tooltip>
           <template #default="{ row }">
             <span class="user-cell font-bold">{{ row.user || '-' }}</span>
           </template>
         </el-table-column>
 
-        <el-table-column prop="password" :label="isZh ? '明文密码' : 'Password'" min-width="180" sortable show-overflow-tooltip>
+        <el-table-column prop="password" :label="i18nStore.tl('明文密码', 'Password')" min-width="180" sortable show-overflow-tooltip>
           <template #default="{ row }">
-            <div v-if="row.password" class="pwd-cell-wrap" @click.stop="copyText(row.password, isZh ? '明文密码' : 'Password')">
+            <div v-if="row.password" class="pwd-cell-wrap" @click.stop="copyText(row.password, i18nStore.tl('明文密码', 'Password'))">
               <span class="pwd-cell cs-font-mono">{{ showPasswords ? row.password : '••••••••••••' }}</span>
-              <el-icon class="copy-icon" :title="isZh ? '点击复制密码' : 'Copy password'"><CopyDocument /></el-icon>
+              <el-icon class="copy-icon" :title="i18nStore.tl('点击复制密码', 'Copy password')"><CopyDocument /></el-icon>
             </div>
             <span v-else class="text-dim">-</span>
           </template>
         </el-table-column>
 
-        <el-table-column prop="hash" :label="isZh ? 'NTLM / 哈希值' : 'NTLM / Hash'" min-width="240" sortable show-overflow-tooltip>
+        <el-table-column prop="hash" :label="i18nStore.tl('NTLM / 哈希值', 'NTLM / Hash')" min-width="240" sortable show-overflow-tooltip>
           <template #default="{ row }">
             <div v-if="row.hash" class="hash-cell-wrap" @click.stop="copyText(row.hash, 'Hash')">
               <span class="hash-cell cs-font-mono">{{ row.hash }}</span>
-              <el-icon class="copy-icon" :title="isZh ? '点击复制哈希' : 'Copy hash'"><CopyDocument /></el-icon>
+              <el-icon class="copy-icon" :title="i18nStore.tl('点击复制哈希', 'Copy hash')"><CopyDocument /></el-icon>
             </div>
             <span v-else class="text-dim">-</span>
           </template>
         </el-table-column>
 
-        <el-table-column prop="host" :label="isZh ? '来源主机' : 'Host'" width="150" sortable show-overflow-tooltip>
+        <el-table-column prop="host" :label="i18nStore.tl('来源主机', 'Host')" width="150" sortable show-overflow-tooltip>
           <template #default="{ row }">
             <span class="cs-font-mono">{{ row.host || '-' }}</span>
           </template>
         </el-table-column>
 
-        <el-table-column prop="source" :label="isZh ? '捕获来源' : 'Source'" width="110" align="center" sortable>
+        <el-table-column prop="source" :label="i18nStore.tl('捕获来源', 'Source')" width="110" align="center" sortable>
           <template #default="{ row }">
             <span :class="['source-badge', `source-${row.source || 'manual'}`]">{{ row.source || 'manual' }}</span>
           </template>
         </el-table-column>
 
-        <el-table-column prop="note" :label="isZh ? '备注 / 标签' : 'Note'" min-width="140" show-overflow-tooltip>
+        <el-table-column prop="note" :label="i18nStore.tl('备注 / 标签', 'Note')" min-width="140" show-overflow-tooltip>
           <template #default="{ row }">
             <span class="text-dim">{{ row.note || '-' }}</span>
           </template>
         </el-table-column>
 
-        <el-table-column prop="updatedAt" :label="isZh ? '更新时间' : 'Updated'" width="170" align="center" sortable show-overflow-tooltip>
+        <el-table-column prop="updatedAt" :label="i18nStore.tl('更新时间', 'Updated')" width="170" align="center" sortable show-overflow-tooltip>
           <template #default="{ row }">
             <span class="cs-font-mono text-dim">{{ row.updatedAt || '-' }}</span>
           </template>
@@ -160,8 +160,8 @@
           <EmptyState
             variant="inline"
             icon="🔑"
-            :title="isZh ? '暂无密码凭据' : 'No Harvested Credentials'"
-            :desc="isZh ? '在 Beacon 会话中执行 logonpasswords / hashdump，或点击下方「添加」手动录入凭据。' : 'Credentials from logonpasswords or hashdump will appear here.'"
+            :title="i18nStore.tl('暂无密码凭据', 'No Harvested Credentials')"
+            :desc="i18nStore.tl('在 Beacon 会话中执行 logonpasswords / hashdump，或点击下方「添加」手动录入凭据。', 'Credentials from logonpasswords or hashdump will appear here.')"
           />
         </template>
       </el-table>
@@ -170,7 +170,7 @@
     <!-- Add/Edit Credential Dialog -->
     <el-dialog
       v-model="editDialogVisible"
-      :title="isEditing ? (isZh ? '编辑凭据' : 'Edit Credential') : (isZh ? '添加凭据' : 'Add Credential')"
+      :title="isEditing ? (i18nStore.tl('编辑凭据', 'Edit Credential')) : (i18nStore.tl('添加凭据', 'Add Credential'))"
       width="480px"
       append-to-body
       class="cs-dialog"
@@ -178,34 +178,34 @@
     >
       <div class="cs-dialog-form cs-font-ui">
         <div class="form-field">
-          <label class="form-label">{{ isZh ? '所属域 / Realm' : 'Realm / Domain' }}:</label>
-          <el-input v-model="formCred.realm" :placeholder="isZh ? '例如 CORP 或 WORKGROUP' : 'e.g. CORP or WORKGROUP'" size="small" />
+          <label class="form-label">{{ i18nStore.tl('所属域 / Realm', 'Realm / Domain') }}:</label>
+          <el-input v-model="formCred.realm" :placeholder="i18nStore.tl('例如 CORP 或 WORKGROUP', 'e.g. CORP or WORKGROUP')" size="small" />
         </div>
         <div class="form-field">
-          <label class="form-label">{{ isZh ? '用户名' : 'Username' }}:</label>
-          <el-input v-model="formCred.user" :placeholder="isZh ? '例如 Administrator' : 'e.g. Administrator'" size="small" />
+          <label class="form-label">{{ i18nStore.tl('用户名', 'Username') }}:</label>
+          <el-input v-model="formCred.user" :placeholder="i18nStore.tl('例如 Administrator', 'e.g. Administrator')" size="small" />
         </div>
         <div class="form-field">
-          <label class="form-label">{{ isZh ? '明文密码' : 'Password' }}:</label>
-          <el-input v-model="formCred.password" :placeholder="isZh ? '明文密码' : 'Cleartext password'" size="small" />
+          <label class="form-label">{{ i18nStore.tl('明文密码', 'Password') }}:</label>
+          <el-input v-model="formCred.password" :placeholder="i18nStore.tl('明文密码', 'Cleartext password')" size="small" />
         </div>
         <div class="form-field">
-          <label class="form-label">{{ isZh ? 'NTLM 哈希' : 'NTLM Hash' }}:</label>
-          <el-input v-model="formCred.hash" :placeholder="isZh ? 'NTLM 哈希（32 位十六进制）' : 'NTLM hash (32 hex characters)'" size="small" />
+          <label class="form-label">{{ i18nStore.tl('NTLM 哈希', 'NTLM Hash') }}:</label>
+          <el-input v-model="formCred.hash" :placeholder="i18nStore.tl('NTLM 哈希（32 位十六进制）', 'NTLM hash (32 hex characters)')" size="small" />
         </div>
         <div class="form-field">
-          <label class="form-label">{{ isZh ? '来源主机 / IP' : 'Host / IP' }}:</label>
-          <el-input v-model="formCred.host" :placeholder="isZh ? '来源主机或 IP' : 'Origin host or IP'" size="small" />
+          <label class="form-label">{{ i18nStore.tl('来源主机 / IP', 'Host / IP') }}:</label>
+          <el-input v-model="formCred.host" :placeholder="i18nStore.tl('来源主机或 IP', 'Origin host or IP')" size="small" />
         </div>
         <div class="form-field">
-          <label class="form-label">{{ isZh ? '备注 / 标签' : 'Note / Tag' }}:</label>
-          <el-input v-model="formCred.note" :placeholder="isZh ? '可选备注' : 'Optional notes'" size="small" />
+          <label class="form-label">{{ i18nStore.tl('备注 / 标签', 'Note / Tag') }}:</label>
+          <el-input v-model="formCred.note" :placeholder="i18nStore.tl('可选备注', 'Optional notes')" size="small" />
         </div>
       </div>
       <template #footer>
         <div class="cs-dialog-footer-center">
-          <button class="cs-btn cs-btn-primary" @click="saveCredential">{{ isZh ? '保存' : 'Save' }}</button>
-          <button class="cs-btn" @click="editDialogVisible = false">{{ isZh ? '取消' : 'Cancel' }}</button>
+          <button class="cs-btn cs-btn-primary" @click="saveCredential">{{ i18nStore.tl('保存', 'Save') }}</button>
+          <button class="cs-btn" @click="editDialogVisible = false">{{ i18nStore.tl('取消', 'Cancel') }}</button>
         </div>
       </template>
     </el-dialog>
@@ -219,13 +219,13 @@
         @mousedown.stop
         @contextmenu.prevent
       >
-        <div class="ctx-item" @click="copySelectedUser">{{ isZh ? '复制用户' : 'Copy User' }}</div>
-        <div class="ctx-item is-highlight" @click="copySelectedPassword">{{ isZh ? '复制密码' : 'Copy Password' }}</div>
-        <div class="ctx-item" @click="copySelectedHash">{{ isZh ? '复制 NTLM 哈希' : 'Copy NTLM Hash' }}</div>
-        <div class="ctx-item" @click="copyUserPass">{{ isZh ? '复制（用户:密码）' : 'Copy (User:Password)' }}</div>
+        <div class="ctx-item" @click="copySelectedUser">{{ i18nStore.tl('复制用户', 'Copy User') }}</div>
+        <div class="ctx-item is-highlight" @click="copySelectedPassword">{{ i18nStore.tl('复制密码', 'Copy Password') }}</div>
+        <div class="ctx-item" @click="copySelectedHash">{{ i18nStore.tl('复制 NTLM 哈希', 'Copy NTLM Hash') }}</div>
+        <div class="ctx-item" @click="copyUserPass">{{ i18nStore.tl('复制（用户:密码）', 'Copy (User:Password)') }}</div>
         <div class="ctx-divider" />
-        <div class="ctx-item" @click="openEditDialog">{{ isZh ? '编辑凭据...' : 'Edit Credential...' }}</div>
-        <div class="ctx-item ctx-danger" @click="deleteSelected">{{ isZh ? '删除凭据' : 'Delete Credential' }}</div>
+        <div class="ctx-item" @click="openEditDialog">{{ i18nStore.tl('编辑凭据...', 'Edit Credential...') }}</div>
+        <div class="ctx-item ctx-danger" @click="deleteSelected">{{ i18nStore.tl('删除凭据', 'Delete Credential') }}</div>
       </div>
     </Teleport>
   </div>

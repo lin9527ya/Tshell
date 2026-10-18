@@ -2,26 +2,26 @@
   <div class="cs-server-status-view cs-font-ui">
     <div class="sv-toolbar">
       <div class="sv-title-group">
-        <span class="sv-title">{{ isZh ? '服务器状态' : 'Server Status' }}</span>
-        <span class="sv-count">{{ isZh ? '实时系统与连接统计' : 'Realtime system & connection stats' }}</span>
+        <span class="sv-title">{{ i18nStore.tl('服务器状态', 'Server Status') }}</span>
+        <span class="sv-count">{{ i18nStore.tl('实时系统与连接统计', 'Realtime system & connection stats') }}</span>
       </div>
       <div class="sv-spacer" />
-      <button class="cs-btn" :disabled="loading" @click="fetchStats">{{ isZh ? '刷新' : 'Refresh' }}</button>
+      <button class="cs-btn" :disabled="loading" @click="fetchStats">{{ i18nStore.tl('刷新', 'Refresh') }}</button>
     </div>
 
     <div class="sv-body" v-loading="loading">
       <div class="sv-stats-grid">
         <div class="sv-stat-card">
           <div class="sv-stat-num">{{ stats.monitor_count }}</div>
-          <div class="sv-stat-lbl">{{ isZh ? '活跃监听器' : 'Active Listeners' }}</div>
+          <div class="sv-stat-lbl">{{ i18nStore.tl('活跃监听器', 'Active Listeners') }}</div>
         </div>
         <div class="sv-stat-card">
           <div class="sv-stat-num">{{ stats.connection_count }}</div>
-          <div class="sv-stat-lbl">{{ isZh ? '在线连接' : 'Online Connections' }}</div>
+          <div class="sv-stat-lbl">{{ i18nStore.tl('在线连接', 'Online Connections') }}</div>
         </div>
         <div class="sv-stat-card">
           <div class="sv-stat-num">{{ stats.online_user_count }} / {{ stats.user_count }}</div>
-          <div class="sv-stat-lbl">{{ isZh ? '在线 / 总会话' : 'Online / Total Clients' }}</div>
+          <div class="sv-stat-lbl">{{ i18nStore.tl('在线 / 总会话', 'Online / Total Clients') }}</div>
         </div>
         <div class="sv-stat-card">
           <div class="sv-stat-num">{{ stats.system_info?.cpu_usage?.toFixed?.(1) || '0.0' }}%</div>
@@ -29,11 +29,11 @@
         </div>
         <div class="sv-stat-card">
           <div class="sv-stat-num">{{ stats.system_info?.memory_usage?.toFixed?.(1) || '0.0' }}%</div>
-          <div class="sv-stat-lbl">{{ isZh ? '内存' : 'Memory' }}</div>
+          <div class="sv-stat-lbl">{{ i18nStore.tl('内存', 'Memory') }}</div>
         </div>
         <div class="sv-stat-card">
           <div class="sv-stat-num">{{ stats.system_info?.disk_usage?.toFixed?.(1) || '0.0' }}%</div>
-          <div class="sv-stat-lbl">{{ isZh ? '磁盘' : 'Disk' }}</div>
+          <div class="sv-stat-lbl">{{ i18nStore.tl('磁盘', 'Disk') }}</div>
         </div>
         <div class="sv-stat-card">
           <div class="sv-stat-num">{{ stats.system_info?.tcp_connections || 0 }}</div>
@@ -45,22 +45,22 @@
         </div>
         <div class="sv-stat-card">
           <div class="sv-stat-num">{{ stats.system_info?.inbound_bw || '-' }}</div>
-          <div class="sv-stat-lbl">{{ isZh ? '入站带宽' : 'Inbound BW' }}</div>
+          <div class="sv-stat-lbl">{{ i18nStore.tl('入站带宽', 'Inbound BW') }}</div>
         </div>
         <div class="sv-stat-card">
           <div class="sv-stat-num">{{ stats.system_info?.outbound_bw || '-' }}</div>
-          <div class="sv-stat-lbl">{{ isZh ? '出站带宽' : 'Outbound BW' }}</div>
+          <div class="sv-stat-lbl">{{ i18nStore.tl('出站带宽', 'Outbound BW') }}</div>
         </div>
       </div>
 
       <div class="sv-config-panel">
-        <div class="sv-panel-header">{{ isZh ? '配置信息' : 'Configuration' }}</div>
+        <div class="sv-panel-header">{{ i18nStore.tl('配置信息', 'Configuration') }}</div>
         <div class="sv-panel-body">
           <div class="sv-config-grid">
-            <div><b>{{ isZh ? '版本' : 'Version' }}:</b> {{ stats.config_info?.version || '-' }}</div>
-            <div><b>{{ isZh ? '日志级别' : 'Log Level' }}:</b> {{ stats.config_info?.log_level || '-' }}</div>
-            <div><b>{{ isZh ? 'Web 端口' : 'Web Port' }}:</b> {{ stats.config_info?.web_port || '-' }}</div>
-            <div><b>{{ isZh ? '日志路径' : 'Log Path' }}:</b> {{ stats.config_info?.log_file_path || '-' }}</div>
+            <div><b>{{ i18nStore.tl('版本', 'Version') }}:</b> {{ stats.config_info?.version || '-' }}</div>
+            <div><b>{{ i18nStore.tl('日志级别', 'Log Level') }}:</b> {{ stats.config_info?.log_level || '-' }}</div>
+            <div><b>{{ i18nStore.tl('Web 端口', 'Web Port') }}:</b> {{ stats.config_info?.web_port || '-' }}</div>
+            <div><b>{{ i18nStore.tl('日志路径', 'Log Path') }}:</b> {{ stats.config_info?.log_file_path || '-' }}</div>
             <div><b>Basic Auth:</b> {{ stats.config_info?.basic_auth ? 'On' : 'Off' }}</div>
           </div>
         </div>
@@ -68,14 +68,14 @@
 
       <!-- 维护操作（后端 /client/reset-id：重排 sessions 自增 ID 序列） -->
       <div class="sv-config-panel">
-        <div class="sv-panel-header">{{ isZh ? '维护操作' : 'Maintenance' }}</div>
+        <div class="sv-panel-header">{{ i18nStore.tl('维护操作', 'Maintenance') }}</div>
         <div class="sv-panel-body">
           <div class="sv-maintain-row">
             <span class="sv-maintain-desc">
-              {{ isZh ? '将 sessions 表自增 ID 序列重置为当前最大 ID，下一次上线从 max+1 继续编号。' : 'Reset the sessions AUTOINCREMENT sequence to the current max ID; the next beacon continues from max+1.' }}
+              {{ i18nStore.tl('将 sessions 表自增 ID 序列重置为当前最大 ID，下一次上线从 max+1 继续编号。', 'Reset the sessions AUTOINCREMENT sequence to the current max ID; the next beacon continues from max+1.') }}
             </span>
             <button class="cs-btn cs-btn-danger" :disabled="resettingId" @click="handleResetClientId">
-              {{ resettingId ? (isZh ? '重置中...' : 'Resetting...') : (isZh ? '重置会话 ID 序列' : 'Reset Session ID Sequence') }}
+              {{ resettingId ? (i18nStore.tl('重置中...', 'Resetting...')) : (i18nStore.tl('重置会话 ID 序列', 'Reset Session ID Sequence')) }}
             </button>
           </div>
         </div>

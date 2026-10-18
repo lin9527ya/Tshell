@@ -38,7 +38,19 @@ const userSetters = {
   setUserName: vi.fn(),
 }
 vi.mock('@/stores/user', () => ({ useUserStore: () => userSetters }))
-vi.mock('@/stores/i18n', () => ({ useI18nStore: () => ({ isZh: true, toggleLocale: vi.fn() }) }))
+// i18n store 替身：必须覆盖组件实际用到的每个方法。
+// 只给 isZh/toggleLocale 时，组件改用 tl() 后会以
+// "i18nStore.tl is not a function" 失败 —— 而且只在渲染到那一行时才炸。
+// tl 这里按 locale 真的分支，而不是恒返回中文：否则语言相关的回归测不出来。
+const makeI18nMock = (locale: 'zh' | 'en') => ({
+  isZh: locale === 'zh',
+  currentLocale: locale,
+  setLocale: vi.fn(),
+  toggleLocale: vi.fn(),
+  t: (key: string, defaultText?: string) => defaultText || key,
+  tl: (zh: string, en: string) => (locale === 'zh' ? zh : en),
+})
+vi.mock('@/stores/i18n', () => ({ useI18nStore: () => makeI18nMock('zh') }))
 vi.mock('@/stores/theme', () => ({ useThemeStore: () => ({ isDark: false, setTheme: vi.fn() }) }))
 vi.mock('@/utils/notifyAudio', () => ({ primeAudio: vi.fn() }))
 vi.mock('@/assets/logo.ico', () => ({ default: 'logo.ico' }))

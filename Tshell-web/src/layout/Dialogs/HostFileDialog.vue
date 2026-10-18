@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     :model-value="modelValue"
-    :title="isZh ? '文件托管' : 'Host File'"
+    :title="i18nStore.tl('文件托管', 'Host File')"
     width="540px"
     class="cs-dialog"
     :close-on-click-modal="false"
@@ -9,26 +9,26 @@
   >
     <div class="cs-dialog-body cs-font-ui">
       <div class="cs-dialog-desc">
-        {{ isZh ? '上传文件经投递通道(/d/)对外分发,支持 MIME 伪装、一次性下载与配额限制;托管记录出现在站点管理列表,可随时关闭/删除。单文件上限 50MB。' : 'Host a file via the delivery hub (/d/). 50MB max per file.' }}
+        {{ i18nStore.tl('上传文件经投递通道(/d/)对外分发,支持 MIME 伪装、一次性下载与配额限制;托管记录出现在站点管理列表,可随时关闭/删除。单文件上限 50MB。', 'Host a file via the delivery hub (/d/). 50MB max per file.') }}
       </div>
 
       <div class="cs-form-row">
-        <label class="cs-form-label"><span class="req">*</span> {{ isZh ? '托管文件:' : 'File:' }}</label>
+        <label class="cs-form-label"><span class="req">*</span> {{ i18nStore.tl('托管文件:', 'File:') }}</label>
         <div class="cs-form-input-wrap has-append">
-          <el-input v-model="form.fileName" size="small" :placeholder="isZh ? '点击右侧选择文件…' : 'Choose a file…'" readonly />
-          <button class="cs-btn cs-btn-xs" :title="isZh ? '选择文件' : 'Choose File'" @click="chooseFile">📄</button>
+          <el-input v-model="form.fileName" size="small" :placeholder="i18nStore.tl('点击右侧选择文件…', 'Choose a file…')" readonly />
+          <button class="cs-btn cs-btn-xs" :title="i18nStore.tl('选择文件', 'Choose File')" @click="chooseFile">📄</button>
         </div>
       </div>
 
       <div class="cs-form-row">
-        <label class="cs-form-label">{{ isZh ? 'URI 伪装:' : 'URI Path:' }}</label>
+        <label class="cs-form-label">{{ i18nStore.tl('URI 伪装:', 'URI Path:') }}</label>
         <div class="cs-form-input-wrap">
           <el-input v-model="form.uriPath" size="small" placeholder="/download/file.ext" />
         </div>
       </div>
 
       <div class="cs-form-row">
-        <label class="cs-form-label">{{ isZh ? 'MIME 类型:' : 'Mime Type:' }}</label>
+        <label class="cs-form-label">{{ i18nStore.tl('MIME 类型:', 'Mime Type:') }}</label>
         <div class="cs-form-input-wrap">
           <el-select v-model="form.mimeType" size="small" style="width: 100%">
             <el-option label="automatic" value="automatic" />
@@ -43,18 +43,18 @@
       </div>
 
       <div class="cs-form-row">
-        <label class="cs-form-label">{{ isZh ? '下载限制:' : 'Limits:' }}</label>
+        <label class="cs-form-label">{{ i18nStore.tl('下载限制:', 'Limits:') }}</label>
         <div class="cs-form-input-wrap" style="display:flex; align-items:center; gap:14px;">
-          <el-checkbox v-model="form.oneTime">{{ isZh ? '一次性下载' : 'One-time' }}</el-checkbox>
-          <el-input-number v-model="form.maxDownloads" size="small" :min="0" :max="99999" :placeholder="isZh ? '次数上限(0=不限)' : 'Max downloads'" style="width: 170px" />
+          <el-checkbox v-model="form.oneTime">{{ i18nStore.tl('一次性下载', 'One-time') }}</el-checkbox>
+          <el-input-number v-model="form.maxDownloads" size="small" :min="0" :max="99999" :placeholder="i18nStore.tl('次数上限(0=不限)', 'Max downloads')" style="width: 170px" />
         </div>
       </div>
 
       <div v-if="resultUrl" class="cs-form-row">
-        <label class="cs-form-label">{{ isZh ? '分发链接:' : 'URL:' }}</label>
+        <label class="cs-form-label">{{ i18nStore.tl('分发链接:', 'URL:') }}</label>
         <div class="cs-form-input-wrap has-append">
           <el-input :model-value="resultUrl" size="small" readonly class="cs-font-mono" />
-          <button class="cs-btn cs-btn-xs" @click="copyUrl">{{ isZh ? '复制' : 'Copy' }}</button>
+          <button class="cs-btn cs-btn-xs" @click="copyUrl">{{ i18nStore.tl('复制', 'Copy') }}</button>
         </div>
       </div>
     </div>
@@ -62,10 +62,10 @@
     <template #footer>
       <div class="cs-dialog-footer-center">
         <button class="cs-btn cs-btn-primary" :disabled="loading" @click="handleLaunch">
-          {{ loading ? (isZh ? '上传中…' : 'Uploading…') : (isZh ? '启动托管' : 'Launch') }}
+          {{ loading ? (i18nStore.tl('上传中…', 'Uploading…')) : (i18nStore.tl('启动托管', 'Launch')) }}
         </button>
         <button class="cs-btn" @click="handleHelp">
-          {{ isZh ? '帮助' : 'Help' }}
+          {{ i18nStore.tl('帮助', 'Help') }}
         </button>
       </div>
     </template>

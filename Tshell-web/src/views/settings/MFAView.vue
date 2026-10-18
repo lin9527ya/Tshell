@@ -2,23 +2,21 @@
   <div class="mfa-page">
     <section class="mfa-card">
       <header class="mfa-head">
-        <h3>{{ isZh ? '两步验证（TOTP）' : 'Two-factor authentication (TOTP)' }}</h3>
+        <h3>{{ i18nStore.tl('两步验证（TOTP）', 'Two-factor authentication (TOTP)') }}</h3>
         <span class="mfa-badge" :class="enabled ? 'on' : 'off'">
-          {{ enabled ? (isZh ? '已开启' : 'Enabled') : isZh ? '未开启' : 'Disabled' }}
+          {{ enabled ? (i18nStore.tl('已开启', 'Enabled')) : i18nStore.tl('未开启', 'Disabled') }}
         </span>
       </header>
 
       <p class="mfa-desc">
-        {{ isZh
-          ? '开启后登录需要「口令 + 认证器动态码」两步。认证器丢失时可用恢复码登录，或用管理员重置。'
-          : 'Once enabled, sign-in requires both your password and a code from your authenticator. If you lose the authenticator, use a recovery code or ask an admin to reset.' }}
+        {{ i18nStore.tl('开启后登录需要「口令 + 认证器动态码」两步。认证器丢失时可用恢复码登录，或用管理员重置。', 'Once enabled, sign-in requires both your password and a code from your authenticator. If you lose the authenticator, use a recovery code or ask an admin to reset.') }}
       </p>
 
       <p v-if="enabled" class="mfa-meta">
-        {{ isZh ? '剩余恢复码' : 'Recovery codes left' }}:
+        {{ i18nStore.tl('剩余恢复码', 'Recovery codes left') }}:
         <strong :class="{ warn: recoveryLeft <= 2 }">{{ recoveryLeft }}</strong>
         <span v-if="recoveryLeft <= 2" class="mfa-warn">
-          {{ isZh ? '（不多了，建议重新绑定一次以换一批）' : '(running low — re-enroll to get a fresh set)' }}
+          {{ i18nStore.tl('（不多了，建议重新绑定一次以换一批）', '(running low — re-enroll to get a fresh set)') }}
         </span>
       </p>
 
@@ -29,34 +27,34 @@
             v-model="password"
             type="password"
             show-password
-            :placeholder="isZh ? '当前口令（用于确认身份）' : 'Current password'"
+            :placeholder="i18nStore.tl('当前口令（用于确认身份）', 'Current password')"
           />
           <button class="mfa-btn" :disabled="busy" @click="startEnroll">
-            {{ isZh ? '开始绑定' : 'Start enrollment' }}
+            {{ i18nStore.tl('开始绑定', 'Start enrollment') }}
           </button>
         </template>
 
         <template v-else>
           <ol class="mfa-steps">
-            <li>{{ isZh ? '用认证器扫描二维码（或手动输入密钥）' : 'Scan the QR code (or enter the key manually)' }}</li>
-            <li>{{ isZh ? '抄写下面的恢复码（只显示这一次）' : 'Write down the recovery codes (shown once)' }}</li>
-            <li>{{ isZh ? '输入认证器里的动态码完成绑定' : 'Enter a code from the authenticator to finish' }}</li>
+            <li>{{ i18nStore.tl('用认证器扫描二维码（或手动输入密钥）', 'Scan the QR code (or enter the key manually)') }}</li>
+            <li>{{ i18nStore.tl('抄写下面的恢复码（只显示这一次）', 'Write down the recovery codes (shown once)') }}</li>
+            <li>{{ i18nStore.tl('输入认证器里的动态码完成绑定', 'Enter a code from the authenticator to finish') }}</li>
           </ol>
 
           <div class="mfa-qr">
             <img :src="qrUrl" alt="otpauth QR" />
           </div>
           <div class="mfa-secret">
-            <span class="mfa-secret-label">{{ isZh ? '手动密钥' : 'Manual key' }}</span>
+            <span class="mfa-secret-label">{{ i18nStore.tl('手动密钥', 'Manual key') }}</span>
             <code>{{ enroll.secret }}</code>
-            <button class="mfa-copy" @click="copy(enroll.secret)">{{ isZh ? '复制' : 'Copy' }}</button>
+            <button class="mfa-copy" @click="copy(enroll.secret)">{{ i18nStore.tl('复制', 'Copy') }}</button>
           </div>
 
           <div class="mfa-recovery">
             <div class="mfa-recovery-head">
-              <strong>{{ isZh ? '恢复码' : 'Recovery codes' }}</strong>
+              <strong>{{ i18nStore.tl('恢复码', 'Recovery codes') }}</strong>
               <button class="mfa-copy" @click="copy(enroll.recovery_codes.join('\n'))">
-                {{ isZh ? '全部复制' : 'Copy all' }}
+                {{ i18nStore.tl('全部复制', 'Copy all') }}
               </button>
             </div>
             <ul>
@@ -67,14 +65,14 @@
           <el-input
             v-model="confirmCode"
             inputmode="numeric"
-            :placeholder="isZh ? '认证器中的 6 位动态码' : '6-digit code'"
+            :placeholder="i18nStore.tl('认证器中的 6 位动态码', '6-digit code')"
           />
           <div class="mfa-actions">
             <button class="mfa-btn" :disabled="busy" @click="confirmEnroll">
-              {{ isZh ? '完成绑定' : 'Confirm' }}
+              {{ i18nStore.tl('完成绑定', 'Confirm') }}
             </button>
             <button class="mfa-btn ghost" :disabled="busy" @click="cancelEnroll">
-              {{ isZh ? '取消' : 'Cancel' }}
+              {{ i18nStore.tl('取消', 'Cancel') }}
             </button>
           </div>
         </template>
@@ -86,14 +84,14 @@
           v-model="password"
           type="password"
           show-password
-          :placeholder="isZh ? '当前口令' : 'Current password'"
+          :placeholder="i18nStore.tl('当前口令', 'Current password')"
         />
         <el-input
           v-model="disableCode"
-          :placeholder="isZh ? '动态码或一个恢复码' : 'Code or a recovery code'"
+          :placeholder="i18nStore.tl('动态码或一个恢复码', 'Code or a recovery code')"
         />
         <button class="mfa-btn danger" :disabled="busy" @click="disable">
-          {{ isZh ? '关闭两步验证' : 'Disable' }}
+          {{ i18nStore.tl('关闭两步验证', 'Disable') }}
         </button>
       </div>
     </section>

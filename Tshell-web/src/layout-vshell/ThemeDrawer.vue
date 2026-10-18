@@ -34,7 +34,7 @@ const NAV_MODES: { key: NavMode; zh: string; en: string }[] = [
 <template>
   <el-drawer
     v-model="visible"
-    :title="isZh ? '主题配置' : 'Theme Configuration'"
+    :title="i18nStore.tl('主题配置', 'Theme Configuration')"
     direction="rtl"
     size="360px"
     append-to-body
@@ -42,7 +42,7 @@ const NAV_MODES: { key: NavMode; zh: string; en: string }[] = [
   >
     <div class="td-body cs-font-ui">
       <!-- 主题 -->
-      <div class="td-sec">{{ isZh ? '主题' : 'Theme' }}</div>
+      <div class="td-sec">{{ i18nStore.tl('主题', 'Theme') }}</div>
       <div class="td-center">
         <div class="td-dark-switch" :class="{ 'is-dark': theme.isDark }" @click="theme.toggleTheme()">
           <span class="td-knob"><VsIcon :name="theme.isDark ? 'moon' : 'sun'" :size="12" /></span>
@@ -50,14 +50,14 @@ const NAV_MODES: { key: NavMode; zh: string; en: string }[] = [
       </div>
 
       <!-- 导航栏模式 -->
-      <div class="td-sec">{{ isZh ? '导航栏模式' : 'Navigation mode' }}</div>
+      <div class="td-sec">{{ i18nStore.tl('导航栏模式', 'Navigation mode') }}</div>
       <div class="td-center td-navmodes">
         <div
           v-for="m in NAV_MODES"
           :key="m.key"
           class="td-navmode"
           :class="{ active: theme.config.navMode === m.key }"
-          :title="isZh ? m.zh : m.en"
+          :title="i18nStore.tl(m.zh, m.en)"
           @click="theme.setNavMode(m.key)"
         >
           <!-- 缩略图：四种布局示意（侧栏整高 / 顶栏整宽 / 图标栏 / 无侧栏） -->
@@ -85,7 +85,7 @@ const NAV_MODES: { key: NavMode; zh: string; en: string }[] = [
       </div>
 
       <!-- 顶栏主题 -->
-      <div class="td-sec">{{ isZh ? '顶栏主题' : 'Header theme' }}</div>
+      <div class="td-sec">{{ i18nStore.tl('顶栏主题', 'Header theme') }}</div>
       <div class="td-swatches">
         <button
           v-for="c in HEADER_COLORS"
@@ -101,7 +101,7 @@ const NAV_MODES: { key: NavMode; zh: string; en: string }[] = [
       </div>
 
       <!-- 菜单主题 -->
-      <div class="td-sec">{{ isZh ? '菜单主题' : 'Menu theme' }}</div>
+      <div class="td-sec">{{ i18nStore.tl('菜单主题', 'Menu theme') }}</div>
       <div class="td-swatches">
         <button
           v-for="c in MENU_COLORS"
@@ -114,13 +114,13 @@ const NAV_MODES: { key: NavMode; zh: string; en: string }[] = [
         />
       </div>
       <div class="td-hint">
-        {{ isZh ? '菜单主题作用于「左侧菜单」模式下的侧边导航' : 'Applies to the sidebar in side-menu mode' }}
+        {{ i18nStore.tl('菜单主题作用于「左侧菜单」模式下的侧边导航', 'Applies to the sidebar in side-menu mode') }}
       </div>
 
       <!-- 控制台 -->
-      <div class="td-sec">{{ isZh ? '控制台' : 'Console' }}</div>
+      <div class="td-sec">{{ i18nStore.tl('控制台', 'Console') }}</div>
       <div class="td-field">
-        <label>{{ isZh ? '回滚行数' : 'Scrollback lines' }}</label>
+        <label>{{ i18nStore.tl('回滚行数', 'Scrollback lines') }}</label>
         <el-input-number
           v-model="prefStore.scrollback"
           :min="1000"
@@ -130,7 +130,7 @@ const NAV_MODES: { key: NavMode; zh: string; en: string }[] = [
         />
       </div>
       <div class="td-field">
-        <label>{{ isZh ? '上线提示音' : 'Online chime' }}</label>
+        <label>{{ i18nStore.tl('上线提示音', 'Online chime') }}</label>
         <el-switch v-model="prefStore.audioNotify" />
       </div>
     </div>

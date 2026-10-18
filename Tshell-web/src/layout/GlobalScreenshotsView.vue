@@ -4,9 +4,9 @@
     <div class="gs-toolbar">
       <div class="gs-title-group">
         <el-icon class="gs-title-icon"><Picture /></el-icon>
-        <span class="gs-title">{{ isZh ? (isClientScoped ? `屏幕截图: ${targetClientTitle}` : '屏幕截图管理') : (isClientScoped ? `Screenshots: ${targetClientTitle}` : 'Screenshots') }}</span>
+        <span class="gs-title">{{ i18nStore.tl(isClientScoped ? `屏幕截图: ${targetClientTitle}` : '屏幕截图管理', isClientScoped ? `Screenshots: ${targetClientTitle}` : 'Screenshots') }}</span>
         <span class="gs-count">
-          ({{ isClientScoped && scopeFilter === 'current' ? `${filteredScreenshots.length} ${isZh ? '张当前会话' : 'current'}` : `${filteredScreenshots.length} ${isZh ? '张截图' : 'captures'}` }})
+          ({{ isClientScoped && scopeFilter === 'current' ? `${filteredScreenshots.length} ${i18nStore.tl('张当前会话', 'current')}` : `${filteredScreenshots.length} ${i18nStore.tl('张截图', 'captures')}` }})
         </span>
       </div>
 
@@ -17,14 +17,14 @@
           :class="{ active: scopeFilter === 'current' }"
           @click="scopeFilter = 'current'"
         >
-          {{ isZh ? '当前会话' : 'Current' }}
+          {{ i18nStore.tl('当前会话', 'Current') }}
         </button>
         <button
           class="gs-scope-btn"
           :class="{ active: scopeFilter === 'all' }"
           @click="scopeFilter = 'all'"
         >
-          {{ isZh ? '全部会话' : 'All' }}
+          {{ i18nStore.tl('全部会话', 'All') }}
         </button>
       </div>
 
@@ -35,26 +35,26 @@
         <button
           class="gs-btn"
           :class="{ active: viewMode === 'split' }"
-          :title="isZh ? '分屏视图' : 'Split View'"
+          :title="i18nStore.tl('分屏视图', 'Split View')"
           @click="viewMode = 'split'"
         >
-          {{ isZh ? '分屏' : 'Split' }}
+          {{ i18nStore.tl('分屏', 'Split') }}
         </button>
         <button
           class="gs-btn"
           :class="{ active: viewMode === 'table' }"
-          :title="isZh ? '表格视图' : 'Table View'"
+          :title="i18nStore.tl('表格视图', 'Table View')"
           @click="viewMode = 'table'"
         >
-          {{ isZh ? '表格' : 'Table' }}
+          {{ i18nStore.tl('表格', 'Table') }}
         </button>
         <button
           class="gs-btn"
           :class="{ active: viewMode === 'grid' }"
-          :title="isZh ? '网格视图' : 'Grid View'"
+          :title="i18nStore.tl('网格视图', 'Grid View')"
           @click="viewMode = 'grid'"
         >
-          {{ isZh ? '网格' : 'Grid' }}
+          {{ i18nStore.tl('网格', 'Grid') }}
         </button>
       </div>
 
@@ -65,7 +65,7 @@
         size="small"
         clearable
         style="width: 220px"
-        :placeholder="isZh ? '选择截图目标客户端' : 'Select target beacon'"
+        :placeholder="i18nStore.tl('选择截图目标客户端', 'Select target beacon')"
       >
         <el-option
           v-for="c in onlineClients"
@@ -77,18 +77,18 @@
 
       <!-- Quality Selector -->
       <div class="gs-quality-group">
-        <span class="gs-label">{{ isZh ? '画质:' : 'Quality:' }}</span>
+        <span class="gs-label">{{ i18nStore.tl('画质:', 'Quality:') }}</span>
         <el-select v-model="screenshotQuality" size="small" style="width: 100px">
-          <el-option :value="0" :label="isZh ? '低画质' : 'Low'" />
-          <el-option :value="1" :label="isZh ? '中画质' : 'Medium'" />
-          <el-option :value="2" :label="isZh ? '高画质' : 'High'" />
+          <el-option :value="0" :label="i18nStore.tl('低画质', 'Low')" />
+          <el-option :value="1" :label="i18nStore.tl('中画质', 'Medium')" />
+          <el-option :value="2" :label="i18nStore.tl('高画质', 'High')" />
         </el-select>
       </div>
 
       <!-- Search Input -->
       <el-input
         v-model="searchKey"
-        :placeholder="isZh ? '过滤用户/计算机/IP/标题...' : 'Filter user, computer, title...'"
+        :placeholder="i18nStore.tl('过滤用户/计算机/IP/标题...', 'Filter user, computer, title...')"
         size="small"
         clearable
         class="gs-search-input"
@@ -97,28 +97,28 @@
       <!-- Capture Button in Toolbar -->
       <button class="cs-btn cs-btn-primary" :disabled="isCapturing || !effectiveTargetUid" @click="handleCapture">
         <el-icon :class="{ 'is-loading': isCapturing }"><Camera /></el-icon>
-        <span>{{ isCapturing ? (isZh ? '抓取中...' : 'Capturing...') : (isZh ? '屏幕抓取' : 'Capture') }}</span>
+        <span>{{ isCapturing ? (i18nStore.tl('抓取中...', 'Capturing...')) : (i18nStore.tl('屏幕抓取', 'Capture')) }}</span>
       </button>
 
       <!-- Item Actions (选中项) -->
       <button class="cs-btn" :disabled="!selectedItem" @click="openFullscreen(selectedItem)">
-        {{ isZh ? '全屏查看' : 'Fullscreen' }}
+        {{ i18nStore.tl('全屏查看', 'Fullscreen') }}
       </button>
       <button class="cs-btn" :disabled="!selectedItem" @click="downloadItem(selectedItem)">
-        {{ isZh ? '保存/下载' : 'Save' }}
+        {{ i18nStore.tl('保存/下载', 'Save') }}
       </button>
       <button class="cs-btn cs-btn-danger" :disabled="!selectedItem" @click="deleteItem(selectedItem)">
-        {{ isZh ? '删除' : 'Delete' }}
+        {{ i18nStore.tl('删除', 'Delete') }}
       </button>
       <button class="cs-btn" :disabled="!filteredScreenshots.length" @click="handleClear">
-        {{ isZh ? '清空列表' : 'Clear' }}
+        {{ i18nStore.tl('清空列表', 'Clear') }}
       </button>
       <button class="cs-btn" @click="showHelp">
-        {{ isZh ? '帮助' : 'Help' }}
+        {{ i18nStore.tl('帮助', 'Help') }}
       </button>
 
       <!-- Refresh Button -->
-      <button class="gs-btn-icon" :title="isZh ? '刷新截图' : 'Refresh Screenshots'" @click="refreshAll">
+      <button class="gs-btn-icon" :title="i18nStore.tl('刷新截图', 'Refresh Screenshots')" @click="refreshAll">
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
           <polyline points="23 4 23 10 17 10" />
           <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
@@ -126,7 +126,7 @@
       </button>
 
       <span class="gs-status-info">
-        {{ isZh ? `当前目标: ${currentTargetDisplay} | 共 ${filteredScreenshots.length} 张截图` : `Target: ${currentTargetDisplay} | ${filteredScreenshots.length} captures` }}
+        {{ i18nStore.tl(`当前目标: ${currentTargetDisplay} | 共 ${filteredScreenshots.length} 张截图`, `Target: ${currentTargetDisplay} | ${filteredScreenshots.length} captures`) }}
       </span>
     </div>
 
@@ -147,32 +147,32 @@
           @row-dblclick="openFullscreen"
           @row-contextmenu="onContextMenu"
         >
-          <el-table-column prop="user" :label="isZh ? '用户' : 'user'" width="140" sortable show-overflow-tooltip>
+          <el-table-column prop="user" :label="i18nStore.tl('用户', 'user')" width="140" sortable show-overflow-tooltip>
             <template #default="{ row }">
               <span class="user-cell">{{ row.user || 'SYSTEM *' }}</span>
             </template>
           </el-table-column>
-          <el-table-column prop="computer" :label="isZh ? '计算机' : 'computer'" width="150" sortable show-overflow-tooltip>
+          <el-table-column prop="computer" :label="i18nStore.tl('计算机', 'computer')" width="150" sortable show-overflow-tooltip>
             <template #default="{ row }">
               <span class="host-cell font-bold">{{ row.computer || row.host }}</span>
             </template>
           </el-table-column>
-          <el-table-column prop="session" :label="isZh ? '会话' : 'session'" width="80" sortable align="center">
+          <el-table-column prop="session" :label="i18nStore.tl('会话', 'session')" width="80" sortable align="center">
             <template #default="{ row }">
               <span class="mono-cell">{{ row.session || '1' }}</span>
             </template>
           </el-table-column>
-          <el-table-column prop="time" :label="isZh ? '截取时间' : 'when'" width="175" sortable show-overflow-tooltip>
+          <el-table-column prop="time" :label="i18nStore.tl('截取时间', 'when')" width="175" sortable show-overflow-tooltip>
             <template #default="{ row }">
               <span class="mono-cell">{{ row.time }}</span>
             </template>
           </el-table-column>
-          <el-table-column prop="qualityLabel" :label="isZh ? '画质' : 'quality'" width="95" align="center" sortable>
+          <el-table-column prop="qualityLabel" :label="i18nStore.tl('画质', 'quality')" width="95" align="center" sortable>
             <template #default="{ row }">
               <span class="quality-badge" :class="`q-${row.quality ?? 1}`">{{ row.qualityLabel || '中画质' }}</span>
             </template>
           </el-table-column>
-          <el-table-column prop="title" :label="isZh ? '窗口标题 / 描述' : 'title'" min-width="200" sortable show-overflow-tooltip>
+          <el-table-column prop="title" :label="i18nStore.tl('窗口标题 / 描述', 'title')" min-width="200" sortable show-overflow-tooltip>
             <template #default="{ row }">
               <span class="title-cell">{{ row.title || 'Tshell' }}</span>
             </template>
@@ -182,8 +182,8 @@
             <EmptyState
               icon="📷"
               variant="inline"
-              :title="isZh ? '暂无屏幕截图' : 'No Screenshots'"
-              :desc="isZh ? (effectiveTargetUid ? '点击右上角【屏幕抓取】即可捕获当前被控端画面。' : '请先选择在线客户端，然后点击【屏幕抓取】捕获远程画面。') : 'Click [ Capture ] to capture the screen.'"
+              :title="i18nStore.tl('暂无屏幕截图', 'No Screenshots')"
+              :desc="i18nStore.tl(effectiveTargetUid ? '点击右上角【屏幕抓取】即可捕获当前被控端画面。' : '请先选择在线客户端，然后点击【屏幕抓取】捕获远程画面。', 'Click [ Capture ] to capture the screen.')"
             />
           </template>
         </el-table>
@@ -192,11 +192,11 @@
       <!-- Preview Pane (Split Mode / Active Item) -->
       <div v-show="viewMode === 'split'" class="gs-preview-pane">
         <div class="gs-preview-header">
-          <span class="gs-preview-title">{{ selectedItem?.title || (selectedItem ? `Tshell - [ ${selectedItem.computer || selectedItem.host} ]` : (isZh ? '画面预览' : 'Preview')) }}</span>
+          <span class="gs-preview-title">{{ selectedItem?.title || (selectedItem ? `Tshell - [ ${selectedItem.computer || selectedItem.host} ]` : (i18nStore.tl('画面预览', 'Preview'))) }}</span>
           <div class="gs-preview-tools">
-            <button class="cs-btn cs-btn-xs" :disabled="!selectedItem" @click="zoomReset">{{ isZh ? '1:1' : '1:1' }}</button>
-            <button class="cs-btn cs-btn-xs" :disabled="!selectedItem" @click="openFullscreen(selectedItem)">{{ isZh ? '全屏' : 'Fullscreen' }}</button>
-            <button class="cs-btn cs-btn-xs cs-btn-primary" :disabled="!selectedItem" @click="downloadItem(selectedItem)">{{ isZh ? '保存' : 'Save' }}</button>
+            <button class="cs-btn cs-btn-xs" :disabled="!selectedItem" @click="zoomReset">{{ i18nStore.tl('1:1', '1:1') }}</button>
+            <button class="cs-btn cs-btn-xs" :disabled="!selectedItem" @click="openFullscreen(selectedItem)">{{ i18nStore.tl('全屏', 'Fullscreen') }}</button>
+            <button class="cs-btn cs-btn-xs cs-btn-primary" :disabled="!selectedItem" @click="downloadItem(selectedItem)">{{ i18nStore.tl('保存', 'Save') }}</button>
           </div>
         </div>
 
@@ -213,7 +213,7 @@
             </div>
           </div>
           <div v-else class="gs-preview-placeholder">
-            <div class="placeholder-text">{{ isZh ? '请在左侧列表中选择截图以预览，或点击【屏幕抓取】获取新截图' : 'Select a screenshot to preview or click [ Capture ]' }}</div>
+            <div class="placeholder-text">{{ i18nStore.tl('请在左侧列表中选择截图以预览，或点击【屏幕抓取】获取新截图', 'Select a screenshot to preview or click [ Capture ]') }}</div>
           </div>
         </div>
       </div>
@@ -232,8 +232,8 @@
           <div class="gs-card-img-wrap">
             <img :src="item.dataUrl" alt="Screenshot" class="gs-card-img" />
             <div class="gs-card-overlay">
-              <button class="cs-btn cs-btn-xs" @click.stop="openFullscreen(item)">{{ isZh ? '全屏' : 'Fullscreen' }}</button>
-              <button class="cs-btn cs-btn-xs cs-btn-primary" @click.stop="downloadItem(item)">{{ isZh ? '保存' : 'Save' }}</button>
+              <button class="cs-btn cs-btn-xs" @click.stop="openFullscreen(item)">{{ i18nStore.tl('全屏', 'Fullscreen') }}</button>
+              <button class="cs-btn cs-btn-xs cs-btn-primary" @click.stop="downloadItem(item)">{{ i18nStore.tl('保存', 'Save') }}</button>
             </div>
           </div>
           <div class="gs-card-footer">
@@ -246,7 +246,7 @@
           v-if="!filteredScreenshots.length"
           icon="📷"
           variant="overlay"
-          :title="isZh ? '暂无屏幕截图' : 'No Screenshots'"
+          :title="i18nStore.tl('暂无屏幕截图', 'No Screenshots')"
         />
       </div>
     </div>
@@ -261,17 +261,17 @@
         @contextmenu.prevent
       >
         <div class="ctx-item is-highlight" @click="handleInteract(ctxMenu.row)">
-          <span class="ctx-text">{{ isZh ? '会话交互(I)' : 'Interact (I)' }}</span>
+          <span class="ctx-text">{{ i18nStore.tl('会话交互(I)', 'Interact (I)') }}</span>
         </div>
         <div class="ctx-item" @click="recaptureTarget(ctxMenu.row)">
-          <span class="ctx-text">{{ isZh ? '重新截图(C)' : 'Recapture (C)' }}</span>
+          <span class="ctx-text">{{ i18nStore.tl('重新截图(C)', 'Recapture (C)') }}</span>
         </div>
         <div
           class="ctx-item has-sub"
           @mouseenter="ctxMenu.showColor = true"
           @mouseleave="ctxMenu.showColor = false"
         >
-          <span class="ctx-text">{{ isZh ? '颜色标记(C)' : 'Color (C)' }}</span>
+          <span class="ctx-text">{{ i18nStore.tl('颜色标记(C)', 'Color (C)') }}</span>
           <span class="ctx-arrow">▶</span>
 
           <div v-show="ctxMenu.showColor" class="ctx-color-palette">
@@ -280,17 +280,17 @@
               :key="c.value"
               class="color-box"
               :style="{ backgroundColor: c.value }"
-              :title="isZh ? c.zh : c.en"
+              :title="i18nStore.tl(c.zh, c.en)"
               @click.stop="setColor(c.value)"
             />
           </div>
         </div>
         <div class="ctx-divider" />
         <div class="ctx-item" @click="downloadItem(ctxMenu.row)">
-          <span class="ctx-text">{{ isZh ? '保存(S)' : 'Save (S)' }}</span>
+          <span class="ctx-text">{{ i18nStore.tl('保存(S)', 'Save (S)') }}</span>
         </div>
         <div class="ctx-item ctx-danger" @click="deleteItem(ctxMenu.row)">
-          <span class="ctx-text">{{ isZh ? '删除(R)' : 'Remove (R)' }}</span>
+          <span class="ctx-text">{{ i18nStore.tl('删除(R)', 'Remove (R)') }}</span>
         </div>
       </div>
     </Teleport>
@@ -319,7 +319,7 @@
           <span class="zoom-label">{{ Math.round(fsZoomFactor * 100) }}%</span>
           <button class="cs-btn cs-btn-xs" @click="fsZoomFactor = Math.min(4, fsZoomFactor + 0.2)">＋</button>
           <button class="cs-btn cs-btn-xs" @click="fsZoomFactor = 1">1:1</button>
-          <button class="cs-btn cs-btn-xs cs-btn-primary" @click="downloadItem(selectedItem)">{{ isZh ? '下载图片' : 'Download' }}</button>
+          <button class="cs-btn cs-btn-xs cs-btn-primary" @click="downloadItem(selectedItem)">{{ i18nStore.tl('下载图片', 'Download') }}</button>
         </div>
       </div>
     </el-dialog>

@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     v-model="visible"
-    :title="title || (isZh ? '选择监听器' : 'Choose a listener')"
+    :title="title || (i18nStore.tl('选择监听器', 'Choose a listener'))"
     width="780px"
     append-to-body
     class="cs-dialog"
@@ -9,7 +9,7 @@
   >
     <div class="cs-dialog-body">
       <div class="cs-dialog-desc">
-        {{ desc || (isZh ? '选择运行中的监听器。载荷将回连该监听器。' : 'Select an active/running listener. The payload will connect back to this listener.') }}
+        {{ desc || (i18nStore.tl('选择运行中的监听器。载荷将回连该监听器。', 'Select an active/running listener. The payload will connect back to this listener.')) }}
       </div>
 
       <div class="cs-table-wrap">
@@ -23,36 +23,36 @@
           @row-dblclick="onRowDblClick"
           class="cs-session-table"
         >
-          <el-table-column prop="name" :label="isZh ? '连接地址' : 'Connect Address'" min-width="160" sortable show-overflow-tooltip />
-          <el-table-column prop="payload" :label="isZh ? '监听地址' : 'Listen Address'" min-width="150" sortable show-overflow-tooltip />
-          <el-table-column prop="host" :label="isZh ? '主机' : 'Host'" min-width="110" sortable show-overflow-tooltip />
-          <el-table-column prop="port" :label="isZh ? '端口' : 'Port'" width="80" sortable align="right" />
-          <el-table-column :label="isZh ? '状态' : 'State'" width="90" align="center">
+          <el-table-column prop="name" :label="i18nStore.tl('连接地址', 'Connect Address')" min-width="160" sortable show-overflow-tooltip />
+          <el-table-column prop="payload" :label="i18nStore.tl('监听地址', 'Listen Address')" min-width="150" sortable show-overflow-tooltip />
+          <el-table-column prop="host" :label="i18nStore.tl('主机', 'Host')" min-width="110" sortable show-overflow-tooltip />
+          <el-table-column prop="port" :label="i18nStore.tl('端口', 'Port')" width="80" sortable align="right" />
+          <el-table-column :label="i18nStore.tl('状态', 'State')" width="90" align="center">
             <template #default="{ row }">
-              <span :class="row.status === 1 ? 'st-online' : 'st-offline'">{{ row.status === 1 ? (isZh ? '运行中' : 'Active') : (isZh ? '未运行' : 'Stopped') }}</span>
+              <span :class="row.status === 1 ? 'st-online' : 'st-offline'">{{ row.status === 1 ? (i18nStore.tl('运行中', 'Active')) : (i18nStore.tl('未运行', 'Stopped')) }}</span>
             </template>
           </el-table-column>
         </el-table>
       </div>
 
       <div v-if="!loading && !listeners.length" class="cs-empty-hint">
-        {{ isZh ? '暂无运行中的监听器。请点击下方「添加监听器」前往监听器页面创建并启动，或先在「监听器」页面开启监听。' : 'No running listeners found. Click "Add Listener" to open the Listener page and start one.' }}
+        {{ i18nStore.tl('暂无运行中的监听器。请点击下方「添加监听器」前往监听器页面创建并启动，或先在「监听器」页面开启监听。', 'No running listeners found. Click "Add Listener" to open the Listener page and start one.') }}
       </div>
     </div>
 
     <template #footer>
       <div class="cs-dialog-footer-center">
         <button class="cs-btn cs-btn-primary" :disabled="!selectedRow" @click="handleChoose">
-          {{ isZh ? '选择' : 'Choose' }}
+          {{ i18nStore.tl('选择', 'Choose') }}
         </button>
         <button class="cs-btn" @click="handleAdd">
-          {{ isZh ? '添加监听器' : 'Add Listener' }}
+          {{ i18nStore.tl('添加监听器', 'Add Listener') }}
         </button>
         <button class="cs-btn" @click="handleRefresh">
-          {{ isZh ? '刷新' : 'Refresh' }}
+          {{ i18nStore.tl('刷新', 'Refresh') }}
         </button>
         <button class="cs-btn" @click="handleHelp">
-          {{ isZh ? '帮助' : 'Help' }}
+          {{ i18nStore.tl('帮助', 'Help') }}
         </button>
       </div>
     </template>

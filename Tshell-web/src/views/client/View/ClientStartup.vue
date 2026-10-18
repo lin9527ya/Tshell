@@ -3,8 +3,8 @@
     <!-- CS Toolbar -->
     <div class="cs-startup-toolbar">
       <div class="toolbar-title-group">
-        <span class="toolbar-title">{{ isZh ? '开机启动（持久化驻留）' : 'Persistence & Startup' }}</span>
-        <span class="toolbar-hint">{{ isZh ? '选择持久化方式将客户端植入目标系统，执行结果在命令控制查看' : 'Select persistence method to maintain access across reboots' }}</span>
+        <span class="toolbar-title">{{ i18nStore.tl('开机启动（持久化驻留）', 'Persistence & Startup') }}</span>
+        <span class="toolbar-hint">{{ i18nStore.tl('选择持久化方式将客户端植入目标系统，执行结果在命令控制查看', 'Select persistence method to maintain access across reboots') }}</span>
       </div>
     </div>
 
@@ -12,10 +12,10 @@
     <div class="cs-startup-body" v-loading="!!loading">
       <div class="cs-startup-section">
         <div class="cs-form-row">
-          <label class="cs-form-label">{{ isZh ? '服务 / 任务名称:' : 'Service / Task Name:' }}</label>
+          <label class="cs-form-label">{{ i18nStore.tl('服务 / 任务名称:', 'Service / Task Name:') }}</label>
           <el-input
             v-model="customName"
-            :placeholder="isZh ? '自定义名称（可选，默认 TshellSvc）' : 'Custom Name (optional, default TshellSvc)'"
+            :placeholder="i18nStore.tl('自定义名称（可选，默认 TshellSvc）', 'Custom Name (optional, default TshellSvc)')"
             style="width: 320px"
             clearable
           />
@@ -24,7 +24,7 @@
 
       <!-- Windows Persistence Group -->
       <div class="cs-group-box">
-        <div class="group-title">Windows {{ isZh ? '持久化策略' : 'Persistence Methods' }}</div>
+        <div class="group-title">Windows {{ i18nStore.tl('持久化策略', 'Persistence Methods') }}</div>
         <div class="group-content">
           <div class="btn-grid">
             <button
@@ -32,39 +32,39 @@
               :disabled="loading !== ''"
               @click="persist('registry')"
             >
-              {{ loading === 'registry' ? (isZh ? '执行中...' : 'Running...') : (isZh ? '注册表 Run 键 (Registry Run)' : 'Registry Run Key') }}
+              {{ loading === 'registry' ? (i18nStore.tl('执行中...', 'Running...')) : (i18nStore.tl('注册表 Run 键 (Registry Run)', 'Registry Run Key')) }}
             </button>
             <button
               class="cs-btn cs-btn-primary"
               :disabled="loading !== ''"
               @click="persist('schtasks')"
             >
-              {{ loading === 'schtasks' ? (isZh ? '执行中...' : 'Running...') : (isZh ? '计划任务 (Scheduled Tasks)' : 'Scheduled Task') }}
+              {{ loading === 'schtasks' ? (i18nStore.tl('执行中...', 'Running...')) : (i18nStore.tl('计划任务 (Scheduled Tasks)', 'Scheduled Task')) }}
             </button>
             <button
               class="cs-btn cs-btn-primary"
               :disabled="loading !== ''"
               @click="persist('startup')"
             >
-              {{ loading === 'startup' ? (isZh ? '执行中...' : 'Running...') : (isZh ? '启动文件夹 (Startup Folder)' : 'Startup Folder') }}
+              {{ loading === 'startup' ? (i18nStore.tl('执行中...', 'Running...')) : (i18nStore.tl('启动文件夹 (Startup Folder)', 'Startup Folder')) }}
             </button>
             <button
               class="cs-btn cs-btn-primary"
               :disabled="loading !== ''"
               @click="promptWmiPersist"
             >
-              {{ isZh ? 'WMI 事件订阅 (WMI)' : 'WMI Subscription' }}
+              {{ i18nStore.tl('WMI 事件订阅 (WMI)', 'WMI Subscription') }}
             </button>
           </div>
           <div class="group-tip">
-            {{ isZh ? '说明：注册表 Run 键无需管理员权限；计划任务与启动文件夹建议提权后执行。' : 'Note: Registry Run key does not require Administrator rights; Tasks and Startup folder benefit from elevated privileges.' }}
+            {{ i18nStore.tl('说明：注册表 Run 键无需管理员权限；计划任务与启动文件夹建议提权后执行。', 'Note: Registry Run key does not require Administrator rights; Tasks and Startup folder benefit from elevated privileges.') }}
           </div>
         </div>
       </div>
 
       <!-- Linux Persistence Group -->
       <div class="cs-group-box">
-        <div class="group-title">Linux {{ isZh ? '持久化策略' : 'Persistence Methods' }}</div>
+        <div class="group-title">Linux {{ i18nStore.tl('持久化策略', 'Persistence Methods') }}</div>
         <div class="group-content">
           <div class="btn-grid">
             <button
@@ -72,18 +72,18 @@
               :disabled="loading !== ''"
               @click="persist('cron')"
             >
-              {{ loading === 'cron' ? (isZh ? '执行中...' : 'Running...') : (isZh ? '定时任务 (Crontab)' : 'Crontab') }}
+              {{ loading === 'cron' ? (i18nStore.tl('执行中...', 'Running...')) : (i18nStore.tl('定时任务 (Crontab)', 'Crontab')) }}
             </button>
             <button
               class="cs-btn"
               :disabled="loading !== ''"
               @click="persist('bashrc')"
             >
-              {{ loading === 'bashrc' ? (isZh ? '执行中...' : 'Running...') : (isZh ? '环境脚本 (.bashrc)' : 'Bashrc Profile') }}
+              {{ loading === 'bashrc' ? (i18nStore.tl('执行中...', 'Running...')) : (i18nStore.tl('环境脚本 (.bashrc)', 'Bashrc Profile')) }}
             </button>
           </div>
           <div class="group-tip">
-            {{ isZh ? '说明：Linux 下 cron 与 bashrc 默认持久化至当前登录用户环境变量。' : 'Note: Linux cron and bashrc persistence take effect for the current user profile.' }}
+            {{ i18nStore.tl('说明：Linux 下 cron 与 bashrc 默认持久化至当前登录用户环境变量。', 'Note: Linux cron and bashrc persistence take effect for the current user profile.') }}
           </div>
         </div>
       </div>

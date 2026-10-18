@@ -126,7 +126,7 @@ function lockUntil(iso: string): string {
 
     <!-- 左侧菜单模式的副栏：汉堡（收起/展开侧栏）+ 当前页面标题 -->
     <template v-if="props.variant !== 'full'">
-      <button class="vs-action-btn vs-side-toggle" :title="isZh ? '收起/展开菜单' : 'Collapse menu'" @click="emit('toggle-side')">
+      <button class="vs-action-btn vs-side-toggle" :title="i18nStore.tl('收起/展开菜单', 'Collapse menu')" @click="emit('toggle-side')">
         <VsIcon name="list-ul" :size="18" />
       </button>
       <span class="vs-topnav-title vs-breadcrumb">{{ activeTitle }}</span>
@@ -147,11 +147,11 @@ function lockUntil(iso: string): string {
     </nav>
 
     <div class="vs-topnav-actions">
-      <button class="vs-action-btn" :title="isZh ? '全屏' : 'Fullscreen'" @click.stop="toggleFullscreen">
+      <button class="vs-action-btn" :title="i18nStore.tl('全屏', 'Fullscreen')" @click.stop="toggleFullscreen">
         <VsIcon :name="isFullscreen ? 'compress' : 'expand'" :size="16" />
       </button>
 
-      <button class="vs-action-btn" :title="isZh ? '切换语言' : 'Language'" @click.stop="i18nStore.toggleLocale()">
+      <button class="vs-action-btn" :title="i18nStore.tl('切换语言', 'Language')" @click.stop="i18nStore.toggleLocale()">
         <VsIcon name="language" :size="16" />
       </button>
 
@@ -159,7 +159,7 @@ function lockUntil(iso: string): string {
       <button
         v-if="canViewGraph"
         class="vs-action-btn"
-        :title="isZh ? '拓扑网络图' : 'Pivot Graph'"
+        :title="i18nStore.tl('拓扑网络图', 'Pivot Graph')"
         @click.stop="router.push('/graph')"
       >
         <VsIcon name="project-diagram" :size="16" />
@@ -168,7 +168,7 @@ function lockUntil(iso: string): string {
       <div class="vs-collab-wrap">
         <button
           class="vs-action-btn vs-collab-btn"
-          :title="isZh ? '在线操作员与会话占用' : 'Online operators & session locks'"
+          :title="i18nStore.tl('在线操作员与会话占用', 'Online operators & session locks')"
           @click.stop="collabOpen = !collabOpen"
         >
           <VsIcon name="users" :size="16" />
@@ -177,9 +177,9 @@ function lockUntil(iso: string): string {
 
         <transition name="vs-pop">
           <div v-if="collabOpen" class="vs-nav-popup vs-collab-popup">
-            <div class="vs-collab-title">{{ isZh ? '在线操作员' : 'Online operators' }}</div>
+            <div class="vs-collab-title">{{ i18nStore.tl('在线操作员', 'Online operators') }}</div>
             <div v-if="!collabStore.operators.length" class="vs-collab-empty">
-              {{ isZh ? '暂无其他在线操作员' : 'No operators online' }}
+              {{ i18nStore.tl('暂无其他在线操作员', 'No operators online') }}
             </div>
             <div v-for="op in collabStore.operators" :key="op.username" class="vs-collab-row">
               <span class="vs-collab-dot" :class="`vs-role-${op.role}`" />
@@ -188,10 +188,10 @@ function lockUntil(iso: string): string {
             </div>
 
             <div class="vs-collab-title vs-collab-title-locks">
-              {{ isZh ? '会话占用' : 'Session locks' }}
+              {{ i18nStore.tl('会话占用', 'Session locks') }}
             </div>
             <div v-if="!collabStore.locks.length" class="vs-collab-empty">
-              {{ isZh ? '当前没有会话被占用' : 'No sessions locked' }}
+              {{ i18nStore.tl('当前没有会话被占用', 'No sessions locked') }}
             </div>
             <div v-for="l in collabStore.locks" :key="l.uid" class="vs-collab-row">
               <VsIcon name="lock" :size="12" class="vs-collab-lock" />
@@ -211,27 +211,27 @@ function lockUntil(iso: string): string {
         <transition name="vs-pop">
           <div v-if="userMenuOpen" class="vs-nav-popup vs-user-popup">
             <div class="vs-popup-item" @click.stop="onUserCmd('preferences')">
-              <VsIcon name="sliders-h" :size="16" /><span>{{ isZh ? '偏好设置' : 'Preferences' }}</span>
+              <VsIcon name="sliders-h" :size="16" /><span>{{ i18nStore.tl('偏好设置', 'Preferences') }}</span>
             </div>
             <div class="vs-popup-item" @click.stop="onUserCmd('theme')">
               <VsIcon :name="isDark ? 'sun' : 'moon'" :size="16" />
-              <span>{{ isDark ? (isZh ? '浅色模式' : 'Light mode') : (isZh ? '深色模式' : 'Dark mode') }}</span>
+              <span>{{ isDark ? (i18nStore.tl('浅色模式', 'Light mode')) : (i18nStore.tl('深色模式', 'Dark mode')) }}</span>
             </div>
             <div class="vs-popup-item" @click.stop="onUserCmd('reports')">
-              <VsIcon name="chart-bar" :size="16" /><span>{{ isZh ? '报告中心' : 'Reports' }}</span>
+              <VsIcon name="chart-bar" :size="16" /><span>{{ i18nStore.tl('报告中心', 'Reports') }}</span>
             </div>
             <div class="vs-popup-item" @click.stop="onUserCmd('about')">
-              <VsIcon name="info-circle" :size="16" /><span>{{ isZh ? '关于' : 'About' }}</span>
+              <VsIcon name="info-circle" :size="16" /><span>{{ i18nStore.tl('关于', 'About') }}</span>
             </div>
             <div class="vs-popup-divider" />
             <div class="vs-popup-item" @click.stop="onUserCmd('logout')">
-              <VsIcon name="sign-out-alt" :size="16" /><span>{{ isZh ? '断开连接' : 'Disconnect' }}</span>
+              <VsIcon name="sign-out-alt" :size="16" /><span>{{ i18nStore.tl('断开连接', 'Disconnect') }}</span>
             </div>
           </div>
         </transition>
       </div>
 
-      <button class="vs-action-btn" :title="isZh ? '偏好设置' : 'Preferences'" @click.stop="onUserCmd('preferences')">
+      <button class="vs-action-btn" :title="i18nStore.tl('偏好设置', 'Preferences')" @click.stop="onUserCmd('preferences')">
         <VsIcon name="gear" :size="16" />
       </button>
     </div>

@@ -12,31 +12,31 @@
     <!-- CS Toolbar -->
     <div class="sm-toolbar">
       <div class="sm-title-group">
-        <span class="sm-title">{{ isZh ? '脚本管理器' : 'Scripts' }}</span>
-        <span class="sm-count">({{ isZh ? `已加载 ${scriptList.length} 个脚本` : `${scriptList.length} loaded` }})</span>
+        <span class="sm-title">{{ i18nStore.tl('脚本管理器', 'Scripts') }}</span>
+        <span class="sm-count">({{ i18nStore.tl(`已加载 ${scriptList.length} 个脚本`, `${scriptList.length} loaded`) }})</span>
       </div>
 
       <div class="sm-spacer" />
 
       <el-input
         v-model="searchKey"
-        :placeholder="isZh ? '过滤脚本名称、路径...' : 'Filter script name, path...'"
+        :placeholder="i18nStore.tl('过滤脚本名称、路径...', 'Filter script name, path...')"
         size="small"
         clearable
         class="sm-search"
       />
 
       <button class="cs-btn cs-btn-primary" @click="handleLoad">
-        {{ isZh ? '加载' : 'Load' }}
+        {{ i18nStore.tl('加载', 'Load') }}
       </button>
       <button class="cs-btn cs-btn-danger" :disabled="!selectedRow" @click="handleUnload">
-        {{ isZh ? '卸载' : 'Unload' }}
+        {{ i18nStore.tl('卸载', 'Unload') }}
       </button>
       <button class="cs-btn" :disabled="!selectedRow" @click="handleReload">
-        {{ isZh ? '重载' : 'Reload' }}
+        {{ i18nStore.tl('重载', 'Reload') }}
       </button>
-      <button class="cs-btn" @click="handleRefresh">{{ isZh ? '刷新' : 'Refresh' }}</button>
-      <button class="cs-btn" @click="handleReloadAll">{{ isZh ? '全部重载' : 'Reload All' }}</button>
+      <button class="cs-btn" @click="handleRefresh">{{ i18nStore.tl('刷新', 'Refresh') }}</button>
+      <button class="cs-btn" @click="handleReloadAll">{{ i18nStore.tl('全部重载', 'Reload All') }}</button>
     </div>
 
     <!-- CS Table (Columns: Script | Path | Events) -->
@@ -49,17 +49,17 @@
         class="cs-session-table"
         @current-change="onCurrentChange"
       >
-        <el-table-column prop="name" :label="isZh ? '脚本' : 'Script'" width="240" sortable show-overflow-tooltip>
+        <el-table-column prop="name" :label="i18nStore.tl('脚本', 'Script')" width="240" sortable show-overflow-tooltip>
           <template #default="{ row }">
             <span class="script-name font-bold">{{ row.name }}</span>
           </template>
         </el-table-column>
-        <el-table-column prop="path" :label="isZh ? '路径' : 'Path'" min-width="300" sortable show-overflow-tooltip>
+        <el-table-column prop="path" :label="i18nStore.tl('路径', 'Path')" min-width="300" sortable show-overflow-tooltip>
           <template #default="{ row }">
             <span class="cs-font-mono path-text">{{ row.path }}</span>
           </template>
         </el-table-column>
-        <el-table-column :label="isZh ? '事件' : 'Events'" width="160" show-overflow-tooltip>
+        <el-table-column :label="i18nStore.tl('事件', 'Events')" width="160" show-overflow-tooltip>
           <template #default="{ row }">
             <span class="cs-font-mono evt-text">{{ (row.events || []).join(', ') || '-' }}</span>
           </template>
@@ -73,28 +73,28 @@
     <div class="sm-exec">
       <div class="sm-console">
         <div class="sm-exec-head">
-          <span class="sm-exec-title">{{ isZh ? 'CNA 控制台' : 'CNA Console' }}</span>
+          <span class="sm-exec-title">{{ i18nStore.tl('CNA 控制台', 'CNA Console') }}</span>
           <el-select
             v-model="execUid"
             size="small"
             clearable
             filterable
             class="sm-uid"
-            :placeholder="isZh ? '目标会话（可选）' : 'Target session (optional)'"
+            :placeholder="i18nStore.tl('目标会话（可选）', 'Target session (optional)')"
           >
             <el-option v-for="c in clients" :key="c.uid" :label="c.label" :value="c.uid" />
           </el-select>
           <div class="sm-spacer" />
           <button class="cs-btn cs-btn-xs" :disabled="!consoleInput.trim()" @click="handleSyntaxCheck">
-            {{ isZh ? '语法检查' : 'Syntax Check' }}
+            {{ i18nStore.tl('语法检查', 'Syntax Check') }}
           </button>
           <button class="cs-btn cs-btn-xs" @click="scriptConsoleStore.clear()">
-            {{ isZh ? '清空' : 'Clear' }}
+            {{ i18nStore.tl('清空', 'Clear') }}
           </button>
         </div>
         <div class="sm-console-log">
           <div v-if="scriptConsoleStore.lines.length === 0" class="sm-line sm-line-info">
-            {{ isZh ? '（暂无输出）' : '(no output yet)' }}
+            {{ i18nStore.tl('（暂无输出）', '(no output yet)') }}
           </div>
           <div
             v-for="(l, i) in scriptConsoleStore.lines"
@@ -109,24 +109,24 @@
           <input
             v-model="consoleInput"
             class="sm-input cs-font-mono"
-            :placeholder="isZh ? '输入别名命令或脚本片段，回车执行' : 'Alias command or script snippet, Enter to run'"
+            :placeholder="i18nStore.tl('输入别名命令或脚本片段，回车执行', 'Alias command or script snippet, Enter to run')"
             @keyup.enter="handleRunConsole"
           />
           <button class="cs-btn cs-btn-primary" :disabled="running || !consoleInput.trim()" @click="handleRunConsole">
-            {{ running ? '…' : (isZh ? '执行' : 'Run') }}
+            {{ running ? '…' : (i18nStore.tl('执行', 'Run')) }}
           </button>
         </div>
       </div>
 
       <div class="sm-menus">
         <div class="sm-exec-head">
-          <span class="sm-exec-title">{{ isZh ? '脚本菜单' : 'Script Menus' }}</span>
+          <span class="sm-exec-title">{{ i18nStore.tl('脚本菜单', 'Script Menus') }}</span>
           <div class="sm-spacer" />
-          <button class="cs-btn cs-btn-xs" @click="refreshMenus">{{ isZh ? '刷新' : 'Refresh' }}</button>
+          <button class="cs-btn cs-btn-xs" @click="refreshMenus">{{ i18nStore.tl('刷新', 'Refresh') }}</button>
         </div>
         <div class="sm-menu-list">
           <div v-if="menus.length === 0" class="sm-line sm-line-info">
-            {{ isZh ? '（没有已注册的菜单）' : '(no menus registered)' }}
+            {{ i18nStore.tl('（没有已注册的菜单）', '(no menus registered)') }}
           </div>
           <template v-for="m in menus" :key="m.kind">
             <div class="sm-menu-kind">{{ m.kind }}<span class="sm-menu-script">— {{ m.script }}</span></div>
@@ -145,7 +145,7 @@
 
     <!-- 目录中可用脚本 -->
     <div v-if="availableFiles.length > 0" class="sm-avail">
-      <span class="sm-avail-title">{{ isZh ? '脚本目录（点击加载）' : 'Scripts Folder (click to load)' }}</span>
+      <span class="sm-avail-title">{{ i18nStore.tl('脚本目录（点击加载）', 'Scripts Folder (click to load)') }}</span>
       <div class="sm-avail-list">
         <span
           v-for="f in availableFiles"

@@ -3,10 +3,10 @@
     <!-- 页签：隧道 / SOCKS5（vshell：同域功能并页） -->
     <div class="tp-tabs">
       <div class="tp-tab" :class="{ active: view === 'tunnel' }" @click="view = 'tunnel'">
-        {{ isZh ? '隧道代理' : 'Tunnels' }}
+        {{ i18nStore.tl('隧道代理', 'Tunnels') }}
       </div>
       <div class="tp-tab" :class="{ active: view === 'socks5' }" @click="view = 'socks5'">
-        {{ isZh ? 'SOCKS5 代理' : 'SOCKS5' }}
+        {{ i18nStore.tl('SOCKS5 代理', 'SOCKS5') }}
       </div>
     </div>
 
@@ -14,29 +14,29 @@
     <!-- vshell 工具条：左（标题 + 计数），右（筛选 + 操作） -->
     <div class="tp-toolbar">
       <div class="tp-title-group">
-        <span class="tp-title">{{ isZh ? '隧道代理' : 'Proxy Pivots' }}</span>
-        <span class="tp-count">({{ filteredTunnelList.filter(t => t.status === 'active').length }} {{ isZh ? '个活跃' : 'active' }} / {{ filteredTunnelList.length }} {{ isZh ? '个总数' : 'total' }})</span>
+        <span class="tp-title">{{ i18nStore.tl('隧道代理', 'Proxy Pivots') }}</span>
+        <span class="tp-count">({{ filteredTunnelList.filter(t => t.status === 'active').length }} {{ i18nStore.tl('个活跃', 'active') }} / {{ filteredTunnelList.length }} {{ i18nStore.tl('个总数', 'total') }})</span>
       </div>
 
       <div class="tp-spacer" />
 
-      <el-select v-model="protocolFilter" :placeholder="isZh ? '协议' : 'Protocol'" clearable class="tp-filter">
-        <el-option :label="isZh ? '全部' : 'ALL'" value="" />
+      <el-select v-model="protocolFilter" :placeholder="i18nStore.tl('协议', 'Protocol')" clearable class="tp-filter">
+        <el-option :label="i18nStore.tl('全部', 'ALL')" value="" />
         <el-option label="TCP" value="tcp" />
         <el-option label="UDP" value="udp" />
         <el-option label="HTTP" value="http" />
         <el-option label="SOCKS5" value="socks5" />
       </el-select>
 
-      <el-select v-model="statusFilter" :placeholder="isZh ? '状态' : 'Status'" clearable class="tp-filter-sm">
-        <el-option :label="isZh ? '全部' : 'ALL'" value="" />
-        <el-option :label="isZh ? '活跃' : 'Active'" value="1" />
-        <el-option :label="isZh ? '停止' : 'Stopped'" value="0" />
+      <el-select v-model="statusFilter" :placeholder="i18nStore.tl('状态', 'Status')" clearable class="tp-filter-sm">
+        <el-option :label="i18nStore.tl('全部', 'ALL')" value="" />
+        <el-option :label="i18nStore.tl('活跃', 'Active')" value="1" />
+        <el-option :label="i18nStore.tl('停止', 'Stopped')" value="0" />
       </el-select>
 
       <el-input
         v-model="searchKeyword"
-        :placeholder="isZh ? '过滤备注、地址、用户...' : 'Filter note, address, user...'"
+        :placeholder="i18nStore.tl('过滤备注、地址、用户...', 'Filter note, address, user...')"
         clearable
         class="tp-search"
         @input="handleSearch"
@@ -50,25 +50,25 @@
       </el-input>
 
       <button class="cs-btn" @click="refreshTunnelList">
-        {{ isZh ? '刷新' : 'Refresh' }}
+        {{ i18nStore.tl('刷新', 'Refresh') }}
       </button>
 
       <span class="tp-toolbar-divider" />
 
       <button class="cs-btn cs-btn-primary" @click="showCreateDialog">
-        {{ isZh ? '添加隧道' : 'Add Tunnel' }}
+        {{ i18nStore.tl('添加隧道', 'Add Tunnel') }}
       </button>
       <button class="cs-btn" :disabled="selectedTunnelIds.length === 0" @click="batchStartTunnels">
-        {{ isZh ? '启动' : 'Start' }}
+        {{ i18nStore.tl('启动', 'Start') }}
       </button>
       <button class="cs-btn" :disabled="selectedTunnelIds.length === 0" @click="batchStopTunnels">
-        {{ isZh ? '停止' : 'Stop' }}
+        {{ i18nStore.tl('停止', 'Stop') }}
       </button>
       <button class="cs-btn cs-btn-danger" :disabled="selectedTunnelIds.length === 0" @click="batchDeleteTunnels">
-        {{ isZh ? '删除' : 'Remove' }}
+        {{ i18nStore.tl('删除', 'Remove') }}
       </button>
       <button class="cs-btn" @click="handleHelp">
-        {{ isZh ? '帮助' : 'Help' }}
+        {{ i18nStore.tl('帮助', 'Help') }}
       </button>
     </div>
 
@@ -76,17 +76,17 @@
       <!-- 内联配置面板（vshell 卡片：新建/编辑隧道，展开在表格上方） -->
       <div v-if="createDialogVisible" class="cs-inline-panel">
         <div class="cs-inline-header">
-          <span class="cs-inline-title">{{ isEditMode ? (isZh ? '编辑隧道代理' : 'Edit Proxy Pivot') : (isZh ? '新建隧道代理' : 'New Proxy Pivot') }}</span>
-          <button class="cs-btn cs-btn-xs" @click="handleCloseDialog">{{ isZh ? '关闭' : 'Close' }}</button>
+          <span class="cs-inline-title">{{ isEditMode ? (i18nStore.tl('编辑隧道代理', 'Edit Proxy Pivot')) : (i18nStore.tl('新建隧道代理', 'New Proxy Pivot')) }}</span>
+          <button class="cs-btn cs-btn-xs" @click="handleCloseDialog">{{ i18nStore.tl('关闭', 'Close') }}</button>
         </div>
 
         <div class="cs-inline-body">
           <div class="cs-form-row">
-            <label class="cs-form-label"><span class="req">*</span> {{ isZh ? '选择客户端' : 'Beacon' }}</label>
+            <label class="cs-form-label"><span class="req">*</span> {{ i18nStore.tl('选择客户端', 'Beacon') }}</label>
             <div class="cs-form-input-wrap">
               <el-select
                 v-model="tunnelForm.clientUid"
-                :placeholder="isZh ? '请选择已上线的客户端' : 'Select online beacon'"
+                :placeholder="i18nStore.tl('请选择已上线的客户端', 'Select online beacon')"
 
                 style="width: 100%"
                 :disabled="isEditMode"
@@ -103,7 +103,7 @@
           </div>
 
           <div class="cs-form-row">
-            <label class="cs-form-label"><span class="req">*</span> {{ isZh ? '协议模式' : 'Protocol' }}</label>
+            <label class="cs-form-label"><span class="req">*</span> {{ i18nStore.tl('协议模式', 'Protocol') }}</label>
             <div class="cs-form-input-wrap">
               <el-radio-group v-model="tunnelForm.protocol" @change="onProtocolChange">
                 <el-radio-button label="socks5">Socks5</el-radio-button>
@@ -115,47 +115,47 @@
           </div>
 
           <div class="cs-form-row">
-            <label class="cs-form-label">{{ isZh ? '备注' : 'Note' }}</label>
+            <label class="cs-form-label">{{ i18nStore.tl('备注', 'Note') }}</label>
             <div class="cs-form-input-wrap">
-              <el-input v-model="tunnelForm.note" :placeholder="isZh ? '请输入隧道用途备注' : 'Enter note'" />
+              <el-input v-model="tunnelForm.note" :placeholder="i18nStore.tl('请输入隧道用途备注', 'Enter note')" />
             </div>
           </div>
 
           <div class="cs-form-row">
-            <label class="cs-form-label"><span class="req">*</span> {{ isZh ? '服务端端口' : 'Port' }}</label>
+            <label class="cs-form-label"><span class="req">*</span> {{ i18nStore.tl('服务端端口', 'Port') }}</label>
             <div class="cs-form-input-wrap">
-              <el-input-number v-model="tunnelForm.serverPort" :min="1" :max="65535" :placeholder="isZh ? '服务端代理端口' : 'Port'" />
+              <el-input-number v-model="tunnelForm.serverPort" :min="1" :max="65535" :placeholder="i18nStore.tl('服务端代理端口', 'Port')" />
             </div>
           </div>
 
           <div v-if="tunnelForm.protocol === 'tcp' || tunnelForm.protocol === 'udp'" class="cs-form-row">
-            <label class="cs-form-label"><span class="req">*</span> {{ isZh ? '目标(IP:端口)' : 'Target' }}</label>
+            <label class="cs-form-label"><span class="req">*</span> {{ i18nStore.tl('目标(IP:端口)', 'Target') }}</label>
             <div class="cs-form-input-wrap">
-              <el-input v-model="tunnelForm.targetAddress" :placeholder="isZh ? '例如: 192.168.1.100:3306' : 'e.g. 192.168.1.100:3306'" />
+              <el-input v-model="tunnelForm.targetAddress" :placeholder="i18nStore.tl('例如: 192.168.1.100:3306', 'e.g. 192.168.1.100:3306')" />
             </div>
           </div>
 
           <div v-if="tunnelForm.protocol === 'socks5' || tunnelForm.protocol === 'http'" class="cs-form-row">
-            <label class="cs-form-label">{{ isZh ? '用户名' : 'Username' }}</label>
+            <label class="cs-form-label">{{ i18nStore.tl('用户名', 'Username') }}</label>
             <div class="cs-form-input-wrap">
-              <el-input v-model="tunnelForm.username" :placeholder="isZh ? '可选认证用户名' : 'Optional username'" />
+              <el-input v-model="tunnelForm.username" :placeholder="i18nStore.tl('可选认证用户名', 'Optional username')" />
             </div>
           </div>
 
           <div v-if="tunnelForm.protocol === 'socks5' || tunnelForm.protocol === 'http'" class="cs-form-row">
-            <label class="cs-form-label">{{ isZh ? '密码' : 'Password' }}</label>
+            <label class="cs-form-label">{{ i18nStore.tl('密码', 'Password') }}</label>
             <div class="cs-form-input-wrap">
-              <el-input v-model="tunnelForm.password" type="password" :placeholder="isZh ? '可选认证密码' : 'Optional password'" show-password />
+              <el-input v-model="tunnelForm.password" type="password" :placeholder="i18nStore.tl('可选认证密码', 'Optional password')" show-password />
             </div>
           </div>
 
           <div class="cs-inline-footer">
             <button class="cs-btn cs-btn-primary" :disabled="createLoading" @click="isEditMode ? updateTunnel() : createTunnel()">
-              {{ isEditMode ? (isZh ? '保存更新' : 'Save') : (isZh ? '创建隧道' : 'Create') }}
+              {{ isEditMode ? (i18nStore.tl('保存更新', 'Save')) : (i18nStore.tl('创建隧道', 'Create')) }}
             </button>
-            <button class="cs-btn" @click="resetForm">{{ isZh ? '重置' : 'Reset' }}</button>
-            <button class="cs-btn" @click="handleCloseDialog">{{ isZh ? '取消' : 'Cancel' }}</button>
-            <button class="cs-btn" @click="handleHelp">{{ isZh ? '帮助' : 'Help' }}</button>
+            <button class="cs-btn" @click="resetForm">{{ i18nStore.tl('重置', 'Reset') }}</button>
+            <button class="cs-btn" @click="handleCloseDialog">{{ i18nStore.tl('取消', 'Cancel') }}</button>
+            <button class="cs-btn" @click="handleHelp">{{ i18nStore.tl('帮助', 'Help') }}</button>
           </div>
         </div>
       </div>
@@ -175,11 +175,11 @@
             <!-- 批量选择列 -->
             <el-table-column v-if="batchSelectMode" type="selection" width="55" :reserve-selection="true">
               <template #header>
-                <span>{{ isZh ? '选择' : 'Select' }}</span>
+                <span>{{ i18nStore.tl('选择', 'Select') }}</span>
               </template>
             </el-table-column>
             <el-table-column prop="id" label="ID" width="80" sortable />
-            <el-table-column prop="note" :label="isZh ? '备注' : 'Note'" width="212">
+            <el-table-column prop="note" :label="i18nStore.tl('备注', 'Note')" width="212">
               <template #default="{ row }">
                 <div class="note-container">
                   <span v-if="!row.isEditingNote" class="note-text">{{ row.note || '-' }}</span>
@@ -188,7 +188,7 @@
                     v-model="row.tempNote"
                     @blur="saveNote(row)"
                     @keyup.enter="saveNote(row)"
-                    :placeholder="isZh ? '请输入备注' : 'Enter note'"
+                    :placeholder="i18nStore.tl('请输入备注', 'Enter note')"
                   />
                   <button v-if="!row.isEditingNote" class="note-edit-btn" @click="editNote(row)">
                     <el-icon><Edit /></el-icon>
@@ -196,13 +196,13 @@
                 </div>
               </template>
             </el-table-column>
-            <el-table-column prop="protocol" :label="isZh ? '协议' : 'Protocol'" width="152">
+            <el-table-column prop="protocol" :label="i18nStore.tl('协议', 'Protocol')" width="152">
               <template #default="{ row }">
                 <span class="vs-chip">{{ row.protocol }}</span>
               </template>
             </el-table-column>
-            <el-table-column prop="serverPort" :label="isZh ? '服务端端口' : 'Port'" width="130" />
-            <el-table-column prop="targetAddress" :label="isZh ? '目标地址' : 'Target'" width="200" show-overflow-tooltip>
+            <el-table-column prop="serverPort" :label="i18nStore.tl('服务端端口', 'Port')" width="130" />
+            <el-table-column prop="targetAddress" :label="i18nStore.tl('目标地址', 'Target')" width="200" show-overflow-tooltip>
               <template #default="{ row }">
                 <span v-if="row.targetAddress && (row.protocol === 'tcp' || row.protocol === 'udp')">
                   {{ row.targetAddress }}
@@ -210,7 +210,7 @@
                 <span v-else class="vs-dim">-</span>
               </template>
             </el-table-column>
-            <el-table-column prop="username" :label="isZh ? '用户' : 'User'" width="152" show-overflow-tooltip>
+            <el-table-column prop="username" :label="i18nStore.tl('用户', 'User')" width="152" show-overflow-tooltip>
               <template #default="{ row }">
                 <span v-if="row.username && (row.protocol === 'socks5' || row.protocol === 'http')">
                   {{ row.username }}
@@ -218,7 +218,7 @@
                 <span v-else class="vs-dim">-</span>
               </template>
             </el-table-column>
-            <el-table-column prop="password" :label="isZh ? '密码' : 'Password'" width="132">
+            <el-table-column prop="password" :label="i18nStore.tl('密码', 'Password')" width="132">
               <template #default="{ row }">
                 <span v-if="row.password && (row.protocol === 'socks5' || row.protocol === 'http')">
                   {{ '*'.repeat(Math.min(row.password.length, 8)) }}
@@ -226,29 +226,29 @@
                 <span v-else class="vs-dim">-</span>
               </template>
             </el-table-column>
-            <el-table-column prop="status" :label="isZh ? '状态' : 'Status'" width="112">
+            <el-table-column prop="status" :label="i18nStore.tl('状态', 'Status')" width="112">
               <template #default="{ row }">
                 <span
                   class="vs-status-tag"
                   :class="row.status === 'active' ? 'is-online' : (row.status === 'loading' ? 'is-warn' : 'is-offline')"
                 >
-                  {{ row.status === 'active' ? (isZh ? '活跃' : 'Active') : (row.status === 'loading' ? (isZh ? '启动中' : 'Starting') : (isZh ? '已停止' : 'Stopped')) }}
+                  {{ row.status === 'active' ? (i18nStore.tl('活跃', 'Active')) : (row.status === 'loading' ? (i18nStore.tl('启动中', 'Starting')) : (i18nStore.tl('已停止', 'Stopped'))) }}
                 </span>
               </template>
             </el-table-column>
-            <el-table-column prop="clientStatus" :label="isZh ? '客户端状态' : 'Beacon'" width="132">
+            <el-table-column prop="clientStatus" :label="i18nStore.tl('客户端状态', 'Beacon')" width="132">
               <template #default="{ row }">
                 <span class="vs-status-tag" :class="row.clientOnline ? 'is-online' : 'is-offline'">
-                  {{ row.clientOnline ? (isZh ? '在线' : 'Online') : (isZh ? '离线' : 'Offline') }}
+                  {{ row.clientOnline ? (i18nStore.tl('在线', 'Online')) : (i18nStore.tl('离线', 'Offline')) }}
                 </span>
               </template>
             </el-table-column>
-            <el-table-column prop="createTime" :label="isZh ? '创建时间' : 'Created At'" width="182">
+            <el-table-column prop="createTime" :label="i18nStore.tl('创建时间', 'Created At')" width="182">
               <template #default="{ row }">
                 <span class="vs-nowrap">{{ formatTime(row.createTime) }}</span>
               </template>
             </el-table-column>
-            <el-table-column :label="isZh ? '操作' : 'Actions'" width="300" fixed="right">
+            <el-table-column :label="i18nStore.tl('操作', 'Actions')" width="300" fixed="right">
               <template #default="{ row }">
                 <div class="action-buttons">
                   <button
@@ -257,7 +257,7 @@
                     @click="startTunnel(row)"
                   >
                     <span v-if="row.status === 'loading'" class="cs-btn-spin" />
-                    {{ isZh ? '启动' : 'Start' }}
+                    {{ i18nStore.tl('启动', 'Start') }}
                   </button>
                   <button
                     class="cs-btn cs-btn-xs"
@@ -265,24 +265,24 @@
                     @click="stopTunnel(row)"
                   >
                     <span v-if="row.status === 'loading'" class="cs-btn-spin" />
-                    {{ isZh ? '停止' : 'Stop' }}
+                    {{ i18nStore.tl('停止', 'Stop') }}
                   </button>
                   <button class="cs-btn cs-btn-xs" :disabled="row.status === 'loading'" @click="editTunnel(row)">
-                    {{ isZh ? '编辑' : 'Edit' }}
+                    {{ i18nStore.tl('编辑', 'Edit') }}
                   </button>
                   <button
                     class="cs-btn cs-btn-xs cs-btn-danger"
                     :disabled="row.status === 'loading'"
                     @click="deleteTunnel(row)"
                   >
-                    {{ isZh ? '删除' : 'Remove' }}
+                    {{ i18nStore.tl('删除', 'Remove') }}
                   </button>
                 </div>
               </template>
             </el-table-column>
 
             <template #empty>
-              <EmptyState variant="inline" icon="🔀" :title="isZh ? '暂无隧道代理' : 'No Tunnel Proxies Configured'" />
+              <EmptyState variant="inline" icon="🔀" :title="i18nStore.tl('暂无隧道代理', 'No Tunnel Proxies Configured')" />
             </template>
           </el-table>
         </div>

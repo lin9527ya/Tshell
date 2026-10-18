@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     v-model="visible"
-    :title="isZh ? '报告' : 'Reports'"
+    :title="i18nStore.tl('报告', 'Reports')"
     width="820px"
     :close-on-click-modal="false"
     append-to-body
@@ -10,17 +10,17 @@
     <div class="reports-container cs-font-ui">
       <el-tabs v-model="activeTab" class="cs-reports-tabs">
         <!-- 威胁指标 IOC -->
-        <el-tab-pane :label="isZh ? '威胁指标 (IOC)' : 'Indicators (IOC)'" name="ioc">
+        <el-tab-pane :label="i18nStore.tl('威胁指标 (IOC)', 'Indicators (IOC)')" name="ioc">
           <div class="rp-toolbar">
-            <button class="cs-btn cs-btn-primary" @click="loadIOC">{{ isZh ? '生成' : 'Generate' }}</button>
-            <button class="cs-btn" :disabled="!ioc" @click="exportIOC">{{ isZh ? '导出 CSV' : 'Export CSV' }}</button>
+            <button class="cs-btn cs-btn-primary" @click="loadIOC">{{ i18nStore.tl('生成', 'Generate') }}</button>
+            <button class="cs-btn" :disabled="!ioc" @click="exportIOC">{{ i18nStore.tl('导出 CSV', 'Export CSV') }}</button>
             <button class="cs-btn" :disabled="!ioc" @click="exportIOCJson">JSON</button>
             <span v-if="ioc" class="rp-meta">{{ ioc.generated_at }}</span>
           </div>
           <div v-if="ioc" class="rp-stats">
-            <div class="rp-stat-card"><b>{{ ioc.hosts?.length || 0 }}</b><span>{{ isZh ? '会话主机' : 'Hosts' }}</span></div>
-            <div class="rp-stat-card"><b>{{ ioc.listener_addresses?.length || 0 }}</b><span>{{ isZh ? '监听地址' : 'Listeners' }}</span></div>
-            <div class="rp-stat-card"><b>{{ ioc.blocked_ips?.length || 0 }}</b><span>{{ isZh ? '封禁 IP' : 'Blocked' }}</span></div>
+            <div class="rp-stat-card"><b>{{ ioc.hosts?.length || 0 }}</b><span>{{ i18nStore.tl('会话主机', 'Hosts') }}</span></div>
+            <div class="rp-stat-card"><b>{{ ioc.listener_addresses?.length || 0 }}</b><span>{{ i18nStore.tl('监听地址', 'Listeners') }}</span></div>
+            <div class="rp-stat-card"><b>{{ ioc.blocked_ips?.length || 0 }}</b><span>{{ i18nStore.tl('封禁 IP', 'Blocked') }}</span></div>
           </div>
           <el-table v-if="ioc" :data="ioc.hosts || []" size="small" height="300" class="cs-session-table">
             <el-table-column prop="host" label="主机" width="150" show-overflow-tooltip />
@@ -30,30 +30,30 @@
             <el-table-column prop="listener" label="监听器" width="90" />
             <el-table-column prop="online" label="状态" width="70">
               <template #default="{ row }">
-                <span :class="row.online === '1' ? 'rp-online' : 'rp-offline'">{{ row.online === '1' ? (isZh ? '在线' : 'ON') : (isZh ? '离线' : 'OFF') }}</span>
+                <span :class="row.online === '1' ? 'rp-online' : 'rp-offline'">{{ row.online === '1' ? (i18nStore.tl('在线', 'ON')) : (i18nStore.tl('离线', 'OFF')) }}</span>
               </template>
             </el-table-column>
           </el-table>
           <div v-if="ioc" class="rp-extra">
-            <div class="rp-extra-title">{{ isZh ? '监听地址:' : 'Listener Addresses:' }}</div>
+            <div class="rp-extra-title">{{ i18nStore.tl('监听地址:', 'Listener Addresses:') }}</div>
             <div class="rp-extra-body mono">{{ (ioc.listener_addresses || []).join('  ') || '-' }}</div>
-            <div class="rp-extra-title">{{ isZh ? '封禁 IP:' : 'Blocked IPs:' }}</div>
+            <div class="rp-extra-title">{{ i18nStore.tl('封禁 IP:', 'Blocked IPs:') }}</div>
             <div class="rp-extra-body mono">{{ (ioc.blocked_ips || []).join('  ') || '-' }}</div>
           </div>
         </el-tab-pane>
 
         <!-- 社会工程 Social -->
-        <el-tab-pane :label="isZh ? '社会工程' : 'Social Engineering'" name="social">
+        <el-tab-pane :label="i18nStore.tl('社会工程', 'Social Engineering')" name="social">
           <div class="rp-toolbar">
-            <button class="cs-btn cs-btn-primary" @click="loadSocial">{{ isZh ? '生成' : 'Generate' }}</button>
-            <button class="cs-btn" :disabled="!social" @click="exportSocial">{{ isZh ? '导出 CSV' : 'Export CSV' }}</button>
+            <button class="cs-btn cs-btn-primary" @click="loadSocial">{{ i18nStore.tl('生成', 'Generate') }}</button>
+            <button class="cs-btn" :disabled="!social" @click="exportSocial">{{ i18nStore.tl('导出 CSV', 'Export CSV') }}</button>
             <button class="cs-btn" :disabled="!social" @click="exportSocialJson">JSON</button>
             <span v-if="social" class="rp-meta">{{ social.generated_at }}</span>
           </div>
           <div v-if="social" class="rp-stats">
-            <div class="rp-stat-card"><b>{{ social.total_clicks || 0 }}</b><span>{{ isZh ? '投递访问' : 'Clicks' }}</span></div>
-            <div class="rp-stat-card"><b>{{ social.unique_ips || 0 }}</b><span>{{ isZh ? '来源 IP' : 'Unique IPs' }}</span></div>
-            <div class="rp-stat-card"><b>{{ social.deliveries?.length || 0 }}</b><span>{{ isZh ? '投递项' : 'Deliveries' }}</span></div>
+            <div class="rp-stat-card"><b>{{ social.total_clicks || 0 }}</b><span>{{ i18nStore.tl('投递访问', 'Clicks') }}</span></div>
+            <div class="rp-stat-card"><b>{{ social.unique_ips || 0 }}</b><span>{{ i18nStore.tl('来源 IP', 'Unique IPs') }}</span></div>
+            <div class="rp-stat-card"><b>{{ social.deliveries?.length || 0 }}</b><span>{{ i18nStore.tl('投递项', 'Deliveries') }}</span></div>
           </div>
           <el-table v-if="social" :data="social.clicks || []" size="small" height="300" class="cs-session-table">
             <el-table-column prop="time" label="时间" width="150" />
@@ -65,16 +65,16 @@
         </el-tab-pane>
 
         <!-- 战术 TTP -->
-        <el-tab-pane :label="isZh ? '战术 TTP' : 'Tactics & TTP'" name="ttp">
+        <el-tab-pane :label="i18nStore.tl('战术 TTP', 'Tactics & TTP')" name="ttp">
           <div class="rp-toolbar">
-            <button class="cs-btn cs-btn-primary" @click="loadTTP">{{ isZh ? '生成' : 'Generate' }}</button>
-            <button class="cs-btn" :disabled="!ttp" @click="exportTTP">{{ isZh ? '导出 CSV' : 'Export CSV' }}</button>
+            <button class="cs-btn cs-btn-primary" @click="loadTTP">{{ i18nStore.tl('生成', 'Generate') }}</button>
+            <button class="cs-btn" :disabled="!ttp" @click="exportTTP">{{ i18nStore.tl('导出 CSV', 'Export CSV') }}</button>
             <button class="cs-btn" :disabled="!ttp" @click="exportTTPJson">JSON</button>
             <span v-if="ttp" class="rp-meta">{{ ttp.generated_at }}</span>
           </div>
           <div v-if="ttp" class="rp-stats">
-            <div class="rp-stat-card"><b>{{ ttp.techniques?.length || 0 }}</b><span>{{ isZh ? '识别技术' : 'Techniques' }}</span></div>
-            <div class="rp-stat-card"><b>{{ ttp.per_session?.length || 0 }}</b><span>{{ isZh ? '行为条目' : 'Activities' }}</span></div>
+            <div class="rp-stat-card"><b>{{ ttp.techniques?.length || 0 }}</b><span>{{ i18nStore.tl('识别技术', 'Techniques') }}</span></div>
+            <div class="rp-stat-card"><b>{{ ttp.per_session?.length || 0 }}</b><span>{{ i18nStore.tl('行为条目', 'Activities') }}</span></div>
           </div>
           <el-table v-if="ttp" :data="ttp.techniques || []" size="small" height="200" class="cs-session-table">
             <el-table-column prop="tactic" label="战术" width="120" />
@@ -92,7 +92,7 @@
 
     <template #footer>
       <div class="cs-dialog-footer-center">
-        <button class="cs-btn" @click="close">{{ isZh ? '关闭' : 'Close' }}</button>
+        <button class="cs-btn" @click="close">{{ i18nStore.tl('关闭', 'Close') }}</button>
       </div>
     </template>
   </el-dialog>

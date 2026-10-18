@@ -3,20 +3,20 @@
     <!-- 工具条：左侧标题，右侧筛选与操作 -->
     <div class="al-toolbar">
       <div class="al-title-group">
-        <span class="al-title">{{ isZh ? '审计日志' : 'Audit Logs' }}</span>
-        <span class="al-count">({{ total }} {{ isZh ? '条日志' : 'entries' }})</span>
+        <span class="al-title">{{ i18nStore.tl('审计日志', 'Audit Logs') }}</span>
+        <span class="al-count">({{ total }} {{ i18nStore.tl('条日志', 'entries') }})</span>
       </div>
 
       <div class="al-spacer" />
 
-      <el-select v-model="query.level" :placeholder="isZh ? '级别' : 'Level'" clearable style="width: 110px">
+      <el-select v-model="query.level" :placeholder="i18nStore.tl('级别', 'Level')" clearable style="width: 110px">
         <el-option label="INFO" value="INFO" />
         <el-option label="WARN" value="WARN" />
         <el-option label="ERROR" value="ERROR" />
         <el-option label="SECURITY" value="SECURITY" />
       </el-select>
 
-      <el-select v-model="query.category" :placeholder="isZh ? '类别' : 'Category'" clearable style="width: 120px">
+      <el-select v-model="query.category" :placeholder="i18nStore.tl('类别', 'Category')" clearable style="width: 120px">
         <el-option label="AUTH" value="AUTH" />
         <el-option label="API" value="API" />
         <el-option label="FILE" value="FILE" />
@@ -27,19 +27,19 @@
 
       <el-input
         v-model="query.keyword"
-        :placeholder="isZh ? '过滤关键字 / 用户...' : 'Filter keyword / user...'"
+        :placeholder="i18nStore.tl('过滤关键字 / 用户...', 'Filter keyword / user...')"
         clearable
         class="al-search"
         @keyup.enter="loadLogs"
       />
 
-      <button class="cs-btn cs-btn-primary" @click="loadLogs">{{ isZh ? '查询' : 'Query' }}</button>
-      <button class="cs-btn" @click="resetQuery">{{ isZh ? '重置' : 'Reset' }}</button>
-      <button class="cs-btn" @click="loadLogs">{{ isZh ? '刷新' : 'Refresh' }}</button>
+      <button class="cs-btn cs-btn-primary" @click="loadLogs">{{ i18nStore.tl('查询', 'Query') }}</button>
+      <button class="cs-btn" @click="resetQuery">{{ i18nStore.tl('重置', 'Reset') }}</button>
+      <button class="cs-btn" @click="loadLogs">{{ i18nStore.tl('刷新', 'Refresh') }}</button>
       <!-- 导出（外带全量日志）与清理（破坏性）是 adminOnly 接口，非 admin 隐藏按钮 -->
-      <button v-if="isAdmin" class="cs-btn" @click="handleExport">{{ isZh ? '导出日志' : 'Export Logs' }}</button>
-      <button v-if="isAdmin" class="cs-btn cs-btn-danger" @click="handleCleanup">{{ isZh ? '清理日志' : 'Cleanup Logs' }}</button>
-      <button class="cs-btn" @click="handleHelp">{{ isZh ? '帮助' : 'Help' }}</button>
+      <button v-if="isAdmin" class="cs-btn" @click="handleExport">{{ i18nStore.tl('导出日志', 'Export Logs') }}</button>
+      <button v-if="isAdmin" class="cs-btn cs-btn-danger" @click="handleCleanup">{{ i18nStore.tl('清理日志', 'Cleanup Logs') }}</button>
+      <button class="cs-btn" @click="handleHelp">{{ i18nStore.tl('帮助', 'Help') }}</button>
     </div>
 
     <!-- 审计统计摘要（后端 /audit/statistics，24h/7d/30d） -->
@@ -47,51 +47,51 @@
       <div class="al-stats-main">
         <div class="al-stat-cell">
           <div class="al-stat-num">{{ stats.total_logs ?? 0 }}</div>
-          <div class="al-stat-lbl">{{ isZh ? '区间日志总数' : 'Total Logs' }}</div>
+          <div class="al-stat-lbl">{{ i18nStore.tl('区间日志总数', 'Total Logs') }}</div>
         </div>
         <div class="al-stat-cell">
           <div class="al-stat-num">{{ stats.today_logs ?? 0 }}</div>
-          <div class="al-stat-lbl">{{ isZh ? '今日日志' : 'Today' }}</div>
+          <div class="al-stat-lbl">{{ i18nStore.tl('今日日志', 'Today') }}</div>
         </div>
         <div class="al-stat-cell">
           <div class="al-stat-num text-danger">{{ stats.recent_failures ?? 0 }}</div>
-          <div class="al-stat-lbl">{{ isZh ? '近 1 小时失败' : 'Failures (1h)' }}</div>
+          <div class="al-stat-lbl">{{ i18nStore.tl('近 1 小时失败', 'Failures (1h)') }}</div>
         </div>
         <div class="al-stat-cell">
           <div class="al-stat-num text-online">{{ (stats.top_users || []).length }}</div>
-          <div class="al-stat-lbl">{{ isZh ? '活跃操作员' : 'Active Operators' }}</div>
+          <div class="al-stat-lbl">{{ i18nStore.tl('活跃操作员', 'Active Operators') }}</div>
         </div>
 
         <div class="al-spacer" />
 
-        <span class="al-stat-hint">{{ isZh ? '统计区间' : 'Range' }}:</span>
+        <span class="al-stat-hint">{{ i18nStore.tl('统计区间', 'Range') }}:</span>
         <el-select v-model="statsRange" style="width: 96px" @change="loadStatistics">
           <el-option label="24h" value="24h" />
           <el-option label="7d" value="7d" />
           <el-option label="30d" value="30d" />
         </el-select>
         <button class="cs-btn cs-btn-xs" :disabled="statsLoading" @click="loadStatistics">
-          {{ statsLoading ? (isZh ? '统计中...' : 'Loading...') : (isZh ? '统计' : 'Stats') }}
+          {{ statsLoading ? (i18nStore.tl('统计中...', 'Loading...')) : (i18nStore.tl('统计', 'Stats')) }}
         </button>
         <button class="cs-btn cs-btn-xs" @click="statsExpanded = !statsExpanded">
-          {{ statsExpanded ? (isZh ? '收起详情' : 'Hide Detail') : (isZh ? '详情' : 'Detail') }}
+          {{ statsExpanded ? (i18nStore.tl('收起详情', 'Hide Detail')) : (i18nStore.tl('详情', 'Detail')) }}
         </button>
       </div>
 
       <!-- 分布与 Top 列表（紧凑明细） -->
       <div v-if="statsExpanded" class="al-stats-detail">
         <div class="al-dist-col">
-          <div class="al-detail-title">{{ isZh ? '级别分布' : 'By Level' }}</div>
+          <div class="al-detail-title">{{ i18nStore.tl('级别分布', 'By Level') }}</div>
           <div class="al-tags">
             <span v-for="(n, k) in stats.logs_by_level || {}" :key="k" class="al-tag" :class="`lvl-${String(k).toLowerCase()}`">
               {{ k }}: {{ n }}
             </span>
           </div>
-          <div class="al-detail-title" style="margin-top: 12px">{{ isZh ? '类别分布' : 'By Category' }}</div>
+          <div class="al-detail-title" style="margin-top: 12px">{{ i18nStore.tl('类别分布', 'By Category') }}</div>
           <div class="al-tags">
             <span v-for="(n, k) in stats.logs_by_category || {}" :key="k" class="al-tag">{{ k }}: {{ n }}</span>
           </div>
-          <div class="al-detail-title" style="margin-top: 12px">{{ isZh ? '结果分布' : 'By Result' }}</div>
+          <div class="al-detail-title" style="margin-top: 12px">{{ i18nStore.tl('结果分布', 'By Result') }}</div>
           <div class="al-tags">
             <span v-for="(n, k) in stats.logs_by_result || {}" :key="k" class="al-tag" :class="String(k) === 'SUCCESS' ? 'lvl-info' : 'lvl-error'">
               {{ k }}: {{ n }}
@@ -99,7 +99,7 @@
           </div>
         </div>
         <div class="al-top-col">
-          <div class="al-detail-title">{{ isZh ? 'Top 10 操作员' : 'Top 10 Operators' }}</div>
+          <div class="al-detail-title">{{ i18nStore.tl('Top 10 操作员', 'Top 10 Operators') }}</div>
           <div class="al-top-list">
             <div v-for="u in stats.top_users || []" :key="u.username" class="al-top-row">
               <span class="al-top-name">{{ u.username }}</span>
@@ -107,7 +107,7 @@
               <span class="al-top-count">{{ u.count }}</span>
             </div>
           </div>
-          <div class="al-detail-title" style="margin-top: 12px">{{ isZh ? 'Top 10 来源 IP' : 'Top 10 Source IPs' }}</div>
+          <div class="al-detail-title" style="margin-top: 12px">{{ i18nStore.tl('Top 10 来源 IP', 'Top 10 Source IPs') }}</div>
           <div class="al-top-list">
             <div v-for="ip in stats.top_ips || []" :key="ip.ip" class="al-top-row">
               <span class="al-top-name mono">{{ ip.ip }}</span>
@@ -128,34 +128,34 @@
           highlight-current-row
           class="cs-session-table"
         >
-          <el-table-column prop="timestamp" :label="isZh ? '时间' : 'Time'" width="160" sortable>
+          <el-table-column prop="timestamp" :label="i18nStore.tl('时间', 'Time')" width="160" sortable>
             <template #default="{ row }">
               <span class="mono-cell">{{ formatTime(row.timestamp) }}</span>
             </template>
           </el-table-column>
-          <el-table-column prop="level" :label="isZh ? '级别' : 'Level'" width="90" align="center">
+          <el-table-column prop="level" :label="i18nStore.tl('级别', 'Level')" width="90" align="center">
             <template #default="{ row }">
               <span class="arch-badge" :class="`lvl-${row.level?.toLowerCase()}`">{{ row.level }}</span>
             </template>
           </el-table-column>
-          <el-table-column prop="category" :label="isZh ? '类别' : 'Category'" width="100" align="center">
+          <el-table-column prop="category" :label="i18nStore.tl('类别', 'Category')" width="100" align="center">
             <template #default="{ row }">
               <span class="mono-cell">{{ row.category }}</span>
             </template>
           </el-table-column>
-          <el-table-column prop="username" :label="isZh ? '用户' : 'User'" width="110" show-overflow-tooltip />
-          <el-table-column prop="client_ip" :label="isZh ? '来源 IP' : 'Source IP'" width="120" show-overflow-tooltip>
+          <el-table-column prop="username" :label="i18nStore.tl('用户', 'User')" width="110" show-overflow-tooltip />
+          <el-table-column prop="client_ip" :label="i18nStore.tl('来源 IP', 'Source IP')" width="120" show-overflow-tooltip>
             <template #default="{ row }">
               <span class="mono-cell">{{ row.client_ip || '-' }}</span>
             </template>
           </el-table-column>
-          <el-table-column prop="action" :label="isZh ? '动作' : 'Action'" width="130" show-overflow-tooltip />
-          <el-table-column prop="result" :label="isZh ? '结果' : 'Result'" width="90" align="center">
+          <el-table-column prop="action" :label="i18nStore.tl('动作', 'Action')" width="130" show-overflow-tooltip />
+          <el-table-column prop="result" :label="i18nStore.tl('结果', 'Result')" width="90" align="center">
             <template #default="{ row }">
               <span :class="row.result === 'SUCCESS' ? 'text-online' : 'text-danger'">{{ row.result }}</span>
             </template>
           </el-table-column>
-          <el-table-column prop="message" :label="isZh ? '消息' : 'Message'" min-width="260" show-overflow-tooltip />
+          <el-table-column prop="message" :label="i18nStore.tl('消息', 'Message')" min-width="260" show-overflow-tooltip />
         </el-table>
       </div>
 
@@ -173,7 +173,7 @@
     <!-- Cleanup Dialog -->
     <el-dialog
       v-model="cleanupDialogVisible"
-      :title="isZh ? '清理审计日志' : 'Cleanup Audit Logs'"
+      :title="i18nStore.tl('清理审计日志', 'Cleanup Audit Logs')"
       width="440px"
       append-to-body
       class="cs-dialog"
@@ -181,27 +181,27 @@
     >
       <div class="cs-dialog-body">
         <div class="cs-dialog-desc">
-          {{ isZh ? '请选择需要清理的时间范围。清理后指定天数之前的日志记录将被彻底删除，不可恢复。' : 'Select the retention threshold. Log entries older than the selected days will be permanently deleted.' }}
+          {{ i18nStore.tl('请选择需要清理的时间范围。清理后指定天数之前的日志记录将被彻底删除，不可恢复。', 'Select the retention threshold. Log entries older than the selected days will be permanently deleted.') }}
         </div>
 
         <div class="cs-form-row">
-          <label class="cs-form-label">{{ isZh ? '快捷选择:' : 'Preset Range:' }}</label>
+          <label class="cs-form-label">{{ i18nStore.tl('快捷选择:', 'Preset Range:') }}</label>
           <el-select v-model="cleanupDays" style="width: 100%">
-            <el-option :label="isZh ? '清理 7 天前的日志' : 'Older than 7 days'" :value="7" />
-            <el-option :label="isZh ? '清理 14 天前的日志' : 'Older than 14 days'" :value="14" />
-            <el-option :label="isZh ? '清理 30 天前的日志（默认）' : 'Older than 30 days (Default)'" :value="30" />
-            <el-option :label="isZh ? '清理 90 天前的日志' : 'Older than 90 days'" :value="90" />
-            <el-option :label="isZh ? '清理 180 天前的日志' : 'Older than 180 days'" :value="180" />
-            <el-option :label="isZh ? '清理 365 天前的日志' : 'Older than 365 days'" :value="365" />
-            <el-option :label="isZh ? '全部清理（清空所有历史日志）' : 'Clear All Logs (0 days)'" :value="0" />
+            <el-option :label="i18nStore.tl('清理 7 天前的日志', 'Older than 7 days')" :value="7" />
+            <el-option :label="i18nStore.tl('清理 14 天前的日志', 'Older than 14 days')" :value="14" />
+            <el-option :label="i18nStore.tl('清理 30 天前的日志（默认）', 'Older than 30 days (Default)')" :value="30" />
+            <el-option :label="i18nStore.tl('清理 90 天前的日志', 'Older than 90 days')" :value="90" />
+            <el-option :label="i18nStore.tl('清理 180 天前的日志', 'Older than 180 days')" :value="180" />
+            <el-option :label="i18nStore.tl('清理 365 天前的日志', 'Older than 365 days')" :value="365" />
+            <el-option :label="i18nStore.tl('全部清理（清空所有历史日志）', 'Clear All Logs (0 days)')" :value="0" />
           </el-select>
         </div>
 
         <div class="cs-form-row" style="margin-top: 10px">
-          <label class="cs-form-label">{{ isZh ? '自定义天数:' : 'Custom Days:' }}</label>
+          <label class="cs-form-label">{{ i18nStore.tl('自定义天数:', 'Custom Days:') }}</label>
           <el-input-number v-model="cleanupDays" :min="0" :max="3650" style="width: 140px" />
           <span class="al-cleanup-hint">
-            {{ cleanupDays === 0 ? (isZh ? '（0 表示清空所有日志）' : '(0 = Clear all)') : (isZh ? `（清理 ${cleanupDays} 天前）` : `(Older than ${cleanupDays}d)`) }}
+            {{ cleanupDays === 0 ? (i18nStore.tl('（0 表示清空所有日志）', '(0 = Clear all)')) : (i18nStore.tl(`（清理 ${cleanupDays} 天前）`, `(Older than ${cleanupDays}d)`)) }}
           </span>
         </div>
       </div>
@@ -209,10 +209,10 @@
       <template #footer>
         <div class="cs-dialog-footer">
           <button class="cs-btn cs-btn-danger" :disabled="cleanupLoading" @click="confirmCleanup">
-            {{ cleanupLoading ? (isZh ? '清理中...' : 'Cleaning...') : (isZh ? '确认清理' : 'Confirm Clean') }}
+            {{ cleanupLoading ? (i18nStore.tl('清理中...', 'Cleaning...')) : (i18nStore.tl('确认清理', 'Confirm Clean')) }}
           </button>
           <button class="cs-btn" @click="cleanupDialogVisible = false">
-            {{ isZh ? '取消' : 'Cancel' }}
+            {{ i18nStore.tl('取消', 'Cancel') }}
           </button>
         </div>
       </template>

@@ -3,28 +3,28 @@
     <!-- 统计卡行（vshell: 蓝色标题链接 + 右侧彩色大图标） -->
     <div class="vs-dash-cards">
       <div class="vs-card vs-stat-card">
-        <div class="vs-stat-title">{{ isZh ? '监听总数' : 'Listeners' }}</div>
+        <div class="vs-stat-title">{{ i18nStore.tl('监听总数', 'Listeners') }}</div>
         <div class="vs-stat-row">
           <span class="vs-stat-value">{{ stats?.monitor_count ?? 0 }}</span>
           <VsIcon name="magic" :size="40" />
         </div>
       </div>
       <div class="vs-card vs-stat-card">
-        <div class="vs-stat-title">{{ isZh ? '在线监听数' : 'Online Listeners' }}</div>
+        <div class="vs-stat-title">{{ i18nStore.tl('在线监听数', 'Online Listeners') }}</div>
         <div class="vs-stat-row">
           <span class="vs-stat-value">{{ stats?.connection_count ?? 0 }}</span>
           <VsIcon name="headset" :size="40" />
         </div>
       </div>
       <div class="vs-card vs-stat-card">
-        <div class="vs-stat-title">{{ isZh ? '客户端总数' : 'Clients' }}</div>
+        <div class="vs-stat-title">{{ i18nStore.tl('客户端总数', 'Clients') }}</div>
         <div class="vs-stat-row">
           <span class="vs-stat-value">{{ stats?.user_count ?? 0 }}</span>
           <VsIcon name="responsive" :size="40" />
         </div>
       </div>
       <div class="vs-card vs-stat-card">
-        <div class="vs-stat-title">{{ isZh ? '在线客户端' : 'Online Clients' }}</div>
+        <div class="vs-stat-title">{{ i18nStore.tl('在线客户端', 'Online Clients') }}</div>
         <div class="vs-stat-row">
           <span class="vs-stat-value">{{ stats?.online_user_count ?? 0 }}</span>
           <VsIcon name="pc" :size="40" />
@@ -35,33 +35,33 @@
     <!-- 配置信息 / 系统信息 -->
     <div class="vs-dash-panels">
       <div class="vs-card vs-panel">
-        <div class="vs-panel-head">{{ isZh ? '配置信息' : 'Config' }}</div>
+        <div class="vs-panel-head">{{ i18nStore.tl('配置信息', 'Config') }}</div>
         <div class="vs-panel-body">
           <div class="vs-kv">
-            <span>{{ isZh ? '日志级别' : 'Log level' }}</span>
+            <span>{{ i18nStore.tl('日志级别', 'Log level') }}</span>
             <b>{{ cfg?.log_level || '-' }}</b>
           </div>
           <div class="vs-kv">
-            <span>{{ isZh ? '日志文件' : 'Log file' }}</span>
+            <span>{{ i18nStore.tl('日志文件', 'Log file') }}</span>
             <b class="ellipsis">{{ cfg?.log_file_path || '-' }}</b>
           </div>
           <div class="vs-kv">
-            <span>{{ isZh ? 'WEB端口' : 'WEB port' }}</span>
+            <span>{{ i18nStore.tl('WEB端口', 'WEB port') }}</span>
             <b>{{ cfg?.web_port ?? '-' }}</b>
           </div>
           <div class="vs-kv">
-            <span>{{ isZh ? 'Basic认证' : 'Basic auth' }}</span>
-            <b>{{ cfg?.basic_auth ? (isZh ? '已开启' : 'On') : (isZh ? '未开启' : 'Off') }}</b>
+            <span>{{ i18nStore.tl('Basic认证', 'Basic auth') }}</span>
+            <b>{{ cfg?.basic_auth ? (i18nStore.tl('已开启', 'On')) : (i18nStore.tl('未开启', 'Off')) }}</b>
           </div>
           <div class="vs-kv">
-            <span>{{ isZh ? '版本' : 'Version' }}</span>
+            <span>{{ i18nStore.tl('版本', 'Version') }}</span>
             <b>{{ cfg?.version || '-' }}</b>
           </div>
         </div>
       </div>
 
       <div class="vs-card vs-panel">
-        <div class="vs-panel-head">{{ isZh ? '系统信息' : 'System' }}</div>
+        <div class="vs-panel-head">{{ i18nStore.tl('系统信息', 'System') }}</div>
         <div class="vs-panel-body">
           <div v-for="g in gauges" :key="g.key" class="vs-gauge-row">
             <span class="vs-gauge-label">{{ g.label }}</span>
@@ -72,19 +72,19 @@
           </div>
 
           <div class="vs-kv">
-            <span>{{ isZh ? 'TCP 通讯 (已建立)' : 'TCP (established)' }}</span>
+            <span>{{ i18nStore.tl('TCP 通讯 (已建立)', 'TCP (established)') }}</span>
             <b>{{ sys?.tcp_connections ?? 0 }}</b>
           </div>
           <div class="vs-kv">
-            <span>{{ isZh ? 'UDP 通讯 (已建立)' : 'UDP (established)' }}</span>
+            <span>{{ i18nStore.tl('UDP 通讯 (已建立)', 'UDP (established)') }}</span>
             <b>{{ sys?.udp_connections ?? 0 }}</b>
           </div>
           <div class="vs-kv">
-            <span>{{ isZh ? '流出带宽' : 'Outbound' }}</span>
+            <span>{{ i18nStore.tl('流出带宽', 'Outbound') }}</span>
             <b>{{ sys?.outbound_bw || '-' }}</b>
           </div>
           <div class="vs-kv">
-            <span>{{ isZh ? '流入带宽' : 'Inbound' }}</span>
+            <span>{{ i18nStore.tl('流入带宽', 'Inbound') }}</span>
             <b>{{ sys?.inbound_bw || '-' }}</b>
           </div>
         </div>
@@ -95,22 +95,22 @@
     <div class="vs-dash-panels">
       <div class="vs-card vs-panel">
         <div class="vs-panel-head">
-          {{ isZh ? '审计活动（24 小时）' : 'Audit activity (24h)' }}
-          <span class="vs-panel-sub">{{ isZh ? '按分类' : 'by category' }}</span>
+          {{ i18nStore.tl('审计活动（24 小时）', 'Audit activity (24h)') }}
+          <span class="vs-panel-sub">{{ i18nStore.tl('按分类', 'by category') }}</span>
         </div>
         <div class="vs-panel-body">
           <div class="vs-triple">
             <div class="vs-triple-item">
               <b>{{ audit?.total_logs ?? 0 }}</b>
-              <span>{{ isZh ? '总事件' : 'Total' }}</span>
+              <span>{{ i18nStore.tl('总事件', 'Total') }}</span>
             </div>
             <div class="vs-triple-item">
               <b>{{ audit?.today_logs ?? 0 }}</b>
-              <span>{{ isZh ? '今日' : 'Today' }}</span>
+              <span>{{ i18nStore.tl('今日', 'Today') }}</span>
             </div>
             <div class="vs-triple-item">
               <b :class="{ warn: (audit?.recent_failures ?? 0) > 0 }">{{ audit?.recent_failures ?? 0 }}</b>
-              <span>{{ isZh ? '近 1 小时失败' : 'Failed 1h' }}</span>
+              <span>{{ i18nStore.tl('近 1 小时失败', 'Failed 1h') }}</span>
             </div>
           </div>
 
@@ -123,10 +123,10 @@
               <span class="vs-bar-val">{{ c.count }}</span>
             </div>
           </div>
-          <div v-else class="vs-empty">{{ isZh ? '暂无审计数据' : 'No audit data' }}</div>
+          <div v-else class="vs-empty">{{ i18nStore.tl('暂无审计数据', 'No audit data') }}</div>
 
           <template v-if="audit?.top_ips?.length">
-            <div class="vs-sub">{{ isZh ? '活跃来源 IP' : 'Top source IPs' }}</div>
+            <div class="vs-sub">{{ i18nStore.tl('活跃来源 IP', 'Top source IPs') }}</div>
             <div v-for="ip in audit.top_ips.slice(0, 4)" :key="ip.ip" class="vs-kv">
               <span class="ellipsis-left">{{ ip.ip }}</span>
               <b>{{ ip.count }}</b>
@@ -136,34 +136,34 @@
       </div>
 
       <div class="vs-card vs-panel">
-        <div class="vs-panel-head">{{ isZh ? '安全态势' : 'Security' }}</div>
+        <div class="vs-panel-head">{{ i18nStore.tl('安全态势', 'Security') }}</div>
         <div class="vs-panel-body">
           <div class="vs-triple">
             <div class="vs-triple-item">
               <b :class="{ warn: (sec?.blocked_ips?.length ?? 0) > 0 }">{{ sec?.blocked_ips?.length ?? 0 }}</b>
-              <span>{{ isZh ? '拦截 IP' : 'Blocked IPs' }}</span>
+              <span>{{ i18nStore.tl('拦截 IP', 'Blocked IPs') }}</span>
             </div>
             <div class="vs-triple-item">
               <b>{{ sec?.login_attempts_tracked ?? 0 }}</b>
-              <span>{{ isZh ? '追踪登录' : 'Login tracked' }}</span>
+              <span>{{ i18nStore.tl('追踪登录', 'Login tracked') }}</span>
             </div>
             <div class="vs-triple-item">
               <b>{{ realtime?.total_active ?? 0 }}</b>
-              <span>{{ isZh ? '近 1 小时活跃 IP' : 'Active IPs 1h' }}</span>
+              <span>{{ i18nStore.tl('近 1 小时活跃 IP', 'Active IPs 1h') }}</span>
             </div>
           </div>
 
-          <div class="vs-sub">{{ isZh ? '被拦截 IP' : 'Blocked list' }}</div>
+          <div class="vs-sub">{{ i18nStore.tl('被拦截 IP', 'Blocked list') }}</div>
           <div v-if="sec?.blocked_ips?.length">
             <div v-for="ip in sec.blocked_ips.slice(0, 5)" :key="ip" class="vs-kv">
               <span class="ellipsis-left">{{ ip }}</span>
               <VsIcon name="shield-alt" :size="12" />
             </div>
           </div>
-          <div v-else class="vs-empty">{{ isZh ? '暂无拦截记录' : 'No blocked IPs' }}</div>
+          <div v-else class="vs-empty">{{ i18nStore.tl('暂无拦截记录', 'No blocked IPs') }}</div>
 
           <div class="vs-kv">
-            <span>{{ isZh ? '追踪 API 请求' : 'API requests tracked' }}</span>
+            <span>{{ i18nStore.tl('追踪 API 请求', 'API requests tracked') }}</span>
             <b>{{ sec?.api_requests_tracked ?? 0 }}</b>
           </div>
         </div>
@@ -174,23 +174,23 @@
     <div class="vs-dash-panels">
       <div class="vs-card vs-panel">
         <div class="vs-panel-head">
-          {{ isZh ? '客户端画像' : 'Client profile' }}
-          <span class="vs-panel-sub">{{ onlineClients }}/{{ clientsStore.clientsList.length }} {{ isZh ? '在线' : 'online' }}</span>
+          {{ i18nStore.tl('客户端画像', 'Client profile') }}
+          <span class="vs-panel-sub">{{ onlineClients }}/{{ clientsStore.clientsList.length }} {{ i18nStore.tl('在线', 'online') }}</span>
         </div>
         <div class="vs-panel-body">
           <div v-if="!clientsStore.clientsList.length" class="vs-empty">
-            {{ isZh ? '暂无客户端' : 'No clients' }}
+            {{ i18nStore.tl('暂无客户端', 'No clients') }}
           </div>
           <template v-else>
             <div class="vs-bar-row">
-              <span class="vs-bar-label">{{ isZh ? '在线率' : 'Online' }}</span>
+              <span class="vs-bar-label">{{ i18nStore.tl('在线率', 'Online') }}</span>
               <div class="vs-bar-track">
                 <div class="vs-bar-fill" :style="{ width: onlineRate + '%' }" />
               </div>
               <span class="vs-bar-val">{{ onlineRate }}%</span>
             </div>
 
-            <div class="vs-sub">{{ isZh ? '系统 / 架构分布' : 'OS / arch' }}</div>
+            <div class="vs-sub">{{ i18nStore.tl('系统 / 架构分布', 'OS / arch') }}</div>
             <div v-for="a in archDist" :key="a.key" class="vs-bar-row">
               <span class="vs-bar-label">{{ a.key }}</span>
               <div class="vs-bar-track">
@@ -199,7 +199,7 @@
               <span class="vs-bar-val">{{ a.count }}</span>
             </div>
 
-            <div class="vs-sub">{{ isZh ? '监听器分布' : 'Listener' }}</div>
+            <div class="vs-sub">{{ i18nStore.tl('监听器分布', 'Listener') }}</div>
             <div v-for="l in listenerDist" :key="l.key" class="vs-bar-row">
               <span class="vs-bar-label">{{ l.key }}</span>
               <div class="vs-bar-track">
@@ -213,15 +213,15 @@
 
       <div class="vs-card vs-panel">
         <div class="vs-panel-head">
-          {{ isZh ? '实时动态' : 'Live events' }}
+          {{ i18nStore.tl('实时动态', 'Live events') }}
           <span class="vs-panel-sub">
             <i class="vs-dot" :class="{ on: eventsStore.connected }" />
-            {{ eventsStore.connected ? (isZh ? '已连接' : 'Connected') : (isZh ? '未连接' : 'Offline') }}
+            {{ eventsStore.connected ? (i18nStore.tl('已连接', 'Connected')) : (i18nStore.tl('未连接', 'Offline')) }}
           </span>
         </div>
         <div class="vs-panel-body">
           <div v-if="!liveEvents.length" class="vs-empty">
-            {{ isZh ? '暂无事件（客户端上线/命令输出会实时出现）' : 'No events yet' }}
+            {{ i18nStore.tl('暂无事件（客户端上线/命令输出会实时出现）', 'No events yet') }}
           </div>
           <div v-for="(ev, i) in liveEvents" :key="ev.ts + '-' + i" class="vs-ev">
             <VsIcon :name="ev.icon" :size="14" class="vs-ev-icon" :class="'lv-' + ev.tone" />

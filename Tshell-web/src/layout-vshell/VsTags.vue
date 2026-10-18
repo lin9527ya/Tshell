@@ -13,7 +13,6 @@ const emit = defineEmits<{
 const i18nStore = useI18nStore()
 const tabs = useTabsStore()
 const router = useRouter()
-const isZh = computed(() => i18nStore.isZh)
 const folded = ref(false)
 
 const ctx = ref<{ visible: boolean; path: string; x: number; y: number }>({
@@ -92,10 +91,10 @@ function closeCtxTab() {
     </div>
 
     <div class="vs-tags-extra">
-      <button class="vs-tags-btn" :title="isZh ? '刷新当前页' : 'Refresh'" @click="onRefresh">
+      <button class="vs-tags-btn" :title="i18nStore.tl('刷新当前页', 'Refresh')" @click="onRefresh">
         <VsIcon name="redo" :size="14" />
       </button>
-      <button class="vs-tags-btn" :title="isZh ? '折叠页头' : 'Collapse header'" @click="toggleFold">
+      <button class="vs-tags-btn" :title="i18nStore.tl('折叠页头', 'Collapse header')" @click="toggleFold">
         <VsIcon :name="folded ? 'window-restore' : 'expand'" :size="14" />
       </button>
     </div>
@@ -107,12 +106,12 @@ function closeCtxTab() {
       :style="{ left: ctx.x + 'px', top: ctx.y + 'px' }"
       @click.stop
     >
-      <div class="vs-popup-item" @click="onRefresh"><VsIcon name="redo" :size="14" /><span>{{ isZh ? '刷新' : 'Refresh' }}</span></div>
-      <div class="vs-popup-item" @click="closeCtxTab"><VsIcon name="times" :size="14" /><span>{{ isZh ? '关闭' : 'Close' }}</span></div>
-      <div class="vs-popup-item" @click="closeOthers"><VsIcon name="columns" :size="14" /><span>{{ isZh ? '关闭其他' : 'Close others' }}</span></div>
-      <div class="vs-popup-item" @click="closeRight"><VsIcon name="arrow-up" :size="14" /><span>{{ isZh ? '关闭右侧' : 'Close right' }}</span></div>
+      <div class="vs-popup-item" @click="onRefresh"><VsIcon name="redo" :size="14" /><span>{{ i18nStore.tl('刷新', 'Refresh') }}</span></div>
+      <div class="vs-popup-item" @click="closeCtxTab"><VsIcon name="times" :size="14" /><span>{{ i18nStore.tl('关闭', 'Close') }}</span></div>
+      <div class="vs-popup-item" @click="closeOthers"><VsIcon name="columns" :size="14" /><span>{{ i18nStore.tl('关闭其他', 'Close others') }}</span></div>
+      <div class="vs-popup-item" @click="closeRight"><VsIcon name="arrow-up" :size="14" /><span>{{ i18nStore.tl('关闭右侧', 'Close right') }}</span></div>
       <div class="vs-popup-divider" />
-      <div class="vs-popup-item" @click="closeAll"><VsIcon name="trash-alt" :size="14" /><span>{{ isZh ? '全部关闭' : 'Close all' }}</span></div>
+      <div class="vs-popup-item" @click="closeAll"><VsIcon name="trash-alt" :size="14" /><span>{{ i18nStore.tl('全部关闭', 'Close all') }}</span></div>
     </div>
   </div>
 </template>

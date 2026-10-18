@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     v-model="visible"
-    :title="isZh ? '凭据获取' : 'Credential Access'"
+    :title="i18nStore.tl('凭据获取', 'Credential Access')"
     width="600px"
     :close-on-click-modal="false"
     append-to-body
@@ -51,26 +51,26 @@
       </div>
 
       <div class="cs-form-row">
-        <label class="cs-form-label">{{ isZh ? '目标会话:' : 'Session:' }}</label>
+        <label class="cs-form-label">{{ i18nStore.tl('目标会话:', 'Session:') }}</label>
         <span class="cs-form-static cs-font-mono">{{ uid ? uid.slice(0, 8) : '-' }}</span>
       </div>
 
       <div class="cs-form-row">
-        <label class="cs-form-label">{{ isZh ? '凭据类型:' : 'Type:' }}</label>
+        <label class="cs-form-label">{{ i18nStore.tl('凭据类型:', 'Type:') }}</label>
         <el-select v-model="form.kind" size="small" class="cs-form-input" @change="onKindChange">
-          <el-option :label="isZh ? 'LSASS 内存转储' : 'LSASS memory dump'" value="lsass" />
-          <el-option :label="isZh ? 'DPAPI 主密钥集' : 'DPAPI master keys'" value="dpapi" />
-          <el-option :label="isZh ? '浏览器凭据与 Cookie' : 'Browser credentials & cookies'" value="browser" />
+          <el-option :label="i18nStore.tl('LSASS 内存转储', 'LSASS memory dump')" value="lsass" />
+          <el-option :label="i18nStore.tl('DPAPI 主密钥集', 'DPAPI master keys')" value="dpapi" />
+          <el-option :label="i18nStore.tl('浏览器凭据与 Cookie', 'Browser credentials & cookies')" value="browser" />
         </el-select>
       </div>
 
       <div class="cs-form-row">
-        <label class="cs-form-label">{{ isZh ? '获取技术:' : 'Technique:' }}</label>
+        <label class="cs-form-label">{{ i18nStore.tl('获取技术:', 'Technique:') }}</label>
         <el-select v-model="form.tech" size="small" class="cs-form-input">
           <el-option
             v-for="tech in techOptions"
             :key="tech.value"
-            :label="isZh ? tech.zh : tech.en"
+            :label="i18nStore.tl(tech.zh, tech.en)"
             :value="tech.value"
           />
         </el-select>
@@ -79,29 +79,29 @@
       <div class="cd-tech-hint">{{ techHint }}</div>
 
       <!-- 等待回传 / 已落地制品：让操作员看到"还差什么、已经拿到了什么" -->
-      <div class="cd-section-title">{{ isZh ? '等待回传' : 'Awaiting transfer' }}</div>
-      <div v-if="!pending.length" class="cd-empty">{{ isZh ? '无' : 'None' }}</div>
+      <div class="cd-section-title">{{ i18nStore.tl('等待回传', 'Awaiting transfer') }}</div>
+      <div v-if="!pending.length" class="cd-empty">{{ i18nStore.tl('无', 'None') }}</div>
       <div v-for="p in pending" :key="p.file_name" class="cd-row">
-        <span class="cd-badge cd-badge-wait">{{ isZh ? '等待中' : 'Pending' }}</span>
+        <span class="cd-badge cd-badge-wait">{{ i18nStore.tl('等待中', 'Pending') }}</span>
         <span class="cs-font-mono cd-name">{{ p.file_name }}</span>
         <span class="cd-meta">{{ p.operator }} · #{{ p.task_id }}</span>
       </div>
 
-      <div class="cd-section-title">{{ isZh ? '已获取制品' : 'Artifacts' }}</div>
-      <div v-if="!artifacts.length" class="cd-empty">{{ isZh ? '无' : 'None' }}</div>
+      <div class="cd-section-title">{{ i18nStore.tl('已获取制品', 'Artifacts') }}</div>
+      <div v-if="!artifacts.length" class="cd-empty">{{ i18nStore.tl('无', 'None') }}</div>
       <div v-for="a in artifacts" :key="a.id" class="cd-row">
         <span class="cd-badge cd-badge-ok">{{ sourceLabel(a.source, isZh) }}</span>
         <span class="cd-name cd-note" :title="a.note">{{ a.note || a.secret }}</span>
-        <a class="row-link" @click="download(a)">{{ isZh ? '取回' : 'Fetch' }}</a>
+        <a class="row-link" @click="download(a)">{{ i18nStore.tl('取回', 'Fetch') }}</a>
       </div>
     </div>
 
     <template #footer>
       <div class="cs-dialog-footer-center">
         <button class="cs-btn cs-btn-primary" :disabled="busy || !uid" @click="handleDump">
-          {{ busy ? (isZh ? '下发中...' : 'Dispatching...') : (isZh ? '开始获取' : 'Start') }}
+          {{ busy ? (i18nStore.tl('下发中...', 'Dispatching...')) : (i18nStore.tl('开始获取', 'Start')) }}
         </button>
-        <button class="cs-btn" @click="visible = false">{{ isZh ? '关闭' : 'Close' }}</button>
+        <button class="cs-btn" @click="visible = false">{{ i18nStore.tl('关闭', 'Close') }}</button>
       </div>
     </template>
   </el-dialog>

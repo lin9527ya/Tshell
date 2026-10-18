@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     v-model="visible"
-    :title="isZh ? 'HTML 应用程序攻击 (HTA)' : 'HTML Application Attack'"
+    :title="i18nStore.tl('HTML 应用程序攻击 (HTA)', 'HTML Application Attack')"
     width="720px"
     append-to-body
     class="cs-dialog"
@@ -9,16 +9,16 @@
   >
     <div class="cs-dialog-body">
       <div class="cs-dialog-desc">
-        {{ isZh ? '基于 WebDelivery 投递生成 HTA 执行入口（后端 delivery hub 托管 /hta 脚本）。目标机执行 mshta 命令即可拉取并运行载荷。' : 'Builds an HTA entry from a WebDelivery (hosted /hta script by the delivery hub). Run the mshta one-liner on target to fetch and execute the payload.' }}
+        {{ i18nStore.tl('基于 WebDelivery 投递生成 HTA 执行入口（后端 delivery hub 托管 /hta 脚本）。目标机执行 mshta 命令即可拉取并运行载荷。', 'Builds an HTA entry from a WebDelivery (hosted /hta script by the delivery hub). Run the mshta one-liner on target to fetch and execute the payload.') }}
       </div>
 
       <div class="cs-form-row">
-        <label class="cs-form-label">{{ isZh ? 'WebDelivery:' : 'Web Delivery:' }}</label>
+        <label class="cs-form-label">{{ i18nStore.tl('WebDelivery:', 'Web Delivery:') }}</label>
         <el-select
           v-model="form.deliveryPort"
           size="small"
           class="cs-form-input"
-          :placeholder="isZh ? '选择 WebDelivery 投递' : 'Select a WebDelivery'"
+          :placeholder="i18nStore.tl('选择 WebDelivery 投递', 'Select a WebDelivery')"
           @visible-change="onDropdown"
         >
           <el-option
@@ -31,23 +31,23 @@
       </div>
 
       <div class="cs-form-row">
-        <label class="cs-form-label">{{ isZh ? '载荷类型:' : 'Payload:' }}</label>
+        <label class="cs-form-label">{{ i18nStore.tl('载荷类型:', 'Payload:') }}</label>
         <el-select v-model="form.mode" size="small" class="cs-form-input">
-          <el-option :label="isZh ? '完整客户端（运行时拉取）' : 'Full client (pull at runtime)'" value="url" />
+          <el-option :label="i18nStore.tl('完整客户端（运行时拉取）', 'Full client (pull at runtime)')" value="url" />
         </el-select>
       </div>
 
       <div class="cs-form-hint">
-        {{ isZh ? '后端仅支持 url 模式：HTA 运行时从投递地址下载并执行载荷（embed 模式 hta 分支未实现）。' : 'Backend supports url mode only: the HTA downloads and executes the payload at runtime (embed is not implemented for HTA).' }}
+        {{ i18nStore.tl('后端仅支持 url 模式：HTA 运行时从投递地址下载并执行载荷（embed 模式 hta 分支未实现）。', 'Backend supports url mode only: the HTA downloads and executes the payload at runtime (embed is not implemented for HTA).') }}
       </div>
     </div>
 
     <template #footer>
       <div class="cs-dialog-footer-center">
         <button class="cs-btn cs-btn-primary" :disabled="!form.deliveryPort" @click="handleGenerate">
-          {{ isZh ? '生成 HTA 命令' : 'Generate HTA' }}
+          {{ i18nStore.tl('生成 HTA 命令', 'Generate HTA') }}
         </button>
-        <button class="cs-btn" @click="handleHelp">{{ isZh ? '帮助' : 'Help' }}</button>
+        <button class="cs-btn" @click="handleHelp">{{ i18nStore.tl('帮助', 'Help') }}</button>
       </div>
     </template>
   </el-dialog>

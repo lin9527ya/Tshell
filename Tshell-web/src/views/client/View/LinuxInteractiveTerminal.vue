@@ -3,12 +3,12 @@
     <!-- Toolbar -->
     <div class="term-toolbar">
       <div class="term-title-group">
-        <span class="term-title">{{ isZh ? '终端交互: ' : 'Terminal: ' }}{{ clientInfo.username }}@{{ clientInfo.computer }}</span>
+        <span class="term-title">{{ i18nStore.tl('终端交互: ', 'Terminal: ') }}{{ clientInfo.username }}@{{ clientInfo.computer }}</span>
         <span
           class="term-status"
           :class="isConnected ? 'is-on' : (isConnecting ? 'is-connecting' : 'is-off')"
         >
-          {{ isConnected ? (isZh ? '已连接' : 'Connected') : isConnecting ? (isZh ? '连接中...' : 'Connecting...') : (isZh ? '未连接' : 'Disconnected') }}
+          {{ isConnected ? (i18nStore.tl('已连接', 'Connected')) : isConnecting ? (i18nStore.tl('连接中...', 'Connecting...')) : (i18nStore.tl('未连接', 'Disconnected')) }}
         </span>
       </div>
 
@@ -20,16 +20,16 @@
         :disabled="isConnecting"
         @click="toggleConnection"
       >
-        {{ isConnected ? (isZh ? '断开' : 'Disconnect') : (isZh ? '连接' : 'Connect') }}
+        {{ isConnected ? (i18nStore.tl('断开', 'Disconnect')) : (i18nStore.tl('连接', 'Connect')) }}
       </button>
       <button class="cs-btn" :disabled="!isConnected" @click="clearTerminal">
-        {{ isZh ? '清屏' : 'Clear' }}
+        {{ i18nStore.tl('清屏', 'Clear') }}
       </button>
       <button class="cs-btn" @click="toggleFullscreen">
-        {{ isFullscreen ? (isZh ? '退出全屏' : 'Exit Fullscreen') : (isZh ? '全屏查看' : 'Fullscreen') }}
+        {{ isFullscreen ? (i18nStore.tl('退出全屏', 'Exit Fullscreen')) : (i18nStore.tl('全屏查看', 'Fullscreen')) }}
       </button>
       <button class="cs-btn" @click="showSettings = true">
-        {{ isZh ? '偏好设置' : 'Preferences' }}
+        {{ i18nStore.tl('偏好设置', 'Preferences') }}
       </button>
     </div>
 
@@ -197,7 +197,8 @@ const prefStore = usePreferencesStore()
 // 获取UID
 const injectedUid = inject<Ref<string> | ComputedRef<string> | null>('realUid', null)
 const getUid = () => {
-  const v = injectedUid && (injectedUid as any).value ? String((injectedUid as any).value) : ''
+  // injectedUid 的类型是 Ref<string> | ComputedRef<string>，两者都有 .value，无需断言
+  const v = injectedUid?.value ? String(injectedUid.value) : ''
   if (v && v.length > 10) return v
   const mapped = useClientUid(route)
   return typeof mapped === 'string' && mapped.length > 10 ? mapped : ''
@@ -779,15 +780,31 @@ const toggleFullscreen = () => {
   }
 }
 
+// 浏览器厂商前缀的全屏 API：TS 的 DOM lib 只声明了标准名，
+// 老 Safari/旧 Edge 只认前缀版。集中声明一次，避免下面每处 `as any`
+// （那会把整个表达式类型放开，方法名拼错也不报错）。
+declare global {
+  interface Element {
+    webkitRequestFullscreen?: () => Promise<void> | void
+    msRequestFullscreen?: () => Promise<void> | void
+  }
+  interface Document {
+    webkitExitFullscreen?: () => Promise<void> | void
+    msExitFullscreen?: () => Promise<void> | void
+    webkitFullscreenElement?: Element | null
+    msFullscreenElement?: Element | null
+  }
+}
+
 const enterFullscreen = () => {
   const terminalContainer = document.querySelector('.xterm-container') as HTMLElement
   if (terminalContainer) {
     if (terminalContainer.requestFullscreen) {
       terminalContainer.requestFullscreen()
-    } else if ((terminalContainer as any).webkitRequestFullscreen) {
-      (terminalContainer as any).webkitRequestFullscreen()
-    } else if ((terminalContainer as any).msRequestFullscreen) {
-      (terminalContainer as any).msRequestFullscreen()
+    } else if (terminalContainer.webkitRequestFullscreen) {
+      terminalContainer.webkitRequestFullscreen()
+    } else if (terminalContainer.msRequestFullscreen) {
+      terminalContainer.msRequestFullscreen()
     }
   }
 }
@@ -795,17 +812,17 @@ const enterFullscreen = () => {
 const exitFullscreen = () => {
   if (document.exitFullscreen) {
     document.exitFullscreen()
-  } else if ((document as any).webkitExitFullscreen) {
-    (document as any).webkitExitFullscreen()
-  } else if ((document as any).msExitFullscreen) {
-    (document as any).msExitFullscreen()
+  } else if (document.webkitExitFullscreen) {
+    document.webkitExitFullscreen()
+  } else if (document.msExitFullscreen) {
+    document.msExitFullscreen()
   }
 }
 
 const handleFullscreenChange = () => {
   const isCurrentlyFullscreen = !!(document.fullscreenElement || 
-    (document as any).webkitFullscreenElement || 
-    (document as any).msFullscreenElement)
+    document.webkitFullscreenElement ||
+    document.msFullscreenElement)
   
   isFullscreen.value = isCurrentlyFullscreen
   

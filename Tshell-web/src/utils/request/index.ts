@@ -5,6 +5,21 @@ import { useUserStore } from '@/stores/user';
 import router from '@/router';
 import axiosRetry from 'axios-retry';
 
+// axios 配置扩展：把我们自己挂上去的字段声明进 axios 的类型，
+// 而不是每处都写 `(config as any).metadata`。
+//
+// 为什么值得改：`as any` 会把整个表达式类型放开 —— 字段名拼错
+// （metadata 写成 metaData）不会报错，运行时静默拿到 undefined，
+// 症状是"请求耗时统计偶尔为 0"这类极难定位的问题。声明进类型后拼错即编译失败。
+declare module 'axios' {
+  interface InternalAxiosRequestConfig {
+    /** 请求开始时间，用于耗时统计与慢请求告警 */
+    metadata?: { startTime: Date };
+    /** 我们自己的单次重试标记（与 axios-retry 无关） */
+    _retry?: boolean;
+  }
+}
+
 // 【修复】移除全局 cancel 令牌：单令牌被每个请求覆盖会取消先发的进行中请求
 // （如同时加载审计日志+上传文件会互相打断）。需要取消时组件内自行创建 CancelToken。
 const service = axios.create({
@@ -41,7 +56,7 @@ service.interceptors.request.use((config) => {
   const token = userStore.getToken();
   
   // 添加请求开始时间用于性能监控
-  (config as any).metadata = { startTime: new Date() };
+  config.metadata = { startTime: new Date() };
   
   if (token) {
     config.headers.Authorization2 = 'Bearer ' + token;
@@ -57,7 +72,7 @@ service.interceptors.response.use(
     (response) => {
       // 添加更详细的日志记录
   if (response.config.url === '/client/screenshot1') {
-    const startTime = (response.config as any).metadata?.startTime as Date || new Date();
+    const startTime = response.config.metadata?.startTime || new Date();
     const duration = new Date().getTime() - startTime.getTime();
     console.log(`截图API请求完成，耗时${duration}毫秒`);
   }
@@ -141,7 +156,7 @@ service.interceptors.response.use(
     async (error) => {
       // 添加更详细的错误日志记录
   if (error.config?.url === '/client/screenshot1') {
-    const startTime = (error.config as any).metadata?.startTime as Date || new Date();
+    const startTime = error.config?.metadata?.startTime || new Date();
     const duration = new Date().getTime() - startTime.getTime();
     console.error(`截图API请求错误，耗时${duration}毫秒，错误信息：`, error.message);
   }
@@ -173,7 +188,7 @@ service.interceptors.response.use(
           
           if (!isAuthValidation) {
             // F5: 刷新重试仅一次——原无限重试在 token 仍被拒时形成刷新→401→刷新的循环风暴
-            const alreadyRetried = (error.config as any)?._retry;
+            const alreadyRetried = error.config?._retry;
             if (alreadyRetried) {
               ElMessage.error('登录已过期，请重新登录');
               userStore.logout();
@@ -183,7 +198,7 @@ service.interceptors.response.use(
             const refreshSuccess = await userStore.refreshToken();
             if (refreshSuccess && error.config) {
               // token刷新成功，重试原请求（仅一次）
-              (error.config as any)._retry = true;
+              error.config._retry = true;
               error.config.headers.Authorization2 = 'Bearer ' + userStore.getToken();
               return service.request(error.config);
             } else {

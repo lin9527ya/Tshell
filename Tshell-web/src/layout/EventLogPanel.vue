@@ -2,7 +2,7 @@
   <div class="event-log cs-font-mono">
     <!-- Event Log Toolbar -->
     <div class="el-toolbar">
-      <span class="el-title">{{ isZh ? '团队服务器事件日志' : 'TeamServer Event Log' }}</span>
+      <span class="el-title">{{ i18nStore.tl('团队服务器事件日志', 'TeamServer Event Log') }}</span>
 
       <!-- Filter Buttons -->
       <div class="el-filter-group">
@@ -11,46 +11,46 @@
           :class="{ active: currentFilter === 'all' }"
           @click="currentFilter = 'all'"
         >
-          {{ isZh ? '全部' : 'All' }}
+          {{ i18nStore.tl('全部', 'All') }}
         </button>
         <button
           class="el-filter-btn"
           :class="{ active: currentFilter === 'client' }"
           @click="currentFilter = 'client'"
         >
-          {{ isZh ? '客户端' : 'Beacons' }}
+          {{ i18nStore.tl('客户端', 'Beacons') }}
         </button>
         <button
           class="el-filter-btn"
           :class="{ active: currentFilter === 'user' }"
           @click="currentFilter = 'user'"
         >
-          {{ isZh ? '操作员' : 'Users' }}
+          {{ i18nStore.tl('操作员', 'Users') }}
         </button>
         <button
           class="el-filter-btn"
           :class="{ active: currentFilter === 'system' }"
           @click="currentFilter = 'system'"
         >
-          {{ isZh ? '系统与服务' : 'System' }}
+          {{ i18nStore.tl('系统与服务', 'System') }}
         </button>
         <button
           class="el-filter-btn"
           :class="{ active: currentFilter === 'chat' }"
           @click="currentFilter = 'chat'"
         >
-          {{ isZh ? '聊天' : 'Chat' }}
+          {{ i18nStore.tl('聊天', 'Chat') }}
         </button>
       </div>
 
       <div class="el-spacer" />
 
-      <button class="cs-btn cs-btn-xs" @click="loadAuditAndClientLogs">{{ isZh ? '刷新' : 'Refresh' }}</button>
-      <button class="cs-btn cs-btn-xs" @click="clearLog">{{ isZh ? '清空' : 'Clear' }}</button>
+      <button class="cs-btn cs-btn-xs" @click="loadAuditAndClientLogs">{{ i18nStore.tl('刷新', 'Refresh') }}</button>
+      <button class="cs-btn cs-btn-xs" @click="clearLog">{{ i18nStore.tl('清空', 'Clear') }}</button>
       <button class="cs-btn cs-btn-xs" :class="{ 'cs-btn-primary': follow }" @click="follow = !follow">
-        {{ follow ? (isZh ? '自动滚动：开' : 'Auto-Scroll: ON') : (isZh ? '自动滚动：关' : 'Auto-Scroll: OFF') }}
+        {{ follow ? (i18nStore.tl('自动滚动：开', 'Auto-Scroll: ON')) : (i18nStore.tl('自动滚动：关', 'Auto-Scroll: OFF')) }}
       </button>
-      <span class="el-count">{{ filteredLines.length }} / {{ lines.length }} {{ isZh ? '条' : 'events' }}</span>
+      <span class="el-count">{{ filteredLines.length }} / {{ lines.length }} {{ i18nStore.tl('条', 'events') }}</span>
     </div>
 
     <!-- Events Body -->
@@ -71,7 +71,7 @@
         <span class="el-text">{{ e.text }}</span>
       </div>
       <div v-if="!filteredLines.length" class="el-empty">
-        {{ isZh ? '暂无匹配的事件日志。' : 'No matching event logs.' }}
+        {{ i18nStore.tl('暂无匹配的事件日志。', 'No matching event logs.') }}
       </div>
     </div>
 
@@ -81,10 +81,10 @@
       <input
         v-model="chatInput"
         class="chat-input"
-        :placeholder="isZh ? '向团队服务器所有操作员发送消息...' : 'Send message to all operators in Event Log...'"
+        :placeholder="i18nStore.tl('向团队服务器所有操作员发送消息...', 'Send message to all operators in Event Log...')"
         @keydown.enter="sendChat"
       />
-      <button class="cs-btn cs-btn-xs" @click="sendChat">{{ isZh ? '发送' : 'Send' }}</button>
+      <button class="cs-btn cs-btn-xs" @click="sendChat">{{ i18nStore.tl('发送', 'Send') }}</button>
     </div>
   </div>
 </template>

@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     v-model="visible"
-    :title="isZh ? 'MS Office 宏攻击' : 'MS Office Macro Attack'"
+    :title="i18nStore.tl('MS Office 宏攻击', 'MS Office Macro Attack')"
     width="700px"
     append-to-body
     class="cs-dialog"
@@ -9,16 +9,16 @@
   >
     <div class="cs-dialog-body">
       <div class="cs-dialog-desc">
-        {{ isZh ? '生成真实可用的 VBA 宏：AutoOpen 时经 XMLHTTP 从 WebDelivery 下载完整客户端并执行（带上线密码参数）。' : 'Generates a working VBA macro: AutoOpen downloads the full client via XMLHTTP from a WebDelivery and executes it (with the beacon password argument).' }}
+        {{ i18nStore.tl('生成真实可用的 VBA 宏：AutoOpen 时经 XMLHTTP 从 WebDelivery 下载完整客户端并执行（带上线密码参数）。', 'Generates a working VBA macro: AutoOpen downloads the full client via XMLHTTP from a WebDelivery and executes it (with the beacon password argument).') }}
       </div>
 
       <div class="cs-form-row">
-        <label class="cs-form-label">{{ isZh ? 'WebDelivery:' : 'Web Delivery:' }}</label>
+        <label class="cs-form-label">{{ i18nStore.tl('WebDelivery:', 'Web Delivery:') }}</label>
         <el-select
           v-model="form.deliveryPort"
           size="small"
           class="cs-form-input"
-          :placeholder="isZh ? '选择 WebDelivery 投递' : 'Select a WebDelivery'"
+          :placeholder="i18nStore.tl('选择 WebDelivery 投递', 'Select a WebDelivery')"
           @visible-change="onDropdown"
         >
           <el-option
@@ -31,17 +31,17 @@
       </div>
 
       <div class="cs-form-row">
-        <label class="cs-form-label">{{ isZh ? '上线密码:' : 'Pass:' }}</label>
-        <el-input v-model="form.pass" size="small" :placeholder="isZh ? '客户端启动上线密码（可选）' : 'Beacon startup password (optional)'" class="cs-form-input" />
+        <label class="cs-form-label">{{ i18nStore.tl('上线密码:', 'Pass:') }}</label>
+        <el-input v-model="form.pass" size="small" :placeholder="i18nStore.tl('客户端启动上线密码（可选）', 'Beacon startup password (optional)')" class="cs-form-input" />
       </div>
     </div>
 
     <template #footer>
       <div class="cs-dialog-footer-center">
         <button class="cs-btn cs-btn-primary" :disabled="!form.deliveryPort" @click="handleGenerate">
-          {{ isZh ? '生成宏代码' : 'Generate Macro' }}
+          {{ i18nStore.tl('生成宏代码', 'Generate Macro') }}
         </button>
-        <button class="cs-btn" @click="handleHelp">{{ isZh ? '帮助' : 'Help' }}</button>
+        <button class="cs-btn" @click="handleHelp">{{ i18nStore.tl('帮助', 'Help') }}</button>
       </div>
     </template>
   </el-dialog>

@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     v-model="visible"
-    :title="isZh ? '注入迁移（进程上线）' : 'Process Migration (Inject)'"
+    :title="i18nStore.tl('注入迁移（进程上线）', 'Process Migration (Inject)')"
     width="500px"
     :close-on-click-modal="false"
     append-to-body
@@ -9,18 +9,18 @@
   >
     <div class="cs-dialog-body cs-font-ui">
       <div class="cs-dialog-desc">
-        {{ isZh ? '生成无阶段 shellcode（完整 beacon 经 donut），经加密命令通道直接下发内存注入指定进程——全程不落盘，新会话以该进程身份上线（如 explorer.exe）。' : 'Generates stageless shellcode (full beacon via donut), dispatched in-memory through the encrypted command channel — never touches disk. The new session comes online as that process (e.g. explorer.exe).' }}
+        {{ i18nStore.tl('生成无阶段 shellcode（完整 beacon 经 donut），经加密命令通道直接下发内存注入指定进程——全程不落盘，新会话以该进程身份上线（如 explorer.exe）。', 'Generates stageless shellcode (full beacon via donut), dispatched in-memory through the encrypted command channel — never touches disk. The new session comes online as that process (e.g. explorer.exe).') }}
       </div>
 
       <div class="cs-form-row">
-        <label class="cs-form-label">{{ isZh ? '监听器:' : 'Listener:' }}</label>
-        <el-select v-model="form.listener" size="small" class="cs-form-input" :placeholder="isZh ? '选择监听器' : 'Select listener'" @visible-change="onDropdown">
+        <label class="cs-form-label">{{ i18nStore.tl('监听器:', 'Listener:') }}</label>
+        <el-select v-model="form.listener" size="small" class="cs-form-input" :placeholder="i18nStore.tl('选择监听器', 'Select listener')" @visible-change="onDropdown">
           <el-option v-for="l in listenerOptions" :key="l.name" :label="l.name" :value="l.name" />
         </el-select>
       </div>
 
       <div class="cs-form-row">
-        <label class="cs-form-label">{{ isZh ? '目标系统:' : 'Target OS:' }}</label>
+        <label class="cs-form-label">{{ i18nStore.tl('目标系统:', 'Target OS:') }}</label>
         <el-select v-model="form.os" size="small" class="cs-form-input">
           <el-option label="Windows" value="windows" />
           <el-option label="Linux" value="linux" />
@@ -28,14 +28,14 @@
       </div>
 
       <div class="cs-form-row">
-        <label class="cs-form-label">{{ isZh ? '上线密码:' : 'Pass:' }}</label>
-        <el-input v-model="form.pass" size="small" class="cs-form-input" :placeholder="isZh ? '可选；不设则无参数启动更隐蔽' : 'Optional; empty = parameter-less launch' " />
+        <label class="cs-form-label">{{ i18nStore.tl('上线密码:', 'Pass:') }}</label>
+        <el-input v-model="form.pass" size="small" class="cs-form-input" :placeholder="i18nStore.tl('可选；不设则无参数启动更隐蔽', 'Optional; empty = parameter-less launch') " />
       </div>
 
       <div class="cs-form-row">
-        <label class="cs-form-label">{{ isZh ? '注入技术:' : 'Technique:' }}</label>
+        <label class="cs-form-label">{{ i18nStore.tl('注入技术:', 'Technique:') }}</label>
         <el-select v-model="form.tech" size="small" class="cs-form-input">
-          <el-option :label="isZh ? 'auto（隐蔽链，推荐）' : 'auto (stealth chain, recommended)'" value="auto" />
+          <el-option :label="i18nStore.tl('auto（隐蔽链，推荐）', 'auto (stealth chain, recommended)')" value="auto" />
           <el-option label="NtCreateThreadEx" value="ntc" />
           <el-option label="QueueUserAPC" value="apc" />
           <el-option label="CreateRemoteThread" value="crt" />
@@ -43,7 +43,7 @@
       </div>
 
       <div class="cs-form-row">
-        <label class="cs-form-label">{{ isZh ? '目标 PID:' : 'Target PID:' }}</label>
+        <label class="cs-form-label">{{ i18nStore.tl('目标 PID:', 'Target PID:') }}</label>
         <el-input v-model="form.pid" size="small" class="cs-form-input" placeholder="explorer.exe 的 PID（进程面板可查）" />
       </div>
     </div>
@@ -51,9 +51,9 @@
     <template #footer>
       <div class="cs-dialog-footer-center">
         <button class="cs-btn cs-btn-primary" :disabled="busy || !form.listener || !form.pid" @click="handleMigrate">
-          {{ busy ? (isZh ? '生成并注入中...' : 'Injecting...') : (isZh ? '生成并注入' : 'Generate & Inject') }}
+          {{ busy ? (i18nStore.tl('生成并注入中...', 'Injecting...')) : (i18nStore.tl('生成并注入', 'Generate & Inject')) }}
         </button>
-        <button class="cs-btn" @click="close">{{ isZh ? '关闭' : 'Close' }}</button>
+        <button class="cs-btn" @click="close">{{ i18nStore.tl('关闭', 'Close') }}</button>
       </div>
     </template>
   </el-dialog>

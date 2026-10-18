@@ -3,23 +3,23 @@
     <!-- CS Toolbar -->
     <div class="sg-toolbar">
       <div class="sg-title-group">
-        <span class="sg-title">{{ isZh ? '分阶段载荷生成器' : 'Payload Generator (Staged)' }}</span>
-        <span class="sg-desc">{{ isZh ? '无阶段 / 分阶段 / DLL / Shellcode / 正向客户端' : 'Stageless / Stage / DLL / Shellcode / Forward Client' }}</span>
+        <span class="sg-title">{{ i18nStore.tl('分阶段载荷生成器', 'Payload Generator (Staged)') }}</span>
+        <span class="sg-desc">{{ i18nStore.tl('无阶段 / 分阶段 / DLL / Shellcode / 正向客户端', 'Stageless / Stage / DLL / Shellcode / Forward Client') }}</span>
       </div>
       <div class="sg-spacer" />
-      <span class="sg-tip">{{ isZh ? '根据监听器自动注入 VKey 与加密盐' : 'Automatic VKey & Salt injection based on Listener' }}</span>
+      <span class="sg-tip">{{ i18nStore.tl('根据监听器自动注入 VKey 与加密盐', 'Automatic VKey & Salt injection based on Listener') }}</span>
       <!-- 高级格式：HTA / Office 宏 / Windows EXE（原全局对话框收编到页内，下拉右对齐） -->
       <el-dropdown trigger="click" placement="bottom-end" class="sg-dropdown" @command="openAdvDialog">
         <button type="button" class="cs-btn">
-          {{ isZh ? '高级格式' : 'Advanced Formats' }}
+          {{ i18nStore.tl('高级格式', 'Advanced Formats') }}
           <span class="sg-caret">▾</span>
         </button>
         <template #dropdown>
           <el-dropdown-menu class="cs-menu-popper">
-            <el-dropdown-item command="hta">{{ isZh ? 'HTA 攻击' : 'HTML Application (HTA)' }}</el-dropdown-item>
-            <el-dropdown-item command="macro">{{ isZh ? 'Office 宏' : 'MS Office Macro' }}</el-dropdown-item>
-            <el-dropdown-item command="exe">{{ isZh ? 'Windows EXE' : 'Windows Executable' }}</el-dropdown-item>
-            <el-dropdown-item command="exeStageless">{{ isZh ? 'Windows EXE 无阶段' : 'Windows Executable (Stageless)' }}</el-dropdown-item>
+            <el-dropdown-item command="hta">{{ i18nStore.tl('HTA 攻击', 'HTML Application (HTA)') }}</el-dropdown-item>
+            <el-dropdown-item command="macro">{{ i18nStore.tl('Office 宏', 'MS Office Macro') }}</el-dropdown-item>
+            <el-dropdown-item command="exe">{{ i18nStore.tl('Windows EXE', 'Windows Executable') }}</el-dropdown-item>
+            <el-dropdown-item command="exeStageless">{{ i18nStore.tl('Windows EXE 无阶段', 'Windows Executable (Stageless)') }}</el-dropdown-item>
           </el-dropdown-menu>
         </template>
       </el-dropdown>
@@ -29,46 +29,46 @@
       <div class="payload-generator">
         <!-- 载荷类型标签页（仅展示已实现能力；eBPF 未实现已隐藏） -->
         <el-tabs v-model="activeTab" class="payload-tabs" @tab-change="handleTabChange">
-          <el-tab-pane :label="isZh ? '分阶段(stage)' : 'stage'" name="stage">
+          <el-tab-pane :label="i18nStore.tl('分阶段(stage)', 'stage')" name="stage">
             <div class="tab-content">
               <el-icon class="tab-icon"><Document /></el-icon>
-              <span class="tab-description-large">{{ isZh ? '分阶段载荷：依赖已配置的 WebDelivery，体积小，运行时二次拉取完整客户端' : 'Staged payload: needs a configured WebDelivery, small size, fetches the full client at run time' }}</span>
+              <span class="tab-description-large">{{ i18nStore.tl('分阶段载荷：依赖已配置的 WebDelivery，体积小，运行时二次拉取完整客户端', 'Staged payload: needs a configured WebDelivery, small size, fetches the full client at run time') }}</span>
             </div>
           </el-tab-pane>
-          <el-tab-pane :label="isZh ? 'Shellcode' : 'shellcode'" name="shellcode">
+          <el-tab-pane :label="i18nStore.tl('Shellcode', 'shellcode')" name="shellcode">
             <div class="tab-content">
               <el-icon class="tab-icon"><DocumentAdd /></el-icon>
-              <span class="tab-description-large">{{ isZh ? 'Stage Shellcode：基于 WebDelivery 生成可注入 shellcode（Windows）' : 'Stage Shellcode: injectable shellcode built from a WebDelivery (Windows)' }}</span>
+              <span class="tab-description-large">{{ i18nStore.tl('Stage Shellcode：基于 WebDelivery 生成可注入 shellcode（Windows）', 'Stage Shellcode: injectable shellcode built from a WebDelivery (Windows)') }}</span>
             </div>
           </el-tab-pane>
-          <el-tab-pane :label="isZh ? '无阶段(stageless)' : 'stageless'" name="stageless">
+          <el-tab-pane :label="i18nStore.tl('无阶段(stageless)', 'stageless')" name="stageless">
             <div class="tab-content">
               <el-icon class="tab-icon"><Files /></el-icon>
-              <span class="tab-description-large">{{ isZh ? '无阶段载荷：完整功能客户端，直接上线' : 'Stageless payload: full-featured client, connects directly' }}</span>
+              <span class="tab-description-large">{{ i18nStore.tl('无阶段载荷：完整功能客户端，直接上线', 'Stageless payload: full-featured client, connects directly') }}</span>
             </div>
           </el-tab-pane>
-          <el-tab-pane :label="isZh ? 'DLL 无阶段' : 'dll stageless'" name="dll">
+          <el-tab-pane :label="i18nStore.tl('DLL 无阶段', 'dll stageless')" name="dll">
             <div class="tab-content">
               <el-icon class="tab-icon"><Files /></el-icon>
-              <span class="tab-description-large">{{ isZh ? 'DLL 无阶段载荷：rundll32 / regsvr32 加载（仅 Windows）' : 'DLL stageless payload: loaded via rundll32 / regsvr32 (Windows only)' }}</span>
+              <span class="tab-description-large">{{ i18nStore.tl('DLL 无阶段载荷：rundll32 / regsvr32 加载（仅 Windows）', 'DLL stageless payload: loaded via rundll32 / regsvr32 (Windows only)') }}</span>
             </div>
           </el-tab-pane>
-          <el-tab-pane :label="isZh ? '正向监听(listen)' : 'listen'" name="listen">
+          <el-tab-pane :label="i18nStore.tl('正向监听(listen)', 'listen')" name="listen">
             <div class="tab-content">
               <el-icon class="tab-icon"><Connection /></el-icon>
-              <span class="tab-description-large">{{ isZh ? '正向客户端：监听模式，由服务端主动连出上线' : 'Forward client: listen mode, the server dials out to it' }}</span>
+              <span class="tab-description-large">{{ i18nStore.tl('正向客户端：监听模式，由服务端主动连出上线', 'Forward client: listen mode, the server dials out to it') }}</span>
             </div>
           </el-tab-pane>
-          <el-tab-pane :label="isZh ? 'DLL 正向监听' : 'dll listen'" name="dlllisten">
+          <el-tab-pane :label="i18nStore.tl('DLL 正向监听', 'dll listen')" name="dlllisten">
             <div class="tab-content">
               <el-icon class="tab-icon"><Connection /></el-icon>
-              <span class="tab-description-large">{{ isZh ? 'DLL 正向客户端：rundll32 / regsvr32 加载（仅 Windows）' : 'DLL forward client: loaded via rundll32 / regsvr32 (Windows only)' }}</span>
+              <span class="tab-description-large">{{ i18nStore.tl('DLL 正向客户端：rundll32 / regsvr32 加载（仅 Windows）', 'DLL forward client: loaded via rundll32 / regsvr32 (Windows only)') }}</span>
             </div>
           </el-tab-pane>
-          <el-tab-pane :label="isZh ? '投递' : 'delivery'" name="delivery">
+          <el-tab-pane :label="i18nStore.tl('投递', 'delivery')" name="delivery">
             <div class="tab-content">
               <el-icon class="tab-icon"><Link /></el-icon>
-              <span class="tab-description-large">{{ isZh ? 'Web 投递：Stager 托管 / 站点克隆 / 文件托管 / 投递日志' : 'Web delivery: stager hosting / site clone / file hosting / delivery logs' }}</span>
+              <span class="tab-description-large">{{ i18nStore.tl('Web 投递：Stager 托管 / 站点克隆 / 文件托管 / 投递日志', 'Web delivery: stager hosting / site clone / file hosting / delivery logs') }}</span>
             </div>
           </el-tab-pane>
         </el-tabs>
@@ -78,10 +78,10 @@
 
           <!-- stageless -->
           <div v-if="activeTab === 'stageless'">
-            <el-form-item :label="isZh ? '监听器' : 'Listener'">
+            <el-form-item :label="i18nStore.tl('监听器', 'Listener')">
               <el-select
                 v-model="formData.listener"
-                :placeholder="isZh ? '选择监听器' : 'Select a listener'"
+                :placeholder="i18nStore.tl('选择监听器', 'Select a listener')"
                 @visible-change="handleDropdown"
                 class="listener-select"
               >
@@ -98,16 +98,16 @@
               </el-select>
             </el-form-item>
 
-            <el-form-item :label="isZh ? '上线密码' : 'Password'">
+            <el-form-item :label="i18nStore.tl('上线密码', 'Password')">
               <el-input
                 v-model="formData.pass"
-                :placeholder="isZh ? '输入上线密码' : 'Enter password'"
+                :placeholder="i18nStore.tl('输入上线密码', 'Enter password')"
                 class="password-input"
                 show-password
               />
             </el-form-item>
 
-            <el-form-item :label="isZh ? '客户端类型' : 'Client Type'">
+            <el-form-item :label="i18nStore.tl('客户端类型', 'Client Type')">
               <div class="client-types-compact">
                 <el-tag
                   v-for="client in clientTypes"
@@ -131,13 +131,13 @@
               :closable="false"
               show-icon
               style="margin-bottom: 16px"
-              :title="isZh ? 'DLL 无阶段载荷（仅 Windows）：rundll32.exe client.dll,Run 或 regsvr32.exe client.dll 加载，导出 Run / DllRegisterServer / DllInstall 三个入口' : 'DLL stageless payload (Windows only): load with rundll32.exe client.dll,Run or regsvr32.exe client.dll; exports Run / DllRegisterServer / DllInstall'"
+              :title="i18nStore.tl('DLL 无阶段载荷（仅 Windows）：rundll32.exe client.dll,Run 或 regsvr32.exe client.dll 加载，导出 Run / DllRegisterServer / DllInstall 三个入口', 'DLL stageless payload (Windows only): load with rundll32.exe client.dll,Run or regsvr32.exe client.dll; exports Run / DllRegisterServer / DllInstall')"
             />
 
-            <el-form-item :label="isZh ? '监听器' : 'Listener'">
+            <el-form-item :label="i18nStore.tl('监听器', 'Listener')">
               <el-select
                 v-model="formData.listener"
-                :placeholder="isZh ? '选择监听器' : 'Select a listener'"
+                :placeholder="i18nStore.tl('选择监听器', 'Select a listener')"
                 @visible-change="handleDropdown"
                 class="listener-select"
               >
@@ -154,16 +154,16 @@
               </el-select>
             </el-form-item>
 
-            <el-form-item :label="isZh ? '上线密码' : 'Password'">
+            <el-form-item :label="i18nStore.tl('上线密码', 'Password')">
               <el-input
                 v-model="formData.pass"
-                :placeholder="isZh ? '输入上线密码' : 'Enter password'"
+                :placeholder="i18nStore.tl('输入上线密码', 'Enter password')"
                 class="password-input"
                 show-password
               />
             </el-form-item>
 
-            <el-form-item :label="isZh ? '客户端类型' : 'Client Type'">
+            <el-form-item :label="i18nStore.tl('客户端类型', 'Client Type')">
               <div class="client-types-compact">
                 <el-tag
                   v-for="client in dllClientTypes"
@@ -179,7 +179,7 @@
               </div>
             </el-form-item>
 
-            <el-form-item :label="isZh ? '加载方式' : 'Load Method'">
+            <el-form-item :label="i18nStore.tl('加载方式', 'Load Method')">
               <div class="hint-text">
                 <div>rundll32: <code>rundll32.exe client.dll,Run</code></div>
                 <div>regsvr32: <code>regsvr32.exe client.dll</code></div>
@@ -195,13 +195,13 @@
               :closable="false"
               show-icon
               style="margin-bottom: 16px"
-              :title="isZh ? '请先在「WebDelivery」页面创建并开启托管，再选择对应 WebDelivery 生成 shellcode' : 'Create and start a host on the WebDelivery page first, then pick it here to build shellcode'"
+              :title="i18nStore.tl('请先在「WebDelivery」页面创建并开启托管，再选择对应 WebDelivery 生成 shellcode', 'Create and start a host on the WebDelivery page first, then pick it here to build shellcode')"
             />
 
             <el-form-item label="WebDelivery">
               <el-select
                 v-model="formData.webDeliveryPort"
-                :placeholder="isZh ? '选择 WebDelivery（按端口）' : 'Select a WebDelivery (by port)'"
+                :placeholder="i18nStore.tl('选择 WebDelivery（按端口）', 'Select a WebDelivery (by port)')"
                 @visible-change="handleWebDeliveryDropdown"
                 class="listener-select"
               >
@@ -214,12 +214,12 @@
               </el-select>
             </el-form-item>
 
-            <el-form-item :label="isZh ? '目标信息' : 'Target Info'" v-if="selectedWebDelivery">
+            <el-form-item :label="i18nStore.tl('目标信息', 'Target Info')" v-if="selectedWebDelivery">
               <el-tag type="success">{{ selectedWebDelivery.OS }}_{{ selectedWebDelivery.Arch }}</el-tag>
               <el-tag style="margin-left: 8px">{{ selectedWebDelivery.ListenerConfig }}</el-tag>
             </el-form-item>
 
-            <el-form-item :label="isZh ? '格式' : 'Format'">
+            <el-form-item :label="i18nStore.tl('格式', 'Format')">
               <div class="format-options">
                 <el-tag
                   v-for="format in shellcodeFormats"
@@ -243,13 +243,13 @@
               :closable="false"
               show-icon
               style="margin-bottom: 16px"
-              :title="isZh ? '请先在「WebDelivery」页面创建并开启托管。动态 Stager 需要服务端安装 Go 工具链' : 'Create and start a host on the WebDelivery page first. Dynamic Stager needs Go installed on the server'"
+              :title="i18nStore.tl('请先在「WebDelivery」页面创建并开启托管。动态 Stager 需要服务端安装 Go 工具链', 'Create and start a host on the WebDelivery page first. Dynamic Stager needs Go installed on the server')"
             />
 
             <el-form-item label="WebDelivery">
               <el-select
                 v-model="formData.webDeliveryPort"
-                :placeholder="isZh ? '选择 WebDelivery（按端口）' : 'Select a WebDelivery (by port)'"
+                :placeholder="i18nStore.tl('选择 WebDelivery（按端口）', 'Select a WebDelivery (by port)')"
                 @visible-change="handleWebDeliveryDropdown"
                 class="listener-select"
               >
@@ -262,27 +262,27 @@
               </el-select>
             </el-form-item>
 
-            <el-form-item :label="isZh ? '目标信息' : 'Target Info'" v-if="selectedWebDelivery">
+            <el-form-item :label="i18nStore.tl('目标信息', 'Target Info')" v-if="selectedWebDelivery">
               <el-tag type="success">{{ selectedWebDelivery.OS }}_{{ selectedWebDelivery.Arch }}</el-tag>
               <el-tag style="margin-left: 8px">{{ selectedWebDelivery.ListenerConfig }}</el-tag>
             </el-form-item>
 
-            <el-form-item :label="isZh ? '构建信息' : 'Build Info'" v-if="selectedWebDelivery">
+            <el-form-item :label="i18nStore.tl('构建信息', 'Build Info')" v-if="selectedWebDelivery">
               <div class="stager-info-box">
-                <div v-if="stagerInfoLoading" class="si-loading">{{ isZh ? '加载中...' : 'Loading...' }}</div>
+                <div v-if="stagerInfoLoading" class="si-loading">{{ i18nStore.tl('加载中...', 'Loading...') }}</div>
                 <template v-else-if="stagerInfo">
                   <div><b>URL:</b> {{ stagerInfo.server_url || '-' }}</div>
-                  <div><b>{{ isZh ? '最后构建' : 'Last Build' }}:</b> {{ stagerInfo.last_build || '-' }}</div>
-                  <div><b>{{ isZh ? '构建次数' : 'Build Count' }}:</b> {{ stagerInfo.build_count || 0 }}</div>
+                  <div><b>{{ i18nStore.tl('最后构建', 'Last Build') }}:</b> {{ stagerInfo.last_build || '-' }}</div>
+                  <div><b>{{ i18nStore.tl('构建次数', 'Build Count') }}:</b> {{ stagerInfo.build_count || 0 }}</div>
                 </template>
-                <div v-else class="si-empty">{{ isZh ? '点击查询获取该投递的 Stager 构建统计' : 'Query build statistics for this delivery' }}</div>
+                <div v-else class="si-empty">{{ i18nStore.tl('点击查询获取该投递的 Stager 构建统计', 'Query build statistics for this delivery') }}</div>
               </div>
               <el-button size="small" :loading="stagerInfoLoading" @click="fetchStagerBuildInfo">
-                {{ isZh ? '查询构建信息' : 'Query Build Info' }}
+                {{ i18nStore.tl('查询构建信息', 'Query Build Info') }}
               </el-button>
             </el-form-item>
 
-            <el-form-item :label="isZh ? '输出格式' : 'Output Format'">
+            <el-form-item :label="i18nStore.tl('输出格式', 'Output Format')">
               <div class="format-options">
                 <el-tag
                   v-for="format in stageFormats"
@@ -298,20 +298,20 @@
                 </el-tag>
               </div>
               <div class="hint-text" v-if="selectedWebDelivery">
-                {{ selectedWebDelivery.OS === 'linux' ? (isZh ? 'Linux 推荐 elf / exe（可执行文件）' : 'Linux recommends elf / exe') : (isZh ? 'Windows 支持 exe / bin / hex / c' : 'Windows supports exe / bin / hex / c') }}
+                {{ selectedWebDelivery.OS === 'linux' ? (i18nStore.tl('Linux 推荐 elf / exe（可执行文件）', 'Linux recommends elf / exe')) : (i18nStore.tl('Windows 支持 exe / bin / hex / c', 'Windows supports exe / bin / hex / c')) }}
               </div>
             </el-form-item>
 
-            <el-form-item :label="isZh ? '反调试' : 'Anti-Debug'">
+            <el-form-item :label="i18nStore.tl('反调试', 'Anti-Debug')">
               <el-switch v-model="formData.antiDebug" />
             </el-form-item>
-            <el-form-item :label="isZh ? '代码混淆' : 'Obfuscation'">
+            <el-form-item :label="i18nStore.tl('代码混淆', 'Obfuscation')">
               <el-switch v-model="formData.obfuscation" />
             </el-form-item>
             <el-form-item label="User-Agent">
               <el-input
                 v-model="formData.userAgent"
-                :placeholder="isZh ? '留空使用随机 UA' : 'Empty = random UA'"
+                :placeholder="i18nStore.tl('留空使用随机 UA', 'Empty = random UA')"
                 class="password-input"
               />
             </el-form-item>
@@ -319,7 +319,7 @@
 
           <!-- listen 正向客户端 -->
           <div v-else-if="activeTab === 'listen'">
-            <el-form-item :label="isZh ? '协议' : 'Protocol'">
+            <el-form-item :label="i18nStore.tl('协议', 'Protocol')">
               <el-radio-group v-model="formData.listenProtocol">
                 <el-radio label="tcp_forward">TCP</el-radio>
                 <el-radio label="kcp_forward">KCP</el-radio>
@@ -329,7 +329,7 @@
               </el-radio-group>
             </el-form-item>
 
-            <el-form-item :label="isZh ? '客户端类型' : 'Client Type'">
+            <el-form-item :label="i18nStore.tl('客户端类型', 'Client Type')">
               <div class="client-types-compact">
                 <el-tag
                   v-for="client in listenClientTypes"
@@ -345,7 +345,7 @@
               </div>
             </el-form-item>
 
-            <el-form-item :label="isZh ? '监听地址' : 'Listen Address'">
+            <el-form-item :label="i18nStore.tl('监听地址', 'Listen Address')">
               <el-input v-model="formData.listenAddress" placeholder="0.0.0.0" class="address-input">
                 <template #append>
                   <el-button :icon="Refresh" @click="refreshAddress" />
@@ -353,24 +353,24 @@
               </el-input>
             </el-form-item>
 
-            <el-form-item :label="isZh ? '监听端口' : 'Listen Port'">
+            <el-form-item :label="i18nStore.tl('监听端口', 'Listen Port')">
               <el-input v-model="formData.listenPort" placeholder="80" class="port-input" type="number" />
             </el-form-item>
 
-            <el-form-item :label="isZh ? '上线密码' : 'Password'">
-              <el-input v-model="formData.pass" :placeholder="isZh ? '输入上线密码' : 'Enter password'" class="password-input" show-password />
+            <el-form-item :label="i18nStore.tl('上线密码', 'Password')">
+              <el-input v-model="formData.pass" :placeholder="i18nStore.tl('输入上线密码', 'Enter password')" class="password-input" show-password />
             </el-form-item>
 
             <el-form-item label="Vkey">
-              <el-input v-model="formData.vkey" :placeholder="isZh ? '留空使用默认值' : 'Empty = default'" class="vkey-input">
+              <el-input v-model="formData.vkey" :placeholder="i18nStore.tl('留空使用默认值', 'Empty = default')" class="vkey-input">
                 <template #append>
                   <el-button :icon="RefreshRight" @click="generateVkey" />
                 </template>
               </el-input>
             </el-form-item>
 
-            <el-form-item :label="isZh ? '流量加密盐' : 'Traffic Salt'">
-              <el-input v-model="formData.encryptSalt" :placeholder="isZh ? '留空使用默认值' : 'Empty = default'" class="salt-input">
+            <el-form-item :label="i18nStore.tl('流量加密盐', 'Traffic Salt')">
+              <el-input v-model="formData.encryptSalt" :placeholder="i18nStore.tl('留空使用默认值', 'Empty = default')" class="salt-input">
                 <template #append>
                   <el-button :icon="RefreshRight" @click="generateSalt" />
                 </template>
@@ -385,10 +385,10 @@
               :closable="false"
               show-icon
               style="margin-bottom: 16px"
-              :title="isZh ? 'DLL 正向客户端（仅 Windows）：rundll32.exe client.dll,Run 或 regsvr32.exe client.dll 加载，导出 Run / DllRegisterServer / DllInstall 三个入口' : 'DLL forward client (Windows only): load with rundll32.exe client.dll,Run or regsvr32.exe client.dll; exports Run / DllRegisterServer / DllInstall'"
+              :title="i18nStore.tl('DLL 正向客户端（仅 Windows）：rundll32.exe client.dll,Run 或 regsvr32.exe client.dll 加载，导出 Run / DllRegisterServer / DllInstall 三个入口', 'DLL forward client (Windows only): load with rundll32.exe client.dll,Run or regsvr32.exe client.dll; exports Run / DllRegisterServer / DllInstall')"
             />
 
-            <el-form-item :label="isZh ? '协议' : 'Protocol'">
+            <el-form-item :label="i18nStore.tl('协议', 'Protocol')">
               <el-radio-group v-model="formData.listenProtocol">
                 <el-radio label="tcp_forward">TCP</el-radio>
                 <el-radio label="kcp_forward">KCP</el-radio>
@@ -398,7 +398,7 @@
               </el-radio-group>
             </el-form-item>
 
-            <el-form-item :label="isZh ? '客户端类型' : 'Client Type'">
+            <el-form-item :label="i18nStore.tl('客户端类型', 'Client Type')">
               <div class="client-types-compact">
                 <el-tag
                   v-for="client in dllClientTypes"
@@ -414,7 +414,7 @@
               </div>
             </el-form-item>
 
-            <el-form-item :label="isZh ? '监听地址' : 'Listen Address'">
+            <el-form-item :label="i18nStore.tl('监听地址', 'Listen Address')">
               <el-input v-model="formData.listenAddress" placeholder="0.0.0.0" class="address-input">
                 <template #append>
                   <el-button :icon="Refresh" @click="refreshAddress" />
@@ -422,31 +422,31 @@
               </el-input>
             </el-form-item>
 
-            <el-form-item :label="isZh ? '监听端口' : 'Listen Port'">
+            <el-form-item :label="i18nStore.tl('监听端口', 'Listen Port')">
               <el-input v-model="formData.listenPort" placeholder="80" class="port-input" type="number" />
             </el-form-item>
 
-            <el-form-item :label="isZh ? '上线密码' : 'Password'">
-              <el-input v-model="formData.pass" :placeholder="isZh ? '输入上线密码' : 'Enter password'" class="password-input" show-password />
+            <el-form-item :label="i18nStore.tl('上线密码', 'Password')">
+              <el-input v-model="formData.pass" :placeholder="i18nStore.tl('输入上线密码', 'Enter password')" class="password-input" show-password />
             </el-form-item>
 
             <el-form-item label="Vkey">
-              <el-input v-model="formData.vkey" :placeholder="isZh ? '留空使用默认值' : 'Empty = default'" class="vkey-input">
+              <el-input v-model="formData.vkey" :placeholder="i18nStore.tl('留空使用默认值', 'Empty = default')" class="vkey-input">
                 <template #append>
                   <el-button :icon="RefreshRight" @click="generateVkey" />
                 </template>
               </el-input>
             </el-form-item>
 
-            <el-form-item :label="isZh ? '流量加密盐' : 'Traffic Salt'">
-              <el-input v-model="formData.encryptSalt" :placeholder="isZh ? '留空使用默认值' : 'Empty = default'" class="salt-input">
+            <el-form-item :label="i18nStore.tl('流量加密盐', 'Traffic Salt')">
+              <el-input v-model="formData.encryptSalt" :placeholder="i18nStore.tl('留空使用默认值', 'Empty = default')" class="salt-input">
                 <template #append>
                   <el-button :icon="RefreshRight" @click="generateSalt" />
                 </template>
               </el-input>
             </el-form-item>
 
-            <el-form-item :label="isZh ? '加载方式' : 'Load Method'">
+            <el-form-item :label="i18nStore.tl('加载方式', 'Load Method')">
               <div class="hint-text">
                 <div>rundll32: <code>rundll32.exe client.dll,Run</code></div>
                 <div>regsvr32: <code>regsvr32.exe client.dll</code></div>
@@ -468,10 +468,10 @@
             :disabled="!isFormValid || generating"
             @click="handleGenerate"
           >
-            {{ generating ? (isZh ? '生成中...' : 'Generating...') : (isZh ? '生成载荷' : 'Generate Payload') }}
+            {{ generating ? (i18nStore.tl('生成中...', 'Generating...')) : (i18nStore.tl('生成载荷', 'Generate Payload')) }}
           </button>
-          <button class="cs-btn" @click="ElMessage.info(isZh ? '载荷生成器说明' : 'Payload Generator Manual')">
-            {{ isZh ? '帮助' : 'Help' }}
+          <button class="cs-btn" @click="ElMessage.info(i18nStore.tl('载荷生成器说明', 'Payload Generator Manual'))">
+            {{ i18nStore.tl('帮助', 'Help') }}
           </button>
         </div>
       </div>

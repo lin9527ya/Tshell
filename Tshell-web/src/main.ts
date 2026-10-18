@@ -42,6 +42,12 @@ class PerformanceMonitor {
       setTimeout(() => {
         const navigation = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming;
         const paint = performance.getEntriesByType('paint');
+        // performance.memory 是 Chrome 专有（非标准，TS 的 DOM lib 里没有）。
+        // 用显式交叉类型而不是 `as any`：字段名写错要能编译期报错，
+        // 且下面访问 usedJSHeapSize 等时不必再逐处断言。
+        const perfMemory = (performance as Performance & {
+          memory?: { usedJSHeapSize: number; totalJSHeapSize: number; jsHeapSizeLimit: number }
+        }).memory;
         
         const metrics = {
           // 页面加载时间
@@ -53,10 +59,10 @@ class PerformanceMonitor {
           // 最大内容绘制
           lcp: 0, // 需要通过 PerformanceObserver 获取
           // 内存信息（如果可用）
-          memory: (performance as any).memory ? {
-            used: (performance as any).memory.usedJSHeapSize,
-            total: (performance as any).memory.totalJSHeapSize,
-            limit: (performance as any).memory.jsHeapSizeLimit
+          memory: perfMemory ? {
+            used: perfMemory.usedJSHeapSize,
+            total: perfMemory.totalJSHeapSize,
+            limit: perfMemory.jsHeapSizeLimit
           } : null
         };
         
@@ -68,7 +74,8 @@ class PerformanceMonitor {
     if ('PerformanceObserver' in window) {
       const lcpObserver = new PerformanceObserver((entryList) => {
         const entries = entryList.getEntries();
-        const lastEntry = entries[entries.length - 1] as any;
+        // LargestContentfulPaint 是 Chrome 扩展条目，TS 的 DOM lib 里只有基础 PerformanceEntry
+        const lastEntry = entries[entries.length - 1] as PerformanceEntry & { renderTime?: number }
         this.recordMetric('lcp', { value: lastEntry.startTime });
       });
       lcpObserver.observe({ entryTypes: ['largest-contentful-paint'] });

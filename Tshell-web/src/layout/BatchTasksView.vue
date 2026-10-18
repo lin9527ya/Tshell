@@ -3,35 +3,35 @@
     <!-- CS Toolbar -->
     <div class="bt-toolbar">
       <div class="bt-title-group">
-        <span class="bt-title">{{ isZh ? '任务中心' : 'Task Center' }}</span>
+        <span class="bt-title">{{ i18nStore.tl('任务中心', 'Task Center') }}</span>
         <span class="bt-count">({{ total }})</span>
         <el-tag v-if="runningCount" size="small" type="warning" class="bt-running">
-          {{ isZh ? `${runningCount} 进行中` : `${runningCount} running` }}
+          {{ i18nStore.tl(`${runningCount} 进行中`, `${runningCount} running`) }}
         </el-tag>
       </div>
 
       <div class="bt-filters">
         <el-select v-model="filters.status" size="small" class="bt-filter-status" @change="reload">
-          <el-option :label="isZh ? '全部状态' : 'All statuses'" value="" />
-          <el-option v-for="s in STATUS_OPTIONS" :key="s.value" :label="isZh ? s.zh : s.en" :value="s.value" />
+          <el-option :label="i18nStore.tl('全部状态', 'All statuses')" value="" />
+          <el-option v-for="s in STATUS_OPTIONS" :key="s.value" :label="i18nStore.tl(s.zh, s.en)" :value="s.value" />
         </el-select>
         <el-select v-model="filters.kind" size="small" class="bt-filter-kind" @change="reload">
-          <el-option :label="isZh ? '全部类型' : 'All kinds'" value="" />
-          <el-option v-for="k in KIND_OPTIONS" :key="k.value" :label="isZh ? k.zh : k.en" :value="k.value" />
+          <el-option :label="i18nStore.tl('全部类型', 'All kinds')" value="" />
+          <el-option v-for="k in KIND_OPTIONS" :key="k.value" :label="i18nStore.tl(k.zh, k.en)" :value="k.value" />
         </el-select>
         <el-input
           v-model="filters.uid"
           size="small"
           clearable
           class="bt-filter-uid"
-          :placeholder="isZh ? '按会话 UID 过滤' : 'Filter by UID'"
+          :placeholder="i18nStore.tl('按会话 UID 过滤', 'Filter by UID')"
           @keyup.enter="reload"
           @clear="reload"
         />
       </div>
 
       <div class="bt-spacer" />
-      <button class="cs-btn" :disabled="loading" @click="reload">{{ isZh ? '刷新' : 'Refresh' }}</button>
+      <button class="cs-btn" :disabled="loading" @click="reload">{{ i18nStore.tl('刷新', 'Refresh') }}</button>
     </div>
 
     <!-- Tasks Table -->
@@ -48,81 +48,81 @@
         <el-table-column type="expand" width="36">
           <template #default="{ row }">
             <div class="bt-expand-box">
-              <div class="bt-expand-title">{{ isZh ? '任务详情' : 'Task Detail' }}</div>
+              <div class="bt-expand-title">{{ i18nStore.tl('任务详情', 'Task Detail') }}</div>
               <div class="bt-expand-meta">
-                <span><b>{{ isZh ? '会话' : 'Session' }}:</b> <code class="cs-font-mono">{{ row.uid }}</code></span>
-                <span><b>{{ isZh ? '批次' : 'Batch' }}:</b> <code class="cs-font-mono">{{ row.batch_id || '-' }}</code></span>
-                <span><b>{{ isZh ? '下发' : 'Dispatched' }}:</b> {{ formatTime(row.created_at) }}</span>
+                <span><b>{{ i18nStore.tl('会话', 'Session') }}:</b> <code class="cs-font-mono">{{ row.uid }}</code></span>
+                <span><b>{{ i18nStore.tl('批次', 'Batch') }}:</b> <code class="cs-font-mono">{{ row.batch_id || '-' }}</code></span>
+                <span><b>{{ i18nStore.tl('下发', 'Dispatched') }}:</b> {{ formatTime(row.created_at) }}</span>
                 <span v-if="row.finished_at && row.finished_at !== '0001-01-01T00:00:00Z'">
-                  <b>{{ isZh ? '结束' : 'Finished' }}:</b> {{ formatTime(row.finished_at) }}
+                  <b>{{ i18nStore.tl('结束', 'Finished') }}:</b> {{ formatTime(row.finished_at) }}
                 </span>
               </div>
               <div v-if="row.error" class="bt-error-box">
-                <div class="bt-error-title">{{ isZh ? '失败原因' : 'Error' }}</div>
+                <div class="bt-error-title">{{ i18nStore.tl('失败原因', 'Error') }}</div>
                 <pre class="bt-card-output cs-font-mono">{{ row.error }}</pre>
               </div>
-              <div class="bt-expand-title">{{ isZh ? '回显结果' : 'Result' }}</div>
+              <div class="bt-expand-title">{{ i18nStore.tl('回显结果', 'Result') }}</div>
               <pre v-if="row.result" class="bt-card-output cs-font-mono">{{ row.result }}</pre>
               <div v-else class="bt-empty-hint">
                 {{ row.status === 'dispatched'
-                  ? (isZh ? '尚未收到回显（命令可能仍在队列中等待目标拉取）' : 'No output yet (may still be queued on the target)')
-                  : (isZh ? '该任务没有回显内容' : 'No output recorded') }}
+                  ? (i18nStore.tl('尚未收到回显（命令可能仍在队列中等待目标拉取）', 'No output yet (may still be queued on the target)'))
+                  : (i18nStore.tl('该任务没有回显内容', 'No output recorded')) }}
               </div>
             </div>
           </template>
         </el-table-column>
 
-        <el-table-column prop="id" :label="isZh ? '任务 ID' : 'ID'" width="80">
+        <el-table-column prop="id" :label="i18nStore.tl('任务 ID', 'ID')" width="80">
           <template #default="{ row }">
             <span class="cs-font-mono text-dim">{{ row.id }}</span>
           </template>
         </el-table-column>
 
-        <el-table-column :label="isZh ? '状态' : 'Status'" width="100" align="center">
+        <el-table-column :label="i18nStore.tl('状态', 'Status')" width="100" align="center">
           <template #default="{ row }">
             <el-tag :type="statusTagType(row.status)" size="small">{{ statusLabel(row.status) }}</el-tag>
           </template>
         </el-table-column>
 
-        <el-table-column :label="isZh ? '类型' : 'Kind'" width="90" align="center">
+        <el-table-column :label="i18nStore.tl('类型', 'Kind')" width="90" align="center">
           <template #default="{ row }">
             <span class="cs-cell-text">{{ kindLabel(row.kind) }}</span>
           </template>
         </el-table-column>
 
-        <el-table-column prop="uid" :label="isZh ? '目标会话' : 'Session'" width="110">
+        <el-table-column prop="uid" :label="i18nStore.tl('目标会话', 'Session')" width="110">
           <template #default="{ row }">
             <span class="cs-font-mono" :title="row.uid">{{ shortUid(row.uid) }}</span>
           </template>
         </el-table-column>
 
-        <el-table-column prop="operator" :label="isZh ? '操作员' : 'Operator'" width="110" show-overflow-tooltip>
+        <el-table-column prop="operator" :label="i18nStore.tl('操作员', 'Operator')" width="110" show-overflow-tooltip>
           <template #default="{ row }">
             <span class="cs-cell-text">{{ row.operator || '-' }}</span>
           </template>
         </el-table-column>
 
-        <el-table-column prop="command" :label="isZh ? '命令' : 'Command'" min-width="200" show-overflow-tooltip>
+        <el-table-column prop="command" :label="i18nStore.tl('命令', 'Command')" min-width="200" show-overflow-tooltip>
           <template #default="{ row }">
             <span class="cs-font-mono font-bold">{{ row.command }}</span>
           </template>
         </el-table-column>
 
-        <el-table-column :label="isZh ? '耗时' : 'Elapsed'" width="90" align="center">
+        <el-table-column :label="i18nStore.tl('耗时', 'Elapsed')" width="90" align="center">
           <template #default="{ row }">
             <span class="cs-font-mono text-dim">{{ elapsed(row) }}</span>
           </template>
         </el-table-column>
 
-        <el-table-column :label="isZh ? '操作' : 'Actions'" width="110" fixed="right" align="center">
+        <el-table-column :label="i18nStore.tl('操作', 'Actions')" width="110" fixed="right" align="center">
           <template #default="{ row }">
             <button
               v-if="row.status === 'dispatched'"
               class="cs-btn bt-cancel-btn"
-              :title="isZh ? '停止等待回显（已下发的命令无法从目标撤回）' : 'Stop waiting (cannot be retracted from target)'"
+              :title="i18nStore.tl('停止等待回显（已下发的命令无法从目标撤回）', 'Stop waiting (cannot be retracted from target)')"
               @click="cancelTask(row)"
             >
-              {{ isZh ? '取消' : 'Cancel' }}
+              {{ i18nStore.tl('取消', 'Cancel') }}
             </button>
             <span v-else class="text-dim">—</span>
           </template>
@@ -132,7 +132,7 @@
       <EmptyState
         v-if="!tasks.length && !loading"
         variant="overlay"
-        :title="isZh ? '暂无任务' : 'No tasks'"
+        :title="i18nStore.tl('暂无任务', 'No tasks')"
       />
     </div>
 

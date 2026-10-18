@@ -7,12 +7,12 @@
         <span class="cd-host">{{ client?.Computer || uid.slice(0, 8) }}</span>
         <span v-if="client?.Username" class="cd-user">{{ client.Username }}</span>
         <span class="cd-tag" :class="isOnline ? 'is-online' : 'is-offline'">
-          {{ isOnline ? (isZh ? '在线' : 'ON') : (isZh ? '离线' : 'OFF') }}
+          {{ isOnline ? (i18nStore.tl('在线', 'ON')) : (i18nStore.tl('离线', 'OFF')) }}
         </span>
       </div>
       <div class="cd-meta">
-        <span v-if="client?.ExternalIP">{{ isZh ? '外网' : 'Ext' }} {{ client.ExternalIP }}</span>
-        <span v-if="client?.InternalIP">{{ isZh ? '内网' : 'Int' }} {{ client.InternalIP }}</span>
+        <span v-if="client?.ExternalIP">{{ i18nStore.tl('外网', 'Ext') }} {{ client.ExternalIP }}</span>
+        <span v-if="client?.InternalIP">{{ i18nStore.tl('内网', 'Int') }} {{ client.InternalIP }}</span>
         <span v-if="client?.Process">{{ client.Process }}</span>
         <span v-if="client?.Arch">{{ client.Arch }}</span>
       </div>
@@ -27,7 +27,7 @@
         :class="{ active: t.key === func }"
         @click="switchTo(t.key)"
       >
-        {{ isZh ? t.zh : t.en }}
+        {{ i18nStore.tl(t.zh, t.en) }}
       </div>
     </div>
 

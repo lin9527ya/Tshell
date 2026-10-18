@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     v-model="visible"
-    :title="isZh ? '会话备注' : 'Session Note'"
+    :title="i18nStore.tl('会话备注', 'Session Note')"
     width="420px"
     :close-on-click-modal="false"
     append-to-body
@@ -9,25 +9,25 @@
   >
     <div class="cs-dialog-body">
       <div class="cs-form-row">
-        <label class="cs-form-label">{{ isZh ? '目标客户端:' : 'Target:' }}</label>
+        <label class="cs-form-label">{{ i18nStore.tl('目标客户端:', 'Target:') }}</label>
         <span class="dialog-val">{{ clientLabel }}</span>
       </div>
       <div class="dialog-field">
-        <label class="dialog-label">{{ isZh ? '备注信息（支持多行）:' : 'Note (multi-line):' }}</label>
+        <label class="dialog-label">{{ i18nStore.tl('备注信息（支持多行）:', 'Note (multi-line):') }}</label>
         <el-input
           v-model="noteText"
           type="textarea"
           :rows="6"
-          :placeholder="isZh ? '输入该会话的完整笔记内容...' : 'Enter full note for this session...'"
+          :placeholder="i18nStore.tl('输入该会话的完整笔记内容...', 'Enter full note for this session...')"
         />
       </div>
     </div>
     <template #footer>
       <div class="cs-dialog-footer">
-        <button class="cs-btn" @click="clearNote">{{ isZh ? '清空' : 'Clear' }}</button>
+        <button class="cs-btn" @click="clearNote">{{ i18nStore.tl('清空', 'Clear') }}</button>
         <div class="footer-spacer" />
-        <button class="cs-btn cs-btn-primary" @click="saveNote">{{ isZh ? '保存备注' : 'Set Note' }}</button>
-        <button class="cs-btn" @click="close">{{ isZh ? '取消' : 'Cancel' }}</button>
+        <button class="cs-btn cs-btn-primary" @click="saveNote">{{ i18nStore.tl('保存备注', 'Set Note') }}</button>
+        <button class="cs-btn" @click="close">{{ i18nStore.tl('取消', 'Cancel') }}</button>
       </div>
     </template>
   </el-dialog>

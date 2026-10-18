@@ -8,17 +8,17 @@
 
     <!-- 右上：明暗切换 + 语言 -->
     <div class="vs-login-actions">
-      <button class="vs-login-icon" :title="isZh ? '切换主题' : 'Toggle theme'" @click="toggleTheme">
+      <button class="vs-login-icon" :title="i18nStore.tl('切换主题', 'Toggle theme')" @click="toggleTheme">
         <VsIcon :name="isDark ? 'sun' : 'moon'" :size="18" />
       </button>
-      <button class="vs-login-icon" :title="isZh ? '切换语言' : 'Language'" @click="i18nStore.toggleLocale()">
+      <button class="vs-login-icon" :title="i18nStore.tl('切换语言', 'Language')" @click="i18nStore.toggleLocale()">
         <VsIcon name="language" :size="18" />
       </button>
     </div>
 
     <div class="vs-login-form">
       <h2 class="vs-login-title">
-        {{ step === 'mfa' ? (isZh ? '两步验证' : 'Two-factor') : isZh ? '登录' : 'Sign in' }}
+        {{ step === 'mfa' ? (i18nStore.tl('两步验证', 'Two-factor')) : i18nStore.tl('登录', 'Sign in') }}
       </h2>
 
       <!-- 第一步：账号 + 密码 -->
@@ -27,7 +27,7 @@
           v-model="param.username"
           size="large"
           class="vs-login-input"
-          :placeholder="isZh ? '账号' : 'Username'"
+          :placeholder="i18nStore.tl('账号', 'Username')"
           @keyup.enter="submitLogin"
         />
         <el-input
@@ -36,7 +36,7 @@
           size="large"
           show-password
           class="vs-login-input"
-          :placeholder="isZh ? '密码' : 'Password'"
+          :placeholder="i18nStore.tl('密码', 'Password')"
           @keyup.enter="submitLogin"
         />
       </template>
@@ -44,9 +44,7 @@
       <!-- 第二步：动态码（或恢复码） -->
       <template v-else>
         <p class="vs-login-hint">
-          {{ isZh
-            ? '请输入认证器中的 6 位动态码；认证器不可用时填一个恢复码。'
-            : 'Enter the 6-digit code from your authenticator, or a recovery code.' }}
+          {{ i18nStore.tl('请输入认证器中的 6 位动态码；认证器不可用时填一个恢复码。', 'Enter the 6-digit code from your authenticator, or a recovery code.') }}
         </p>
         <el-input
           v-model="param.mfaCode"
@@ -54,21 +52,21 @@
           class="vs-login-input"
           inputmode="numeric"
           autocomplete="one-time-code"
-          :placeholder="isZh ? '动态码 / 恢复码' : 'Code / recovery code'"
+          :placeholder="i18nStore.tl('动态码 / 恢复码', 'Code / recovery code')"
           @keyup.enter="submitMfa"
         />
       </template>
 
       <button class="vs-login-submit" :disabled="loading" @click="step === 'mfa' ? submitMfa() : submitLogin()">
         {{ loading
-          ? (isZh ? '处理中…' : 'Working…')
+          ? (i18nStore.tl('处理中…', 'Working…'))
           : step === 'mfa'
-            ? (isZh ? '验证' : 'Verify')
-            : isZh ? '登录' : 'Sign in' }}
+            ? (i18nStore.tl('验证', 'Verify'))
+            : i18nStore.tl('登录', 'Sign in') }}
       </button>
 
       <button v-if="step === 'mfa'" class="vs-login-back" @click="backToPassword">
-        {{ isZh ? '返回重新输入账号' : 'Back' }}
+        {{ i18nStore.tl('返回重新输入账号', 'Back') }}
       </button>
 
       <div class="vs-login-foot">Tshell C2 · Team Server (v4.9.1)</div>
@@ -95,7 +93,6 @@ const userinfo = useUserStore()
 const i18nStore = useI18nStore()
 const themeStore = useThemeStore()
 
-const isZh = computed(() => i18nStore.isZh)
 const isDark = computed(() => themeStore.isDark)
 
 const loading = ref(false)

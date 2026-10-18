@@ -5,10 +5,10 @@
       <div class="gd-title-group">
         <el-icon class="gd-title-icon"><FolderOpened /></el-icon>
         <span class="gd-title">
-          {{ isZh ? (isClientScoped ? `下载管理: ${targetClientTitle}` : '下载文件管理') : (isClientScoped ? `Downloads: ${targetClientTitle}` : 'Downloaded Files') }}
+          {{ i18nStore.tl(isClientScoped ? `下载管理: ${targetClientTitle}` : '下载文件管理', isClientScoped ? `Downloads: ${targetClientTitle}` : 'Downloaded Files') }}
         </span>
         <span class="gd-count">
-          ({{ isClientScoped && scopeFilter === 'current' ? `${filteredList.length} ${isZh ? '个当前文件' : 'current'}` : `${filteredList.length} ${isZh ? '个文件' : 'files'}` }})
+          ({{ isClientScoped && scopeFilter === 'current' ? `${filteredList.length} ${i18nStore.tl('个当前文件', 'current')}` : `${filteredList.length} ${i18nStore.tl('个文件', 'files')}` }})
         </span>
       </div>
 
@@ -19,14 +19,14 @@
           :class="{ active: scopeFilter === 'current' }"
           @click="scopeFilter = 'current'"
         >
-          {{ isZh ? '当前会话' : 'Current' }}
+          {{ i18nStore.tl('当前会话', 'Current') }}
         </button>
         <button
           class="gd-scope-btn"
           :class="{ active: scopeFilter === 'all' }"
           @click="scopeFilter = 'all'"
         >
-          {{ isZh ? '全部会话' : 'All' }}
+          {{ i18nStore.tl('全部会话', 'All') }}
         </button>
       </div>
 
@@ -34,27 +34,27 @@
 
       <el-input
         v-model="searchKey"
-        :placeholder="isZh ? '过滤文件名、主机、远端路径...' : 'Filter file, host, path...'"
+        :placeholder="i18nStore.tl('过滤文件名、主机、远端路径...', 'Filter file, host, path...')"
         size="small"
         clearable
         class="gd-search-input"
       />
 
       <button class="cs-btn cs-btn-primary" :disabled="!selectedRow && !selectedRows.length" @click="handleDownloadSelected">
-        {{ isZh ? '下载到本地' : 'Download' }}
+        {{ i18nStore.tl('下载到本地', 'Download') }}
       </button>
       <button class="cs-btn cs-btn-danger" :disabled="!selectedRow && !selectedRows.length" @click="handleDeleteSelected">
-        {{ isZh ? '删除记录' : 'Delete' }}
+        {{ i18nStore.tl('删除记录', 'Delete') }}
       </button>
       <button class="cs-btn" :disabled="loading" @click="refreshAll">
         <el-icon :class="{ 'is-loading': loading }"><Refresh /></el-icon>
-        <span>{{ isZh ? '刷新' : 'Refresh' }}</span>
+        <span>{{ i18nStore.tl('刷新', 'Refresh') }}</span>
       </button>
       <button class="cs-btn" @click="showHelp">
-        {{ isZh ? '帮助' : 'Help' }}
+        {{ i18nStore.tl('帮助', 'Help') }}
       </button>
       <span class="gd-status-info">
-        {{ isZh ? `共 ${filteredList.length} 个下载项` : `${filteredList.length} download items` }}
+        {{ i18nStore.tl(`共 ${filteredList.length} 个下载项`, `${filteredList.length} download items`) }}
       </span>
     </div>
 
@@ -75,13 +75,13 @@
       >
         <el-table-column type="selection" width="38" align="center" :reserve-selection="true" />
 
-        <el-table-column v-if="!isClientScoped || scopeFilter === 'all'" prop="host" :label="isZh ? '会话 / 主机' : 'Session / Host'" width="180" sortable show-overflow-tooltip>
+        <el-table-column v-if="!isClientScoped || scopeFilter === 'all'" prop="host" :label="i18nStore.tl('会话 / 主机', 'Session / Host')" width="180" sortable show-overflow-tooltip>
           <template #default="{ row }">
             <span class="host-cell font-bold">{{ row.host || row.uid.slice(0, 8) }}</span>
           </template>
         </el-table-column>
 
-        <el-table-column prop="fileName" :label="isZh ? '文件名' : 'File Name'" min-width="220" sortable show-overflow-tooltip>
+        <el-table-column prop="fileName" :label="i18nStore.tl('文件名', 'File Name')" min-width="220" sortable show-overflow-tooltip>
           <template #default="{ row }">
             <div class="gd-file-cell">
               <el-icon class="gd-file-icon" :class="getFileIconClass(row.fileName)">
@@ -92,19 +92,19 @@
           </template>
         </el-table-column>
 
-        <el-table-column prop="fileSize" :label="isZh ? '大小' : 'Size'" width="120" sortable align="right">
+        <el-table-column prop="fileSize" :label="i18nStore.tl('大小', 'Size')" width="120" sortable align="right">
           <template #default="{ row }">
             <span class="cs-font-mono">{{ row.fileSize || '-' }}</span>
           </template>
         </el-table-column>
 
-        <el-table-column prop="downloadTime" :label="isZh ? '下载日期' : 'Date'" width="180" sortable align="center" show-overflow-tooltip>
+        <el-table-column prop="downloadTime" :label="i18nStore.tl('下载日期', 'Date')" width="180" sortable align="center" show-overflow-tooltip>
           <template #default="{ row }">
             <span class="cs-font-mono text-dim">{{ formatTime(row.downloadTime) }}</span>
           </template>
         </el-table-column>
 
-        <el-table-column prop="downloadPart" :label="isZh ? '传输进度' : 'Progress'" width="140" sortable align="center">
+        <el-table-column prop="downloadPart" :label="i18nStore.tl('传输进度', 'Progress')" width="140" sortable align="center">
           <template #default="{ row }">
             <div class="progress-cell">
               <el-progress
@@ -116,19 +116,19 @@
           </template>
         </el-table-column>
 
-        <el-table-column prop="filePath" :label="isZh ? '远端路径' : 'Remote Path'" min-width="260" sortable show-overflow-tooltip>
+        <el-table-column prop="filePath" :label="i18nStore.tl('远端路径', 'Remote Path')" min-width="260" sortable show-overflow-tooltip>
           <template #default="{ row }">
             <span class="cs-font-mono text-dim" :title="row.filePath">{{ row.filePath }}</span>
           </template>
         </el-table-column>
 
-        <el-table-column :label="isZh ? '操作' : 'Actions'" width="180" align="center">
+        <el-table-column :label="i18nStore.tl('操作', 'Actions')" width="180" align="center">
           <template #default="{ row }">
             <button class="cs-btn cs-btn-xs cs-btn-primary" @click="handleDownload(row)">
-              {{ isZh ? '下载到本地' : 'Download' }}
+              {{ i18nStore.tl('下载到本地', 'Download') }}
             </button>
             <button class="cs-btn cs-btn-xs cs-btn-danger" style="margin-left: 6px" @click="handleDelete(row)">
-              {{ isZh ? '删除' : 'Delete' }}
+              {{ i18nStore.tl('删除', 'Delete') }}
             </button>
           </template>
         </el-table-column>
@@ -137,8 +137,8 @@
           <EmptyState
             icon="📁"
             variant="inline"
-            :title="isZh ? '暂无下载的文件' : 'No Downloaded Files'"
-            :desc="isZh ? '在文件管理器中右键选择「下载文件」后，下载记录将在此聚合展示。' : 'Files downloaded via File Browser will appear here.'"
+            :title="i18nStore.tl('暂无下载的文件', 'No Downloaded Files')"
+            :desc="i18nStore.tl('在文件管理器中右键选择「下载文件」后，下载记录将在此聚合展示。', 'Files downloaded via File Browser will appear here.')"
           />
         </template>
       </el-table>

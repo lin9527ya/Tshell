@@ -14,24 +14,24 @@
         <span class="bc-meta-pill"><span class="pill-k">PID</span><b>{{ pid }}</b></span>
         <span class="bc-meta-pill"><span class="pill-k">Arch</span><b>{{ arch }}</b></span>
         <span class="bc-meta-pill"><span class="pill-k">IP</span><b>{{ ip }}</b></span>
-        <span class="bc-meta-pill"><span class="pill-k">{{ isZh ? '监听器' : 'Lis' }}</span><b>{{ listener }}</b></span>
-        <span class="bc-meta-pill"><span class="pill-k">{{ isZh ? '心跳' : 'Sleep' }}</span><b>{{ sleep }}</b></span>
+        <span class="bc-meta-pill"><span class="pill-k">{{ i18nStore.tl('监听器', 'Lis') }}</span><b>{{ listener }}</b></span>
+        <span class="bc-meta-pill"><span class="pill-k">{{ i18nStore.tl('心跳', 'Sleep') }}</span><b>{{ sleep }}</b></span>
       </div>
 
       <div class="bc-spacer" />
 
       <!-- Quick Action Buttons -->
       <div class="bc-quick-actions">
-        <button class="bc-action-btn" :title="isZh ? '打开文件浏览器' : 'Open File Browser'" @click="openFiles">{{ isZh ? '文件' : 'Files' }}</button>
-        <button class="bc-action-btn" :title="isZh ? '打开进程列表' : 'Open Process List'" @click="openPids">{{ isZh ? '进程' : 'Processes' }}</button>
-        <button class="bc-action-btn" :title="isZh ? '打开屏幕截图' : 'Open Screenshots'" @click="openScreenshots">{{ isZh ? '截图' : 'Screenshots' }}</button>
-        <button class="bc-action-btn" :title="isZh ? '快速心跳 5 秒' : 'Quick Sleep 5s'" @click="sendSleep(5, 10)">{{ isZh ? '心跳 5s' : 'Sleep 5s' }}</button>
-        <button class="bc-action-btn" :title="isZh ? '任务队列' : 'Task Queue'" @click="openTaskQueue">{{ isZh ? '任务' : 'Tasks' }}</button>
-        <button class="bc-action-btn" :title="isZh ? '导出会话输出' : 'Export Session Output'" @click="exportOutput">{{ isZh ? '导出' : 'Export' }}</button>
-        <button class="bc-action-btn" :title="isZh ? '清空控制台' : 'Clear Console'" @click="clearTerminal">{{ isZh ? '清空' : 'Clear' }}</button>
+        <button class="bc-action-btn" :title="i18nStore.tl('打开文件浏览器', 'Open File Browser')" @click="openFiles">{{ i18nStore.tl('文件', 'Files') }}</button>
+        <button class="bc-action-btn" :title="i18nStore.tl('打开进程列表', 'Open Process List')" @click="openPids">{{ i18nStore.tl('进程', 'Processes') }}</button>
+        <button class="bc-action-btn" :title="i18nStore.tl('打开屏幕截图', 'Open Screenshots')" @click="openScreenshots">{{ i18nStore.tl('截图', 'Screenshots') }}</button>
+        <button class="bc-action-btn" :title="i18nStore.tl('快速心跳 5 秒', 'Quick Sleep 5s')" @click="sendSleep(5, 10)">{{ i18nStore.tl('心跳 5s', 'Sleep 5s') }}</button>
+        <button class="bc-action-btn" :title="i18nStore.tl('任务队列', 'Task Queue')" @click="openTaskQueue">{{ i18nStore.tl('任务', 'Tasks') }}</button>
+        <button class="bc-action-btn" :title="i18nStore.tl('导出会话输出', 'Export Session Output')" @click="exportOutput">{{ i18nStore.tl('导出', 'Export') }}</button>
+        <button class="bc-action-btn" :title="i18nStore.tl('清空控制台', 'Clear Console')" @click="clearTerminal">{{ i18nStore.tl('清空', 'Clear') }}</button>
       </div>
 
-      <span class="bc-last" :class="online ? 'ok' : 'err'">{{ online ? (isZh ? '● 在线' : '● Online') : (isZh ? '○ 离线' : '○ Offline') }}</span>
+      <span class="bc-last" :class="online ? 'ok' : 'err'">{{ online ? (i18nStore.tl('● 在线', '● Online')) : (i18nStore.tl('○ 离线', '○ Offline')) }}</span>
     </div>
 
     <!-- Terminal Surface (xterm.js) -->
@@ -44,18 +44,18 @@
         ref="inputEl"
         v-model="input"
         class="bc-input"
-        :placeholder="isZh ? '输入 beacon 命令，按回车执行，上下方向键浏览历史...' : 'Type beacon command, press Enter to execute, Up/Down for history...'"
+        :placeholder="i18nStore.tl('输入 beacon 命令，按回车执行，上下方向键浏览历史...', 'Type beacon command, press Enter to execute, Up/Down for history...')"
         autocomplete="off"
         spellcheck="false"
         @keydown="onKeydown"
       />
-      <button class="cs-btn cs-btn-primary" @click="send">{{ isZh ? '运行' : 'Run' }}</button>
+      <button class="cs-btn cs-btn-primary" @click="send">{{ i18nStore.tl('运行', 'Run') }}</button>
     </div>
 
     <!-- 任务队列可视化对话框 -->
     <el-dialog
       v-model="taskDialogVisible"
-      :title="isZh ? '任务队列: ' + props.uid.slice(0, 8) : 'Task Queue: ' + props.uid.slice(0, 8)"
+      :title="i18nStore.tl('任务队列: ' + props.uid.slice(0, 8), 'Task Queue: ' + props.uid.slice(0, 8))"
       width="560px"
       append-to-body
       class="cs-dialog"
@@ -64,18 +64,18 @@
       <div class="tq-container cs-font-ui">
         <div class="tq-toolbar">
           <div class="tq-stats">
-            <span class="tq-stat">{{ isZh ? '队列中:' : 'Queued:' }} <b>{{ taskQueue.queue_len || 0 }}</b></span>
-            <span class="tq-stat">{{ isZh ? '记录:' : 'Records:' }} <b>{{ (taskQueue.commands || []).length }}</b></span>
-            <span class="tq-stat">{{ isZh ? '最后拉取:' : 'Last pull:' }} <b>{{ taskQueue.last_pull_at || '-' }}</b></span>
+            <span class="tq-stat">{{ i18nStore.tl('队列中:', 'Queued:') }} <b>{{ taskQueue.queue_len || 0 }}</b></span>
+            <span class="tq-stat">{{ i18nStore.tl('记录:', 'Records:') }} <b>{{ (taskQueue.commands || []).length }}</b></span>
+            <span class="tq-stat">{{ i18nStore.tl('最后拉取:', 'Last pull:') }} <b>{{ taskQueue.last_pull_at || '-' }}</b></span>
           </div>
-          <button class="cs-btn cs-btn-xs" @click="refreshTaskQueue">{{ isZh ? '刷新' : 'Refresh' }}</button>
+          <button class="cs-btn cs-btn-xs" @click="refreshTaskQueue">{{ i18nStore.tl('刷新', 'Refresh') }}</button>
         </div>
         <div v-if="(taskQueue.queue_len || 0) > 0" class="tq-warn">
-          {{ isZh ? `⚠ 服务端仍有 ${taskQueue.queue_len} 条命令待客户端取走(可能离线或心跳慢)` : `⚠ ${taskQueue.queue_len} command(s) still queued on server (offline or slow heartbeat)` }}
+          {{ i18nStore.tl(`⚠ 服务端仍有 ${taskQueue.queue_len} 条命令待客户端取走(可能离线或心跳慢)`, `⚠ ${taskQueue.queue_len} command(s) still queued on server (offline or slow heartbeat)`) }}
         </div>
         <el-table :data="taskQueue.commands || []" size="small" height="320" class="cs-session-table">
           <template #empty>
-            <EmptyState variant="inline" :title="isZh ? '暂无任务' : 'No tasks'" />
+            <EmptyState variant="inline" :title="i18nStore.tl('暂无任务', 'No tasks')" />
           </template>
           <el-table-column prop="sent_at" label="时间" width="150">
             <template #default="{ row }">
@@ -90,12 +90,12 @@
           <el-table-column prop="status" label="状态" width="90" align="center">
             <template #default="{ row }">
               <span :class="row.status === 'removed' ? 'tq-removed' : 'tq-queued'">
-                {{ row.status === 'removed' ? (isZh ? '已取走' : 'Taken') : (isZh ? '待取' : 'Queued') }}
+                {{ row.status === 'removed' ? (i18nStore.tl('已取走', 'Taken')) : (i18nStore.tl('待取', 'Queued')) }}
               </span>
             </template>
           </el-table-column>
         </el-table>
-        <div class="tq-hint">{{ isZh ? '状态为近似值(协议无逐命令回执);命令执行结果见控制台输出。' : 'Status is approximate (no per-command ACK); results appear in the console.' }}</div>
+        <div class="tq-hint">{{ i18nStore.tl('状态为近似值(协议无逐命令回执);命令执行结果见控制台输出。', 'Status is approximate (no per-command ACK); results appear in the console.') }}</div>
       </div>
     </el-dialog>
   </div>

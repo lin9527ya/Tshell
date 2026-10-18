@@ -327,9 +327,31 @@ go test -race ./Tshell-server/...     # 见 §4 回归基线（注意用外层�
     以 `=` `+` `-` `@` 开头的单元格在 Excel/WPS 里会被当公式执行 —— 导出前加前导单引号
   - RFC 4180 转义（含逗号/引号/换行的字段）＋ UTF-8 BOM（否则 Excel 中文乱码）
   - 测试 21 项
-- **仍未做**：i18n 内联三元 **1496 处**（字典仅 478 行）；`as any` **51 处**；
-  最大单文件 `views/client/View/ClientFiles.vue` **2213 行**、`views/plugins/PluginsView.vue` **1947 行**
-  —— 属独立的重构工作量，不是一次能收掉的
+- **i18n 内联三元**：✅ 已清零（2026-10-19，1655 → 0）
+  - 新增 `i18nStore.tl(zh, en)`：**机械可迁移**是它存在的首要理由 ——
+    1600+ 处内联三元形态统一但 grep 不出"哪些是待翻译文案"，`tl(` 把每一处都标出来
+  - 更关键的是它给**字典化留了升级点**：以后把 tl 改成"先查 dict、查不到回退字面量"，
+    调用点一处都不用动。把迁移从"一次大爆炸"变成可增量
+  - 两个迁移脚本（`scripts/migrate-i18n.cjs` / `-pass2.cjs`，可重复运行的 dry-run 模式）：
+    第一遍吃"单行单引号纯字面量"1616 处，第二遍吃成员访问（`x.zh/x.en`）与模板字符串 25 处，
+    剩下 14 处人工（嵌套三元、字符串拼接、含嵌套插值的模板）
+  - **刻意不动的 6 处**：`api/cred/index.ts` 与 `stores/screenshots.ts` 里 `isZh` 是
+    **函数参数**（它们不是组件，把语言作为显式参数传入是正确设计），
+    改成 store 调用反而破坏可测试性
+- **`as any`**：63 → **32**（2026-10-19）
+  - 消掉的三批都是"用类型声明代替断言"的真实改进：
+    axios 配置扩展（`declare module 'axios'`，字段名拼错现在会编译失败，
+    此前 `as any` 会让 `metadata` 写成 `metaData` 静默拿到 undefined）、
+    `performance.memory` 显式接口、厂商前缀全屏 API 的 `declare global`（10 处 → 1 处声明）
+  - 顺带修掉一处纯噪音：`(injectedUid as any).value` —— 它的类型本来就是
+    `Ref<string> | ComputedRef<string>`，两者都有 `.value`，断言毫无必要
+- **棘轮守卫**：`src/techdebt.test.ts` 钉住两条 ——
+  组件内联三元上限 **0**（清零后不允许回涨）、`as any` 上限 **32**（只许降）。
+  另有第三条钉住 `tl` 按 locale **真的分支**：它若退化成恒返回中文，
+  1600 处调用点的语言切换会静默失效而没人立刻发现
+- **仍未做**：最大单文件 `views/client/View/ClientFiles.vue` **2213 行**、
+  `views/plugins/PluginsView.vue` **1947 行** —— 拆分属独立重构，需要先补该视图的测试
+  （否则拆分就是"在没有安全网的情况下动最大的文件"）
 
 ---
 

@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     v-model="visible"
-    :title="isZh ? '鱼叉式邮件钓鱼' : 'Spear Phish'"
+    :title="i18nStore.tl('鱼叉式邮件钓鱼', 'Spear Phish')"
     width="540px"
     append-to-body
     class="cs-dialog"
@@ -16,37 +16,37 @@
           height="120px"
           class="cs-session-table"
         >
-          <el-table-column prop="to" :label="isZh ? '收件人' : 'To'" min-width="140" />
-          <el-table-column prop="toName" :label="isZh ? '收件人姓名' : 'To_Name'" min-width="140" />
+          <el-table-column prop="to" :label="i18nStore.tl('收件人', 'To')" min-width="140" />
+          <el-table-column prop="toName" :label="i18nStore.tl('收件人姓名', 'To_Name')" min-width="140" />
         </el-table>
       </div>
 
       <div class="cs-form-row">
-        <label class="cs-form-label">{{ isZh ? '目标列表:' : 'Targets:' }}</label>
+        <label class="cs-form-label">{{ i18nStore.tl('目标列表:', 'Targets:') }}</label>
         <div class="cs-input-with-btn">
           <el-input v-model="form.targets" size="small" placeholder="targets.csv" class="cs-form-input" />
-          <button class="cs-picker-btn" :title="isZh ? '选择目标文件' : 'Choose targets file'" @click="pickFile('targets')">📄</button>
+          <button class="cs-picker-btn" :title="i18nStore.tl('选择目标文件', 'Choose targets file')" @click="pickFile('targets')">📄</button>
         </div>
       </div>
 
       <div class="cs-form-row">
-        <label class="cs-form-label">{{ isZh ? '邮件模板:' : 'Template:' }}</label>
+        <label class="cs-form-label">{{ i18nStore.tl('邮件模板:', 'Template:') }}</label>
         <div class="cs-input-with-btn">
           <el-input v-model="form.template" size="small" placeholder="template.html" class="cs-form-input" />
-          <button class="cs-picker-btn" :title="isZh ? '选择模板文件' : 'Choose template file'" @click="pickFile('template')">📄</button>
+          <button class="cs-picker-btn" :title="i18nStore.tl('选择模板文件', 'Choose template file')" @click="pickFile('template')">📄</button>
         </div>
       </div>
 
       <div class="cs-form-row">
-        <label class="cs-form-label">{{ isZh ? '附件文件:' : 'Attachment:' }}</label>
+        <label class="cs-form-label">{{ i18nStore.tl('附件文件:', 'Attachment:') }}</label>
         <div class="cs-input-with-btn">
           <el-input v-model="form.attachment" size="small" placeholder="invoice.docx" class="cs-form-input" />
-          <button class="cs-picker-btn" :title="isZh ? '选择附件文件' : 'Choose attachment file'" @click="pickFile('attachment')">📄</button>
+          <button class="cs-picker-btn" :title="i18nStore.tl('选择附件文件', 'Choose attachment file')" @click="pickFile('attachment')">📄</button>
         </div>
       </div>
 
       <div class="cs-form-row">
-        <label class="cs-form-label">{{ isZh ? '嵌入 URL:' : 'Embed URL:' }}</label>
+        <label class="cs-form-label">{{ i18nStore.tl('嵌入 URL:', 'Embed URL:') }}</label>
         <div class="cs-input-with-btn">
           <el-input v-model="form.embedUrl" size="small" placeholder="http://192.168.10.4/login" class="cs-form-input" />
           <button class="cs-picker-btn" @click="pickEmbedUrl">...</button>
@@ -54,24 +54,24 @@
       </div>
 
       <div class="cs-form-row">
-        <label class="cs-form-label">{{ isZh ? '邮件服务器:' : 'Mail Server:' }}</label>
+        <label class="cs-form-label">{{ i18nStore.tl('邮件服务器:', 'Mail Server:') }}</label>
         <div class="cs-input-with-btn">
           <el-input v-model="form.mailServer" size="small" placeholder="smtp.domain.com:25" class="cs-form-input" />
-          <button class="cs-picker-btn" :title="isZh ? '配置邮件服务器' : 'Configure Mail Server'" @click="showMailServerDialog = true">...</button>
+          <button class="cs-picker-btn" :title="i18nStore.tl('配置邮件服务器', 'Configure Mail Server')" @click="showMailServerDialog = true">...</button>
         </div>
       </div>
 
       <div class="cs-form-row">
-        <label class="cs-form-label">{{ isZh ? '退信反弹地址:' : 'Bounce To:' }}</label>
+        <label class="cs-form-label">{{ i18nStore.tl('退信反弹地址:', 'Bounce To:') }}</label>
         <el-input v-model="form.bounceTo" size="small" placeholder="bounce@domain.com" class="cs-form-input" />
       </div>
     </div>
 
     <template #footer>
       <div class="cs-dialog-footer-center">
-        <button class="cs-btn" @click="handlePreview">{{ isZh ? '预览' : 'Preview' }}</button>
-        <button class="cs-btn cs-btn-primary" @click="handleSend">{{ isZh ? '发送' : 'Send' }}</button>
-        <button class="cs-btn" @click="handleHelp">{{ isZh ? '帮助' : 'Help' }}</button>
+        <button class="cs-btn" @click="handlePreview">{{ i18nStore.tl('预览', 'Preview') }}</button>
+        <button class="cs-btn cs-btn-primary" @click="handleSend">{{ i18nStore.tl('发送', 'Send') }}</button>
+        <button class="cs-btn" @click="handleHelp">{{ i18nStore.tl('帮助', 'Help') }}</button>
       </div>
     </template>
 

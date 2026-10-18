@@ -3,15 +3,15 @@
     <!-- CS Toolbar -->
     <div class="ct-toolbar">
       <div class="ct-title-group">
-        <span class="ct-title">{{ isZh ? '后渗透工具箱: ' : 'Post-Exploitation Toolkit: ' }}{{ currentClientTitle }}</span>
-        <span class="ct-count">({{ isZh ? `共 ${toolList.length} 个功能模块` : `${toolList.length} modules available` }})</span>
+        <span class="ct-title">{{ i18nStore.tl('后渗透工具箱: ', 'Post-Exploitation Toolkit: ') }}{{ currentClientTitle }}</span>
+        <span class="ct-count">({{ i18nStore.tl(`共 ${toolList.length} 个功能模块`, `${toolList.length} modules available`) }})</span>
       </div>
 
       <div class="ct-spacer" />
 
       <el-input
         v-model="searchKeyword"
-        :placeholder="isZh ? '过滤模块名称...' : 'Filter module name...'"
+        :placeholder="i18nStore.tl('过滤模块名称...', 'Filter module name...')"
         clearable
         class="ct-search"
       />
@@ -22,7 +22,7 @@
       <span class="ct-selected-hint">
         {{ selectedTool
           ? `${selectedTool.name} (${selectedTool.category})`
-          : (isZh ? '未选择模块' : 'No module selected') }}
+          : (i18nStore.tl('未选择模块', 'No module selected')) }}
       </span>
 
       <div class="ct-spacer" />
@@ -32,7 +32,7 @@
         :disabled="!selectedTool || !!loading"
         @click="executeSelectedTool"
       >
-        {{ loading ? (isZh ? '执行中...' : 'Executing...') : (isZh ? '执行' : 'Execute') }}
+        {{ loading ? (i18nStore.tl('执行中...', 'Executing...')) : (i18nStore.tl('执行', 'Execute')) }}
       </button>
 
       <button
@@ -40,7 +40,7 @@
         class="cs-btn"
         @click="runTool('keylog_get')"
       >
-        {{ isZh ? '获取击键记录' : 'Get Keystrokes' }}
+        {{ i18nStore.tl('获取击键记录', 'Get Keystrokes') }}
       </button>
 
       <button
@@ -48,7 +48,7 @@
         class="cs-btn cs-btn-danger"
         @click="runTool('keylog_stop')"
       >
-        {{ isZh ? '停止键盘记录' : 'Stop Keylogger' }}
+        {{ i18nStore.tl('停止键盘记录', 'Stop Keylogger') }}
       </button>
 
       <button
@@ -56,7 +56,7 @@
         class="cs-btn"
         @click="runTool('hideprocess off')"
       >
-        {{ isZh ? '恢复进程名' : 'Restore Process Name' }}
+        {{ i18nStore.tl('恢复进程名', 'Restore Process Name') }}
       </button>
 
       <button
@@ -64,11 +64,11 @@
         class="cs-btn cs-btn-danger"
         @click="runTool('hidenet off')"
       >
-        {{ isZh ? '停止隐藏端口' : 'Stop Hide Port' }}
+        {{ i18nStore.tl('停止隐藏端口', 'Stop Hide Port') }}
       </button>
 
       <button class="cs-btn" @click="handleHelp">
-        {{ isZh ? '帮助' : 'Help' }}
+        {{ i18nStore.tl('帮助', 'Help') }}
       </button>
     </div>
 
@@ -84,17 +84,17 @@
           class="cs-session-table"
           @current-change="onSelectTool"
         >
-          <el-table-column prop="name" :label="isZh ? '功能模块' : 'Module'" width="160" sortable show-overflow-tooltip>
+          <el-table-column prop="name" :label="i18nStore.tl('功能模块', 'Module')" width="160" sortable show-overflow-tooltip>
             <template #default="{ row }">
               <span class="tool-name font-bold">{{ row.name }}</span>
             </template>
           </el-table-column>
-          <el-table-column prop="category" :label="isZh ? '分类' : 'Category'" width="110" sortable align="center">
+          <el-table-column prop="category" :label="i18nStore.tl('分类', 'Category')" width="110" sortable align="center">
             <template #default="{ row }">
               <span class="category-badge">{{ row.category }}</span>
             </template>
           </el-table-column>
-          <el-table-column prop="desc" :label="isZh ? '功能说明' : 'Description'" min-width="180" show-overflow-tooltip>
+          <el-table-column prop="desc" :label="i18nStore.tl('功能说明', 'Description')" min-width="180" show-overflow-tooltip>
             <template #default="{ row }">
               <span class="text-dim">{{ row.desc }}</span>
             </template>
@@ -113,40 +113,40 @@
           <div class="ct-card-form">
             <!-- Dynamic Param Form based on selectedTool.id -->
             <div v-if="selectedTool.id === 'services' || selectedTool.id === 'service_stop'" class="cs-form-row">
-              <label class="cs-form-label">{{ isZh ? '服务名称 (可选):' : 'Service Name (optional):' }}</label>
+              <label class="cs-form-label">{{ i18nStore.tl('服务名称 (可选):', 'Service Name (optional):') }}</label>
               <el-input v-model="serviceName" placeholder="e.g. Spooler, W32Time" style="width: 240px" />
             </div>
 
             <div v-else-if="selectedTool.id === 'reg_query'" class="cs-form-row">
-              <label class="cs-form-label">{{ isZh ? '注册表路径:' : 'Registry Key Path:' }}</label>
+              <label class="cs-form-label">{{ i18nStore.tl('注册表路径:', 'Registry Key Path:') }}</label>
               <el-input v-model="regPath" placeholder="HKCU\Software\Microsoft\Windows\CurrentVersion\Run" style="width: 400px" />
             </div>
 
             <div v-else-if="selectedTool.id === 'hideprocess'" class="cs-form-row">
-              <label class="cs-form-label">{{ isZh ? '伪装进程名:' : 'Masquerade Name:' }}</label>
+              <label class="cs-form-label">{{ i18nStore.tl('伪装进程名:', 'Masquerade Name:') }}</label>
               <el-input v-model="fakeName" placeholder="systemd" style="width: 240px" />
             </div>
 
             <div v-else-if="selectedTool.id === 'hidenet'" class="cs-form-row">
-              <label class="cs-form-label">{{ isZh ? '隐藏端口 (1-65535):' : 'Port to Hide (1-65535):' }}</label>
+              <label class="cs-form-label">{{ i18nStore.tl('隐藏端口 (1-65535):', 'Port to Hide (1-65535):') }}</label>
               <el-input v-model="hidePort" placeholder="4444" style="width: 160px" />
             </div>
 
             <div v-else class="ct-no-params">
-              <span class="cs-font-mono text-dim">{{ isZh ? '无需额外参数，点击【执行】即可下发指令。' : 'No extra parameters required. Click Execute to issue command.' }}</span>
+              <span class="cs-font-mono text-dim">{{ i18nStore.tl('无需额外参数，点击【执行】即可下发指令。', 'No extra parameters required. Click Execute to issue command.') }}</span>
             </div>
           </div>
         </div>
 
         <div v-else class="ct-empty-selection">
           <div class="ct-empty-icon">🧰</div>
-          <div class="ct-empty-text">{{ isZh ? '请从左侧列表选择一个后渗透模块进行配置与执行。' : 'Select a post-exploitation module from the left list to configure and execute.' }}</div>
+          <div class="ct-empty-text">{{ i18nStore.tl('请从左侧列表选择一个后渗透模块进行配置与执行。', 'Select a post-exploitation module from the left list to configure and execute.') }}</div>
         </div>
 
         <!-- Terminal Output Area -->
         <div class="ct-output-header">
-          <span>{{ isZh ? '执行控制台日志' : 'Execution Console Log' }}</span>
-          <button class="cs-btn cs-btn-xs" @click="consoleLogs = []">{{ isZh ? '清空' : 'Clear' }}</button>
+          <span>{{ i18nStore.tl('执行控制台日志', 'Execution Console Log') }}</span>
+          <button class="cs-btn cs-btn-xs" @click="consoleLogs = []">{{ i18nStore.tl('清空', 'Clear') }}</button>
         </div>
         <div class="ct-output-console cs-font-mono" v-loading="!!loading">
           <div v-for="(log, i) in consoleLogs" :key="i" class="log-line">
@@ -155,7 +155,7 @@
             <span class="log-msg">{{ log.msg }}</span>
           </div>
           <div v-if="!consoleLogs.length" class="empty-log">
-            {{ isZh ? '就绪等待执行。输出结果将在此处及 Beacon 控制台同步展示。' : 'Ready for execution. Output results will stream here and to Beacon Console.' }}
+            {{ i18nStore.tl('就绪等待执行。输出结果将在此处及 Beacon 控制台同步展示。', 'Ready for execution. Output results will stream here and to Beacon Console.') }}
           </div>
         </div>
       </div>

@@ -3,21 +3,21 @@
     <!-- vshell 工具条：左（标题 + 计数），右（筛选 + 操作） -->
     <div class="tp-toolbar">
       <div class="tp-title-group">
-        <span class="tp-title">{{ isZh ? 'SOCKS5 反向代理' : 'SOCKS5 Proxies' }}</span>
-        <span class="tp-count">({{ activeCount }} {{ isZh ? '个活跃' : 'active' }} / {{ socks5List.length }} {{ isZh ? '个总数' : 'total' }})</span>
+        <span class="tp-title">{{ i18nStore.tl('SOCKS5 反向代理', 'SOCKS5 Proxies') }}</span>
+        <span class="tp-count">({{ activeCount }} {{ i18nStore.tl('个活跃', 'active') }} / {{ socks5List.length }} {{ i18nStore.tl('个总数', 'total') }})</span>
       </div>
 
       <div class="tp-spacer" />
 
-      <el-select v-model="statusFilter" :placeholder="isZh ? '状态' : 'Status'" clearable class="tp-filter-sm">
-        <el-option :label="isZh ? '全部' : 'ALL'" value="" />
-        <el-option :label="isZh ? '活跃' : 'Active'" value="1" />
-        <el-option :label="isZh ? '停止' : 'Stopped'" value="2" />
+      <el-select v-model="statusFilter" :placeholder="i18nStore.tl('状态', 'Status')" clearable class="tp-filter-sm">
+        <el-option :label="i18nStore.tl('全部', 'ALL')" value="" />
+        <el-option :label="i18nStore.tl('活跃', 'Active')" value="1" />
+        <el-option :label="i18nStore.tl('停止', 'Stopped')" value="2" />
       </el-select>
 
       <el-input
         v-model="searchKeyword"
-        :placeholder="isZh ? '过滤备注、用户、端口...' : 'Filter note, user, port...'"
+        :placeholder="i18nStore.tl('过滤备注、用户、端口...', 'Filter note, user, port...')"
         clearable
         class="tp-search"
         @input="handleSearch"
@@ -31,25 +31,25 @@
       </el-input>
 
       <button class="cs-btn" @click="refreshList">
-        {{ isZh ? '刷新' : 'Refresh' }}
+        {{ i18nStore.tl('刷新', 'Refresh') }}
       </button>
 
       <span class="tp-toolbar-divider" />
 
       <button class="cs-btn cs-btn-primary" @click="showCreateDialog">
-        {{ isZh ? '添加代理' : 'Add Proxy' }}
+        {{ i18nStore.tl('添加代理', 'Add Proxy') }}
       </button>
       <button class="cs-btn" :disabled="selectedIds.length === 0" @click="batchOpen">
-        {{ isZh ? '启动' : 'Start' }}
+        {{ i18nStore.tl('启动', 'Start') }}
       </button>
       <button class="cs-btn" :disabled="selectedIds.length === 0" @click="batchClose">
-        {{ isZh ? '停止' : 'Stop' }}
+        {{ i18nStore.tl('停止', 'Stop') }}
       </button>
       <button class="cs-btn cs-btn-danger" :disabled="selectedIds.length === 0" @click="batchDelete">
-        {{ isZh ? '删除' : 'Remove' }}
+        {{ i18nStore.tl('删除', 'Remove') }}
       </button>
       <button class="cs-btn" @click="handleHelp">
-        {{ isZh ? '帮助' : 'Help' }}
+        {{ i18nStore.tl('帮助', 'Help') }}
       </button>
     </div>
 
@@ -57,17 +57,17 @@
       <!-- 内联配置面板（vshell 卡片：新建/编辑代理，展开在表格上方） -->
       <div v-if="createDialogVisible" class="cs-inline-panel">
         <div class="cs-inline-header">
-          <span class="cs-inline-title">{{ isEditMode ? (isZh ? '编辑 SOCKS5 代理' : 'Edit SOCKS5 Proxy') : (isZh ? '新建 SOCKS5 代理' : 'New SOCKS5 Proxy') }}</span>
-          <button class="cs-btn cs-btn-xs" @click="handleCloseDialog">{{ isZh ? '关闭' : 'Close' }}</button>
+          <span class="cs-inline-title">{{ isEditMode ? (i18nStore.tl('编辑 SOCKS5 代理', 'Edit SOCKS5 Proxy')) : (i18nStore.tl('新建 SOCKS5 代理', 'New SOCKS5 Proxy')) }}</span>
+          <button class="cs-btn cs-btn-xs" @click="handleCloseDialog">{{ i18nStore.tl('关闭', 'Close') }}</button>
         </div>
 
         <div class="cs-inline-body">
           <div class="cs-form-row">
-            <label class="cs-form-label"><span class="req">*</span> {{ isZh ? '选择客户端' : 'Beacon' }}</label>
+            <label class="cs-form-label"><span class="req">*</span> {{ i18nStore.tl('选择客户端', 'Beacon') }}</label>
             <div class="cs-form-input-wrap">
               <el-select
                 v-model="socks5Form.clientUid"
-                :placeholder="isZh ? '请选择已上线的客户端' : 'Select online beacon'"
+                :placeholder="i18nStore.tl('请选择已上线的客户端', 'Select online beacon')"
 
                 style="width: 100%"
                 :disabled="isEditMode"
@@ -83,35 +83,35 @@
           </div>
 
           <div class="cs-form-row">
-            <label class="cs-form-label"><span class="req">*</span> {{ isZh ? '服务端端口' : 'Port' }}</label>
+            <label class="cs-form-label"><span class="req">*</span> {{ i18nStore.tl('服务端端口', 'Port') }}</label>
             <div class="cs-form-input-wrap">
               <el-input-number v-model="socks5Form.serverPort" :min="1" :max="65535" style="width: 180px" />
-              <span class="cs-form-hint">{{ isZh ? '（Agent 端口 = 端口 + 1000）' : '（Agent port = port + 1000）' }}</span>
+              <span class="cs-form-hint">{{ i18nStore.tl('（Agent 端口 = 端口 + 1000）', '（Agent port = port + 1000）') }}</span>
             </div>
           </div>
 
           <div class="cs-form-row">
-            <label class="cs-form-label">{{ isZh ? '备注' : 'Note' }}</label>
+            <label class="cs-form-label">{{ i18nStore.tl('备注', 'Note') }}</label>
             <div class="cs-form-input-wrap">
-              <el-input v-model="socks5Form.note" :placeholder="isZh ? '请输入代理用途备注' : 'Enter note'" />
+              <el-input v-model="socks5Form.note" :placeholder="i18nStore.tl('请输入代理用途备注', 'Enter note')" />
             </div>
           </div>
 
           <div class="cs-form-row">
-            <label class="cs-form-label">{{ isZh ? '用户名' : 'Username' }}</label>
+            <label class="cs-form-label">{{ i18nStore.tl('用户名', 'Username') }}</label>
             <div class="cs-form-input-wrap">
-              <el-input v-model="socks5Form.username" :placeholder="isZh ? '可选认证用户名' : 'Optional username'" />
+              <el-input v-model="socks5Form.username" :placeholder="i18nStore.tl('可选认证用户名', 'Optional username')" />
             </div>
           </div>
 
           <div class="cs-form-row">
-            <label class="cs-form-label">{{ isZh ? '密码' : 'Password' }}</label>
+            <label class="cs-form-label">{{ i18nStore.tl('密码', 'Password') }}</label>
             <div class="cs-form-input-wrap">
               <el-input
                 v-model="socks5Form.password"
                 type="password"
 
-                :placeholder="isEditMode ? (isZh ? '留空保持不变' : 'Leave empty to keep') : (isZh ? '可选认证密码' : 'Optional password')"
+                :placeholder="isEditMode ? (i18nStore.tl('留空保持不变', 'Leave empty to keep')) : (i18nStore.tl('可选认证密码', 'Optional password'))"
                 show-password
               />
             </div>
@@ -119,11 +119,11 @@
 
           <div class="cs-inline-footer">
             <button class="cs-btn cs-btn-primary" :disabled="createLoading" @click="isEditMode ? updateProxy() : createProxy()">
-              {{ isEditMode ? (isZh ? '保存更新' : 'Save') : (isZh ? '创建代理' : 'Create') }}
+              {{ isEditMode ? (i18nStore.tl('保存更新', 'Save')) : (i18nStore.tl('创建代理', 'Create')) }}
             </button>
-            <button class="cs-btn" @click="resetForm">{{ isZh ? '重置' : 'Reset' }}</button>
-            <button class="cs-btn" @click="handleCloseDialog">{{ isZh ? '取消' : 'Cancel' }}</button>
-            <button class="cs-btn" @click="handleHelp">{{ isZh ? '帮助' : 'Help' }}</button>
+            <button class="cs-btn" @click="resetForm">{{ i18nStore.tl('重置', 'Reset') }}</button>
+            <button class="cs-btn" @click="handleCloseDialog">{{ i18nStore.tl('取消', 'Cancel') }}</button>
+            <button class="cs-btn" @click="handleHelp">{{ i18nStore.tl('帮助', 'Help') }}</button>
           </div>
         </div>
       </div>
@@ -142,7 +142,7 @@
           >
             <el-table-column type="selection" width="45" :reserve-selection="true" />
             <el-table-column prop="id" label="ID" width="70" sortable />
-            <el-table-column prop="note" :label="isZh ? '备注' : 'Note'" width="200">
+            <el-table-column prop="note" :label="i18nStore.tl('备注', 'Note')" width="200">
               <template #default="{ row }">
                 <div class="note-container">
                   <span v-if="!row.isEditingNote" class="note-text">{{ row.note || '-' }}</span>
@@ -151,7 +151,7 @@
                     v-model="row.tempNote"
                     @blur="saveNote(row)"
                     @keyup.enter="saveNote(row)"
-                    :placeholder="isZh ? '请输入备注' : 'Enter note'"
+                    :placeholder="i18nStore.tl('请输入备注', 'Enter note')"
                   />
                   <button v-if="!row.isEditingNote" class="note-edit-btn" @click="editNote(row)">
                     <el-icon><Edit /></el-icon>
@@ -159,45 +159,45 @@
                 </div>
               </template>
             </el-table-column>
-            <el-table-column prop="protocol" :label="isZh ? '协议' : 'Protocol'" width="110">
+            <el-table-column prop="protocol" :label="i18nStore.tl('协议', 'Protocol')" width="110">
               <template #default="{ row }">
                 <span class="vs-chip">{{ row.protocol.toUpperCase() }}</span>
               </template>
             </el-table-column>
-            <el-table-column prop="serverPort" :label="isZh ? '服务端端口' : 'Server Port'" width="110">
+            <el-table-column prop="serverPort" :label="i18nStore.tl('服务端端口', 'Server Port')" width="110">
               <template #default="{ row }">
                 <span class="cs-font-mono">{{ row.serverPort }}</span>
               </template>
             </el-table-column>
-            <el-table-column prop="agentPort" :label="isZh ? 'Agent 端口' : 'Agent Port'" width="110">
+            <el-table-column prop="agentPort" :label="i18nStore.tl('Agent 端口', 'Agent Port')" width="110">
               <template #default="{ row }">
                 <span class="cs-font-mono">{{ row.agentPort }}</span>
               </template>
             </el-table-column>
-            <el-table-column prop="username" :label="isZh ? '用户' : 'User'" width="140" show-overflow-tooltip>
+            <el-table-column prop="username" :label="i18nStore.tl('用户', 'User')" width="140" show-overflow-tooltip>
               <template #default="{ row }">
                 <span v-if="row.username" class="cs-font-mono">{{ row.username }}</span>
                 <span v-else class="vs-dim">-</span>
               </template>
             </el-table-column>
-            <el-table-column prop="status" :label="isZh ? '状态' : 'Status'" width="90">
+            <el-table-column prop="status" :label="i18nStore.tl('状态', 'Status')" width="90">
               <template #default="{ row }">
                 <span class="vs-status-tag" :class="row.status === 'active' ? 'is-online' : 'is-offline'">
-                  {{ row.status === 'active' ? (isZh ? '活跃' : 'Active') : (isZh ? '停止' : 'Stopped') }}
+                  {{ row.status === 'active' ? (i18nStore.tl('活跃', 'Active')) : (i18nStore.tl('停止', 'Stopped')) }}
                 </span>
               </template>
             </el-table-column>
-            <el-table-column prop="clientInfo" :label="isZh ? '客户端' : 'Client'" width="180" show-overflow-tooltip>
+            <el-table-column prop="clientInfo" :label="i18nStore.tl('客户端', 'Client')" width="180" show-overflow-tooltip>
               <template #default="{ row }">
                 <span class="cs-font-mono">{{ row.clientInfo }}</span>
               </template>
             </el-table-column>
-            <el-table-column prop="createTime" :label="isZh ? '创建时间' : 'Created'" width="170">
+            <el-table-column prop="createTime" :label="i18nStore.tl('创建时间', 'Created')" width="170">
               <template #default="{ row }">
                 <span class="vs-nowrap">{{ formatTime(row.createTime) }}</span>
               </template>
             </el-table-column>
-            <el-table-column :label="isZh ? '操作' : 'Actions'" width="320" fixed="right">
+            <el-table-column :label="i18nStore.tl('操作', 'Actions')" width="320" fixed="right">
               <template #default="{ row }">
                 <div class="action-buttons">
                   <button
@@ -205,26 +205,26 @@
                     :disabled="row.status === 'active'"
                     @click="openProxy(row)"
                   >
-                    {{ isZh ? '启动' : 'Start' }}
+                    {{ i18nStore.tl('启动', 'Start') }}
                   </button>
                   <button class="cs-btn cs-btn-xs" :disabled="row.status !== 'active'" @click="closeProxy(row)">
-                    {{ isZh ? '停止' : 'Stop' }}
+                    {{ i18nStore.tl('停止', 'Stop') }}
                   </button>
                   <button class="cs-btn cs-btn-xs" @click="editProxy(row)">
-                    {{ isZh ? '编辑' : 'Edit' }}
+                    {{ i18nStore.tl('编辑', 'Edit') }}
                   </button>
                   <button class="cs-btn cs-btn-xs" :disabled="row.status !== 'active'" @click="copyCurlCmd(row)">
-                    {{ isZh ? '复制命令' : 'Copy Cmd' }}
+                    {{ i18nStore.tl('复制命令', 'Copy Cmd') }}
                   </button>
                   <button class="cs-btn cs-btn-xs cs-btn-danger" @click="deleteProxy(row)">
-                    {{ isZh ? '删除' : 'Delete' }}
+                    {{ i18nStore.tl('删除', 'Delete') }}
                   </button>
                 </div>
               </template>
             </el-table-column>
 
             <template #empty>
-              <EmptyState variant="inline" icon="🧦" :title="isZh ? '暂无 SOCKS5 代理' : 'No SOCKS5 Proxies Configured'" />
+              <EmptyState variant="inline" icon="🧦" :title="i18nStore.tl('暂无 SOCKS5 代理', 'No SOCKS5 Proxies Configured')" />
             </template>
           </el-table>
         </div>

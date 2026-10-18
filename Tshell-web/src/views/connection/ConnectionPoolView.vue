@@ -3,28 +3,28 @@
     <!-- vshell 工具条：内容上方一行（左标题/统计，右操作） -->
     <div class="cp-toolbar">
       <div class="cp-title-group">
-        <span class="cp-title">{{ isZh ? '连接池与工作线程管理' : 'Connection Pool & Workers' }}</span>
+        <span class="cp-title">{{ i18nStore.tl('连接池与工作线程管理', 'Connection Pool & Workers') }}</span>
         <span class="cp-stats">
-          ({{ poolStats.active_connections || connections.length }} {{ isZh ? '个活动连接' : 'active sockets' }} / {{ workerStats.worker_count || 16 }} {{ isZh ? '个工作线程' : 'workers' }})
+          ({{ poolStats.active_connections || connections.length }} {{ i18nStore.tl('个活动连接', 'active sockets') }} / {{ workerStats.worker_count || 16 }} {{ i18nStore.tl('个工作线程', 'workers') }})
         </span>
       </div>
 
       <div class="cp-spacer" />
 
       <button class="cs-btn" @click="handleHelp">
-        {{ isZh ? '帮助' : 'Help' }}
+        {{ i18nStore.tl('帮助', 'Help') }}
       </button>
 
       <button class="cs-btn cs-btn-primary" @click="handleSavePoolConfig">
-        {{ isZh ? '保存连接池参数' : 'Save Pool Tuning' }}
+        {{ i18nStore.tl('保存连接池参数', 'Save Pool Tuning') }}
       </button>
 
       <button class="cs-btn" :disabled="healthChecking" @click="handleHealthCheck">
-        {{ healthChecking ? (isZh ? '检查中...' : 'Checking...') : (isZh ? '健康检查' : 'Health Check') }}
+        {{ healthChecking ? (i18nStore.tl('检查中...', 'Checking...')) : (i18nStore.tl('健康检查', 'Health Check')) }}
       </button>
 
       <button class="cs-btn" :disabled="loading" @click="fetchData">
-        {{ isZh ? '刷新' : 'Refresh' }}
+        {{ i18nStore.tl('刷新', 'Refresh') }}
       </button>
     </div>
 
@@ -33,12 +33,12 @@
       <!-- Top / Left: Active Connections Table -->
       <div class="cp-table-panel">
         <div class="cp-panel-header">
-          <span class="panel-title">{{ isZh ? '活动套接字与传输会话' : 'Active Sockets & Transport Sessions' }}</span>
+          <span class="panel-title">{{ i18nStore.tl('活动套接字与传输会话', 'Active Sockets & Transport Sessions') }}</span>
           <div class="cp-filter-group">
             <!-- 后端 /connection/protocol/:protocol 协议过滤 -->
             <el-select
               v-model="protocolFilter"
-              :placeholder="isZh ? '全部协议' : 'All Protocols'"
+              :placeholder="i18nStore.tl('全部协议', 'All Protocols')"
               clearable
               class="cp-protocol-select"
               @change="onProtocolFilterChange"
@@ -53,7 +53,7 @@
             <!-- 后端 /connection/uid/:uid UID 精确查询 -->
             <el-input
               v-model="uidFilter"
-              :placeholder="isZh ? '按 Beacon UID 查询' : 'Lookup Beacon UID'"
+              :placeholder="i18nStore.tl('按 Beacon UID 查询', 'Lookup Beacon UID')"
               clearable
               class="cp-uid-input"
               @keyup.enter="onUidSearch"
@@ -65,12 +65,12 @@
                 </svg>
               </template>
             </el-input>
-            <button class="cs-btn cs-btn-xs" @click="onUidSearch">{{ isZh ? '查询' : 'Find' }}</button>
+            <button class="cs-btn cs-btn-xs" @click="onUidSearch">{{ i18nStore.tl('查询', 'Find') }}</button>
             <button v-if="protocolFilter || uidFilter" class="cs-btn cs-btn-xs" @click="clearFilters">
-              {{ isZh ? '清除过滤' : 'Clear' }}
+              {{ i18nStore.tl('清除过滤', 'Clear') }}
             </button>
             <button class="cs-btn cs-btn-xs cs-btn-danger" :disabled="!selectedConnection" @click="selectedConnection && handleCloseConn(selectedConnection)">
-              {{ isZh ? '断开选中连接' : 'Disconnect Selected' }}
+              {{ i18nStore.tl('断开选中连接', 'Disconnect Selected') }}
             </button>
           </div>
         </div>
@@ -84,32 +84,32 @@
             v-loading="loading"
             @current-change="(r: any) => selectedConnection = r"
           >
-            <el-table-column prop="id" :label="isZh ? '套接字 ID' : 'Socket ID'" width="100" sortable>
+            <el-table-column prop="id" :label="i18nStore.tl('套接字 ID', 'Socket ID')" width="100" sortable>
               <template #default="{ row }">
                 <span class="cs-font-mono vs-strong">{{ row.id || row.Id || 'sock-1' }}</span>
               </template>
             </el-table-column>
-            <el-table-column prop="protocol" :label="isZh ? '协议' : 'Protocol'" width="100" sortable align="center">
+            <el-table-column prop="protocol" :label="i18nStore.tl('协议', 'Protocol')" width="100" sortable align="center">
               <template #default="{ row }">
                 <span class="vs-chip">{{ row.protocol || 'TCP' }}</span>
               </template>
             </el-table-column>
-            <el-table-column prop="client_ip" :label="isZh ? '远端地址' : 'Remote Address'" min-width="180" sortable show-overflow-tooltip>
+            <el-table-column prop="client_ip" :label="i18nStore.tl('远端地址', 'Remote Address')" min-width="180" sortable show-overflow-tooltip>
               <template #default="{ row }">
                 <span class="cs-font-mono">{{ row.client_ip || row.remote_addr || '-' }}</span>
               </template>
             </el-table-column>
-            <el-table-column prop="uid" :label="isZh ? 'Beacon UID' : 'Beacon UID'" min-width="160" show-overflow-tooltip>
+            <el-table-column prop="uid" :label="i18nStore.tl('Beacon UID', 'Beacon UID')" min-width="160" show-overflow-tooltip>
               <template #default="{ row }">
                 <span class="cs-font-mono vs-dim">{{ row.uid || row.Uid || '-' }}</span>
               </template>
             </el-table-column>
-            <el-table-column prop="uptime" :label="isZh ? '运行时长' : 'Uptime'" width="130" align="right">
+            <el-table-column prop="uptime" :label="i18nStore.tl('运行时长', 'Uptime')" width="130" align="right">
               <template #default="{ row }">
                 <span class="cs-font-mono">{{ formatUptime(row.uptime, row) }}</span>
               </template>
             </el-table-column>
-            <el-table-column prop="is_active" :label="isZh ? '状态' : 'State'" width="110" align="center">
+            <el-table-column prop="is_active" :label="i18nStore.tl('状态', 'State')" width="110" align="center">
               <template #default="{ row }">
                 <span class="vs-status-tag" :class="row.is_active ? 'is-online' : 'is-offline'">
                   {{ row.is_active ? 'ESTABLISHED' : 'CLOSED' }}
@@ -124,7 +124,7 @@
                   <rect x="3" y="14" width="18" height="6" rx="2" />
                   <path d="M7 7h.01M7 17h.01" />
                 </svg>
-                <span>{{ isZh ? '暂无活动连接' : 'No active connections' }}</span>
+                <span>{{ i18nStore.tl('暂无活动连接', 'No active connections') }}</span>
               </div>
             </template>
           </el-table>
@@ -134,26 +134,26 @@
       <!-- Bottom / Right: Pool Tuning & Worker Thread Pool -->
       <div class="cp-config-panel">
         <div class="cp-panel-header">
-          <span class="panel-title">{{ isZh ? '连接池与工作线程配置' : 'Pool Tuning & Worker Thread Pool' }}</span>
+          <span class="panel-title">{{ i18nStore.tl('连接池与工作线程配置', 'Pool Tuning & Worker Thread Pool') }}</span>
         </div>
 
         <div class="cp-config-grid">
           <div class="cp-form-col">
             <div class="cs-form-row">
-              <label class="cs-form-label">{{ isZh ? '工作线程数' : 'Worker Pool Size' }}:</label>
+              <label class="cs-form-label">{{ i18nStore.tl('工作线程数', 'Worker Pool Size') }}:</label>
               <div class="input-with-btn">
                 <el-input-number v-model="workerCount" :min="4" :max="128" />
-                <button class="cs-btn cs-btn-primary" @click="handleResizeWorkers">{{ isZh ? '应用' : 'Apply Size' }}</button>
+                <button class="cs-btn cs-btn-primary" @click="handleResizeWorkers">{{ i18nStore.tl('应用', 'Apply Size') }}</button>
               </div>
             </div>
 
             <div class="cs-form-row">
-              <label class="cs-form-label">{{ isZh ? '最大连接数' : 'Max Pool Connections' }}:</label>
+              <label class="cs-form-label">{{ i18nStore.tl('最大连接数', 'Max Pool Connections') }}:</label>
               <el-input-number v-model="poolConfig.max_connections" :min="50" :max="5000" />
             </div>
 
             <div class="cs-form-row">
-              <label class="cs-form-label">{{ isZh ? '最大空闲时间' : 'Max Idle Duration' }}:</label>
+              <label class="cs-form-label">{{ i18nStore.tl('最大空闲时间', 'Max Idle Duration') }}:</label>
               <el-input v-model="poolConfig.max_idle_time" placeholder="300s" class="cp-idle-input" />
             </div>
           </div>
@@ -161,14 +161,14 @@
           <div class="cp-stats-col">
             <div class="stat-mini-card">
               <div class="stat-num">{{ poolStats.active_connections || connections.length }}</div>
-              <div class="stat-lbl">{{ isZh ? '活动 TCP/HTTP 连接' : 'Active TCP/HTTP Sockets' }}</div>
+              <div class="stat-lbl">{{ i18nStore.tl('活动 TCP/HTTP 连接', 'Active TCP/HTTP Sockets') }}</div>
             </div>
             <div class="stat-mini-card">
               <div class="stat-num">{{ workerStats.worker_count || workerCount }}</div>
-              <div class="stat-lbl">{{ isZh ? '专用工作线程数' : 'Dedicated Worker Threads' }}</div>
+              <div class="stat-lbl">{{ i18nStore.tl('专用工作线程数', 'Dedicated Worker Threads') }}</div>
             </div>
             <div class="stat-mini-card">
-              <div class="stat-lbl">{{ isZh ? '连接池健康状态' : 'Pool Health State' }}</div>
+              <div class="stat-lbl">{{ i18nStore.tl('连接池健康状态', 'Pool Health State') }}</div>
               <span
                 class="vs-status-tag"
                 :class="String(poolStats.health_status || 'HEALTHY').toUpperCase() === 'HEALTHY' ? 'is-online' : 'is-offline'"

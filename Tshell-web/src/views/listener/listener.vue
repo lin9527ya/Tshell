@@ -4,7 +4,7 @@
     <div class="cs-listener-toolbar">
       <div class="cs-title-group">
         <el-icon class="cs-title-icon"><Headset /></el-icon>
-        <span class="cs-title">{{ isZh ? '监听器管理' : 'Listeners' }}</span>
+        <span class="cs-title">{{ i18nStore.tl('监听器管理', 'Listeners') }}</span>
       </div>
 
       <!-- 正/反向监听器：下划线页签（激活 = 主色字 + 2px 主色下划线） -->
@@ -14,7 +14,7 @@
           :class="{ active: activeView === 'normal' }"
           @click="switchView('normal')"
         >
-          <span class="tab-label">{{ isZh ? '反向监听器' : 'Reverse Listeners' }}</span>
+          <span class="tab-label">{{ i18nStore.tl('反向监听器', 'Reverse Listeners') }}</span>
           <span class="tab-badge">{{ listenersList.length }}</span>
         </button>
         <button
@@ -22,20 +22,20 @@
           :class="{ active: activeView === 'forward' }"
           @click="switchView('forward')"
         >
-          <span class="tab-label">{{ isZh ? '正向监听器' : 'Forward Listeners' }}</span>
+          <span class="tab-label">{{ i18nStore.tl('正向监听器', 'Forward Listeners') }}</span>
           <span class="tab-badge">{{ forwardCount }}</span>
         </button>
       </div>
 
       <span v-if="activeView === 'normal'" class="cs-toolbar-hint">
-        {{ isZh ? `共 ${filteredListeners.length} 个反向监听器` : `${filteredListeners.length} reverse listener(s)` }}
+        {{ i18nStore.tl(`共 ${filteredListeners.length} 个反向监听器`, `${filteredListeners.length} reverse listener(s)`) }}
       </span>
 
       <div class="cs-spacer" />
 
       <el-input
         v-model="searchKey"
-        :placeholder="activeView === 'normal' ? (isZh ? '过滤反向监听器 (名称/载荷/地址/备注)...' : 'Filter reverse listeners...') : (isZh ? '过滤正向监听器 (名称/载荷/地址/备注)...' : 'Filter forward listeners...')"
+        :placeholder="activeView === 'normal' ? (i18nStore.tl('过滤反向监听器 (名称/载荷/地址/备注)...', 'Filter reverse listeners...')) : (i18nStore.tl('过滤正向监听器 (名称/载荷/地址/备注)...', 'Filter forward listeners...'))"
         clearable
         class="cs-search"
       >
@@ -49,24 +49,24 @@
 
       <button class="cs-btn" :disabled="currentLoading" @click="handleRefresh">
         <el-icon :class="{ 'is-loading': currentLoading }"><Refresh /></el-icon>
-        <span>{{ isZh ? '刷新' : 'Refresh' }}</span>
+        <span>{{ i18nStore.tl('刷新', 'Refresh') }}</span>
       </button>
 
       <!-- 攻击工具：正向连接 / 鱼叉式钓鱼（页面内局部弹窗） -->
       <span class="cs-toolbar-divider" />
-      <button class="cs-btn" @click="showForwardConnect = true">{{ isZh ? '正向连接' : 'Forward Connect' }}</button>
-      <button class="cs-btn" @click="showSpearPhish = true">{{ isZh ? '钓鱼邮件' : 'Spear Phish' }}</button>
+      <button class="cs-btn" @click="showForwardConnect = true">{{ i18nStore.tl('正向连接', 'Forward Connect') }}</button>
+      <button class="cs-btn" @click="showSpearPhish = true">{{ i18nStore.tl('钓鱼邮件', 'Spear Phish') }}</button>
 
       <!-- 反向监听器操作（正向视图的操作条由子面板自带） -->
       <template v-if="activeView === 'normal'">
         <span class="cs-toolbar-divider" />
-        <button class="cs-btn cs-btn-primary" @click="openAddDialog">{{ isZh ? '添加' : 'Add' }}</button>
-        <button class="cs-btn" :disabled="!selectedRow" @click="openEditDialog()">{{ isZh ? '编辑' : 'Edit' }}</button>
-        <button class="cs-btn" :disabled="!selectedRow || selectedRow.Status === 1" @click="() => handleStart(selectedRow)">{{ isZh ? '开启' : 'Start' }}</button>
-        <button class="cs-btn" :disabled="!selectedRow || selectedRow.Status !== 1" @click="() => handleStop(selectedRow)">{{ isZh ? '关闭' : 'Stop' }}</button>
-        <button class="cs-btn" :disabled="!selectedRow" @click="() => handleRestart(selectedRow)">{{ isZh ? '重启' : 'Restart' }}</button>
-        <button class="cs-btn cs-btn-danger" :disabled="!selectedRow" @click="() => handleRemove(selectedRow)">{{ isZh ? '删除' : 'Remove' }}</button>
-        <button class="cs-btn" @click="handleHelp">{{ isZh ? '帮助' : 'Help' }}</button>
+        <button class="cs-btn cs-btn-primary" @click="openAddDialog">{{ i18nStore.tl('添加', 'Add') }}</button>
+        <button class="cs-btn" :disabled="!selectedRow" @click="openEditDialog()">{{ i18nStore.tl('编辑', 'Edit') }}</button>
+        <button class="cs-btn" :disabled="!selectedRow || selectedRow.Status === 1" @click="() => handleStart(selectedRow)">{{ i18nStore.tl('开启', 'Start') }}</button>
+        <button class="cs-btn" :disabled="!selectedRow || selectedRow.Status !== 1" @click="() => handleStop(selectedRow)">{{ i18nStore.tl('关闭', 'Stop') }}</button>
+        <button class="cs-btn" :disabled="!selectedRow" @click="() => handleRestart(selectedRow)">{{ i18nStore.tl('重启', 'Restart') }}</button>
+        <button class="cs-btn cs-btn-danger" :disabled="!selectedRow" @click="() => handleRemove(selectedRow)">{{ i18nStore.tl('删除', 'Remove') }}</button>
+        <button class="cs-btn" @click="handleHelp">{{ i18nStore.tl('帮助', 'Help') }}</button>
       </template>
     </div>
 
@@ -88,32 +88,32 @@
             @row-dblclick="onRowDblClick"
             @row-contextmenu="onRowContextMenu"
           >
-            <el-table-column prop="name" :label="isZh ? '名称' : 'name'" min-width="110" sortable show-overflow-tooltip />
-            <el-table-column prop="payload" :label="isZh ? '载荷' : 'payload'" min-width="160" sortable show-overflow-tooltip />
-            <el-table-column prop="host" :label="isZh ? '主机' : 'host'" min-width="140" sortable show-overflow-tooltip />
-            <el-table-column prop="port" :label="isZh ? '端口' : 'port'" width="85" sortable align="left" />
-            <el-table-column prop="bindto" :label="isZh ? '回连地址' : 'bindto'" min-width="160" sortable show-overflow-tooltip />
-            <el-table-column :label="isZh ? '状态' : 'status'" width="115" sortable align="center">
+            <el-table-column prop="name" :label="i18nStore.tl('名称', 'name')" min-width="110" sortable show-overflow-tooltip />
+            <el-table-column prop="payload" :label="i18nStore.tl('载荷', 'payload')" min-width="160" sortable show-overflow-tooltip />
+            <el-table-column prop="host" :label="i18nStore.tl('主机', 'host')" min-width="140" sortable show-overflow-tooltip />
+            <el-table-column prop="port" :label="i18nStore.tl('端口', 'port')" width="85" sortable align="left" />
+            <el-table-column prop="bindto" :label="i18nStore.tl('回连地址', 'bindto')" min-width="160" sortable show-overflow-tooltip />
+            <el-table-column :label="i18nStore.tl('状态', 'status')" width="115" sortable align="center">
               <template #default="{ row }">
                 <span class="vs-status-tag" :class="row.Status === 1 ? 'is-online' : 'is-offline'">
-                  {{ row.Status === 1 ? (isZh ? '监听中' : 'Listening') : (isZh ? '已停止' : 'Stopped') }}
+                  {{ row.Status === 1 ? (i18nStore.tl('监听中', 'Listening')) : (i18nStore.tl('已停止', 'Stopped')) }}
                 </span>
               </template>
             </el-table-column>
-            <el-table-column prop="note" :label="isZh ? '备注' : 'note'" min-width="140" sortable show-overflow-tooltip />
-            <el-table-column :label="isZh ? 'VKey' : 'vkey'" min-width="115" show-overflow-tooltip>
+            <el-table-column prop="note" :label="i18nStore.tl('备注', 'note')" min-width="140" sortable show-overflow-tooltip />
+            <el-table-column :label="i18nStore.tl('VKey', 'vkey')" min-width="115" show-overflow-tooltip>
               <template #default="{ row }">
                 <span class="cs-font-mono">{{ maskSecret(row.VKey) }}</span>
               </template>
             </el-table-column>
-            <el-table-column :label="isZh ? '加密盐' : 'encryption_salt'" min-width="115" show-overflow-tooltip>
+            <el-table-column :label="i18nStore.tl('加密盐', 'encryption_salt')" min-width="115" show-overflow-tooltip>
               <template #default="{ row }">
                 <span class="cs-font-mono">{{ maskSecret(row.EncryptionSalt) }}</span>
               </template>
             </el-table-column>
 
             <template #empty>
-              <EmptyState variant="inline" icon="📡" :title="isZh ? '暂无反向监听器' : 'No Listeners Configured'" />
+              <EmptyState variant="inline" icon="📡" :title="i18nStore.tl('暂无反向监听器', 'No Listeners Configured')" />
             </template>
           </el-table>
         </div>
@@ -140,16 +140,16 @@
         @contextmenu.prevent
       >
         <div class="ctx-item" :class="{ disabled: ctxMenu.row?.Status === 1 }" @click="handleStart(ctxMenu.row)">
-          <span class="ctx-text">{{ isZh ? '开启监听' : 'Start Listener' }}</span>
+          <span class="ctx-text">{{ i18nStore.tl('开启监听', 'Start Listener') }}</span>
         </div>
         <div class="ctx-item" :class="{ disabled: ctxMenu.row?.Status !== 1 }" @click="handleStop(ctxMenu.row)">
-          <span class="ctx-text">{{ isZh ? '关闭监听' : 'Stop Listener' }}</span>
+          <span class="ctx-text">{{ i18nStore.tl('关闭监听', 'Stop Listener') }}</span>
         </div>
         <div class="ctx-item" @click="handleRestart(ctxMenu.row)">
-          <span class="ctx-text">{{ isZh ? '重启监听' : 'Restart Listener' }}</span>
+          <span class="ctx-text">{{ i18nStore.tl('重启监听', 'Restart Listener') }}</span>
         </div>
         <div class="ctx-item" @click="openEditDialog(ctxMenu.row)">
-          <span class="ctx-text">{{ isZh ? '编辑...' : 'Edit...' }}</span>
+          <span class="ctx-text">{{ i18nStore.tl('编辑...', 'Edit...') }}</span>
         </div>
         <div class="ctx-divider" />
         <div
@@ -157,7 +157,7 @@
           @mouseenter="ctxMenu.showColor = true"
           @mouseleave="ctxMenu.showColor = false"
         >
-          <span class="ctx-text">{{ isZh ? '颜色' : 'Color' }}</span>
+          <span class="ctx-text">{{ i18nStore.tl('颜色', 'Color') }}</span>
           <span class="ctx-arrow">▶</span>
 
           <div v-show="ctxMenu.showColor" class="ctx-color-palette">
@@ -166,14 +166,14 @@
               :key="c.value"
               class="color-box"
               :style="{ backgroundColor: c.value }"
-              :title="isZh ? c.zh : c.en"
+              :title="i18nStore.tl(c.zh, c.en)"
               @click.stop="setColor(c.value)"
             />
           </div>
         </div>
         <div class="ctx-divider" />
         <div class="ctx-item ctx-danger" @click="handleRemove(ctxMenu.row)">
-          <span class="ctx-text">{{ isZh ? '删除' : 'Remove' }}</span>
+          <span class="ctx-text">{{ i18nStore.tl('删除', 'Remove') }}</span>
         </div>
       </div>
     </Teleport>

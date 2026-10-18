@@ -1,19 +1,19 @@
 <template>
   <el-dialog
     v-model="visible"
-    :title="isEdit ? (isZh ? '编辑监听器' : 'Edit Listener') : (isZh ? '新建监听器' : 'New Listener')"
+    :title="isEdit ? (i18nStore.tl('编辑监听器', 'Edit Listener')) : (i18nStore.tl('新建监听器', 'New Listener'))"
     width="560px"
     append-to-body
     class="cs-dialog"
     :close-on-click-modal="false"
   >
     <div class="cs-dialog-body cs-font-ui">
-      <div class="cs-dialog-desc">{{ isZh ? '配置 C2 监听器。VKey 和 Salt 必须使用自定义值。' : 'Configure a C2 listener. VKey and Salt must be custom values.' }}</div>
+      <div class="cs-dialog-desc">{{ i18nStore.tl('配置 C2 监听器。VKey 和 Salt 必须使用自定义值。', 'Configure a C2 listener. VKey and Salt must be custom values.') }}</div>
 
       <div class="cs-form-row">
-        <label class="cs-form-label">{{ isZh ? '协议类型' : 'Type / Protocol' }}:</label>
+        <label class="cs-form-label">{{ i18nStore.tl('协议类型', 'Type / Protocol') }}:</label>
         <el-select v-model="form.type" size="small" class="cs-form-input">
-          <el-option-group v-if="scope === 'reverse'" :label="isZh ? '反向监听' : 'Reverse Listeners'">
+          <el-option-group v-if="scope === 'reverse'" :label="i18nStore.tl('反向监听', 'Reverse Listeners')">
             <el-option label="TCP" value="tcp" />
             <el-option label="KCP" value="kcp" />
             <el-option label="WebSocket" value="websocket" />
@@ -22,7 +22,7 @@
             <el-option label="DNS" value="dns" />
             <el-option label="OSS" value="oss" />
           </el-option-group>
-          <el-option-group v-else :label="isZh ? '正向监听' : 'Forward Listeners'">
+          <el-option-group v-else :label="i18nStore.tl('正向监听', 'Forward Listeners')">
             <el-option label="TCP Forward" value="tcp_forward" />
             <el-option label="KCP Forward" value="kcp_forward" />
             <el-option label="WebSocket Forward" value="ws_forward" />
@@ -33,43 +33,43 @@
       </div>
 
       <div class="cs-form-row">
-        <label class="cs-form-label">{{ isZh ? '监听地址' : 'Listen Address' }}:</label>
+        <label class="cs-form-label">{{ i18nStore.tl('监听地址', 'Listen Address') }}:</label>
         <el-input v-model="form.listenAddress" size="small" placeholder="0.0.0.0:8089" class="cs-form-input" />
       </div>
 
       <div class="cs-form-row">
-        <label class="cs-form-label">{{ isZh ? '连接地址' : 'Connect Address' }}:</label>
+        <label class="cs-form-label">{{ i18nStore.tl('连接地址', 'Connect Address') }}:</label>
         <el-input v-model="form.connectAddress" size="small" placeholder="public.domain.com:8089" class="cs-form-input" />
       </div>
 
       <div class="cs-form-row">
-        <label class="cs-form-label">{{ isZh ? '备注' : 'Note' }}:</label>
+        <label class="cs-form-label">{{ i18nStore.tl('备注', 'Note') }}:</label>
         <el-input v-model="form.note" size="small" placeholder="HTTPS C2" class="cs-form-input" />
       </div>
 
       <div class="cs-form-row">
-        <label class="cs-form-label">{{ isZh ? '心跳超时' : 'Heartbeat Timeout' }}:</label>
+        <label class="cs-form-label">{{ i18nStore.tl('心跳超时', 'Heartbeat Timeout') }}:</label>
         <el-input v-model="form.retries" size="small" placeholder="30" class="cs-form-input" />
       </div>
 
       <div class="cs-form-row">
-        <label class="cs-form-label">{{ isZh ? '心跳间隔' : 'Heartbeat Interval' }}:</label>
+        <label class="cs-form-label">{{ i18nStore.tl('心跳间隔', 'Heartbeat Interval') }}:</label>
         <el-input v-model="form.interval" size="small" placeholder="10" class="cs-form-input" />
       </div>
 
       <div class="cs-form-row">
-        <label class="cs-form-label">{{ isZh ? 'VKey' : 'VKey' }}:</label>
+        <label class="cs-form-label">{{ i18nStore.tl('VKey', 'VKey') }}:</label>
         <div class="cs-input-with-btn">
-          <el-input v-model="form.vkey" size="small" show-password :placeholder="isZh ? '监听器主密钥' : 'Listener master key'" class="cs-form-input" />
-          <button class="cs-btn cs-btn-xs" type="button" @click="generateVkey">{{ isZh ? '随机' : 'Random' }}</button>
+          <el-input v-model="form.vkey" size="small" show-password :placeholder="i18nStore.tl('监听器主密钥', 'Listener master key')" class="cs-form-input" />
+          <button class="cs-btn cs-btn-xs" type="button" @click="generateVkey">{{ i18nStore.tl('随机', 'Random') }}</button>
         </div>
       </div>
 
       <div class="cs-form-row">
-        <label class="cs-form-label">{{ isZh ? '加密盐' : 'Encryption Salt' }}:</label>
+        <label class="cs-form-label">{{ i18nStore.tl('加密盐', 'Encryption Salt') }}:</label>
         <div class="cs-input-with-btn">
-          <el-input v-model="form.encryptionSalt" size="small" show-password :placeholder="isZh ? '流量加密盐' : 'Traffic encryption salt'" class="cs-form-input" />
-          <button class="cs-btn cs-btn-xs" type="button" @click="generateSalt">{{ isZh ? '随机' : 'Random' }}</button>
+          <el-input v-model="form.encryptionSalt" size="small" show-password :placeholder="i18nStore.tl('流量加密盐', 'Traffic encryption salt')" class="cs-form-input" />
+          <button class="cs-btn cs-btn-xs" type="button" @click="generateSalt">{{ i18nStore.tl('随机', 'Random') }}</button>
         </div>
       </div>
 
@@ -79,24 +79,24 @@
         运行中不可改（改 DB 而句柄仍挂在旧路径上会变成僵尸监听器），与地址/类型同规则。
       -->
       <div class="cs-form-row">
-        <label class="cs-form-label">{{ isZh ? 'C2 画像' : 'C2 Profile' }}:</label>
+        <label class="cs-form-label">{{ i18nStore.tl('C2 画像', 'C2 Profile') }}:</label>
         <el-select v-model="form.profile" size="small" class="cs-form-input" :disabled="running">
-          <el-option :label="isZh ? 'default（跟随默认特征）' : 'default'" value="default" />
+          <el-option :label="i18nStore.tl('default（跟随默认特征）', 'default')" value="default" />
           <el-option v-for="p in profileOptions" :key="p" :label="p" :value="p" />
         </el-select>
       </div>
       <div v-if="running" class="cs-dialog-desc">
-        {{ isZh ? '监听器运行中，需先停止才能修改画像。' : 'Stop the listener before changing its profile.' }}
+        {{ i18nStore.tl('监听器运行中，需先停止才能修改画像。', 'Stop the listener before changing its profile.') }}
       </div>
     </div>
 
     <template #footer>
       <div class="cs-dialog-footer-center">
         <button class="cs-btn cs-btn-primary" :disabled="saving" @click="handleSave">
-          {{ saving ? (isZh ? '保存中...' : 'Saving...') : (isZh ? '保存' : 'Save') }}
+          {{ saving ? (i18nStore.tl('保存中...', 'Saving...')) : (i18nStore.tl('保存', 'Save')) }}
         </button>
-        <button class="cs-btn" @click="visible = false">{{ isZh ? '取消' : 'Cancel' }}</button>
-        <button class="cs-btn" @click="handleHelp">{{ isZh ? '帮助' : 'Help' }}</button>
+        <button class="cs-btn" @click="visible = false">{{ i18nStore.tl('取消', 'Cancel') }}</button>
+        <button class="cs-btn" @click="handleHelp">{{ i18nStore.tl('帮助', 'Help') }}</button>
       </div>
     </template>
   </el-dialog>

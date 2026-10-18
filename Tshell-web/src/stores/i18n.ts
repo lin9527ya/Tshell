@@ -462,12 +462,31 @@ export const useI18nStore = defineStore(
       return dict[currentLocale.value]?.[key] || defaultText || key
     }
 
+    /**
+     * tl（translate literal）按当前语言返回两段字面量之一。
+     *
+     * 为什么要有它，而不是继续写 `isZh ? '中' : 'En'`：
+     *
+     *  1. **可机械迁移**：内联三元在 59 个组件文件里有 1600+ 处，形态统一但
+     *     grep 不出"哪些是待翻译文案"；`tl(` 把每一处都标出来，后续可用脚本抽取。
+     *  2. **给字典化留一个升级点**：以后把 tl 改成"先查 dict、查不到再回退字面量"，
+     *     调用点一处都不用动。这是把 1600 处迁移从"一次大爆炸"变成"可增量"的关键。
+     *  3. 组件不再需要 `const isZh = computed(...)` 这一层，少一个响应式依赖。
+     *
+     * 注意：它读的是 `currentLocale.value`，在模板里调用时会被渲染函数追踪，
+     * 切换语言仍会正常重渲染（与 isZh 行为一致）。
+     */
+    function tl(zhText: string, enText: string): string {
+      return currentLocale.value === 'zh' ? zhText : enText
+    }
+
     return {
       currentLocale,
       isZh,
       setLocale,
       toggleLocale,
       t,
+      tl,
     }
   },
   {

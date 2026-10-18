@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     v-model="visible"
-    :title="isZh ? '内存执行' : 'Memory Execute'"
+    :title="i18nStore.tl('内存执行', 'Memory Execute')"
     width="540px"
     :close-on-click-modal="false"
     append-to-body
@@ -9,19 +9,19 @@
   >
     <div class="cs-dialog-body">
       <div class="cs-form-row">
-        <label class="cs-form-label">{{ isZh ? '目标客户端:' : 'Target:' }}</label>
+        <label class="cs-form-label">{{ i18nStore.tl('目标客户端:', 'Target:') }}</label>
         <span class="dialog-val cs-font-mono">{{ clientLabel }}</span>
       </div>
 
       <div class="cs-form-row">
-        <label class="cs-form-label">{{ isZh ? '执行模式:' : 'Mode:' }}</label>
+        <label class="cs-form-label">{{ i18nStore.tl('执行模式:', 'Mode:') }}</label>
         <el-select v-model="execMode" size="small" class="cs-form-input">
           <el-option v-for="m in modeOptions" :key="m.value" :label="m.label" :value="m.value" />
         </el-select>
       </div>
 
       <div class="cs-form-row">
-        <label class="cs-form-label">{{ isZh ? '载荷文件:' : 'Payload File:' }}</label>
+        <label class="cs-form-label">{{ i18nStore.tl('载荷文件:', 'Payload File:') }}</label>
         <div class="dialog-file-row">
           <el-upload
             :auto-upload="false"
@@ -30,7 +30,7 @@
             :on-remove="onFileRemove"
             :on-exceed="onFileExceed"
           >
-            <button type="button" class="cs-btn">{{ isZh ? '选择文件' : 'Select File' }}</button>
+            <button type="button" class="cs-btn">{{ i18nStore.tl('选择文件', 'Select File') }}</button>
           </el-upload>
           <span v-if="selectedFile" class="dialog-hint cs-font-mono">{{ selectedFile.name }} ({{ (selectedFile.size / 1024).toFixed(1) }} KB)</span>
           <span v-else class="dialog-hint">{{ fileHint }}</span>
@@ -38,17 +38,17 @@
       </div>
 
       <div class="cs-form-row">
-        <label class="cs-form-label">{{ isZh ? '参数:' : 'Arguments:' }}</label>
-        <el-input v-model="args" size="small" class="cs-form-input" :placeholder="isZh ? '可选执行参数' : 'Optional arguments'" />
+        <label class="cs-form-label">{{ i18nStore.tl('参数:', 'Arguments:') }}</label>
+        <el-input v-model="args" size="small" class="cs-form-input" :placeholder="i18nStore.tl('可选执行参数', 'Optional arguments')" />
       </div>
     </div>
 
     <template #footer>
       <div class="cs-dialog-footer">
         <button class="cs-btn cs-btn-primary" :disabled="submitting || !selectedFile" @click="doExecute">
-          {{ submitting ? (isZh ? '下发中...' : 'Sending...') : (isZh ? '执行' : 'Execute') }}
+          {{ submitting ? (i18nStore.tl('下发中...', 'Sending...')) : (i18nStore.tl('执行', 'Execute')) }}
         </button>
-        <button class="cs-btn" @click="close">{{ isZh ? '取消' : 'Cancel' }}</button>
+        <button class="cs-btn" @click="close">{{ i18nStore.tl('取消', 'Cancel') }}</button>
       </div>
     </template>
   </el-dialog>
