@@ -61,8 +61,11 @@ func generateNginxServer(p Params, getURI, postURI, wsPath string) string {
 	b.WriteString("}\n\n")
 
 	b.WriteString("server {\n")
-	b.WriteString("    listen 443 ssl;\n")
-	b.WriteString("    http2 on;\n")
+	// HTTP/2 写法取兼容式：`listen ... http2` 在 nginx 1.9.5~1.30 全都能解析
+	// （≥1.25.1 只报 deprecated 警告），而独立的 `http2 on;` 需要 nginx ≥1.25.1 ——
+	// Ubuntu 24.04(1.24)/22.04(1.18)、Debian 12(1.22)、RHEL 9(1.20) 上会直接
+	// `unknown directive "http2"` 启动失败。模板是贴到别人服务器上的，取能跑的那一种。
+	b.WriteString("    listen 443 ssl http2;   # ≥1.25.1 会提示 deprecated，可改为 `listen 443 ssl;` + `http2 on;`\n")
 	b.WriteString(fmt.Sprintf("    server_name %s;\n\n", serverName(p)))
 	b.WriteString("    # 证书：建议用真实域名签发（Let's Encrypt 或商业证书），自签证书是明显的重定向器特征\n")
 	b.WriteString(fmt.Sprintf("    ssl_certificate     %s;\n", certPath(p)))

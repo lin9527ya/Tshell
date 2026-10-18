@@ -54,6 +54,11 @@ curl -H "Authorization2: Bearer <token>" \
 
 ## 2. 部署（nginx）
 
+> HTTP/2 用兼容写法 `listen 443 ssl http2;`：nginx 1.9.5~1.30 都能解析（≥1.25.1 只提示
+> deprecated）。若你的 nginx ≥ 1.25.1，可换成 `listen 443 ssl;` + `http2 on;` 消掉警告；
+> 但反过来不行 —— 独立的 `http2 on;` 在 Ubuntu 24.04(1.24)/22.04(1.18)、Debian 12(1.22)、
+> RHEL 9(1.20) 上会 `unknown directive "http2"` 直接启动失败。
+
 ```bash
 # 1) 生成（见上）
 # 2) 校验语法 —— 生成的是完整配置时用 -c；片段则先放进 conf.d 再 nginx -t
