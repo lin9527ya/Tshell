@@ -12,6 +12,12 @@ vi.mock('@/api/cred', () => ({
     dump: (...a: unknown[]) => dump(...a),
     listArtifacts: (...a: unknown[]) => listArtifacts(...a),
   },
+  // 对话框直接用到这几个导出的纯函数，mock 时必须一并给（否则渲染期就是 undefined）
+  CRED_TECHS: { lsass: ['auto', 'comsvcs', 'dbgcore'], dpapi: ['keys'], browser: ['all', 'chrome', 'edge'] },
+  defaultTech: (kind: string) => ({ dpapi: 'keys', browser: 'all' } as Record<string, string>)[kind] || 'auto',
+  sourceLabel: (source: string) =>
+    ({ lsass: 'LSASS 转储', dpapi: 'DPAPI 主密钥', browser: '浏览器凭据' } as Record<string, string>)[source] || source,
+  artifactExt: (source: string) => ({ dpapi: '.zip', browser: '.json' } as Record<string, string>)[source] || '.dmp',
 }))
 
 vi.mock('@/api/clients', () => ({
@@ -140,5 +146,87 @@ describe('CredentialDumpDialog（凭据获取）', () => {
       uid: 'uid-win-1',
       filePath: '/srv/Downloads/1/lsass-DC01-20261018-120000.dmp',
     })
+  })
+
+  // ===== 第二批凭据模块（DPAPI / 浏览器）的界面行为 =====
+
+  it('切换类型时技术重置为该类型的默认值（避免跨类型误配）', async () => {
+    const wrapper = mountDialog()
+    await flushPromises()
+    const vm = wrapper.vm as any
+
+    vm.form.tech = 'comsvcs'
+    await flushPromises()
+
+    // 模板里的下拉 change 事件内联到渲染函数，不会挂到 vm 上，
+    // 所以这里显式走同一个函数：改 kind + 重置 tech
+    const changeKind = (k: string) => { vm.form.kind = k; vm.onKindChange(k) }
+
+    changeKind('browser')
+    await flushPromises()
+    expect(vm.form.tech).toBe('all')
+
+    changeKind('dpapi')
+    await flushPromises()
+    expect(vm.form.tech).toBe('keys')
+
+    changeKind('lsass')
+    await flushPromises()
+    expect(vm.form.tech).toBe('auto')
+  })
+
+  it('按类型给出对应说明（DPAPI / 浏览器）', async () => {
+    const wrapper = mountDialog()
+    await flushPromises()
+    const vm = wrapper.vm as any
+
+    vm.form.kind = 'browser'
+    await flushPromises()
+    let text = bodyText()
+    expect(text).toContain('内存中完成解密')
+    expect(text).toContain('明文不落盘')
+
+    vm.form.kind = 'dpapi'
+    await flushPromises()
+    text = bodyText()
+    expect(text).toContain('DPAPI 主密钥')
+    expect(text).toContain('masterkey')
+    expect(text).toContain('Credential Manager')
+  })
+
+  it('按所选类型下发（browser/chrome）', async () => {
+    const wrapper = mountDialog()
+    await flushPromises()
+    const vm = wrapper.vm as any
+
+    vm.form.kind = 'browser'
+    vm.form.tech = 'chrome'
+    await flushPromises()
+
+    const startBtn = findButton(/开始获取|Start/)
+    startBtn!.click()
+    await flushPromises()
+
+    expect(dump).toHaveBeenCalledWith({ uid: 'uid-win-1', kind: 'browser', tech: 'chrome' })
+  })
+
+  it('制品列表按来源显示类型徽标', async () => {
+    listArtifacts.mockResolvedValue({
+      data: {
+        data: {
+          pending: [],
+          artifacts: [
+            artifact({ id: 1, source: 'dpapi', secret: '/srv/Downloads/1/dpapi-WS01.zip', note: 'DPAPI 主密钥集' }),
+            artifact({ id: 2, source: 'browser', secret: '/srv/Downloads/1/browser-WS01.json', note: '浏览器凭据制品' }),
+          ],
+        },
+      },
+    })
+    const wrapper = mountDialog()
+    await flushPromises()
+
+    const text = bodyText()
+    expect(text).toContain('DPAPI 主密钥')
+    expect(text).toContain('浏览器凭据')
   })
 })

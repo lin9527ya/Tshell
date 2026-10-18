@@ -257,3 +257,48 @@ cd Tshell-web && npm run build:embed
 - go mod tidy 在离线环境可能因代理下载失败,不影响构建
 
 | 126 | 修复客户端"管理"跳 /401:子路由 permiss 为数字(2)而 permiss store 为字符串('2'),includes 恒 false → 19 处统一转字符串 | 浏览器实测点击"管理"正常进入 clientManager 终端页 |
+
+## N 组（凭据模块第二批：DPAPI + 浏览器，2026-10 追加）
+
+> 用法同前：改动涉及凭据链路时逐条 grep，期望值 ≥1（0 = 被回滚）。
+
+| # | 优化 | 验证命令 | 期望 |
+|---|------|----------|------|
+| 127 | 凭据类型三类化（服务端） | `grep -c "KindDPAPI\|KindBrowser" Tshell-server/pkg/cred/dump.go` | ≥2 |
+| 128 | 类型×技术分域校验 | `grep -c "techsByKind" Tshell-server/pkg/cred/dump.go` | ≥1 |
+| 129 | 制品形态按类型定（minidump/zip/json） | `grep -c "FormatByKind" Tshell-server/pkg/cred/*.go` | ≥2 |
+| 130 | ZIP 制品逐条目校验（CRC + manifest） | `grep -c "func ValidateZip" Tshell-server/pkg/cred/zipcheck.go` | ≥1 |
+| 131 | 浏览器制品解析与校验 | `grep -c "func ParseBrowserArtifact" Tshell-server/pkg/cred/browser.go` | ≥1 |
+| 132 | 明文口令/Cookie 入库到凭据库 | `grep -c "func ingestBrowserArtifact" Tshell-server/pkg/api/cred_ingest.go` | ≥1 |
+| 133 | 凭据库新增 cookie 类型 | `grep -c '"cookie": true' Tshell-server/pkg/api/loot.go` | ≥1 |
+| 134 | 制品列表覆盖全部类型（不再写死 lsass） | `grep -c "In(\"source\", cred.Kinds)" Tshell-server/pkg/api/cred.go` | ≥1 |
+| 135 | 客户端按 kind 分派 | `grep -c "func CmdCredDump" Tshell-client/implant/core/services/cred.go` | ≥1 |
+| 136 | 浏览器密文解密（v10/v20） | `grep -c "prefixV20" Tshell-client/implant/core/services/browser.go` | ≥2 |
+| 137 | DPAPI 解封装 | `grep -c "func cryptUnprotect" Tshell-client/implant/core/services/browser_crypto_windows.go` | ≥1 |
+| 138 | DPAPI 主密钥采集（ZIP 制品） | `grep -c "func collectDPAPIMasterKeys" Tshell-client/implant/core/services/dpapi_windows.go` | ≥1 |
+| 139 | 自写 SQLite 读取器（含 WAL） | `grep -c "func (db \*DB) Table\|func openWAL" Tshell-client/implant/core/sqlite/reader_impl.go Tshell-client/implant/core/sqlite/wal.go` | ≥2 |
+| 140 | 明文不落盘（三类制品都在回传后删除） | `grep -c "exfilFile" Tshell-client/implant/core/services/cred.go` | ≥3 |
+| 141 | 前端类型/技术联动 | `grep -c "CRED_TECHS" Tshell-web/src/api/cred/index.ts Tshell-web/src/layout/Dialogs/CredentialDumpDialog.vue` | ≥2 |
+
+### 验证结果（2026-10-18，Windows 开发机）
+- 服务端 `go build ./... && go vet ./...` 全绿；`go test ./pkg/cred/... ./pkg/api/...` 全绿
+  （本机 TDM-GCC 下 `-race` 链接失败：缺 `WaitOnAddress`/`WakeByAddressSingle` 符号，
+  属工具链限制，race 门禁由 CI 的 Linux job 保证）
+- 植入体 `go test ./...` 全绿；13 种传输标签交叉编译全绿（windows/amd64 + linux/darwin 桩）
+- 前端 `npm run type-check` 0 错误、`npx vitest run` 47 passed、`npm run build` 成功
+- 中继 `go test ./...` 全绿
+- **本机（Windows）测试环境的既有失败**（与本次改动无关，Windows 语义差异）：
+  `TestInsecurePermPaths` / `backup.TestCreateProducesVerifiedSnapshot`（0600 权限断言）、
+  `cna.TestBuiltinOpen*`（symlink 需开发者模式）、`proxy.TestStartTunnelFailsWhenAgentPortBusy`
+  （端口占用判定）、`logx.TestSetOutputFile`（Windows 下文件被占用导致 TempDir 清理失败）。
+  这些用例在 Linux/CI 上通过。
+- 顺带修掉一个真实竞态：`events_collab_test.go` 在服务端"回 ok 之后再登记在线"的窗口里直接断言，
+  本机会稳定失败 —— 改成等待状态收敛（3s 上限）。
+
+### 环境注意（本轮踩坑）
+- `go mod tidy` 会把植入体的 `go` 指令顶到 1.26、并把 `golang.org/x/*` 升到要求 Go 1.26 的版本，
+  CI（Go 1.25）会直接构建失败。本机没有 go1.26 工具链时用
+  `GOTOOLCHAIN=local` + 钉住 `x/sys v0.39.0 / x/text v0.32.0 / x/crypto v0.46.0 /
+  x/net v0.48.0 / x/sync v0.19.0 / x/time v0.14.0 / x/mod v0.31.0 / x/tools v0.40.0`。
+- 前端 `npm run lint` 在本机不可用：`eslint` 不在 `package.json` 依赖里（只有 `eslint-config-*`），
+  `npm ci` 不会装它 —— 属既有问题，需要单独补依赖或在 CI 里显式安装。

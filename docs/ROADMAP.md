@@ -3,9 +3,10 @@
 > **用途**：接着往下做的工作台。已完成的部分给出证据与代码位置；未完成的部分给出
 > **目标 / 现状 / 入口 / 验收 / 工作量**，换台机器（含 Windows）也能直接开工。
 >
-> - 版本基线：**v1.0.0**（提交 `5e96559`），最后更新：2026-10-18
+> - 版本基线：**v1.0.0**（提交 `5e96559`），最后更新：2026-10-18（凭据模块第二批：DPAPI + 浏览器）
 > - 逐条"已知限制"的完整描述见 [`KNOWN_LIMITATIONS.md`](./KNOWN_LIMITATIONS.md)，本文做索引与待办
 > - 架构与部署分别见 [`../ARCHITECTURE.md`](../ARCHITECTURE.md)、[`../DEPLOYMENT.md`](../DEPLOYMENT.md)
+> - 本轮改动清单与验证结果见 [`../OPTIMIZATION_CHECKLIST.md`](../OPTIMIZATION_CHECKLIST.md) N 组
 
 ---
 
@@ -29,7 +30,7 @@ go test -race ./Tshell-server/...     # 见 §4 回归基线（注意用外层�
 
 ---
 
-## 1. 当前状态（v1.0.0）
+## 1. 当前状态（v1.0.0 + 凭据模块第二批）
 
 | 维度 | 状态 |
 |---|---|
@@ -37,10 +38,11 @@ go test -race ./Tshell-server/...     # 见 §4 回归基线（注意用外层�
 | 加密 | AES-256-GCM 全链路、监听器主密钥 + HKDF 会话密钥、per-session nonce 唯一化、24h 轮换、sleep mask（全传输） |
 | 服务端 | 任务一等对象、审计落库、多操作员协作、Prometheus 指标、备份恢复、存储抽象（SQLite/PostgreSQL + 版本化迁移）、RBAC/限流/隐藏访问 |
 | 前端 | 会话表 / Beacon 控制台 / 任务中心 / 事件日志 / 凭据库 / Payload 与 Attacks 对话框族 / 密钥管理 / 审计 |
+| 后渗透 | LSASS 转储、**DPAPI 主密钥集**、**浏览器口令与 Cookie**（内存解密）、端口扫描、令牌操作链、横向移动、持久化族 |
 | 工程 | CI 六 job（vet / staticcheck / race / 覆盖率 20% / PG 集成 / 可复现构建）、可复现构建 + SBOM、redirector 模板、模板随仓库提供 |
 
 **一句话**：单机单操作员的完成度高；**团队化/规模化的完成度仍偏低**（多副本、MFA），
-**后渗透深度是最大短板**（凭据获取只有 LSASS、无提权模块）。
+**后渗透深度仍是最大短板**（凭据侧刚补上 DPAPI/浏览器两块，无提权模块、无 Kerberos/BloodHound）。
 
 ---
 
@@ -62,8 +64,7 @@ go test -race ./Tshell-server/...     # 见 §4 回归基线（注意用外层�
   默认/空密钥三处 fail-closed（监听器启动 / 生成载荷 / firstBlood）
 - 占位符残留校验：生成载荷时严格检查（多传输端点列表除外）
 
-### 2.3 服务端运营能力
-- **任务一等对象**：`tasks` 表 + 状态机 `queued→dispatched→completed|failed|timeout` +
+### 2.3 服务端运营能力- **任务一等对象**：`tasks` 表 + 状态机 `queued→dispatched→completed|failed|timeout` +
   `POST /api/task/:id/cancel` + 前端任务中心（`pkg/api/tasks.go`）
 - **审计落库**：`AuditLogDB` 双写（文件留人读）+ 库表分页查询（`pkg/audit/db.go`）
 - **多操作员协作**：presence / 会话锁 / 操作广播（`pkg/collab/collab.go`）
@@ -80,8 +81,18 @@ go test -race ./Tshell-server/...     # 见 §4 回归基线（注意用外层�
 ### 2.4 前端
 - vshell 风格壳 + 任务中心（进度真实、可取消）、凭据库、事件日志、批量操作、
   报告三件套（IOC / 社工 / TTP）
+- 凭据获取对话框支持**三类制品**：类型下拉（LSASS / DPAPI / 浏览器）+ 技术随类型联动，
+  制品列表按来源显示徽标，取回时按类型定扩展名
 
-### 2.5 工程与供应链
+### 2.5 后渗透（凭据侧第二批，2026-10-18）
+- **DPAPI 主密钥集**（`kind=dpapi`）：解密用户主密钥 → ZIP 制品 → 服务端逐条目校验后登记
+- **浏览器凭据与 Cookie**（`kind=browser`）：Chrome/Edge 主密钥（DPAPI）→ AES-GCM 逐条解密
+  （v10/v20/老式明文），**植入体内存内完成、明文不落盘**；服务端解析入库到凭据库
+- 支撑件：自写纯 Go SQLite 只读读取器（含 WAL 覆盖、溢出页链），
+  见 `Tshell-client/implant/core/sqlite/`；已知限制见 KNOWN_LIMITATIONS §12h
+- 详见 `docs/CREDENTIAL_ACCESS.md` §7/§9
+
+### 2.6 工程与供应链
 - CI 六 job：server（build / file-mode build / vet / **staticcheck** / race + 覆盖率 20%）、
   implant（13 传输交叉编译 + multi 标签用例 + staticcheck）、relay、postgres（service container）、
   reproducible（双次构建比对 + manifest + SBOM）、web（lint / type-check / vitest / build）
@@ -100,16 +111,27 @@ go test -race ./Tshell-server/...     # 见 §4 回归基线（注意用外层�
 - **目标**：补齐 AD 攻击链的凭据侧：DPAPI 解密（`CryptUnprotectData`）、浏览器
   凭据与 cookie（Chrome/Edge 的 Local State + Login Data）、Kerberos 票据（list/purge/
   ptt）、BloodHound 采集器
-- **现状**：只有 LSASS 转储链路（`Tshell-server/pkg/cred/dump.go`、`minidump.go`、
-  `Tshell-client/implant/core/services/cred_windows.go`）；loot 表与 CRUD 就绪，
-  但 `pkg/api/loot.go` 顶部注释自述"提取命令族（LSASS/DPAPI/...）V1 仅库表"
+- **现状（2026-10-18 更新）**：
+  - ✅ LSASS 转储链路（`Tshell-server/pkg/cred/dump.go`、`minidump.go`、
+    `Tshell-client/implant/core/services/cred_windows.go`）
+  - ✅ **DPAPI 主密钥集**（`kind=dpapi`）：客户端解密 `Protect\<SID>` 下的用户主密钥、
+    打包 ZIP 回传；服务端逐条目 CRC + manifest 校验后登记（`pkg/cred/zipcheck.go`）
+  - ✅ **浏览器凭据与 Cookie**（`kind=browser`）：Chrome/Edge 的 `Local State` →
+    DPAPI 主密钥 → `Login Data`/`Cookies` 逐条 AES-GCM 解密（**植入体内存内完成，
+    明文不落盘**）；服务端解析后把口令/Cookie 写入凭据库
+    （`pkg/cred/browser.go`、`pkg/api/cred_ingest.go`）
+  - ✅ 支撑件：自写纯 Go SQLite 只读读取器（含 WAL），
+    见 `Tshell-client/implant/core/sqlite/` 与 KNOWN_LIMITATIONS §12h
+  - ⏳ Kerberos 票据、BloodHound 采集器、Firefox(NSS)、Chromium `Web Data`
 - **入口**：
-  - 客户端：`implant/core/services/cred_windows.go`（新增模块）+ `core/app/dispatch.go`（命令分发）
-  - 服务端：`pkg/cred/`（制品请求/匹配）、`pkg/api/loot.go`
-  - 前端：凭据库页（`Tshell-web/src/views/`）
+  - 客户端：`implant/core/services/cred.go`（按 kind 分派）、`browser*.go`、`dpapi_windows.go`、
+    `core/sqlite/`（读取器）
+  - 服务端：`pkg/cred/`（kinds/techs/形态校验/解析）、`pkg/api/cred.go`、`pkg/api/cred_ingest.go`
+  - 前端：`Tshell-web/src/layout/Dialogs/CredentialDumpDialog.vue`、`src/api/cred/index.ts`
 - **验收**：每个模块独立开关 + 独立单测；产物落 loot 表并按 uid/类型过滤可查；
-  不落盘明文口令（内存解析 → 直接回传）
-- **建议**：按"单模块 + 独立开关 + 单独测试"推进，不要一次全上
+  不落盘明文口令（内存解析 → 直接回传）—— 已满足（单测覆盖；实机验证待做）
+- **剩余**：Kerberos / BloodHound / Firefox；以及 Windows 实机验证
+  （见 `docs/CREDENTIAL_ACCESS.md` §9）
 
 #### 3.2 提权模块（getsystem / UAC bypass）— **M**
 - **目标**：至少 getsystem（命名管道 + 令牌复制）+ 一种 UAC bypass（fodhelper 或
@@ -235,11 +257,25 @@ CI 会在 push 时跑同一套门禁（`.github/workflows/ci.yml`，六个 job�
    `powershell -File build_templates.ps1`（全矩阵，耗时较长）。
 4. **依赖**：Go ≥ 1.25（implant `go.mod` 要求 1.25，服务端 1.24）、Node ≥ 18、
    TDM-GCC（仓库根目录有 `tdm64-gcc-10.3.0-2.exe`）。
+   ⚠️ **不要在没确认的情况下跑 `go mod tidy`**（在 `Tshell-client/implant/` 下）：
+   它会把 `go` 指令顶到 1.26、并把 `golang.org/x/*` 升到要求 Go 1.26 的版本，
+   CI（Go 1.25）会立刻构建失败。需要整理依赖时：设 `GOTOOLCHAIN=local`，
+   并把 `x/sys v0.39.0 / x/text v0.32.0 / x/crypto v0.46.0 / x/net v0.48.0 /
+   x/sync v0.19.0 / x/time v0.14.0 / x/mod v0.31.0 / x/tools v0.40.0` 钉住。
 5. **构建顺序**：`build_templates.ps1` → `npm run build:embed` → 服务端**文件模式**
    `go build -o tshell-server.exe .\main.go`（包模式在 TDM-GCC 下可能产出跑不起来的 cgo exe）。
    内存紧张加 `GOMEMLIMIT=3GiB`。
 6. **不要**在 `Tshell-server/` 等子目录里跑 git（有嵌套 `.git`，会拿到上游的旧 tag/commit）。
 7. 模板是二进制：`.gitattributes` 已声明 `binary`，避免 `core.autocrlf=true` 把 gzip 流写坏。
+   同一文件里也锚定了 `Tshell-client/implant/core/sqlite/testdata/**`（SQLite 样本 + WAL 也是二进制）。
+8. **Windows 本机跑测试的既有失败**（平台语义差异，非回归；CI 的 Linux job 通过）：
+   - `-race` 链接失败（TDM-GCC 缺 `WaitOnAddress`/`WakeByAddressSingle` 符号）→ 本机用
+     `go test ./...` 验证，race 门禁交给 CI；
+   - 权限类断言：`TestInsecurePermPaths`、`backup.TestCreateProducesVerifiedSnapshot`
+     （Windows 下 `0600` 报出来是 `666`/`-rw-rw-rw-`）；
+   - symlink 类：`cna.TestBuiltinOpen*`（需要开发者模式或管理员）；
+   - 端口占用判定：`proxy.TestStartTunnelFailsWhenAgentPortBusy`；
+   - 文件占用清理：`logx.TestSetOutputFile`（Windows 不允许删除仍被打开的文件）。
 
 ---
 

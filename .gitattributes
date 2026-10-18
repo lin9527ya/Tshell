@@ -26,3 +26,8 @@ Tshell-server/pkg/api/server/** binary
 *.ttf   binary
 *.zip   binary
 *.gz    binary
+
+# SQLite 单元测试样本（implant/core/sqlite/testdata）：库文件、WAL 与 SHM 都是二进制，
+# 被当成文本做行尾转换会让页结构整体错位（测试会以"结构畸形"失败）。
+# -wal/-shm 没有稳定的扩展名规律，所以按目录锚定。
+Tshell-client/implant/core/sqlite/testdata/** binary

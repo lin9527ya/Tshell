@@ -1,30 +1,32 @@
-# 凭据获取（阶段三 · 模块 1：LSASS 内存转储）
+# 凭据获取（阶段三）
 
-> 状态：**服务端链路与协议已实现并有单测覆盖；Windows 端转储路径已交叉编译通过，
-> 但尚未在真实 Windows 目标上验证**（见文末"验证状态"）。
+> 状态：**三类制品（LSASS 转储 / DPAPI 主密钥集 / 浏览器凭据与 Cookie）的服务端链路、
+> 协议与客户端实现均已完成并有单测覆盖；Windows 端尚未在真实目标上验证**
+> （见 §6 与 §9 的"验证状态"）。
 
-## 1. 链路
+## 1. 链路（以 LSASS 模块为例）
 
 ```
 操作员（会话行 → 凭据获取）
    │  POST /api/cred/dump {uid, kind=lsass, tech}
    ▼
 服务端 pkg/api/cred.go
-   ├─ 校验：会话存在 / Windows / 类型与技术合法 / 未被其他操作员占用
+   ├─ 校验：会话存在 / Windows / **类型与技术的组合合法** / 未被其他操作员占用
    ├─ 建任务 kind=cred（谁/何时/对哪台机器/用了什么技术）
-   ├─ 登记"等待回传的制品"（uid + 期望文件名 + 任务 + 操作员 + 30 分钟有效期）
-   └─ 下发 CRED_DUMP 帧：cmdBuf = "lsass|<tech>|<fileName>"
+   ├─ 登记"等待回传的制品"（uid + 期望文件名 + 形态 + 任务 + 操作员 + 30 分钟有效期）
+   └─ 下发 CRED_DUMP 帧：cmdBuf = "kind|tech|fileName"
    ▼
 客户端 core/services/cred.go（Windows）
-   ├─ 找 lsass.exe 的 PID
-   ├─ 按技术选型获取内存转储 → %TEMP%\<fileName>
+   ├─ 按 kind 分派：lsass 转储 / dpapi 打包 / browser 内存解密
+   ├─ 制品落到 %TEMP%\<fileName>
    ├─ 经**下载通道**回传（复用 v2 下载协议：type22 头 + type26 分块）
-   └─ 回传结束后删除目标机上的转储文件
+   └─ 回传结束后删除目标机上的制品文件
    ▼
 服务端下载完成回调 → matchCredArtifact
    ├─ 按文件名精确匹配到那次请求（匹配不上就按普通下载处理，不错认）
-   ├─ 校验 minidump（MDMP 签名 / 版本 / 目录边界 / 必需数据流）
-   ├─ 成功 → 任务 completed + 登记制品（loot type=dump, source=lsass）+ 审计 + 事件 + 指标
+   ├─ 按制品形态校验：minidump（MDMP 签名/数据流）| ZIP（逐条 CRC + manifest）| JSON（schema + 条数）
+   ├─ browser 制品额外解析：明文口令/Cookie 写入凭据库（loot）
+   ├─ 成功 → 任务 completed + 登记制品（loot）+ 审计 + 事件 + 指标
    └─ 失败 → 任务 failed，**不登记制品**（半截文件/空文件绝不当作"已获取"）
 ```
 
@@ -113,19 +115,122 @@ pypykatz lsa minidump lsass-DC01-20261018-120000.dmp
 建议的首次验证方式：在一台**授权的**测试虚机上按 §1 链路走一遍，
 对照 `CRED_ACCESS` 审计与任务终态确认每一步。
 
-## 7. 后续模块（阶段三 · 第 13 项剩余）
+## 7. 第二批模块：DPAPI 主密钥与浏览器凭据（本轮实现）
 
-按"单个模块 + 独立开关 + 单独测试"推进，每块都复用本模块的制品管线
-（登记 → 回传 → 校验 → 归属）：
+在第一批（LSASS）的制品管线之上加了两个模块。二者与 LSASS 的**关键区别**是
+制品内容已经是明文/密钥，因此服务端不只是"校验形态"，还多做一步解析入库。
+
+| kind | 制品 | 形态 | 客户端做什么 | 服务端做什么 |
+|---|---|---|---|---|
+| `lsass` | 内存转储 | `.dmp` | 转储落盘 → 回传 → 删除 | 只校验 minidump 形态（不变） |
+| `dpapi` | DPAPI 主密钥集 | `.zip` | 逐个解密 `Protect\<SID>` 下的主密钥，打包 manifest + `keys/<GUID>.json` | 校验 ZIP（逐条读、CRC、必须有 manifest），登记 `loot(type=dump, source=dpapi)` |
+| `browser` | 口令与 Cookie | `.json` | 内存内 DPAPI→AES-GCM 解密，只写明文 JSON | 解析 JSON：口令入 `loot(type=pwd, source=browser:<浏览器>)`、Cookie 入 `loot(type=cookie)`；制品本体留档 |
+
+### 7.1 浏览器凭据的解密链路
+
+```
+Local State（os_crypt.encrypted_key, base64("DPAPI"+blob)）
+  │  CryptUnprotectData（当前用户作用域）
+  ▼
+32 字节浏览器主密钥
+  │
+  ├─ Login Data / logins.password_value   ─┐
+  └─ Network/Cookies / cookies.encrypted_value ─┤ 按前缀选算法：
+                                                │   v10 → AES-256-GCM（12B nonce + 密文 + 16B tag）
+                                                │   v20 → AES-256-GCM，密钥 = SHA256(32B 前缀 || 主密钥)
+                                                │   其他 → 按明文（老格式）
+                                                ▼
+                                          明文口令 / Cookie 值
+```
+
+要点：
+
+- **明文不落盘**：解密全在植入体内存里完成，只有汇总后的 JSON 短暂落在 `%TEMP%`，
+  回传完成后删除（`exfilFile(path, true)`）。
+- **不引依赖**：读 `Login Data` / `Cookies` 用自写的纯 Go SQLite 只读读取器
+  （`implant/core/sqlite/`）。植入体是 `CGO_ENABLED=0` 全矩阵交叉编译，
+  引 SQLite 驱动会让 141 个模板每个胀大数 MB。
+- **读取器带 WAL 支持**：Chromium 系默认 `journal_mode=WAL`，最新写入常常只在
+  `-wal` 里；不读 WAL 会稳定漏掉最新数据。
+- **库被独占也能读**：先 `os.Open` 直读，失败则复制副本再读（副本只含密文）。
+
+### 7.2 DPAPI 主密钥制品的用途
+
+主密钥是**通用开锁器**：拿到 `masterkey` 后，同一用户的其他 DPAPI 数据都能离线解开
+（Credential Manager、Vault、保存的 RDP 凭据、EFS 私钥、以及浏览器主密钥本身）。
+因此制品里同时给出明文 masterkey（base64）与 `manifest.json`（SID/用户/主机/时间）。
+
+解析示例：
+
+```bash
+# 从制品里取 masterkey 后
+pypykatz dpapi masterkey <GUID> <masterkey-base64>   # 或用 impacket 的 dpapi 模块
+```
+
+### 7.3 操作入口与接口
+
+- 会话行 → 更多 → **凭据获取** → 选类型（LSASS 内存转储 / DPAPI 主密钥集 /
+  浏览器凭据与 Cookie）→ 技术随类型联动（`auto|comsvcs|dbgcore` / `keys` /
+  `all|chrome|edge`）。
+- `POST /api/cred/dump {uid, kind, tech}`；`GET /api/cred/artifacts?uid=`（三类制品都返回）。
+- 凭据库新增 `cookie` 类型（前端过滤 pill 对齐 `Tshell-server/pkg/api/loot.go` 的枚举）。
+
+### 7.4 失败是显式的（第二批新增行）
+
+| 失败点 | 表现 |
+|---|---|
+| 类型与技术误配（如 `browser` + `comsvcs`） | 服务端 400 列出可选技术；客户端再拒一次 |
+| 浏览器未安装 / 无 `Local State` | 该浏览器记入制品 `errors[]`；全部不可用时任务 failed |
+| `Local State` 的 DPAPI 解密失败（换了用户上下文） | 该浏览器整体失败并在 `errors[]` 说明，不产出半截数据 |
+| 单个口令/Cookie 解不开 | 跳过该条并计入 `errors[]`（GCM 认证失败说明密钥不符或数据被改） |
+| 制品 JSON 非法 / 无任何可用条目 | 服务端任务 failed + 不登记制品（与 LSASS 同语义） |
+| 制品超限（>8MB / 口令 >2000 / Cookie >20000） | 服务端拒收；客户端采集时先截断并在 `errors[]` 说明 |
+| ZIP 截断 / CRC 不符 / 缺 manifest | 任务 failed + 不登记（逐个条目读一遍才算完整） |
+
+## 8. 后续模块（阶段三 · 第 13 项剩余）
 
 | 模块 | 说明 | 复用点 |
 |---|---|---|
-| DPAPI 凭据/主密钥 | 用户主密钥 + 浏览器/凭据管理器 blob | 制品类型加 `dpapi`，客户端新增取法 |
-| 浏览器凭据 / Cookie | Chrome/Edge 登录数据与 Cookie 库（需 DPAPI 解密） | 制品类型加 `browser` |
+| DPAPI 凭据/主密钥 | ✅ 本轮实现（见 §7） | 制品类型 `dpapi` |
+| 浏览器凭据 / Cookie | ✅ 本轮实现（见 §7） | 制品类型 `browser` |
 | Kerberos 票据 | 列出/导出/注入/清除票据 | 票据文件即制品 |
 | BloodHound 采集 | 域对象与 ACL 采集，产出 JSON | 制品类型加 `bloodhound` |
 | 提权模块 | getsystem（命名管道模拟）/ UAC 绕过 | 属"动作"类，不需要制品管线 |
 | 端口扫描 | ✅ 已实现（TCP connect 扫描，跨平台）：`scan <目标> <端口> [超时毫秒]` | 结果直接作为命令回显 |
+| Firefox / NSS 凭据 | `logins.json` + `key4.db`（NSS 解密，非 DPAPI） | 复用 `browser` 制品的 JSON 结构 |
+| Chromium `Web Data` | 自动填充/信用卡（价值与噪声都高，需单独开关） | 复用 `browser` 管线 |
 
-服务端侧每加一个模块只需：`pkg/cred` 的 `Kinds` 加一项、客户端加一个取法、
-前端下拉加一项 —— 登记/校验/归属/审计链路完全复用。
+服务端侧每加一个模块只需：`pkg/cred` 的 `techsByKind` 加一项、客户端加一个取法、
+前端 `CRED_TECHS` 加一项 —— 登记/校验/归属/审计链路完全复用。
+
+## 9. 第二批的验证状态
+
+**已在仓库内验证**：
+
+- 服务端：类型×技术矩阵（合法/误配/未知）、ZIP 校验（完整/空/截断/CRC 错/缺 manifest/条目超限）、
+  浏览器 JSON 校验（合法/空/截断/无可用条目/体积与条数超限）、入库字段与去重
+  （口令按 `(uid,type,host,secret,source)` 去重）、制品列表覆盖三类来源；
+  `go test -race ./pkg/cred/... ./pkg/api/...` 全绿。
+- 客户端：v10/v20/明文三分支解密、篡改与截断必须报错、`Local State` 各类畸形输入、
+  制品 JSON 字段与服务端 schema 对齐、类型×技术矩阵、非 Windows 桩显式报错；
+  `go test ./core/services/... ./core/sqlite/...` 全绿。
+- 交叉编译：windows/amd64（真实现）与 linux/darwin（桩）全部通过，13 种传输标签全绿。
+- 真实库只读验证：`TestRealChromeDatabase` 直接读本机 Chrome/Edge 的
+  `Login Data` / `Cookies`（存在时执行，否则跳过）。
+
+**尚未验证**（需要授权 Windows 目标）：
+
+1. `CryptUnprotectData` 在真实用户上下文里解出的主密钥长度与可解性
+   （本机开发环境下浏览器库里没有已保存的口令，无法覆盖"有数据"的分支）；
+2. v20（App-Bound Encryption）在较新 Chrome 上是否仍需附加参数
+   —— 若目标浏览器启用了 App-Bound，纯 `CryptUnprotectData` 可能被拒；
+3. `Login Data` 被浏览器独占时的副本回退路径；
+4. 大 Cookie 库（数万条）经下载通道回传的耗时。
+
+**已知限制（见 KNOWN_LIMITATIONS §12h/§12i）**：
+
+- 自写 SQLite 读取器的**溢出页切分**在极端样本上尚未逐字节对齐
+  （结构判据保证"链正好用完"，但页内片段与溢出页衔接处可能有偏移）；
+  浏览器库里 >1KB 的 Cookie 密文才会走到这条路径，实测样本见
+  `scripts/fit_sqlite_overflow.py`。
+

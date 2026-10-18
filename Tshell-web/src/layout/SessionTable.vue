@@ -281,7 +281,7 @@
                     <el-dropdown-item command="group">{{ isZh ? '设置分组' : 'Set Group' }}</el-dropdown-item>
                     <el-dropdown-item command="alive">{{ isZh ? '检查存活' : 'Check Alive' }}</el-dropdown-item>
                     <el-dropdown-item v-if="isWindowsSession(row)" command="cred" divided>
-                      {{ isZh ? '凭据获取（LSASS）' : 'Credential Access' }}
+                      {{ isZh ? '凭据获取' : 'Credential Access' }}
                     </el-dropdown-item>
                     <el-dropdown-item command="clientReport">{{ isZh ? '会话报告' : 'Session Report' }}</el-dropdown-item>
                     <el-dropdown-item command="migrate" divided>{{ isZh ? '进程迁移' : 'Migrate' }}</el-dropdown-item>

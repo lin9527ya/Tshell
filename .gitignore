@@ -34,6 +34,12 @@ docs/archive/
 *.db
 token.txt
 
+# 例外：SQLite 读取器的单元测试样本是**刻意入库**的（几 KB 的合成库，
+# 不含任何真实数据；构造脚本见 scripts/make_sqlite_fixtures.py）。
+# 不放进版本库的话，克隆后 Tshell-client/implant/core/sqlite 的单测全部无法运行。
+!Tshell-client/implant/core/sqlite/testdata/
+!Tshell-client/implant/core/sqlite/testdata/**
+
 # 本地工具与历史脚本归档（未纳入版本控制）
 .playwright-mcp/
 .gotmp/

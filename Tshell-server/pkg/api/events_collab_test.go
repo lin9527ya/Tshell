@@ -87,9 +87,19 @@ func TestEventsPresenceAndChat(t *testing.T) {
 
 	alice := dialEvents(t, srv, tokenFor("alice"))
 	bob := dialEvents(t, srv, tokenFor("bob"))
+	_ = bob
 
-	// 在线状态：两条事件流连接都应出现在在线列表（不依赖任何 HTTP API 请求）
+	// 在线状态：两条事件流连接都应出现在在线列表（不依赖任何 HTTP API 请求）。
+	//
+	// 这里有真实的时序：服务端先回 "ok" 再登记在线（Touch 在 WriteJSON 之后），
+	// 客户端读到 "ok" 时登记可能还没完成 —— 直接断言会随机失败（本机实测复现）。
+	// 按"等待状态收敛"来断言，而不是赌调度顺序。
 	online := collab.Global.Online()
+	deadline := time.Now().Add(3 * time.Second)
+	for len(online) != 2 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+		online = collab.Global.Online()
+	}
 	if len(online) != 2 {
 		t.Fatalf("在线操作员数 = %d，期望 2（%+v）", len(online), online)
 	}

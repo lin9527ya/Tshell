@@ -139,12 +139,22 @@ func TestKindAndTechValidation(t *testing.T) {
 	if !IsKindSupported(KindLsass) || IsKindSupported("nope") {
 		t.Fatal("凭据类型校验不符")
 	}
-	for _, tech := range Techs {
-		if !IsTechSupported(tech) {
-			t.Errorf("技术 %s 应被支持", tech)
+	// 技术按类型校验：每种类型自己的技术清单必须自洽（默认项也在清单里）
+	for _, kind := range Kinds {
+		techs := TechsFor(kind)
+		if len(techs) == 0 {
+			t.Fatalf("类型 %s 没有任何技术", kind)
+		}
+		if !IsTechSupportedFor(kind, DefaultTech(kind)) {
+			t.Fatalf("类型 %s 的默认技术不在清单里: %s", kind, DefaultTech(kind))
+		}
+		for _, tech := range techs {
+			if !IsTechSupportedFor(kind, tech) {
+				t.Errorf("技术 %s/%s 应被支持", kind, tech)
+			}
 		}
 	}
-	if IsTechSupported("magic") {
+	if IsTechSupportedFor(KindLsass, "magic") {
 		t.Fatal("未知技术不应被支持")
 	}
 }

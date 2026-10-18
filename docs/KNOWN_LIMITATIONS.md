@@ -72,14 +72,61 @@
 - 若要根治：协议加一个下载结束报文（客户端发完主动告知），属协议变更。
 - 状态：⏳（协议层），当前判定已能覆盖常规场景且不再让任务永远停在 dispatched。
 
-## 12c. 凭据获取（阶段三 · 模块 1：LSASS）
-- 现状：✅ 服务端链路 + 协议 + 客户端 Windows 实现（comsvcs / dbgcore / auto 三种技术）
-  已实现；制品经下载通道回传，服务端校验 minidump 后登记为 `loot(type=dump)`，
-  全程有 `CRED_ACCESS` 审计与 `tshell_cred_artifacts_total` 指标。
-- 遗留：**Windows 端未在真实目标上验证**（本仓库只能交叉编译）；DPAPI / 浏览器 /
-  Kerberos / BloodHound / 提权 / 端口扫描等后续模块未实现。
-- 详见 docs/CREDENTIAL_ACCESS.md（含"验证状态"与首次验证建议）。
-- 状态：✅（链路）/ ⏳（实机验证 + 后续模块）
+## 12c. 凭据获取（阶段三）
+- 现状：✅ **三类制品**的服务端链路 + 协议 + 客户端 Windows 实现已就绪：
+  - **LSASS 内存转储**（`kind=lsass`）：comsvcs / dbgcore / auto 三种技术；
+    制品经下载通道回传，服务端校验 minidump 后登记为 `loot(type=dump)`。
+  - **DPAPI 主密钥集**（`kind=dpapi`，本轮）：逐个解密
+    `%APPDATA%\Microsoft\Protect\<SID>` 下的用户主密钥，打包为
+    ZIP（`manifest.json` + `keys/<GUID>.json`，masterkey 为 base64 明文）；
+    服务端逐条目 CRC 校验 + 要求 manifest，登记 `loot(type=dump, source=dpapi)`。
+  - **浏览器凭据与 Cookie**（`kind=browser`，本轮）：Chrome/Edge 的
+    `Local State`（DPAPI 解出浏览器主密钥）→ `Login Data` / `Network/Cookies`
+    逐条 AES-GCM 解密（v10 / v20 / 老式明文），**在植入体内存中完成**，
+    只回传明文 JSON；服务端解析后把口令写入 `loot(type=pwd, source=browser:<浏览器>)`、
+    Cookie 写入 `loot(type=cookie)`。明文不落盘，临时文件回传后删除。
+  - 三类共用：类型×技术分域校验（`browser` 配 `comsvcs` 之类当场拒绝）、
+    `CRED_ACCESS` 审计、`tshell_cred_artifacts_total{kind}` 指标、失败显式（不登记半截制品）。
+- 遗留：
+  - **Windows 端未在真实目标上验证**（本仓库只能交叉编译）；
+  - Kerberos 票据 / BloodHound / Firefox(NSS) / Chromium `Web Data` 未实现；
+  - 提权模块（getsystem / UAC bypass）未实现。
+- 详见 docs/CREDENTIAL_ACCESS.md（含 §7 第二批模块、§9 验证状态）。
+- 状态：✅（三条链路 + 单测）/ ⏳（实机验证 + 后续模块）
+
+## 12h. 自写 SQLite 只读读取器（浏览器凭据模块的依赖）
+- 现状：✅ 已实现（本轮）：`implant/core/sqlite/`，纯 Go、零依赖，只做
+  "按表读行"：文件头校验 → `sqlite_master` 定位根页 → 表 b-tree 遍历 →
+  记录解码（varint / serial type / NULL / BLOB / TEXT / REAL）→ 溢出页链 +
+  **WAL 覆盖**（Chromium 默认 `journal_mode=WAL`，最新数据常只在 `-wal` 里）。
+  所有长度字段都按页/库大小钳制，畸形结构返回错误而不 panic 或死循环。
+- 为什么不引驱动：植入体是 `CGO_ENABLED=0` 全矩阵交叉编译，且模板体积敏感
+  （141 个模板共 373MB）；`go-sqlite3` 需要 cgo，纯 Go 驱动会让每个模板胀大数 MB
+  并把模块的 Go 版本要求抬高（实测：引 `modernc.org/sqlite` 后 `go mod tidy`
+  直接把 `go` 指令顶到 1.26，CI 的 1.25 立刻构建失败）。
+- **遗留（重要）**：溢出页单元格的**页内切分点**尚未逐字节对齐。
+  SQLite 没有公开可靠的解析式（file format §1.5 的写法与实测样本不符：
+  `scripts/fit_sqlite_overflow.py` 用 4 种页大小 × 9 种载荷实测，没有一个候选式能全覆盖）。
+  读取器目前用"溢出链正好用完 + 末页指针为 0"的结构判据反推切分点，
+  并在所有可能切分点里穷举验证 —— 链结构与记录列数都能对上，
+  但**页内片段与溢出页的衔接处仍可能偏移若干字节**（表现为该条密文解不开，
+  不会产生错误的明文）。影响面：只有 >1KB 的字段（浏览器库里主要是大 Cookie、
+  少数长口令）会走到这条路径；LSASS/DPAPI 制品与常规浏览器条目不受影响。
+- 若要根治：按 SQLite 源码（`btreeInitPage` / `fillInCell`）逐位对齐
+  `maxLocal` / `minLocal` / 溢出阈值，并用真实 Chrome 库做逐字节回归。
+- 状态：⏳（常规路径 ✅ / 溢出页切分点待精修）
+
+## 12i. 浏览器凭据模块的实机验证
+- 现状：✅ 链路与算法已实现并有单测（v10/v20/明文的解密分支、篡改与截断必须报错、
+  `Local State` 畸形输入、制品 schema 与服务端对齐、真实库只读冒烟测试）。
+- 尚未验证（需要授权 Windows 目标）：
+  1. `CryptUnprotectData` 在真实用户上下文里的行为（开发机上浏览器库是空的，
+     覆盖不到"有已保存口令"的分支）；
+  2. 较新 Chrome 的 **App-Bound Encryption**：若目标启用了 App-Bound，
+     仅靠 `CryptUnprotectData` 可能拿不到可用主密钥（需要在目标侧另有手段）；
+  3. `Login Data` 被浏览器独占时的副本回退路径；
+  4. 数万条 Cookie 的采集与回传耗时。
+- 状态：✅（实现 + 单测）/ ⏳（实机验证）
 
 ## 12d. 内存 OPSEC（阶段三 · 第 14 项）
 - 现状：✅ sleep mask 修复并扩展到**全部传输**（原来只有轮询型走 mask，且遮蔽的是

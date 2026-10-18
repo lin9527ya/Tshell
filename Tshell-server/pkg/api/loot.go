@@ -13,8 +13,8 @@ import (
 
 // ===== Loot 凭据/制品库(功能批) =====
 // 集中管理行动中获取的凭据与制品: 手动录入、命令产出自动识别(如 WiFi 密码)、
-// 截图等制品引用。V1 提供库表 + CRUD + 按 uid/类型过滤;提取命令族(LSASS/DPAPI/
-// 浏览器)后续批次接入。
+// 凭据获取制品(LSASS 转储 / DPAPI 主密钥集 / 浏览器凭据与 Cookie，见 cred.go)、
+// 截图等制品引用。库表 + CRUD + 按 uid/类型过滤 + 浏览器制品自动拆条入库。
 
 // lootType 合法值校验(V1 枚举,前端过滤 pill 对齐)
 var lootTypes = map[string]bool{
@@ -23,6 +23,7 @@ var lootTypes = map[string]bool{
 	"domain": true, // 域账号
 	"note":   true, // 备忘(密钥/token/连接串等自由文本)
 	"dump":   true, // 内存转储制品(LSASS 等;secret 存服务端文件路径,由操作员本地解析)
+	"cookie": true, // 浏览器 Cookie(会话材料;secret 存 name=value)
 }
 
 // ListLoot GET /api/loot?uid=&type=&page=&size=
