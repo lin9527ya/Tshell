@@ -43,6 +43,14 @@ import (
 //go:embed dist
 var embedFS embed.FS
 
+// 构建期注入（-ldflags "-X main.Version=..."）：用于 /api/version 与产物溯源。
+// 未注入时保持 dev/unknown，避免把本地开发构建误认为发布版本。
+var (
+	Version   = "dev"
+	GitCommit = "unknown"
+	BuildTime = "unknown"
+)
+
 func main() {
 	// 调试用 pprof(设置环境变量 TSHELL_PPROF=1 启用,默认关闭不暴露)
 	if os.Getenv("TSHELL_PPROF") == "1" {
@@ -478,6 +486,15 @@ func main() {
 	// 前端路由守卫用它校验 token——原用 /api/config/current（adminOnly），
 	// operator/auditor 访问返回 403 → 前端误判 token 无效 → 切页即登出。
 	protected.GET("/auth/check", api.AuthCheckHandler)
+
+	// 构建信息（所有登录角色）：排障与产物溯源（版本/commit/构建时间由 ldflags 注入）
+	protected.GET("/version", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"version":    Version,
+			"commit":     GitCommit,
+			"build_time": BuildTime,
+		})
+	})
 
 	// C13 RBAC：管理员专属路由组（密钥/安全配置/审计管理/用户口令/监听器管理）
 	adminOnly := protected.Group("")

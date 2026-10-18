@@ -16,18 +16,22 @@ func execBatchSQL(stmts []batchStmt) {
 	if len(stmts) == 0 {
 		return
 	}
+	engine := currentEngine()
+	if engine == nil {
+		return
+	}
 
 	// 逐条执行（事务失败时的回退路径；xorm Exec(sql, args...) 参数需整体展开）
 	runEach := func() {
 		for _, s := range stmts {
 			args := append([]interface{}{s.sql}, s.args...)
-			if _, e := Engine.Exec(args...); e != nil {
+			if _, e := engine.Exec(args...); e != nil {
 				log.Printf("execBatchSQL 回退执行失败: %v", e)
 			}
 		}
 	}
 
-	session := Engine.NewSession()
+	session := engine.NewSession()
 	defer session.Close()
 
 	if err := session.Begin(); err != nil {

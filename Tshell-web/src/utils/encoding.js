@@ -235,7 +235,8 @@ function convertAnsiToHtml(text) {
     '0': '' // 重置
   }
 
-  // 处理ANSI转义序列
+  // 处理ANSI转义序列（\x1b 是 ESC 控制字符，这里必须匹配）
+  // eslint-disable-next-line no-control-regex
   return text.replace(/\x1b\[([0-9;]*)m/g, (match, codes) => {
     if (!codes) return '<span style="color: #d3d7cf;">'
 

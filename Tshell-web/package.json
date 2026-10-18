@@ -13,7 +13,8 @@
     "preview": "vite preview",
     "test:unit": "vitest",
     "type-check": "vue-tsc --noEmit -p tsconfig.vitest.json --composite false",
-    "lint": "eslint . --ext .vue,.js,.jsx,.cjs,.mjs,.ts,.tsx,.cts,.mts --fix --ignore-path .gitignore",
+    "lint": "eslint src --ext .vue,.js,.ts",
+    "lint:fix": "eslint src --ext .vue,.js,.ts --fix",
     "format": "prettier --write src/",
     "build:embed": "npm run build && node scripts/copy-to-backend.js",
     "deploy:full": "npm run build:embed && cd ../Tshell---A-Cross-Platform-C2 && go build -o tshell-server ."

@@ -15,7 +15,7 @@
 
       <div class="cs-form-row">
         <label class="cs-form-label">{{ isZh ? '执行模式:' : 'Mode:' }}</label>
-        <el-select v-model="mode" size="small" class="cs-form-input">
+        <el-select v-model="execMode" size="small" class="cs-form-input">
           <el-option v-for="m in modeOptions" :key="m.value" :label="m.label" :value="m.value" />
         </el-select>
       </div>
@@ -91,13 +91,13 @@ const modeOptions = [
   { value: 'exec-file', label: 'exec-file (文件执行)' },
 ]
 
-const mode = ref('execute-assembly')
+const execMode = ref('execute-assembly')
 const args = ref('')
 const selectedFile = ref<File | null>(null)
 const submitting = ref(false)
 
 const fileHint = computed(() => {
-  switch (mode.value) {
+  switch (execMode.value) {
     case 'execute-assembly': return isZh.value ? '选择 .NET 程序集 (exe/dll)' : 'Select .NET assembly (exe/dll)'
     case 'inline-bin': return isZh.value ? '选择可转换 Shellcode 的 PE (exe/dll)' : 'Select a PE convertible to shellcode'
     case 'shellcode-inject': return isZh.value ? '选择原始 Shellcode 文件' : 'Select raw shellcode file'
@@ -113,7 +113,7 @@ watch(
   visible,
   (val) => {
     if (val) {
-      mode.value = props.mode || 'execute-assembly'
+      execMode.value = props.mode || 'execute-assembly'
       args.value = ''
       selectedFile.value = null
     }
@@ -144,9 +144,9 @@ async function doExecute() {
   }
   submitting.value = true
   try {
-    const res = await ClientAPI.execute_bin(uid.value, selectedFile.value, args.value.trim(), mode.value)
+    const res = await ClientAPI.execute_bin(uid.value, selectedFile.value, args.value.trim(), execMode.value)
     if (res.status === 200 && res.data && res.data.status === 200) {
-      ElMessage.success(isZh.value ? `已下发 ${mode.value} 执行请求` : `${mode.value} execution dispatched`)
+      ElMessage.success(isZh.value ? `已下发 ${execMode.value} 执行请求` : `${execMode.value} execution dispatched`)
       close()
       // 跳转到 Beacon 控制台：后端已把 `$ mode file args` 写入 shell 历史，控制台 3s 轮询自动回显
       router.push(`/client/${uid.value}/console`)

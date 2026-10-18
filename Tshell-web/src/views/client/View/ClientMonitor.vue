@@ -441,7 +441,7 @@ async function connectHvncWs() {
 }
 
 const stopHvnc = async () => {
-  if (hvncWs) { try { hvncWs.close() } catch {}; hvncWs = null }
+  if (hvncWs) { try { hvncWs.close() } catch {} hvncWs = null }
   stopHvncPolling()
   flushHvncInput(true)
   try {

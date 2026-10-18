@@ -22,7 +22,7 @@ export const useGlobalFileTreeStore = defineStore('globalFileTree', {
             }
 
             // 如果 dict 中没有 uid 的条目，则创建一个新的空数组
-            if (!this.dict.hasOwnProperty(uid)) {
+            if (!Object.prototype.hasOwnProperty.call(this.dict, uid)) {
                 this.dict[uid] = [];
             }
 

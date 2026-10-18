@@ -729,11 +729,12 @@ const handleMessage = (message: any) => {
       }
       break
 
-    case 'pong':
+    case 'pong': {
       // 计算延迟
       const now = Date.now()
       latency.value = now - (message.content * 1000)
       break
+    }
 
     default:
       console.log('收到未知消息类型:', message.type)

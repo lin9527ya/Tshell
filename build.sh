@@ -66,7 +66,11 @@ build_server() {
   # 产出的 cgo exe 无法执行——"not a valid Win32 application";文件模式已验证可用)。
   # CC 传 PATH 中的编译器名而非显式路径,与环境变量解析保持一致。
   CGO_ENABLED=1 GOPROXY=https://goproxy.cn,direct GOMEMLIMIT=3GiB \
-    go build -ldflags "-s -w" -trimpath -o "$out" ./main.go
+    # 版本信息注入：/api/version 可查，便于产物溯源
+    VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo dev)
+    COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo unknown)
+    BUILDTIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    go build -ldflags "-s -w -X main.Version=${VERSION} -X main.GitCommit=${COMMIT} -X main.BuildTime=${BUILDTIME}" -trimpath -o "$out" ./main.go
   ok "服务端构建完成: Tshell-server/$out(重启生效)"
 }
 

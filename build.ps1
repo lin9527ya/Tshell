@@ -62,7 +62,11 @@ function Build-Server {
     # cgo exe 无法执行——"not a valid Win32 application";文件模式已验证可用)
     $env:CGO_ENABLED = "1"
     $env:GOPROXY = "https://goproxy.cn,direct"; $env:GOMEMLIMIT = "3GiB"
-    go build -ldflags "-s -w" -trimpath -o tshell-server.exe .\main.go
+    # 版本信息注入：/api/version 可查，便于产物溯源
+    $Version = (git describe --tags --always --dirty 2>$null); if (-not $Version) { $Version = "dev" }
+    $Commit = (git rev-parse --short HEAD 2>$null); if (-not $Commit) { $Commit = "unknown" }
+    $BuildTime = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+    go build -ldflags "-s -w -X main.Version=$Version -X main.GitCommit=$Commit -X main.BuildTime=$BuildTime" -trimpath -o tshell-server.exe .\main.go
     if ($LASTEXITCODE -ne 0) { throw "服务端构建失败" }
     Remove-Item Env:CGO_ENABLED, Env:GOPROXY, Env:GOMEMLIMIT -ErrorAction SilentlyContinue
     Write-Ok "服务端构建完成: Tshell-server\tshell-server.exe(重启生效)"

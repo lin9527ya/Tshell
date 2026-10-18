@@ -44,7 +44,7 @@
             @node-expand="handleNodeExpand"
             @node-collapse="handleNodeCollapse"
           >
-            <template #default="{ node, data }">
+            <template #default="{ data }">
               <div class="fm-tree-node" :class="{ active: data.path === currentPath }">
                 <el-icon class="fm-node-icon">
                   <Monitor v-if="data.type === 'group'" />
@@ -762,7 +762,7 @@ function parseToDate(t: any): Date | null {
     return new Date(n > 1e11 ? n : n * 1000)
   }
   // Check DD/MM/YYYY or DD-MM-YYYY (e.g. 17/08/2026 14:32:00)
-  const ddmmyyyy = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/)
+  const ddmmyyyy = s.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/)
   if (ddmmyyyy) {
     const day = parseInt(ddmmyyyy[1], 10)
     const month = parseInt(ddmmyyyy[2], 10) - 1
@@ -773,7 +773,7 @@ function parseToDate(t: any): Date | null {
     return new Date(year, month, day, hour, minute, second)
   }
   // Check YYYY/MM/DD or YYYY-MM-DD (e.g. 2026-08-17 14:32:00)
-  const yyyymmdd = s.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/)
+  const yyyymmdd = s.match(/^(\d{4})[/-](\d{1,2})[/-](\d{1,2})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/)
   if (yyyymmdd) {
     const year = parseInt(yyyymmdd[1], 10)
     const month = parseInt(yyyymmdd[2], 10) - 1

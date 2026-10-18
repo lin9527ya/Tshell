@@ -58,11 +58,6 @@ func UnsafeStructToBytes(ptr any) []byte {
 		panic("need a pointer")
 	}
 
-	return *(*[]byte)(unsafe.Pointer(
-		&reflect.SliceHeader{
-			Data: v.Pointer(),
-			Len:  int(v.Elem().Type().Size()),
-			Cap:  int(v.Elem().Type().Size()),
-		},
-	))
+	// 用 unsafe.Slice 替代手工构造 reflect.SliceHeader（go vet 会报 possible misuse）
+	return unsafe.Slice((*byte)(unsafe.Pointer(v.Pointer())), int(v.Elem().Type().Size()))
 }

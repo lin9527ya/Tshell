@@ -7,7 +7,7 @@ import axiosRetry from 'axios-retry';
 
 // 【修复】移除全局 cancel 令牌：单令牌被每个请求覆盖会取消先发的进行中请求
 // （如同时加载审计日志+上传文件会互相打断）。需要取消时组件内自行创建 CancelToken。
-let service = axios.create({
+const service = axios.create({
   // baseURL: axiosConfig.baseURL,
   baseURL: '/api',
   timeout: 90 * 1000, // 设置默认超时为90秒，单个API可以覆盖此设置

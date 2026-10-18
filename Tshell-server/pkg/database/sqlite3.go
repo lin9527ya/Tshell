@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -1088,13 +1089,27 @@ func ensureColumnNameMigrations(engine *xorm.Engine) error {
 	return nil
 }
 
+// engineMu 保护全局 Engine 指针的读写。
+// 后台 flusher goroutine 会长期运行并读取 Engine，而 ConnectDateBase 在启动/测试里
+// 会替换该指针——不加锁时 -race 会报数据竞争（本轮 CI 加 -race 后实测 13 处）。
+var engineMu sync.RWMutex
+
+// currentEngine 后台 goroutine 安全取当前引擎（未初始化时返回 nil）。
+func currentEngine() *xorm.Engine {
+	engineMu.RLock()
+	defer engineMu.RUnlock()
+	return Engine
+}
+
 func ConnectDateBase() {
 	var err error
 	dsn := DatabaseName
 	if !strings.Contains(dsn, "?") {
 		dsn += "?_journal_mode=WAL&_busy_timeout=10000&_synchronous=NORMAL"
 	}
+	engineMu.Lock()
 	Engine, err = xorm.NewEngine("sqlite3", dsn)
+	engineMu.Unlock()
 	if err != nil {
 		log.Fatalf("连接sqlite3数据库失败: %v", err)
 	}

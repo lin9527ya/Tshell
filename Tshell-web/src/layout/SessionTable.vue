@@ -401,17 +401,17 @@ function formatLastActive(row: RowData): string {
       // CS 风格倒计时:距下次心跳的秒数(心跳间隔 - 距最后心跳)
       const interval = heartbeatIntervalSeconds(row)
       const next = Math.max(0, interval - diff)
-      if (next <= 0) return isZh ? '心跳中' : 'checking in'
-      return isZh ? `下次心跳 ${next}s` : `next ${next}s`
+      if (next <= 0) return isZh.value ? '心跳中' : 'checking in'
+      return isZh.value ? `下次心跳 ${next}s` : `next ${next}s`
     }
-    return (isZh ? '已离线 ' : 'off ') + relTime(diff)
+    return (isZh.value ? '已离线 ' : 'off ') + relTime(diff)
   }
   // 无时间戳回退：按上线时长或离线占位
   if (row.FirstStart) {
     const d = parseTs(row.FirstStart)
-    if (d !== null) return online ? relTime(d) : (isZh ? '已离线' : 'offline')
+    if (d !== null) return online ? relTime(d) : (isZh.value ? '已离线' : 'offline')
   }
-  return online ? '0s' : (isZh ? '已离线' : '1908h')
+  return online ? '0s' : (isZh.value ? '已离线' : '1908h')
 }
 
 // 心跳间隔(秒):优先 Sleep 字段(客户端 sleep 设置),兜底监听器配置/5
