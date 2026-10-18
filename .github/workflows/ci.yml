@@ -57,7 +57,8 @@ jobs:
             go build -tags transport_$t -o /dev/null ./cmd/single || exit 1
           done
       - name: Test (race)
-        run: go test -race ./core/... -count=1
+        # ./... 含 cmd/single 的传输接线守卫（pollTransport 必须实现 PollInterval）
+        run: go test -race ./... -count=1
 
   web:
     name: Web (Vue3 + TS)
