@@ -91,10 +91,11 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
-import { ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useEventsStore } from '@/stores/events'
 import { useUserStore } from '@/stores/user'
 import { useClientsStore, type ClientData } from '@/stores/clients'
+import { useCollabStore } from '@/stores/collab'
 import { useI18nStore } from '@/stores/i18n'
 import { detectClientOs } from '@/utils/clientUtils'
 import AuditAPI from '@/api/audit'
@@ -199,13 +200,11 @@ function scroll() {
 function sendChat() {
   const msg = chatInput.value.trim()
   if (!msg) return
-  addLogLine({
-    time: Date.now(),
-    type: 'chat',
-    category: 'chat',
-    user: currentUser.value,
-    text: msg,
-  })
+  // 走事件流上行、由服务端广播（原实现只本地 echo：其他操作员永远看不到）
+  if (!eventsStore.sendChat(msg)) {
+    ElMessage.warning(isZh.value ? '事件流未连接，消息未发送' : 'Event stream offline, message not sent')
+    return
+  }
   chatInput.value = ''
 }
 
@@ -332,6 +331,20 @@ async function loadAuditAndClientLogs() {
 // 【性能】增量处理:events 数组为新事件前插(unshift)+ 尾部裁剪,已处理事件用
 // WeakSet 标记;从头部遍历,遇到已处理的即 break(其后必然全部已处理)。
 // 原实现每次 watch 都遍历全部 100 条并重复做客户端查找与行构造。
+// 操作广播的动作文案（服务端 action 值 → 可读标签）；用函数而非常量表，
+// 切换语言后新到的事件才会跟着变
+function actionLabel(action: string): string {
+  const zh: Record<string, string> = {
+    lock: '占用了会话', unlock: '释放了会话', command: '下发命令',
+    batch: '批量下发', exec: '执行载荷',
+  }
+  const en: Record<string, string> = {
+    lock: 'locked session', unlock: 'released session', command: 'sent command',
+    batch: 'batch command', exec: 'executed payload',
+  }
+  return (isZh.value ? zh : en)[action] || action
+}
+
 const processedEvents = new WeakSet<object>()
 watch(
   () => eventsStore.events,
@@ -429,6 +442,21 @@ watch(
             ? `监听器已关闭: ${detail.name || detail.type || ''}`
             : `Listener stopped: ${detail.name || detail.type || ''}`,
         })
+      } else if (t === 'operator_action') {
+        const op = detail.operator || raw.operator || 'operator'
+        const action = String(detail.action || '')
+        const target = e.uid ? ` [${e.uid.slice(0, 8)}]` : ''
+        const label = actionLabel(action)
+        addLogLine({
+          time,
+          type: 'user_login',
+          category: 'user',
+          text: isZh.value
+            ? `操作员 <${op}> ${label}${target}${detail.detail ? `: ${detail.detail}` : ''}`
+            : `Operator <${op}> ${label}${target}${detail.detail ? `: ${detail.detail}` : ''}`,
+        })
+        // 占用状态可能刚变化，立即刷新（不必等 30s 轮询）
+        try { useCollabStore().refresh() } catch { /* ignore */ }
       } else if (t === 'chat') {
         addLogLine({
           time,

@@ -63,6 +63,11 @@ func InjectMem(c *gin.Context) {
 		tech = injectMemTechAuto
 	}
 
+	// 协作：注入是最"侵入"的动作之一，被他人锁定时直接拒绝
+	if !checkSessionLock(c, uid) {
+		return
+	}
+
 	file, err := c.FormFile("file")
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "缺少 shellcode 文件: " + err.Error()})

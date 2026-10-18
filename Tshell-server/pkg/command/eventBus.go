@@ -13,13 +13,15 @@ import (
 type EventType string
 
 const (
-	EventClientOnline  EventType = "client_online"  // 客户端上线
-	EventClientOffline EventType = "client_offline" // 客户端离线
-	EventClientNew     EventType = "client_new"     // 新客户端（FirstBlood）
-	EventCmdOutput     EventType = "cmd_output"     // 命令输出
-	EventDownloadDone  EventType = "download_done"  // 下载完成
-	EventSecurityBlock EventType = "security_block" // 安全拦截
-	EventLoginFailed   EventType = "login_failed"   // 登录失败
+	EventClientOnline   EventType = "client_online"   // 客户端上线
+	EventClientOffline  EventType = "client_offline"  // 客户端离线
+	EventClientNew      EventType = "client_new"      // 新客户端（FirstBlood）
+	EventCmdOutput      EventType = "cmd_output"      // 命令输出
+	EventDownloadDone   EventType = "download_done"   // 下载完成
+	EventSecurityBlock  EventType = "security_block"  // 安全拦截
+	EventLoginFailed    EventType = "login_failed"    // 登录失败
+	EventOperatorAction EventType = "operator_action" // 操作员动作（协作：锁/命令/高危操作）
+	EventChat           EventType = "chat"            // 操作员聊天（团队频道）
 )
 
 // C2Event 事件负载

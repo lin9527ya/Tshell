@@ -91,6 +91,20 @@ export const useEventsStore = defineStore('events', () => {
     openSocket()
   }
 
+  // 团队频道：消息经事件流上行，服务端广播给所有操作员（含发送者自己），
+  // 因此这里不回显本地——本地 echo 会在多端出现重复行。
+  const sendChat = (text: string): boolean => {
+    const msg = text.trim()
+    if (!msg) return false
+    if (!ws || ws.readyState !== WebSocket.OPEN) return false
+    try {
+      ws.send(JSON.stringify({ type: 'chat', content: msg }))
+      return true
+    } catch {
+      return false
+    }
+  }
+
   const disconnect = () => {
     refCount = Math.max(0, refCount - 1)
     // 仍有其他订阅者时保留连接，仅最后一个订阅者退出时才真正关闭
@@ -99,5 +113,5 @@ export const useEventsStore = defineStore('events', () => {
     connected.value = false
   }
 
-  return { events, connected, connect, disconnect }
+  return { events, connected, connect, disconnect, sendChat }
 })

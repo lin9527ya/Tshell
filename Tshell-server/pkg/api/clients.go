@@ -222,6 +222,11 @@ func SendCommands(c *gin.Context) {
 		return
 	}
 
+	// 协作：会话被其他操作员占用时拒绝下发（无人持锁则行为不变）
+	if !checkSessionLock(c, commands.Uid) {
+		return
+	}
+
 	// CNA alias 拦截：命令首词匹配脚本注册的 alias 时，由脚本引擎执行（不下发客户端）
 	if cna.Global != nil && commands.Command != "" {
 		fields := strings.Fields(commands.Command)
@@ -251,6 +256,9 @@ func SendCommands(c *gin.Context) {
 	} else {
 		sendcommand.SendCommand(commands.Uid, commands.Command)
 	}
+
+	// 操作广播：让其他操作员看到"谁对哪台机器下了什么"（截断，避免长命令刷屏）
+	publishOperatorAction(commands.Uid, operatorFromContext(c), "command", truncateForEvent(commands.Command))
 
 	// 不再全量读取 shell blob 回显（避免长会话 5MB 级 IO/转码），返回成功状态即可
 	c.JSON(http.StatusOK, gin.H{"status": http.StatusOK, "data": ""})

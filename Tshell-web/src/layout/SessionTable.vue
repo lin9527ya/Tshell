@@ -72,6 +72,15 @@
 
               <!-- OS Icon(单一来源组件;在线状态用于兜底显示器图标) -->
               <OsIcon :os="getClientOsType(row)" :size="16" fallback="screen" :online="isClientOnline(row)" class="beacon-os-svg" />
+
+              <!-- 多操作员协作：会话被其他操作员占用时给出可见提示 -->
+              <VsIcon
+                v-if="collabStore.lockedByOther(row.Uid)"
+                name="lock"
+                :size="11"
+                class="beacon-lock-badge"
+                :title="`${collabStore.lockedByOther(row.Uid)?.owner} 正在操作该会话`"
+              />
             </div>
           </template>
         </el-table-column>
@@ -258,7 +267,16 @@
                 <a class="row-link">{{ isZh ? '更多' : 'More' }} ▾</a>
                 <template #dropdown>
                   <el-dropdown-menu>
-                    <el-dropdown-item command="note">{{ isZh ? '备注' : 'Note' }}</el-dropdown-item>
+                    <el-dropdown-item v-if="!collabStore.lockOf(row.Uid)" command="lock">
+                      {{ isZh ? '占用会话（协作）' : 'Lock Session' }}
+                    </el-dropdown-item>
+                    <el-dropdown-item v-else-if="collabStore.lockOf(row.Uid)?.owner === userStore.username" command="unlock">
+                      {{ isZh ? '释放会话' : 'Release Session' }}
+                    </el-dropdown-item>
+                    <el-dropdown-item v-else disabled>
+                      {{ isZh ? '已被 ' + collabStore.lockOf(row.Uid)?.owner + ' 占用' : 'Locked by ' + collabStore.lockOf(row.Uid)?.owner }}
+                    </el-dropdown-item>
+                    <el-dropdown-item command="note" divided>{{ isZh ? '备注' : 'Note' }}</el-dropdown-item>
                     <el-dropdown-item command="sleep">{{ isZh ? '回连间隔' : 'Sleep' }}</el-dropdown-item>
                     <el-dropdown-item command="group">{{ isZh ? '设置分组' : 'Set Group' }}</el-dropdown-item>
                     <el-dropdown-item command="alive">{{ isZh ? '检查存活' : 'Check Alive' }}</el-dropdown-item>
@@ -295,6 +313,9 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useClientsStore, type ClientData } from '@/stores/clients'
 import { useI18nStore } from '@/stores/i18n'
 import { useSessionSelectionStore } from '@/stores/sessionSelection'
+import { useCollabStore } from '@/stores/collab'
+import { useUserStore } from '@/stores/user'
+import VsIcon from '@/layout-vshell/VsIcon.vue'
 import { useVisibilityInterval } from '@/utils/useVisibilityInterval'
 import { detectClientOs } from '@/utils/clientUtils'
 import ClientAPI from '@/api/clients'
@@ -312,6 +333,8 @@ interface RowData extends ClientData {
 
 const clientsStore = useClientsStore()
 const workspace = useSessionSelectionStore()
+const collabStore = useCollabStore()
+const userStore = useUserStore()
 const router = useRouter()
 const i18nStore = useI18nStore()
 const isZh = computed(() => i18nStore.isZh)
@@ -498,6 +521,40 @@ function onRowCmd(cmd: string, row: RowData) {
     actRemove(row)
   } else if (cmd === 'cleanup') {
     actCleanup(row)
+  } else if (cmd === 'lock') {
+    actLock(row)
+  } else if (cmd === 'unlock') {
+    actUnlock(row)
+  }
+}
+
+// 占用/释放会话：告诉别人"这台我在动"，避免互相踩踏（服务端据此拒绝他人下发）
+async function actLock(row: RowData) {
+  const { value } = await ElMessageBox.prompt(
+    isZh.value ? `占用会话 ${row.Uid.slice(0, 8)}（占用期间其他操作员无法对其下发命令）:` : `Lock session ${row.Uid.slice(0, 8)}:`,
+    isZh.value ? '占用会话' : 'Lock Session',
+    {
+      confirmButtonText: isZh.value ? '占用' : 'Lock',
+      cancelButtonText: isZh.value ? '取消' : 'Cancel',
+      inputPlaceholder: isZh.value ? '占用原因（可选）' : 'Reason (optional)',
+      inputValue: '',
+    },
+  ).catch(() => ({ value: null as string | null }))
+  if (value === null) return
+  try {
+    await collabStore.acquire(row.Uid, value || '')
+    ElMessage.success(isZh.value ? '已占用该会话' : 'Session locked')
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.error || (isZh.value ? '占用失败' : 'Lock failed'))
+  }
+}
+
+async function actUnlock(row: RowData) {
+  try {
+    await collabStore.release(row.Uid)
+    ElMessage.success(isZh.value ? '已释放该会话' : 'Session released')
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.error || (isZh.value ? '释放失败' : 'Release failed'))
   }
 }
 
@@ -695,18 +752,28 @@ let tickTimer: number | null = null
 onMounted(() => {
   clientsStore.fetchClients()
   start()
+  collabStore.start()
   tickTimer = window.setInterval(() => { nowTick.value = Date.now() }, 1000)
   window.addEventListener('cs-focus-session-search', onFocusSearchEvent)
 })
 
 onBeforeUnmount(() => {
   stop()
+  collabStore.stop()
   if (tickTimer) window.clearInterval(tickTimer)
   window.removeEventListener('cs-focus-session-search', onFocusSearchEvent)
 })
 </script>
 
 <style scoped>
+/* 会话锁标记（多操作员协作） */
+.beacon-lock-badge {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  color: #f0883e;
+}
+
 /* 行操作列（vshell：文字链接 + 下拉） */
 .row-actions {
   display: flex;

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"BackendTemplate/pkg/collab"
 	"BackendTemplate/pkg/command"
 	"BackendTemplate/pkg/database"
 	"BackendTemplate/pkg/errors"
@@ -270,6 +271,10 @@ func AuthMiddleware() gin.HandlerFunc {
 		c.Set("username", claims.Username)
 		c.Set("user_id", claims.UserID)
 		c.Set("claims", claims) // C13 RBAC: 供 RequireRole 校验
+
+		// 多操作员协作：任一已认证请求都是在线的证据（超时由 registry 惰性清理）
+		collab.Global.Touch(claims.Username, claims.Role, c.ClientIP())
+
 		logx.Infof("✅ JWT认证成功: 用户=%s(角色:%s), 方法=%s %s\n", claims.Username, claims.Role, c.Request.Method, c.Request.URL.Path)
 		c.Next()
 	}

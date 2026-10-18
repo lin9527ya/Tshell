@@ -71,6 +71,10 @@ func Migrate(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "V1 仅支持 Windows 会话迁移(donut 仅转换 PE)"})
 		return
 	}
+	// 协作：迁移会重启会话进程，被他人锁定时拒绝
+	if !checkSessionLock(c, body.Uid) {
+		return
+	}
 	listenerType := client.Listener
 	// clients.Arch 为 "x64"/"x86"(MetaInfo flag 位),模板文件名需 amd64/386
 	archType := "amd64"

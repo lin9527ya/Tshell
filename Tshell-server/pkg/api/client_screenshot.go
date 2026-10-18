@@ -204,6 +204,11 @@ func ExecuteBin(c *gin.Context) {
 		return
 	}
 
+	// 协作：会话被其他操作员占用时拒绝（在写历史/建任务之前拦下）
+	if !checkSessionLock(c, uid) {
+		return
+	}
+
 	auditBinExecute(c, "START", mode, uid, file.Filename, len(fileBytes), args, "")
 
 	// 任务记录（kind=exec）：成功投递后保持 dispatched，客户端回显时由 OnTaskOutput 置 completed
@@ -227,6 +232,7 @@ func ExecuteBin(c *gin.Context) {
 			return
 		}
 		auditBinExecute(c, "SUCCESS", mode, uid, file.Filename, len(fileBytes), args, "")
+		publishOperatorAction(uid, operatorFromContext(c), "exec", mode+" "+file.Filename)
 		c.JSON(http.StatusOK, gin.H{"status": http.StatusOK})
 	}
 

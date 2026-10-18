@@ -156,6 +156,11 @@ func BatchCommand(c *gin.Context) {
 		return
 	}
 
+	// 协作：批量里任一 uid 被他人锁定 → 整批拒绝（避免"部分下发"造成的状态歧义）
+	if !checkSessionLocks(c, req.UIDs) {
+		return
+	}
+
 	batchID, rows := createTaskRows(req.UIDs, operatorFromContext(c), "batch", req.Command)
 	if len(rows) == 0 {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "任务创建失败（数据库不可用？）"})
@@ -170,6 +175,9 @@ func BatchCommand(c *gin.Context) {
 			}
 		}
 	}()
+
+	publishOperatorAction("", operatorFromContext(c), "batch",
+		fmt.Sprintf("对 %d 台主机下发: %s", len(rows), truncateForEvent(req.Command)))
 
 	c.JSON(http.StatusOK, gin.H{"status": 200, "task_id": batchID, "total": len(rows)})
 }

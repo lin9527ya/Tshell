@@ -4,13 +4,11 @@
 package main
 
 import (
-	"net/http"
-	"runtime/debug"
 	"BackendTemplate/pkg/api"
 	"BackendTemplate/pkg/audit"
-	"BackendTemplate/pkg/command"
 	"BackendTemplate/pkg/c2profile"
 	"BackendTemplate/pkg/cna"
+	"BackendTemplate/pkg/command"
 	"BackendTemplate/pkg/config"
 	"BackendTemplate/pkg/connection"
 	"BackendTemplate/pkg/database"
@@ -30,9 +28,11 @@ import (
 	"fmt"
 	"html/template"
 	"io/fs"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"syscall"
@@ -631,6 +631,12 @@ func main() {
 	// 任务一等对象：明细查询（可过滤/分页）与取消（仅 dispatched 可取消）
 	operatorOnly.GET("/tasks", api.ListTaskRows)
 	operatorOnly.POST("/tasks/:id/cancel", api.CancelTask)
+
+	// 多操作员协作：在线状态（读：全角色）+ 会话锁（写：admin/operator）
+	protected.GET("/collab/operators", api.ListOperators)
+	protected.GET("/collab/locks", api.ListSessionLocks)
+	operatorOnly.POST("/collab/locks/:uid", api.AcquireSessionLock)
+	operatorOnly.DELETE("/collab/locks/:uid", api.ReleaseSessionLock)
 	operatorOnly.GET("/client/session-log", api.DownloadSessionLog)
 
 	// 正向连接功能

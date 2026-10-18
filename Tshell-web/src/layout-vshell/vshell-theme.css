@@ -287,6 +287,99 @@
   color: var(--vs-primary);
 }
 
+/* ===== 多操作员协作：在线状态与会话占用 ===== */
+.vs-collab-wrap {
+  position: relative;
+  height: 100%;
+  display: flex;
+  align-items: center;
+}
+
+.vs-collab-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.vs-collab-count {
+  font-size: 11px;
+  line-height: 1;
+  padding: 1px 4px;
+  border-radius: 8px;
+  background: var(--vs-primary);
+  color: #fff;
+}
+
+.vs-collab-popup {
+  right: 0;
+  left: auto;
+  min-width: 220px;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 6px;
+}
+
+.vs-collab-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.6;
+  padding: 4px 6px;
+}
+
+.vs-collab-title-locks {
+  margin-top: 4px;
+  border-top: 1px solid var(--vs-popup-border);
+  padding-top: 8px;
+}
+
+.vs-collab-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  font-size: 12px;
+  border-radius: 6px;
+}
+
+.vs-collab-row:hover {
+  background: var(--vs-hover-bg, rgba(255, 255, 255, 0.06));
+}
+
+.vs-collab-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vs-collab-meta {
+  opacity: 0.6;
+  font-size: 11px;
+}
+
+.vs-collab-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--cs-online, #3fb950);
+}
+
+.vs-role-admin { background: #f0883e; }
+.vs-role-operator { background: #3fb950; }
+.vs-role-auditor { background: #8b949e; }
+
+.vs-collab-lock {
+  color: #f0883e;
+}
+
+.vs-collab-empty {
+  font-size: 12px;
+  opacity: 0.55;
+  padding: 4px 6px;
+}
+
 .vs-user-wrap {
   position: relative;
   height: 100%;

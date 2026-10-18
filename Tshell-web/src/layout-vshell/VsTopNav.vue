@@ -9,6 +9,7 @@ import { useI18nStore } from '@/stores/i18n'
 import { useThemeStore } from '@/stores/theme'
 import { useUserStore } from '@/stores/user'
 import { usePermissStore } from '@/stores/userpermiss'
+import { useCollabStore } from '@/stores/collab'
 import logoUrl from '@/assets/logo.ico'
 
 const props = withDefaults(
@@ -21,11 +22,13 @@ const i18nStore = useI18nStore()
 const themeStore = useThemeStore()
 const userStore = useUserStore()
 const permissStore = usePermissStore()
+const collabStore = useCollabStore()
 const router = useRouter()
 
 const isZh = computed(() => i18nStore.isZh)
 const isDark = computed(() => themeStore.isDark)
 const userMenuOpen = ref(false)
+const collabOpen = ref(false)
 const isFullscreen = ref(false)
 // 顶栏用户菜单内的局部弹窗（不再走全局 workspace store）
 const showPreferences = ref(false)
@@ -78,16 +81,26 @@ function onUserCmd(cmd: string) {
 function onDocClick(e: MouseEvent) {
   const el = e.target as HTMLElement
   if (!el.closest('.vs-user-wrap')) userMenuOpen.value = false
+  if (!el.closest('.vs-collab-wrap')) collabOpen.value = false
 }
 
 onMounted(() => {
   document.addEventListener('click', onDocClick)
   document.addEventListener('fullscreenchange', onFsChange)
+  collabStore.start()
 })
 onBeforeUnmount(() => {
   document.removeEventListener('click', onDocClick)
   document.removeEventListener('fullscreenchange', onFsChange)
+  collabStore.stop()
 })
+
+// 会话锁到期时间（本地时区 HH:MM），用于提示"占用到几点"
+function lockUntil(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
 </script>
 
 <template>
@@ -133,6 +146,43 @@ onBeforeUnmount(() => {
       <button class="vs-action-btn" :title="isZh ? '切换语言' : 'Language'" @click.stop="i18nStore.toggleLocale()">
         <VsIcon name="language" :size="16" />
       </button>
+
+      <div class="vs-collab-wrap">
+        <button
+          class="vs-action-btn vs-collab-btn"
+          :title="isZh ? '在线操作员与会话占用' : 'Online operators & session locks'"
+          @click.stop="collabOpen = !collabOpen"
+        >
+          <VsIcon name="users" :size="16" />
+          <span class="vs-collab-count">{{ collabStore.operators.length }}</span>
+        </button>
+
+        <transition name="vs-pop">
+          <div v-if="collabOpen" class="vs-nav-popup vs-collab-popup">
+            <div class="vs-collab-title">{{ isZh ? '在线操作员' : 'Online operators' }}</div>
+            <div v-if="!collabStore.operators.length" class="vs-collab-empty">
+              {{ isZh ? '暂无其他在线操作员' : 'No operators online' }}
+            </div>
+            <div v-for="op in collabStore.operators" :key="op.username" class="vs-collab-row">
+              <span class="vs-collab-dot" :class="`vs-role-${op.role}`" />
+              <span class="vs-collab-name">{{ op.username }}</span>
+              <span class="vs-collab-meta">{{ op.role }}</span>
+            </div>
+
+            <div class="vs-collab-title vs-collab-title-locks">
+              {{ isZh ? '会话占用' : 'Session locks' }}
+            </div>
+            <div v-if="!collabStore.locks.length" class="vs-collab-empty">
+              {{ isZh ? '当前没有会话被占用' : 'No sessions locked' }}
+            </div>
+            <div v-for="l in collabStore.locks" :key="l.uid" class="vs-collab-row">
+              <VsIcon name="lock" :size="12" class="vs-collab-lock" />
+              <span class="vs-collab-name">{{ l.uid.slice(0, 8) }}</span>
+              <span class="vs-collab-meta">{{ l.owner }} · {{ lockUntil(l.expires_at) }}</span>
+            </div>
+          </div>
+        </transition>
+      </div>
 
       <div class="vs-user-wrap">
         <div class="vs-user" @click.stop="userMenuOpen = !userMenuOpen">

@@ -52,6 +52,41 @@ func TestPluginRoutePolicy(t *testing.T) {
 	}
 }
 
+// TestCollabRoutePolicy 守卫多操作员协作路由的分组：
+// 会话锁是"阻止别人操作某台主机"的写操作，必须限 admin/operator；
+// 在线状态与锁列表是只读信息，保留在 protected（auditor 也应看得到谁在线）。
+func TestCollabRoutePolicy(t *testing.T) {
+	src, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatalf("读取 main.go 失败: %v", err)
+	}
+
+	want := map[string]string{
+		"/collab/operators":  "protected",
+		"/collab/locks":      "protected",
+		"/collab/locks/:uid": "operatorOnly", // POST/DELETE 均须为写权限组
+	}
+
+	re := regexp.MustCompile(`(?m)^\s*(\w+)\.(?:GET|POST|DELETE|PUT)\("(/collab/[^"]*)"`)
+	got := map[string]string{}
+	for _, m := range re.FindAllStringSubmatch(string(src), -1) {
+		got[m[2]] = m[1]
+	}
+	if len(got) == 0 {
+		t.Fatal("main.go 中找不到协作路由（/collab/...）")
+	}
+	for route, group := range want {
+		g, ok := got[route]
+		if !ok {
+			t.Errorf("main.go 中找不到协作路由 %s", route)
+			continue
+		}
+		if g != group {
+			t.Errorf("协作路由 %s 挂在 %s，期望 %s", route, g, group)
+		}
+	}
+}
+
 // TestBodyLimitPolicy 守卫 main.go 里的按路径请求体上限。
 // 全局默认是 10MB，任何声明了更大上限的上传接口都必须在这里登记，
 // 否则 handler 里的大小检查永远走不到（这正是修复前插件上传 50MB 失效的原因）。
