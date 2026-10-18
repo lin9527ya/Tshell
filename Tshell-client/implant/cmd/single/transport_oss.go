@@ -1,4 +1,4 @@
-//go:build transport_oss
+//go:build transport_oss || transport_multi
 
 package main
 
@@ -18,8 +18,6 @@ import (
 	"github.com/aliyun/aliyun-oss-go-sdk/oss"
 )
 
-// listenerType 监听器类型（服务端 patch 与 FirstBlood 用）
-const listenerType = "oss"
 
 // OSSClient 实现 communication.Transport（OSS 轮询模型）。
 type OSSClient struct {
@@ -31,7 +29,13 @@ type OSSClient struct {
 }
 
 // NewTransport 构造 OSS 传输（单二进制 build tag 入口）
-func NewTransport() transportClient {
+// init 注册到运行时传输表（多传输构建下按 scheme 选择；单传输构建下只有自己）
+func init() {
+	registerTransport("oss", newOSSTransport)
+	listenerType = "oss"
+}
+
+func newOSSTransport() transportClient {
 	return &OSSClient{reconnectMgr: reconnect.NewReconnectManager()}
 }
 

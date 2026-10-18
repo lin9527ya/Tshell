@@ -1,4 +1,4 @@
-//go:build transport_tcp || !(transport_http || transport_https || transport_kcp || transport_oss || transport_websocket || transport_dns || transport_tcp_forward || transport_kcp_forward || transport_ws_forward || transport_http_forward || transport_https_forward)
+//go:build transport_tcp || transport_multi || !(transport_http || transport_https || transport_kcp || transport_oss || transport_websocket || transport_dns || transport_tcp_forward || transport_kcp_forward || transport_ws_forward || transport_http_forward || transport_https_forward)
 
 package main
 
@@ -15,8 +15,6 @@ import (
 	"time"
 )
 
-// listenerType 监听器类型（服务端 patch 与 FirstBlood 用）
-const listenerType = "tcp"
 
 // TCPClient 实现 communication.Transport（TCP 持久传输）。
 type TCPClient struct {
@@ -29,7 +27,13 @@ type TCPClient struct {
 }
 
 // NewTransport 构造 TCP 传输（单二进制 build tag 入口）
-func NewTransport() transportClient {
+// init 注册到运行时传输表（多传输构建下按 scheme 选择；单传输构建下只有自己）
+func init() {
+	registerTransport("tcp", newTCPTransport)
+	listenerType = "tcp"
+}
+
+func newTCPTransport() transportClient {
 	return &TCPClient{reconnectMgr: reconnect.NewReconnectManager()}
 }
 

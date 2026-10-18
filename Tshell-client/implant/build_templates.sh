@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # 编译统一 implant 模块（单二进制 cmd/single，build tag 选择传输协议）。
 # 12 个协议（http/https/kcp/oss/tcp/websocket/tcp_forward/kcp_forward/ws_forward/
-# http_forward/https_forward/dns），交叉编译各 OS/架构，直接放置到服务端模板目录
+# http_forward/https_forward/dns）+ 多传输（multi，运行时按端点 scheme 切换），
+# 交叉编译各 OS/架构，直接放置到服务端模板目录
 # Tshell-server/pkg/api/server/{proto}/，供服务端 GenServer 二进制 patch 管线使用。
 # 与 build_templates.ps1 功能对齐（12 adapter + DLL 载荷 + 相同 OS/架构矩阵）。
 #
@@ -46,7 +47,7 @@ else
 fi
 
 # proto:文件名前缀（websocket 用 ws_；与 ps1 的 $Protos 一致）
-PROTOS="http:http https:https kcp:kcp oss:oss tcp:tcp websocket:ws tcp_forward:tcp_forward kcp_forward:kcp_forward ws_forward:ws_forward http_forward:http_forward https_forward:https_forward dns:dns"
+PROTOS="http:http https:https kcp:kcp oss:oss tcp:tcp websocket:ws tcp_forward:tcp_forward kcp_forward:kcp_forward ws_forward:ws_forward http_forward:http_forward https_forward:https_forward dns:dns multi:multi"
 
 # OS/架构对（服务端模板集；只保留 Go 工具链支持且依赖可编译的组合）
 # - darwin 仅 amd64/arm64；windows 排除 arm（gopsutil 不支持）

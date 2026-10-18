@@ -1,4 +1,4 @@
-//go:build transport_http_forward
+//go:build transport_http_forward || transport_multi
 
 package main
 
@@ -17,11 +17,15 @@ import (
 	"time"
 )
 
-// listenerType 监听器类型（服务端 patch 与 FirstBlood 用）
-const listenerType = "http_forward"
 
 // NewTransport 构造 http_forward 传输（单二进制 build tag 入口）
-func NewTransport() transportClient {
+// init 注册到运行时传输表（多传输构建下按 scheme 选择；单传输构建下只有自己）
+func init() {
+	registerTransport("http_forward", newHTTPForwardTransport)
+	listenerType = "http_forward"
+}
+
+func newHTTPForwardTransport() transportClient {
 	return &HTTPForwardClient{reconnectMgr: reconnect.NewReconnectManager()}
 }
 

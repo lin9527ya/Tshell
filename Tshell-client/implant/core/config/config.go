@@ -362,6 +362,7 @@ func VerifyNoPlaceholderResidue() {
 		TLSJA3Placeholder,
 		DNSLabelPrefixPlaceholder,
 		SessionKeyInfoPlaceholder,
+		MultiEndpoints,
 	}
 	for _, c := range checks {
 		if strings.Contains(c, obfs.Dec("LXbQH0u6JASAUvw=")) {

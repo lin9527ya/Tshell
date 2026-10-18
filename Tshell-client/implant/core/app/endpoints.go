@@ -17,6 +17,12 @@ var (
 )
 
 func initEndpoints() {
+	// 多传输构建：服务端 patch 了端点列表（scheme://addr,...），优先使用；
+	// 单传输构建或未 patch 时回落到 config.Host（历史行为不变）。
+	if multi := config.MultiEndpointsList(); len(multi) > 0 {
+		endpoints = multi
+		return
+	}
 	raw := strings.ReplaceAll(config.Host, " ", "")
 	for _, h := range strings.Split(raw, ",") {
 		h = strings.TrimSpace(h)

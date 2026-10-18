@@ -1,4 +1,4 @@
-//go:build transport_kcp
+//go:build transport_kcp || transport_multi
 
 package main
 
@@ -16,8 +16,6 @@ import (
 	"github.com/xtaci/kcp-go/v5"
 )
 
-// listenerType 监听器类型（服务端 patch 与 FirstBlood 用）
-const listenerType = "kcp"
 
 // KCPClient 实现 communication.Transport（KCP 持久传输）。
 type KCPClient struct {
@@ -30,7 +28,13 @@ type KCPClient struct {
 }
 
 // NewTransport 构造 KCP 传输（单二进制 build tag 入口）
-func NewTransport() transportClient {
+// init 注册到运行时传输表（多传输构建下按 scheme 选择；单传输构建下只有自己）
+func init() {
+	registerTransport("kcp", newKCPTransport)
+	listenerType = "kcp"
+}
+
+func newKCPTransport() transportClient {
 	return &KCPClient{reconnectMgr: reconnect.NewReconnectManager()}
 }
 
