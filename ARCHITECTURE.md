@@ -57,7 +57,7 @@ Tshell/
   - 接口:`GET /api/tasks`(过滤+分页)、`GET /api/tasks/:id`、`POST /api/tasks/:id/cancel`。
   - 前端任务中心(`/tasks`)按真实状态展示与取消;插件页与文件下载对话框按 `task_id` 轮询终态,
     不再靠"输出稳定 N 次"或"百分比到 100"猜完成。
-- **单二进制多传输**(阶段三):`-tags transport_multi` 构建含全部 12 种传输的二进制,运行时按端点 `scheme://addr` 选择实现并顺序回退(tcp→https→dns...);服务端 `GenServer.endpoints` patch 512 字节定长占位符,并校验各端点监听器密钥一致;生成入口见载荷生成对话框"多传输端点"。
+- **单二进制多传输**(阶段三):`-tags transport_multi` 构建含全部 12 种传输的二进制,运行时按端点 `scheme://addr` 选择实现并顺序回退(tcp→https→dns...),并对端点做**主动健康探测**(60s TCP 探测、优先健康端点、活动端点连续失败主动断开);服务端 `GenServer.endpoints` patch 512 字节定长占位符,并校验各端点监听器密钥一致;生成入口见载荷生成对话框"多传输端点"。
 - **Schema 迁移**:`schema_migrations` 版本表 + 有序迁移清单(幂等、失败不记录、可重试),`/api/version` 暴露 `schema_version`;必须单副本部署(见 DEPLOYMENT.md 的单实例约束)。
 - **端口扫描**(阶段三):控制台命令 `scan <目标> <端口> [超时ms]`,TCP connect 跨平台扫描,支持 CIDR/主机名/端口范围/`top`,总量与并发有上限,结果按主机聚合回显。
 - **macOS 能力**(阶段三):launchd 持久化(LaunchAgent/LaunchDaemon,plist 由平台无关的生成器产出并单测校验)、`chflags` 文件隐藏、`screencapture` 截图与拉取式屏幕监控、**交互式 PTY 终端**(与 Linux 共用的 `commands_pty_unix.go`,默认 shell 按平台选择)。

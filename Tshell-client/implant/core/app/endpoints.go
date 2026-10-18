@@ -46,11 +46,58 @@ func CurrentEndpoint() string {
 	return endpoints[epIdx]
 }
 
+// endpointSelector 可选的"下一个端点"选择器：多传输构建注入健康度选择
+// （见 cmd/single/transport_multi.go）。返回空串表示沿用默认轮转。
+// 签名：current 为当前端点，all 为全部端点；返回应切换到的端点。
+var endpointSelector func(current string, all []string) string
+
+// SetEndpointSelector 注入端点选择器（仅多传输构建使用）
+func SetEndpointSelector(f func(current string, all []string) string) {
+	epMu.Lock()
+	endpointSelector = f
+	epMu.Unlock()
+}
+
+// AllEndpoints 返回全部端点的副本（健康探测用）
+func AllEndpoints() []string {
+	epInitOnce.Do(initEndpoints)
+	epMu.Lock()
+	defer epMu.Unlock()
+	out := make([]string, len(endpoints))
+	copy(out, endpoints)
+	return out
+}
+
+// SetCurrentEndpoint 把当前端点切到指定值（存在时）。健康探测触发切换后调用，
+// 保证后续 AdvanceEndpoint 的轮转顺序与实际使用的端点一致。
+func SetCurrentEndpoint(ep string) {
+	epInitOnce.Do(initEndpoints)
+	epMu.Lock()
+	defer epMu.Unlock()
+	for i, e := range endpoints {
+		if e == ep {
+			epIdx = i
+			return
+		}
+	}
+}
+
 // AdvanceEndpoint 轮转到下一个 endpoint（连接失败时调用），返回新的当前 endpoint。
+// 若注入了选择器（多传输构建），优先选健康端点；全都不健康时退回顺序轮转。
 func AdvanceEndpoint() string {
 	epInitOnce.Do(initEndpoints)
 	epMu.Lock()
 	defer epMu.Unlock()
+	if endpointSelector != nil {
+		if next := endpointSelector(endpoints[epIdx], endpoints); next != "" {
+			for i, e := range endpoints {
+				if e == next {
+					epIdx = i
+					return endpoints[epIdx]
+				}
+			}
+		}
+	}
 	epIdx = (epIdx + 1) % len(endpoints)
 	return endpoints[epIdx]
 }
