@@ -242,8 +242,15 @@ func SendCommands(c *gin.Context) {
 	commandLine := "$ " + commands.Command + "\n"
 	database.AppendShellContent(commands.Uid, commandLine)
 
-	// 发送命令到客户端
-	sendcommand.SendCommand(commands.Uid, commands.Command)
+	// 任务一等对象：控制台命令也落库（谁/何时/对哪个 beacon/发了什么），
+	// 投递失败如实标 failed（原来一律"已下发"）。
+	if _, rows := createTaskRows([]string{commands.Uid}, operatorFromContext(c), "console", commands.Command); len(rows) > 0 {
+		if err := sendcommand.SendCommandChecked(commands.Uid, commands.Command); err != nil {
+			finishTask(rows[0].Id, taskStatusFailed, "", err.Error())
+		}
+	} else {
+		sendcommand.SendCommand(commands.Uid, commands.Command)
+	}
 
 	// 不再全量读取 shell blob 回显（避免长会话 5MB 级 IO/转码），返回成功状态即可
 	c.JSON(http.StatusOK, gin.H{"status": http.StatusOK, "data": ""})

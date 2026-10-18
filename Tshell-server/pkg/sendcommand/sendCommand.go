@@ -450,6 +450,21 @@ func SendFileUploadCommand(uid string, byteToSend []byte) {
 	sendByProtocol(listenerType, uid, byteToSend, "文件上传")
 }
 
+// SendCommandChecked 发送文本命令并返回失败原因（队列满/连接不存在/加密或写入失败）。
+// 本地处理的命令（如 clear，resolveCommand 返回 send=false）视为成功。
+// 与 SendCommand 的关系同 SendFileUploadCommandChecked 与 SendFileUploadCommand。
+func SendCommandChecked(uid, command string) error {
+	listenerType, exists := getListenerType(uid)
+	if !exists {
+		return fmt.Errorf("客户端连接类型未知（可能已离线）: %s", uid)
+	}
+	byteToSend, send := resolveCommand(uid, command)
+	if !send {
+		return nil
+	}
+	return sendByProtocolErr(listenerType, uid, byteToSend, "命令")
+}
+
 // SendFileUploadCommandChecked 发送已编码命令字节并返回失败原因。
 // 与 SendFileUploadCommand 的差别是"真的知道有没有发出去"（队列满 / 连接不存在 /
 // 加密或写入失败都会返回错误），供 /api/bin/execute 这类必须如实回报结果的入口使用。

