@@ -131,3 +131,30 @@ func TestTokenLateralCommands(t *testing.T) {
 		}
 	}
 }
+
+// TestPortScanCommand 端口扫描走独立命令类型，且参数原样下发（客户端自己解析/校验）。
+// 若落进 SHELL 兜底，目标机上会执行一条名为 scan 的系统命令——什么都不扫，还留痕。
+func TestPortScanCommand(t *testing.T) {
+	cases := []struct{ cmd, want string }{
+		{"scan 10.0.0.0/24 top", "10.0.0.0/24 top"},
+		{"scan 10.0.0.5 22,80,443 500", "10.0.0.5 22,80,443 500"},
+		{"scan 192.168.1.0/30 1-1024", "192.168.1.0/30 1-1024"},
+	}
+	for _, c := range cases {
+		got, send := resolveCommand("testuid", c.cmd)
+		if !send {
+			t.Fatalf("%s 应发送", c.cmd)
+		}
+		typ := uint32(got[0])<<24 | uint32(got[1])<<16 | uint32(got[2])<<8 | uint32(got[3])
+		if typ != command1.PORT_SCAN {
+			t.Fatalf("%s: 类型期望 PORT_SCAN(%d) 实际 %d", c.cmd, command1.PORT_SCAN, typ)
+		}
+		if string(got[4:]) != c.want {
+			t.Fatalf("%s: 参数期望 %q 实际 %q", c.cmd, c.want, string(got[4:]))
+		}
+	}
+	// 不带参数的 scan 不应被当成扫描命令（否则下发空任务）
+	if got, send := resolveCommand("testuid", "scan"); send {
+		t.Logf("无参数 scan 被解析为类型 % x（走通用路径）", got[:4])
+	}
+}

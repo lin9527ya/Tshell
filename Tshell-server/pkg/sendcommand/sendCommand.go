@@ -72,6 +72,8 @@ var commandTable = []cmdSpec{
 	{prefix: "interactive_shell_cmd_input ", typ: command1.CMD_MODE_INPUT, build: rawArg},
 	{prefix: "interactive_shell_wmi_input ", typ: command1.WMI_MODE_INPUT, build: rawArg},
 	{prefix: "persist ", typ: command1.PERSIST, build: rawArg},
+	// 端口扫描：scan <目标> <端口> [超时毫秒]，如 `scan 10.0.0.0/24 top`
+	{prefix: "scan ", typ: command1.PORT_SCAN, build: rawArg},
 	{prefix: "service_start ", typ: command1.SERVICE_START, build: rawArg},
 	{prefix: "service_stop ", typ: command1.SERVICE_STOP, build: rawArg},
 	{prefix: "reg_query ", typ: command1.REG_QUERY, build: rawArg},

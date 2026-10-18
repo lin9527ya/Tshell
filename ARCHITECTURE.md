@@ -57,6 +57,7 @@ Tshell/
   - 接口:`GET /api/tasks`(过滤+分页)、`GET /api/tasks/:id`、`POST /api/tasks/:id/cancel`。
   - 前端任务中心(`/tasks`)按真实状态展示与取消;插件页与文件下载对话框按 `task_id` 轮询终态,
     不再靠"输出稳定 N 次"或"百分比到 100"猜完成。
+- **端口扫描**(阶段三):控制台命令 `scan <目标> <端口> [超时ms]`,TCP connect 跨平台扫描,支持 CIDR/主机名/端口范围/`top`,总量与并发有上限,结果按主机聚合回显。
 - **macOS 能力**(阶段三):launchd 持久化(LaunchAgent/LaunchDaemon,plist 由平台无关的生成器产出并单测校验)、`chflags` 文件隐藏、`screencapture` 截图与拉取式屏幕监控;PTY 交互终端待做。
 - **内存 OPSEC**(阶段三):sleep mask 就地遮蔽**真实**密钥材料(会话密钥/上一把/主密钥/盐 + 清空 AEAD 缓存),按片遮蔽(默认 2s)+ 在途判定,覆盖全部传输且不打断活跃隧道;syscall trampoline 走 W^X(RW→RX)与绝对跳转;详见 docs/MEMORY_OPSEC.md。
 - **重定向器**(阶段三):配置由**当前画像**生成(`pkg/redirector`,`./tshell -gen-redirector nginx|apache` 或 `GET /api/redirector/template`),只转发画像声明的路径、其余跳诱饵站点、隐藏版本与后端特征;nginx 产完整配置、apache 产 vhost 片段(模块集按发行版而异);生成器自带真实 `nginx -t`/`apache2 -t` 语法校验。详见 docs/REDIRECTOR.md。
