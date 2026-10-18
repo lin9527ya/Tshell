@@ -1,11 +1,17 @@
-package main
+package cli
 
 import (
 	"BackendTemplate/pkg/backup"
-	"BackendTemplate/pkg/database"
 	"fmt"
 )
 
+// Package cli 服务端的命令行入口（备份/恢复、重定向器生成等）。
+//
+// 单独成包而不是放在 main 包：服务端的权威构建入口 build.sh 用**文件模式**
+// (`go build ./main.go`)——这是 Windows+TDM-GCC 下验证过的唯一可用形态。
+// 文件模式只编译被点名的那个文件，main 包里再多一个 .go 就会编译失败，
+// 因此 main 包必须保持单文件，CLI 实现放在这里由 main.go 调用。
+//
 // 备份/恢复 CLI 入口（`./tshell -backup` / `-restore` / `-list-backups`）。
 //
 // 为什么恢复不做成 HTTP 接口：SQLite 的数据库就是那个文件，运行中的进程持有它
@@ -13,7 +19,7 @@ import (
 // 这里把它做成一条命令，避免运维手工 cp 出错（漏删 -wal 是最常见的坑）。
 // 步骤见 docs/BACKUP_RESTORE.md。
 
-func runListBackups(m *backup.Manager) int {
+func RunListBackups(m *backup.Manager) int {
 	list, err := m.List()
 	if err != nil {
 		fmt.Printf("读取备份目录失败: %v\n", err)
@@ -36,7 +42,7 @@ func runListBackups(m *backup.Manager) int {
 	return 0
 }
 
-func runBackupNow(m *backup.Manager) int {
+func RunBackupNow(m *backup.Manager) int {
 	info, err := m.Create("cli")
 	if err != nil {
 		fmt.Printf("❌ 备份失败: %v\n", err)
@@ -51,7 +57,7 @@ func runBackupNow(m *backup.Manager) int {
 	return 0
 }
 
-func runRestore(m *backup.Manager, arg, dbPath string, force bool) int {
+func RunRestore(m *backup.Manager, arg, dbPath string, force bool) int {
 	backupPath, err := backup.ResolveBackup(m, arg)
 	if err != nil {
 		fmt.Printf("❌ %v\n", err)
@@ -73,6 +79,3 @@ func runRestore(m *backup.Manager, arg, dbPath string, force bool) int {
 	fmt.Printf("   现在可以启动服务端: ./tshell -config <配置文件>\n")
 	return 0
 }
-
-// 让 database 包被引用（恢复路径使用 database.DatabaseName 作为默认库路径）
-var _ = database.DatabaseName
