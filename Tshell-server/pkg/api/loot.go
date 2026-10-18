@@ -18,10 +18,11 @@ import (
 
 // lootType 合法值校验(V1 枚举,前端过滤 pill 对齐)
 var lootTypes = map[string]bool{
-	"pwd": true,    // 明文密码
-	"hash": true,   // NTLM/哈希
+	"pwd":    true, // 明文密码
+	"hash":   true, // NTLM/哈希
 	"domain": true, // 域账号
-	"note": true,   // 备忘(密钥/token/连接串等自由文本)
+	"note":   true, // 备忘(密钥/token/连接串等自由文本)
+	"dump":   true, // 内存转储制品(LSASS 等;secret 存服务端文件路径,由操作员本地解析)
 }
 
 // ListLoot GET /api/loot?uid=&type=&page=&size=

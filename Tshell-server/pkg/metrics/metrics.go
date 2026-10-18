@@ -58,6 +58,10 @@ var (
 		Name: "tshell_operator_actions_total",
 		Help: "操作员动作数（协作审计：谁在做什么）",
 	}, []string{"action"})
+	credArtifactsTotal = promauto.With(registry).NewCounterVec(prometheus.CounterOpts{
+		Name: "tshell_cred_artifacts_total",
+		Help: "凭据制品成功回传并校验通过的次数（按类型）",
+	}, []string{"kind"})
 )
 
 // collectorsRegistered 保证采集器只注册一次（重复调用是安全的空操作）
@@ -117,6 +121,11 @@ func AuditDropped(n int) {
 // SecurityBlock 安全拦截（隐藏访问/限流/白名单等）
 func SecurityBlock(reason string) {
 	securityBlockTotal.WithLabelValues(reason).Inc()
+}
+
+// CredArtifact 凭据制品落地（按类型）——"取到了什么"是红队最关心的一条曲线
+func CredArtifact(kind string) {
+	credArtifactsTotal.WithLabelValues(kind).Inc()
 }
 
 // OperatorAction 操作员动作（锁/命令/批量/执行）

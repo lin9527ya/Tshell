@@ -22,6 +22,7 @@ const (
 	EventLoginFailed    EventType = "login_failed"    // 登录失败
 	EventOperatorAction EventType = "operator_action" // 操作员动作（协作：锁/命令/高危操作）
 	EventChat           EventType = "chat"            // 操作员聊天（团队频道）
+	EventLootNew        EventType = "loot_new"        // 新增战利品/制品（含凭据制品回传）
 )
 
 // C2Event 事件负载

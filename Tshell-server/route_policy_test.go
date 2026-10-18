@@ -118,6 +118,28 @@ func TestBackupRoutePolicy(t *testing.T) {
 	}
 }
 
+// TestCredRoutePolicy 凭据获取接口限 admin+operator（auditor 只读审计，不应能发起凭据获取），
+// 且必须挂在 operatorOnly 而不是 protected —— 这是"能直接读取目标机内存"的动作。
+func TestCredRoutePolicy(t *testing.T) {
+	src, err := os.ReadFile("main.go")
+	if err != nil {
+		t.Fatalf("读取 main.go 失败: %v", err)
+	}
+	re := regexp.MustCompile(`(?m)^\s*(\w+)\.(?:GET|POST|DELETE|PUT)\("(/cred/[^"]*)"`)
+	got := map[string]string{}
+	for _, m := range re.FindAllStringSubmatch(string(src), -1) {
+		got[m[2]] = m[1]
+	}
+	if len(got) == 0 {
+		t.Fatal("main.go 中找不到凭据获取路由（/cred/...）")
+	}
+	for route, group := range got {
+		if group != "operatorOnly" {
+			t.Errorf("凭据路由 %s 挂在 %s，期望 operatorOnly", route, group)
+		}
+	}
+}
+
 // TestBodyLimitPolicy 守卫 main.go 里的按路径请求体上限。
 // 全局默认是 10MB，任何声明了更大上限的上传接口都必须在这里登记，
 // 否则 handler 里的大小检查永远走不到（这正是修复前插件上传 50MB 失效的原因）。

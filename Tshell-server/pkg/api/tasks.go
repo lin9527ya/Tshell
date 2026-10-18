@@ -225,6 +225,11 @@ func OnDownloadEnd(uid, filePath, status string) {
 	if database.Engine == nil || uid == "" || filePath == "" {
 		return
 	}
+	// 凭据制品优先：命中凭据请求的产物时按凭据链路收敛（校验/登记/任务/审计），
+	// 不再当作普通下载处理（它本来也没有对应的 kind=download 任务）
+	if matchCredArtifact(uid, filePath, status) {
+		return
+	}
 	// 同一 uid 同一路径可能重复下载：只收敛最早一条仍在 dispatched 的记录
 	var task database.Task
 	has, err := database.Engine.Where("uid = ? AND kind = ? AND command = ? AND status = ?",
