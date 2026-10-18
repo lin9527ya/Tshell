@@ -405,9 +405,21 @@ go test -race ./Tshell-server/...     # 见 §4 回归基线（注意用外层�
     （合计约 170 行纯字符串处理）抽到 `views/plugins/output-filter.ts`（26 项测试）。
     选它的理由：这是该视图最长最绕的逻辑，且直接决定操作员看到什么 ——
     过滤错了就是"执行成功但看不到结果"，而此前同样没有一行测试
+  - **组件级测试已补**（2026-10-19）：`PluginsView.test.ts` 4 项 ——
+    挂载加载列表、选中后加载详情并渲染字段、渲染无 "is not a function"、
+    未选模式时按钮文案。这几项专盯"抽出去的东西单测很足、**调用点却没人管**"
+    这个空档：`output-filter.ts` 有 26 项单测，但组件把 mimikatz 路径接到通用过滤器、
+    或 `filterOpts` 传错提示文案，单测全绿而页面行为是错的
+  - 写这个测试时踩到 4 个"看起来像渲染问题"的坑，都记在测试注释里：
+    ① API 方法名是 snake_case（`get_plugins` 而不是 `getPlugins`）——
+       名字写错会被组件 catch 掉，只表现为"列表是空的"
+    ② 插件名渲染在 `el-select` 的**下拉里**（teleport 到 body），`wrapper.text()` 取不到
+    ③ 页面上有多个 `el-select`，`findComponent` 只返回第一个，必须按 placeholder 挑
+    ④ `handlePluginChange` 读的是 v-model 值，只发 `change` 不发 `update:modelValue`
+       会让函数直接 return，表现为"详情接口没被调用"
   - **仍未做**：两个大文件的**模板**（ClientFiles 517 行 / PluginsView 295 行）
-    与其余编排逻辑（API 调用、轮询、拖拽缩放）尚未拆 —— 需要先补组件级测试
-    （挂载 + 交互 + mock API），否则拆模板仍是无安全网操作
+    与其余编排逻辑（API 调用、轮询、拖拽缩放）尚未拆。PluginsView 已有安全网；
+    ClientFiles 仍缺组件级测试，拆它之前要先补
 
 ---
 
