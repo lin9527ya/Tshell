@@ -32,6 +32,7 @@ import (
 	"io/fs"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -94,6 +95,23 @@ func main() {
 	// 日志级别：debug|info|warn|error（服务端输出内容开关）
 	appConfig := config.GetGlobalConfig()
 	logx.SetLevel(logx.ParseLevel(appConfig.Logging.Level))
+	// 日志格式与输出（config.logging.format/output 此前是死配置：logx 恒为 text+stdout）
+	logx.SetFormat(appConfig.Logging.Format)
+	if strings.EqualFold(appConfig.Logging.Output, "file") {
+		logDir := appConfig.Logging.AuditLogDir
+		if logDir == "" {
+			logDir = "./logs"
+		}
+		_ = os.MkdirAll(logDir, 0o750)
+		if ferr := logx.SetOutputFile(filepath.Join(logDir, "tshell.log")); ferr != nil {
+			logx.Warnf("⚠️ [配置] 日志文件打开失败，回退 stdout: %v\n", ferr)
+		}
+	}
+	// jwt.algorithm 此前完全未被读取：实现固定 RS256（pkg/security/jwt_manager.go）。
+	// 显式提示，避免运维以为改成了 HS256 却仍在用 RS256。
+	if alg := appConfig.JWT.Algorithm; alg != "" && !strings.EqualFold(alg, "RS256") {
+		logx.Warnf("⚠️ [配置] jwt.algorithm=%s 不受支持（实现固定 RS256），已忽略\n", alg)
+	}
 	// 【安全修复】白名单由配置驱动：私网段不再默认全量豁免（防内网爆破），
 	// 仅回环 + security.whitelist_ips 显式声明条目豁免限流；强制模式同步配置
 	security.GlobalRateLimiter.RebuildWhitelist(appConfig.Security.WhitelistIPs)
@@ -183,6 +201,8 @@ func main() {
 
 	database.ConnectDateBase()
 	defer database.Engine.Close()
+	// 连接池参数（config.database.* 此前是死配置：ConnectDateBase 硬编码 10/5/5m）
+	database.ConfigurePool(appConfig.Database.MaxOpenConns, appConfig.Database.MaxIdleConns, appConfig.Database.MaxLifetime)
 
 	// 初始化统一离线检测器（B13: 替代各协议 duplicated 的 checkHeartbeats）
 	connection.InitOfflineDetector()
@@ -210,8 +230,20 @@ func main() {
 		fmt.Printf("✅ 管理员用户初始化成功：%s\n", appConfig.Auth.DefaultUsername)
 	}
 
-	// 初始化审计日志系统
-	err = audit.InitAuditLogger("./logs", 100*1024*1024, 30) // 100MB, 30天
+	// 初始化审计日志系统（目录/大小/天数来自 config.logging.*，此前硬编码 ./logs、100MB、30 天）
+	auditDir := appConfig.Logging.AuditLogDir
+	if auditDir == "" {
+		auditDir = "./logs"
+	}
+	auditMaxSize := appConfig.Logging.MaxFileSize
+	if auditMaxSize <= 0 {
+		auditMaxSize = 100 * 1024 * 1024
+	}
+	auditMaxDays := appConfig.Logging.MaxRetainDays
+	if auditMaxDays <= 0 {
+		auditMaxDays = 30
+	}
+	err = audit.InitAuditLogger(auditDir, auditMaxSize, auditMaxDays)
 	if err != nil {
 		fmt.Printf("审计日志系统初始化失败: %v\n", err)
 		os.Exit(1)

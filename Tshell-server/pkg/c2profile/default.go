@@ -26,19 +26,13 @@ useragent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
 # 调大更隐蔽（连接频率低）但命令响应变慢
 sleeptime_ms: 1000
 
-# 心跳抖动百分比（0-50）：在基准上随机 ±，打破固定节奏
-jitter_percent: 20
-
 # ------------------------------------------------------------
 # HTTP 传输伪装（http-get / http-post）
 # uri: 请求路径（服务端监听器按此注册；默认保留腾讯系接口伪装）
-# headers: 附加请求头（可省略）
-# metadata_cookie_prepend: http-get 元数据 Cookie 前置串（可省略）
 # ------------------------------------------------------------
 http:
   get:
     uri: "/tencent/mcp/pc/pcsearch"
-    metadata_cookie_prepend: "BDUSS="
   post:
     uri: "/tencent/sensearch/collection/item/check"
 
@@ -59,9 +53,7 @@ tls:
 # ------------------------------------------------------------
 # DNS 传输特征
 # beacon_prefix: 上线/轮询查询的子域前缀
-# query_type: 查询类型（TXT / A / AAAA）
 # ------------------------------------------------------------
 dns:
   beacon_prefix: "update"
-  query_type: "TXT"
 `

@@ -70,14 +70,10 @@ useragent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
 # 心跳基准（毫秒，1-60000）
 sleeptime_ms: 1000
 
-# 心跳抖动百分比（0-50）
-jitter_percent: 20
-
 # HTTP 传输伪装
 http:
   get:
     uri: "/tencent/mcp/pc/pcsearch"
-    metadata_cookie_prepend: "BDUSS="
   post:
     uri: "/tencent/sensearch/collection/item/check"
 
@@ -92,7 +88,6 @@ tls:
 # DNS 传输特征
 dns:
   beacon_prefix: "update"
-  query_type: "TXT"
 `
 
 const profileContent = ref(defaultC2)

@@ -4,7 +4,6 @@ description: "验证长 URI 注入（>31 字符，旧占位符不可容纳）"
 
 useragent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 sleeptime_ms: 1000
-jitter_percent: 20
 
 http:
   get:

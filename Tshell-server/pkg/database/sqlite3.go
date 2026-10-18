@@ -1094,6 +1094,26 @@ func ensureColumnNameMigrations(engine *xorm.Engine) error {
 // 会替换该指针——不加锁时 -race 会报数据竞争（本轮 CI 加 -race 后实测 13 处）。
 var engineMu sync.RWMutex
 
+// ConfigurePool 应用配置里的连接池参数（config.database.max_open_conns 等此前是死配置：
+// ConnectDateBase 里硬编码 10/5/5m）。传 0/负值表示沿用默认。
+func ConfigurePool(maxOpen, maxIdle int, lifetime time.Duration) {
+	engineMu.RLock()
+	e := Engine
+	engineMu.RUnlock()
+	if e == nil {
+		return
+	}
+	if maxOpen > 0 {
+		e.SetMaxOpenConns(maxOpen)
+	}
+	if maxIdle > 0 {
+		e.SetMaxIdleConns(maxIdle)
+	}
+	if lifetime > 0 {
+		e.SetConnMaxLifetime(lifetime)
+	}
+}
+
 // currentEngine 后台 goroutine 安全取当前引擎（未初始化时返回 nil）。
 func currentEngine() *xorm.Engine {
 	engineMu.RLock()
