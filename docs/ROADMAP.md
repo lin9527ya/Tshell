@@ -417,9 +417,12 @@ go test -race ./Tshell-server/...     # 见 §4 回归基线（注意用外层�
     ③ 页面上有多个 `el-select`，`findComponent` 只返回第一个，必须按 placeholder 挑
     ④ `handlePluginChange` 读的是 v-model 值，只发 `change` 不发 `update:modelValue`
        会让函数直接 return，表现为"详情接口没被调用"
+  - `ClientFiles.test.ts` 4 项（2026-10-19）：挂载拉磁盘列表、渲染无报错、
+    **图标/名称类名确实来自 format.ts**、文件大小走 `formatFileSize`（1KB→"1.0 KB"）。
+    最后两项是重点：`format.ts` 自己有 32 项单测，但组件若又留一份本地实现，
+    单测全绿而页面走旧逻辑 —— 只有挂载组件才看得出来
   - **仍未做**：两个大文件的**模板**（ClientFiles 517 行 / PluginsView 295 行）
-    与其余编排逻辑（API 调用、轮询、拖拽缩放）尚未拆。PluginsView 已有安全网；
-    ClientFiles 仍缺组件级测试，拆它之前要先补
+    与其余编排逻辑（API 调用、轮询、拖拽缩放）尚未拆。两个视图现在都有组件级安全网了
 
 ---
 
