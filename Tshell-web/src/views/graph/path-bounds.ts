@@ -10,6 +10,7 @@
  * 圆弧命令里的数字是增量（a6.3 6.3 0 1 1 0 12.6 里的 12.6 是直径），必然误判；
  * 而真正畸形的图形（左侧多出两段鼓包）它反而查不出来。
  */
+import { type GlyphFit } from './glyph'
 import type { Pt } from './path-bounds-types'
 
 const ARITY: Record<string, number> = {
@@ -68,7 +69,12 @@ function sampleArc(from: Pt, rx: number, ry: number, rotDeg: number, largeArc: n
   return pts
 }
 
-export function pathBounds(d: string, arcSteps = 24): PathBounds {
+/**
+ * pathBounds 解析 path。
+ * @param fit 可选：图标的坐标系变换（glyphFit 的结果），给了就返回**变换后**的包围盒 ——
+ *            图标原始 viewBox 各不相同（24×24 / 448×512…），不换算没法比"是否落在圆内"。
+ */
+export function pathBounds(d: string, arcSteps = 24, fit?: GlyphFit): PathBounds {
   const tokens = d.match(/[MmLlHhVvCcSsQqTtAaZz]|-?\d*\.?\d+(?:e[-+]?\d+)?/g) || []
   const pts: Pt[] = []
   let cur: Pt = { x: 0, y: 0 }
@@ -163,13 +169,14 @@ export function pathBounds(d: string, arcSteps = 24): PathBounds {
   }
 
   if (!pts.length) return { minX: 0, minY: 0, maxX: 0, maxY: 0, maxRadius: 0 }
-  const xs = pts.map((q) => q.x)
-  const ys = pts.map((q) => q.y)
+  const mapped = fit ? pts.map((q) => ({ x: q.x * fit.s + fit.tx, y: q.y * fit.s + fit.ty })) : pts
+  const xs = mapped.map((q) => q.x)
+  const ys = mapped.map((q) => q.y)
   return {
     minX: Math.min(...xs),
     minY: Math.min(...ys),
     maxX: Math.max(...xs),
     maxY: Math.max(...ys),
-    maxRadius: Math.max(...pts.map((q) => Math.hypot(q.x, q.y))),
+    maxRadius: Math.max(...mapped.map((q) => Math.hypot(q.x, q.y))),
   }
 }

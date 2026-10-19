@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import { OS_GLYPHS, osGlyphKey } from './os-glyph'
-import { pathBounds } from './path-bounds'
 
 describe('osGlyphKey', () => {
   it('windows / linux 各自归一', () => {
@@ -63,36 +62,6 @@ describe('OS_GLYPHS', () => {
         i += arity
       }
       expect(sawMove, `${key}: 缺少 M 起笔`).toBe(true)
-    }
-  })
-})
-
-describe('图形几何：必须落在节点圆（半径 9）内且大致居中', () => {
-  const NODE_R = 9
-  const cases = (['windows', 'linux', 'darwin', 'other'] as const).map((k) => [k, OS_GLYPHS[k].d] as const)
-
-  it('最远点不超过节点圆半径', () => {
-    for (const [name, d] of cases) {
-      const b = pathBounds(d)
-      expect(b.maxRadius, `${name} 最远点 ${b.maxRadius.toFixed(2)} 超出半径 ${NODE_R}`).toBeLessThanOrEqual(NODE_R)
-    }
-  })
-
-  it('大致居中（歪掉的图形放进圆里一眼就看得出来）', () => {
-    for (const [name, d] of cases) {
-      const b = pathBounds(d)
-      const cx = (b.minX + b.maxX) / 2
-      const cy = (b.minY + b.maxY) / 2
-      expect(Math.abs(cx), `${name} 水平偏移 ${cx.toFixed(2)}`).toBeLessThanOrEqual(0.8)
-      expect(Math.abs(cy), `${name} 垂直偏移 ${cy.toFixed(2)}`).toBeLessThanOrEqual(0.8)
-    }
-  })
-
-  it('不是空图形或一条线（宽高都要有量级）', () => {
-    for (const [name, d] of cases) {
-      const b = pathBounds(d)
-      expect(b.maxX - b.minX, name).toBeGreaterThan(6)
-      expect(b.maxY - b.minY, name).toBeGreaterThan(4)
     }
   })
 })

@@ -34,20 +34,27 @@
           ) }}
         </span>
       </div>
-      <div class="pg-legend-row">
-        <span class="pg-legend-cap">{{ i18nStore.tl('客户端图标（按系统）', 'Client icons (by OS)') }}</span>
-        <span v-for="k in OS_KEYS" :key="'os-' + k" class="pg-legend-item">
-          <svg class="pg-legend-glyph" viewBox="-8 -8 16 16" width="14" height="14" aria-hidden="true">
-            <path :d="OS_GLYPHS[k].d" />
-          </svg>
-          {{ i18nStore.tl(OS_GLYPHS[k].zh, OS_GLYPHS[k].en) }}
-        </span>
-        <span class="pg-legend-cap">{{ i18nStore.tl('目标图标（按端口推测）', 'Target icons (by port)') }}</span>
-        <span v-for="k in TARGET_KEYS" :key="'tg-' + k" class="pg-legend-item">
-          <svg class="pg-legend-glyph" viewBox="-8 -8 16 16" width="14" height="14" aria-hidden="true">
-            <path :d="TARGET_GLYPHS[k].d" />
-          </svg>
-          {{ i18nStore.tl(TARGET_GLYPHS[k].zh, TARGET_GLYPHS[k].en) }}
+      <div v-if="presentTypes.has('client') || presentTypes.has('target') || presentTypes.has('listener') || presentTypes.has('tunnel')" class="pg-legend-row">
+        <template v-if="presentTypes.has('client')">
+          <span class="pg-legend-cap">{{ i18nStore.tl('客户端（按系统）', 'Client (by OS)') }}</span>
+          <span v-for="k in OS_KEYS" :key="'os-' + k" class="pg-legend-item">
+            <svg class="pg-legend-glyph" viewBox="-8 -8 16 16" width="14" height="14" aria-hidden="true">
+              <path :d="OS_GLYPHS[k].d" :transform="glyphTransform(OS_GLYPHS[k].vb, 8)" />
+            </svg>
+            {{ i18nStore.tl(OS_GLYPHS[k].zh, OS_GLYPHS[k].en) }}
+          </span>
+        </template>
+        <template v-if="presentTypes.has('target')">
+          <span class="pg-legend-cap">{{ i18nStore.tl('目标（按端口推测）', 'Target (by port)') }}</span>
+          <span v-for="k in TARGET_KEYS" :key="'tg-' + k" class="pg-legend-item">
+            <svg class="pg-legend-glyph" viewBox="-8 -8 16 16" width="14" height="14" aria-hidden="true">
+              <path :d="TARGET_GLYPHS[k].d" :transform="glyphTransform(TARGET_GLYPHS[k].vb, 8)" />
+            </svg>
+            {{ i18nStore.tl(TARGET_GLYPHS[k].zh, TARGET_GLYPHS[k].en) }}
+          </span>
+        </template>
+        <span v-if="presentTypes.has('listener') || presentTypes.has('tunnel')" class="pg-legend-note">
+          {{ i18nStore.tl('监听器 / 隧道：图标对应其协议（见节点标签）', 'Listener / tunnel icons follow the protocol (see node label)') }}
         </span>
       </div>
     </div>
@@ -106,7 +113,7 @@
               @keydown.space.prevent="onNodeClick(nd)"
             >
               <!-- 悬停/选中的光晕（CS 拓扑图同款：节点周围一圈淡色） -->
-              <circle class="pg-node-halo" r="16" :fill="TYPE_COLORS[nd.type] || '#6b7280'" opacity="0" />
+              <circle class="pg-node-halo" :r="NODE_RADIUS + 8" :fill="TYPE_COLORS[nd.type] || '#6b7280'" opacity="0" />
               <circle
                 :r="NODE_RADIUS"
                 :fill="nodeFill(nd)"
@@ -114,8 +121,13 @@
                 stroke-width="2"
                 :stroke-dasharray="isOnline(nd) ? undefined : '3 2'"
               />
-              <!-- 节点图标：客户端按系统（Windows/Linux/macOS），目标按端口推测服务类型 -->
-              <path v-if="nodeGlyph(nd)" class="pg-node-glyph" :d="nodeGlyph(nd)!" />
+              <!-- 节点图标：客户端按系统、目标按端口推测、监听器/隧道按协议（见 node-glyph.ts） -->
+              <path
+                v-if="nd.glyph"
+                class="pg-node-glyph"
+                :d="nd.glyph.d"
+                :transform="nd.glyphT"
+              />
               <text class="pg-node-label" :x="LABEL_DX" y="4">{{ nd.label }}</text>
               <text v-if="nd.sub_label" class="pg-node-sub" :x="LABEL_DX" y="19">{{ nd.sub_label }}</text>
             </g>
@@ -255,8 +267,11 @@ import {
   type GraphNode,
   type LaidOutEdge,
 } from './layout'
-import { OS_GLYPHS, osGlyphKey } from './os-glyph'
-import { portOf, TARGET_GLYPHS, targetGlyphKey, targetService } from './target-glyph'
+import { GLYPH_HALF } from './layout'
+import { glyphTransform } from './glyph'
+import { nodeGlyph } from './node-glyph'
+import { OS_GLYPHS } from './os-glyph'
+import { portOf, TARGET_GLYPHS, targetService } from './target-glyph'
 import {
   buildExportSvg,
   downloadBlob,
@@ -354,7 +369,17 @@ const posOf = computed(() => {
   return m
 })
 
-const viewNodes = computed(() => visibleNodes.value.map((n) => ({ ...n, ...(posOf.value.get(n.id) || n) })))
+const viewNodes = computed(() =>
+  visibleNodes.value.map((n) => {
+    const g = nodeGlyph(n)
+    return {
+      ...n,
+      ...(posOf.value.get(n.id) || n),
+      glyph: g,
+      glyphT: g ? glyphTransform(g.vb, GLYPH_HALF) : '',
+    }
+  }),
+)
 
 /** 离线客户端 id 集合：节点置灰、连线画虚线都看它 */
 const offlineIds = computed(() => {
@@ -713,16 +738,8 @@ onBeforeUnmount(() => {
 const legendTypes = ['server', 'listener', 'client', 'tunnel', 'target']
 const OS_KEYS = ['windows', 'linux', 'darwin', 'other'] as const
 const TARGET_KEYS = ['windows', 'terminal', 'web', 'database', 'generic'] as const
-
-/**
- * 节点图标：客户端按上报的系统，目标按端口推测（地址里带端口才有意义）。
- * 其它类型（服务端/监听器/隧道）不画 —— 它们没有"是什么系统/什么服务"这层信息。
- */
-function nodeGlyph(nd: GraphNode): string | null {
-  if (nd.type === 'client') return OS_GLYPHS[osGlyphKey(nd.meta?.os)].d
-  if (nd.type === 'target') return TARGET_GLYPHS[targetGlyphKey(nd.label)].d
-  return null
-}
+/** 图里出现了哪几类节点 —— 图例只解释"这张图里有的东西"，不列一堆用不上的 */
+const presentTypes = computed(() => new Set(nodes.value.map((n) => n.type)))
 
 const clientCount = computed(() => nodes.value.filter((n) => n.type === 'client').length)
 const onlineCount = computed(() => nodes.value.filter((n) => n.type === 'client' && isOnline(n)).length)
@@ -847,6 +864,11 @@ onMounted(load)
 /* 分组小标题：图标行里"客户端按系统 / 目标按端口"两组的说明 */
 .pg-legend-cap {
   opacity: 0.6;
+}
+
+/* 监听器/隧道不逐个列图标，一句话带过 */
+.pg-legend-note {
+  opacity: 0.5;
 }
 .pg-legend-item {
   display: inline-flex;

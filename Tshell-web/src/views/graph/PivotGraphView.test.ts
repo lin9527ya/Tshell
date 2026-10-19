@@ -21,6 +21,7 @@ vi.mock('vue-router', () => ({
 import PivotGraphView from './PivotGraphView.vue'
 import { OS_GLYPHS } from './os-glyph'
 import { TARGET_GLYPHS } from './target-glyph'
+import { LISTENER_GLYPHS, TUNNEL_GLYPHS } from './node-glyph'
 
 const SAMPLE = {
   nodes: [
@@ -307,17 +308,19 @@ describe('PivotGraphView 辨识度与导出', () => {
     const w = mountView()
     await flushPromises()
 
-    // 客户端与目标节点画图标；server/listener/tunnel 不画
-    // （SAMPLE 里 2 个客户端 + 1 个目标 10.0.0.5:445）
+    // 除服务端外都画图标（SAMPLE：2 客户端 + 1 监听器 + 1 隧道 + 1 目标）
     const icons = w.findAll('.pg-node-glyph')
-    expect(icons).toHaveLength(3)
+    expect(icons).toHaveLength(5)
+    // 服务端是唯一的"自己"，不画图标
+    const server = w.findAll('.pg-node').find((n) => n.text().includes('Tshell Server'))!
+    expect(server.find('.pg-node-glyph').exists()).toBe(false)
 
     const win = w.findAll('.pg-node').find((n) => n.text().includes('WEB-01'))!
     const lin = w.findAll('.pg-node').find((n) => n.text().includes('WEB-02'))!
     const winD = win.find('.pg-node-glyph').attributes('d')
     const linD = lin.find('.pg-node-glyph').attributes('d')
     expect(winD).not.toBe(linD)
-    expect(winD).toContain('M-5.5 -5.5') // Windows 四方块
+    expect(winD).toContain('M0 0h11.377') // simple-icons 的 Windows 四方块
     expect(linD!.length).toBeGreaterThan(winD!.length) // Tux 形状更复杂
   })
 
@@ -331,10 +334,11 @@ describe('PivotGraphView 辨识度与导出', () => {
     await flushPromises()
 
     const mac = w.findAll('.pg-node').find((n) => n.text().includes('WEB-01'))!
-    const d = mac.find('.pg-node-glyph').attributes('d')!
-    expect(d).toContain('A3 3 0 0 1') // 咬口那段圆弧
-    expect(d).not.toBe(OS_GLYPHS.other.d)
-    expect(d).toBe(OS_GLYPHS.darwin.d)
+    const path = mac.find('.pg-node-glyph')
+    expect(path.attributes('d')).toBe(OS_GLYPHS.darwin.d)
+    expect(path.attributes('d')).not.toBe(OS_GLYPHS.other.d)
+    // 图标集坐标系（384×512）与节点坐标系不同，靠 transform 映射进圆里
+    expect(path.attributes('transform')).toContain('scale(')
   })
 
   it('离线主机置灰：灰虚线空心圈 + 灰色标签', async () => {
@@ -464,12 +468,31 @@ describe('PivotGraphView 目标节点图标', () => {
     expect(meta).toContain('按端口推测')
   })
 
-  it('监听器/服务端节点不画图标（它们没有系统/服务这层信息）', async () => {
+  it('监听器按协议画图标（tcp → 插头图标）', async () => {
     getGraphData.mockResolvedValue({ data: { data: withTarget('10.0.0.5:445') } })
     const w = mountView()
     await flushPromises()
     const listener = w.findAll('.pg-node').find((n) => n.text().includes('tcp'))!
-    expect(listener.find('.pg-node-glyph').exists()).toBe(false)
+    expect(listener.find('.pg-node-glyph').attributes('d')).toBe(LISTENER_GLYPHS.tcp.d)
+  })
+
+  it('隧道按协议画图标（socks5 → 转发图标）', async () => {
+    getGraphData.mockResolvedValue({
+      data: {
+        data: {
+          nodes: [
+            { id: 'server', type: 'server', label: 'Tshell Server' },
+            { id: 't1', type: 'tunnel', label: 'socks5', sub_label: '10.0.0.5:445' },
+          ],
+          edges: [{ id: 'e1', source: 'server', target: 't1' }],
+        },
+      },
+    })
+    const w = mountView()
+    await flushPromises()
+    const tunnel = w.findAll('.pg-node').find((n) => n.text().includes('socks5'))!
+    expect(tunnel.find('.pg-node-glyph').attributes('d')).toBe(TUNNEL_GLYPHS.socks5.d)
+    // 服务端仍然没有图标
     expect(w.findAll('.pg-node-glyph')).toHaveLength(1)
   })
 })
