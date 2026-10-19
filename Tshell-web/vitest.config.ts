@@ -15,6 +15,9 @@ export default defineConfig({
   },
   test: {
     environment: 'jsdom',
+    // 把 window.localStorage/sessionStorage 桥到 globalThis：
+    // jsdom 只挂在 window 上，组件按浏览器语义写的是裸 localStorage（见该文件注释）
+    setupFiles: ['./vitest.setup.ts'],
     exclude: ['node_modules/**', 'dist/**', 'e2e/*']
   }
 })

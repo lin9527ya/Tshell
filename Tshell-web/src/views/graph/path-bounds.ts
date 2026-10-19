@@ -134,7 +134,7 @@ export function pathBounds(d: string, arcSteps = 24, fit?: GlyphFit): PathBounds
         break
       }
       case 'S': {
-        const c1 = prevCtrl ? { x: 2 * cur.x - prevCtrl.x, y: 2 * cur.y - prevCtrl.y } : cur
+        const c1: Pt = prevCtrl ? { x: 2 * cur.x - prevCtrl.x, y: 2 * cur.y - prevCtrl.y } : cur
         const c2 = p(a[0], a[1])
         const end = p(a[2], a[3])
         pts.push(c1, c2, end)
@@ -151,7 +151,7 @@ export function pathBounds(d: string, arcSteps = 24, fit?: GlyphFit): PathBounds
         break
       }
       case 'T': {
-        const c1 = prevCtrl ? { x: 2 * cur.x - prevCtrl.x, y: 2 * cur.y - prevCtrl.y } : cur
+        const c1: Pt = prevCtrl ? { x: 2 * cur.x - prevCtrl.x, y: 2 * cur.y - prevCtrl.y } : cur
         const end = p(a[0], a[1])
         pts.push(c1, end)
         prevCtrl = c1
