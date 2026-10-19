@@ -38,6 +38,18 @@ jobs:
             echo "模板缺失，构建 linux/amd64 子集兜底"
             bash build_templates.sh
           fi
+      - name: Prepare frontend dist (only if missing)
+        # 前端产物 dist/ 按 .gitignore 不入库（克隆后由 `npm run build:embed` 生成）。
+        # 缺失时放一个占位 index.html 兜底 —— 否则 `//go:embed dist` 会让构建步直接失败，
+        # 与上面模板兜底同理。CI 只编译到 /dev/null，不产出交付镜像，占位不会外流。
+        run: |
+          if [ -n "$(ls -A dist 2>/dev/null)" ]; then
+            echo "dist 已存在，跳过"
+          else
+            mkdir -p dist
+            printf '%s\n' '<!doctype html><title>build placeholder</title>' > dist/index.html
+            echo "dist 缺失，已放置占位 index.html"
+          fi
       - name: Build (version injected)
         run: |
           VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo dev)
@@ -92,6 +104,20 @@ jobs:
             echo "模板缺失，构建 linux/amd64 子集兜底"
             bash build_templates.sh
           fi
+      - name: Setup Node (frontend dist)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: Tshell-web/package-lock.json
+      - name: Build frontend dist
+        # dist/ 不入库，而交付二进制由 build.sh 走"前端 → 服务端"生成并嵌入。
+        # 可复现比对必须嵌入**同一份** dist，故这里真跑 build:embed（不能用占位兜底，
+        # 否则比对出来的二进制与实际交付的那份对不上）。
+        working-directory: Tshell-web
+        run: |
+          npm ci --legacy-peer-deps
+          npm run build:embed
       - name: Build twice and compare
         # 同一源码 + 同一工具链 + 同一参数必须产出逐字节相同的二进制。
         # 构建时间取提交时间（SOURCE_DATE_EPOCH），不用"现在"。
