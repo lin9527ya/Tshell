@@ -1,1 +1,0 @@
-import{s as r}from"./index.BMFFlgJv.js";const e={list(t){return r({url:"/tasks",method:"GET",params:t})},get(t){return r({url:`/tasks/${t}`,method:"GET"})},cancel(t){return r({url:`/tasks/${t}/cancel`,method:"POST"})}};export{e as T};
