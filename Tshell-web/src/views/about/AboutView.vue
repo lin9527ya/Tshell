@@ -61,10 +61,15 @@ const hostInfo = computed(() => `${window.location.protocol}//${window.location.
   background: var(--cs-bg);
   overflow: auto;
   box-sizing: border-box;
+  /* 纵向排布（页头在上），卡片自身水平居中，避免宽屏下右侧大片留白 */
+  display: flex;
+  flex-direction: column;
 }
 
 .ab-card {
   max-width: 720px;
+  margin: 0 auto;
+  width: 100%;
   background: var(--cs-panel);
   border: 1px solid var(--cs-card-border);
   border-radius: 8px;

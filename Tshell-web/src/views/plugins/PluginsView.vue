@@ -1344,7 +1344,13 @@ Note: polling transports fetch commands on their next check-in.`;
   right: 0;
   width: 20px;
   height: 20px;
-  background: linear-gradient(-45deg, transparent 0%, transparent 40%, var(--cs-active) 40%, var(--cs-active) 60%, transparent 60%);
+  /* 右下角拖拽手柄：三点抓握，默认低调，悬停高亮 */
+  background:
+    radial-gradient(circle at 78% 22%, var(--cs-text-dim) 1.2px, transparent 1.5px),
+    radial-gradient(circle at 58% 42%, var(--cs-text-dim) 1.2px, transparent 1.5px),
+    radial-gradient(circle at 78% 58%, var(--cs-text-dim) 1.2px, transparent 1.5px);
+  opacity: 0.55;
+  transition: opacity 0.2s ease;
   cursor: nw-resize;
   z-index: 10;
   border-bottom-right-radius: 6px;
@@ -1356,7 +1362,8 @@ Note: polling transports fetch commands on their next check-in.`;
   right: 0;
   width: 4px;
   height: 40px;
-  background: var(--cs-active);
+  background: var(--cs-border-strong);
+  opacity: 0.45;
   cursor: ew-resize;
   z-index: 9;
   transform: translateY(-50%);
@@ -1371,7 +1378,8 @@ Note: polling transports fetch commands on their next check-in.`;
   left: 50%;
   width: 40px;
   height: 4px;
-  background: var(--cs-active);
+  background: var(--cs-border-strong);
+  opacity: 0.45;
   cursor: ns-resize;
   z-index: 9;
   transform: translateX(-50%);
@@ -1381,7 +1389,11 @@ Note: polling transports fetch commands on their next check-in.`;
 }
 
 .resize-handle-right:hover,
-.resize-handle-bottom:hover,
+.resize-handle-bottom:hover {
+  background: var(--cs-active);
+  opacity: 0.85;
+}
+
 .resize-handle-corner:hover {
   opacity: 1;
 }

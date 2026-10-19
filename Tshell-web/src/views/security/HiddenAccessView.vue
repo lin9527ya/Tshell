@@ -290,6 +290,7 @@ onMounted(() => {
 
 .ha-card {
   max-width: 760px;
+  margin: 0 auto;
   background: var(--cs-panel);
   border: 1px solid var(--cs-card-border);
   border-radius: 8px;

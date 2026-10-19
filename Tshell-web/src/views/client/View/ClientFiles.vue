@@ -73,6 +73,9 @@
             <button class="ic-btn" :title="i18nStore.tl('磁盘驱动器 / 根目录', 'Drives / Home')" @click="goClientHome">
               <el-icon><HomeFilled /></el-icon>
             </button>
+            <button class="ic-btn" :title="i18nStore.tl('帮助', 'Help')" @click="handleHelp">
+              <el-icon><QuestionFilled /></el-icon>
+            </button>
             <button class="ic-btn" :disabled="!canGoUp" :title="i18nStore.tl('上一级目录', 'Up')" @click="goUpLevel">
               <el-icon><Top /></el-icon>
             </button>
@@ -152,9 +155,6 @@
 
         <!-- 操作条（vshell：操作集中在表格上方，取代原底部按钮行） -->
         <div class="fm-action-bar">
-          <button class="cs-btn" @click="fetchDrives">
-            {{ i18nStore.tl('驱动器 (Drives)', 'Drives') }}
-          </button>
           <button class="cs-btn" :disabled="selectedFiles.length === 0" @click="handleFileView()">
             {{ i18nStore.tl('查看/编辑 (View)', 'View') }}
           </button>
@@ -166,9 +166,6 @@
           </button>
           <button class="cs-btn cs-btn-danger" :disabled="selectedFiles.length === 0" @click="deleteSelectedFiles">
             {{ i18nStore.tl('删除 (Delete)', 'Delete') }}
-          </button>
-          <button class="cs-btn" @click="handleHelp">
-            {{ i18nStore.tl('帮助 (Help)', 'Help') }}
           </button>
 
           <div class="fm-spacer" />
@@ -536,7 +533,7 @@ import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Search, Refresh, FolderAdd, DocumentAdd, Download, Upload,
-  Folder, Document, Fold, FolderOpened, Monitor, HomeFilled, Top, Loading
+  Folder, Document, Fold, FolderOpened, Monitor, HomeFilled, Top, Loading, QuestionFilled
 } from '@element-plus/icons-vue'
 import ClientAPI from '@/api/clients'
 import TaskAPI from '@/api/tasks'

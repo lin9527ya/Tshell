@@ -33,10 +33,10 @@
       {{ i18nStore.tl('暂无拓扑数据：先创建监听器并让客户端上线', 'No topology data yet: create a listener and bring a client online') }}
     </div>
 
-    <div v-else class="pg-canvas" @click.self="selected = null">
+    <div v-else class="pg-canvas" :ref="setCanvasRef" @click.self="selected = null">
       <svg
-        :width="layout.width"
-        :height="layout.height"
+        :width="layout.width * fitScale"
+        :height="layout.height * fitScale"
         :viewBox="`0 0 ${layout.width} ${layout.height}`"
         role="img"
         :aria-label="i18nStore.tl('拓扑网络图', 'Pivot graph')"
@@ -122,7 +122,7 @@
  *  2. 离线客户端画成**灰色虚线空心**，与在线实心一眼可分 —— 否则一片点看不出谁掉线；
  *  3. 点击节点在下方列出 meta：图上放不下的地址/密钥指纹等信息集中在这里。
  */
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import PageHeader from '@/components/Common/PageHeader.vue'
 import ClientApi from '@/api/clients'
 import { useI18nStore } from '@/stores/i18n'
@@ -145,6 +145,39 @@ const error = ref('')
 const selected = ref<string | null>(null)
 
 const layout = computed(() => computeLayout(nodes.value, edges.value))
+
+// ---- fitView：图大于画布时等比缩小到可见（不放大，节点尺寸保持恒定）----
+const canvasSize = reactive({ w: 0, h: 0 })
+let canvasObserver: ResizeObserver | null = null
+
+const fitScale = computed(() => {
+  const { w, h } = canvasSize
+  const lw = layout.value.width
+  const lh = layout.value.height
+  if (!w || !h || !lw || !lh) return 1
+  const pad = 24
+  return Math.min(1, (w - pad) / lw, (h - pad) / lh)
+})
+
+// 画布按需渲染（空数据/加载中不渲染），故用函数 ref 在元素出现时挂观察到
+function setCanvasRef(el: any) {
+  canvasObserver?.disconnect()
+  canvasObserver = null
+  if (!el || typeof ResizeObserver === 'undefined') return
+  canvasObserver = new ResizeObserver((entries) => {
+    const r = entries[0]?.contentRect
+    if (r) {
+      canvasSize.w = r.width
+      canvasSize.h = r.height
+    }
+  })
+  canvasObserver.observe(el)
+}
+
+onBeforeUnmount(() => {
+  canvasObserver?.disconnect()
+  canvasObserver = null
+})
 
 const legendTypes = ['server', 'listener', 'client', 'tunnel', 'target']
 
