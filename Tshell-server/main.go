@@ -275,6 +275,26 @@ func main() {
 	}
 	fmt.Println("✅ MFA 密钥加密器初始化成功")
 
+	// OPSEC P0-1：战果（口令/哈希/票据密钥）静态加密。
+	// 优先用独立的密钥文件（可与数据库分开保管）；未配置则由 JWT 私钥派生。
+	// 初始化失败**直接退出** —— 不能带着"战果会以明文落库"的状态继续跑：
+	// 那正是本项要消除的风险，静默降级等于白做。
+	if keyFile := appConfig.Security.AtRestKeyFile; keyFile != "" {
+		if err := security.InitAtRestCipherFromKeyFile(keyFile); err != nil {
+			fmt.Printf("战果静态加密初始化失败（security.at_rest_key_file=%s）: %v\n", keyFile, err)
+			os.Exit(1)
+		}
+		fmt.Printf("✅ 战果静态加密已启用（独立密钥文件 %s）\n", keyFile)
+	} else {
+		if err := security.InitAtRestCipherFromPrivateKey(security.GlobalJWTManager.PrivateKey()); err != nil {
+			fmt.Printf("战果静态加密初始化失败: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println("✅ 战果静态加密已启用（由 JWT 私钥派生；建议改用 security.at_rest_key_file 分离保管）")
+	}
+	// 注入到领域层（pkg/security 依赖 pkg/database，不能反向 import，故用注入）
+	database.SetLootCrypto(security.Seal, security.Open, security.Fingerprint)
+
 	// 初始化安全密钥管理器
 	err = encrypt.InitSecureKeyManager()
 	if err != nil {
@@ -345,6 +365,16 @@ func main() {
 	defer database.DB().Close()
 	// 连接池参数（config.database.* 此前是死配置：ConnectDateBase 硬编码 10/5/5m）
 	database.ConfigurePool(appConfig.Database.MaxOpenConns, appConfig.Database.MaxIdleConns, appConfig.Database.MaxLifetime)
+
+	// OPSEC P0-1：把存量明文战果加密回写（幂等，只在有新明文时动行）。
+	// 放在连库之后、业务起来之前 —— 早于任何读取，避免"读到旧明文又当成新数据"。
+	if n, err := database.MigrateLootSecrets(); err != nil {
+		// 迁移失败不阻断启动（已有密文行仍可正常读写），但必须喊出来：
+		// 沉默的后果是"以为加密了，其实还有明文行留在库里"。
+		logx.Errorf("❌ [安全] 战果明文迁移失败（库中可能仍有明文行）: %v\n", err)
+	} else if n > 0 {
+		logx.Warnf("⚠️ [安全] 已把 %d 条历史明文战果加密回写\n", n)
+	}
 
 	// ===== 数据库备份 =====
 	if appConfig.Backup.Enabled && database.IsPostgres() {

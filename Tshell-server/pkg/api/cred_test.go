@@ -201,6 +201,7 @@ func TestCredArtifactIngest(t *testing.T) {
 
 	var loot []database.Loot
 	database.Engine.Where("uid = ?", "uid-win").Find(&loot)
+	decryptLootForTest(t, loot)
 	if len(loot) != 1 {
 		t.Fatalf("应登记 1 条制品，实际 %d 条", len(loot))
 	}
@@ -238,6 +239,7 @@ func TestCredArtifactRejectsInvalidDump(t *testing.T) {
 	}
 	var loot []database.Loot
 	database.Engine.Find(&loot)
+	decryptLootForTest(t, loot)
 	if len(loot) != 0 {
 		t.Fatalf("无效制品不应登记为战利品: %+v", loot)
 	}
@@ -283,6 +285,7 @@ func TestUnrelatedDownloadIsNotCredArtifact(t *testing.T) {
 
 	var loot []database.Loot
 	database.Engine.Find(&loot)
+	decryptLootForTest(t, loot)
 	if len(loot) != 0 {
 		t.Fatalf("普通下载不应登记为凭据制品: %+v", loot)
 	}

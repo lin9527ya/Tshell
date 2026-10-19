@@ -479,15 +479,18 @@ type Task struct {
 // Loot 凭据/制品库(功能批): 行动中获取的凭据与制品集中管理。
 // 来源: 手动录入 / 命令产出自动识别(WiFi 密码等) / 后续提取命令族(LSASS/DPAPI/浏览器)。
 type Loot struct {
-	Id        int64  `json:"id" xorm:"pk autoincr"`
-	Uid       string `json:"uid" xorm:"index"`              // 来源会话
-	Type      string `json:"type" xorm:"varchar(20) index"` // pwd 明文 / hash NTLM哈希 / domain 域账号 / note 备忘
-	User      string `json:"user" xorm:"varchar(255)"`      // 用户名
-	Realm     string `json:"realm" xorm:"varchar(255)"`     // 域/REALM
-	Host      string `json:"host" xorm:"varchar(255)"`      // 主机名
-	Secret    string `json:"secret" xorm:"text"`            // 密码/哈希/密钥
-	Note      string `json:"note" xorm:"text"`              // 备注
-	Source    string `json:"source" xorm:"varchar(50)"`     // 来源: manual/wifi/keylog/lsass/...
+	Id     int64  `json:"id" xorm:"pk autoincr"`
+	Uid    string `json:"uid" xorm:"index"`              // 来源会话
+	Type   string `json:"type" xorm:"varchar(20) index"` // pwd 明文 / hash NTLM哈希 / domain 域账号 / note 备忘
+	User   string `json:"user" xorm:"varchar(255)"`      // 用户名
+	Realm  string `json:"realm" xorm:"varchar(255)"`     // 域/REALM
+	Host   string `json:"host" xorm:"varchar(255)"`      // 主机名
+	Secret string `json:"secret" xorm:"text"`            // 密码/哈希/密钥（静态加密，见 loot_crypto.go）
+	// SecretFp 去重指纹（HMAC-SHA256，非明文、非可逆）。
+	// 为什么需要它：Secret 用 AES-GCM 加密后每次密文不同，不能再拿 Secret 做去重键。
+	SecretFp  string `json:"-" xorm:"varchar(64) index"`
+	Note      string `json:"note" xorm:"text"`          // 备注
+	Source    string `json:"source" xorm:"varchar(50)"` // 来源: manual/wifi/keylog/lsass/...
 	CreatedAt string `json:"created_at" xorm:"varchar(32) index"`
 }
 

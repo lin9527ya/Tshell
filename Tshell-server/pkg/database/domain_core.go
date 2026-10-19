@@ -563,7 +563,13 @@ func (LootStore) ListBySources(sources []string, uid string, limit int) ([]Loot,
 	if uid != "" {
 		sess = sess.And("uid = ?", uid)
 	}
-	return out, sess.Desc("id").Limit(limit).Find(&out)
+	if err := sess.Desc("id").Limit(limit).Find(&out); err != nil {
+		return out, err
+	}
+	if err := decryptLootRows(out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // AddAutoIngest 命令产出自动入库（去重键与手动录入**刻意不同**）。
@@ -583,8 +589,14 @@ func (LootStore) AddAutoIngest(l *Loot) (bool, error) {
 	if s == nil {
 		return false, ErrStoreUnavailable
 	}
-	has, err := s.Where("uid = ? AND type = ? AND host = ? AND secret = ? AND source = ?",
-		l.Uid, l.Type, l.Host, l.Secret, l.Source).Exist(&Loot{})
+	// 去重改用**指纹列**：Secret 已静态加密，AES-GCM 每次密文不同，
+	// 继续拿 Secret 比较会让同一口令的重复收集全部"不重复"，去重形同失效。
+	fp, err := lootFp(l.Secret)
+	if err != nil {
+		return false, err
+	}
+	has, err := s.Where("uid = ? AND type = ? AND host = ? AND secret_fp = ? AND source = ?",
+		l.Uid, l.Type, l.Host, fp, l.Source).Exist(&Loot{})
 	if err != nil {
 		return false, err
 	}
@@ -594,6 +606,12 @@ func (LootStore) AddAutoIngest(l *Loot) (bool, error) {
 	if l.CreatedAt == "" {
 		l.CreatedAt = nowStamp()
 	}
+	sealed, err := sealLootSecret(l.Secret)
+	if err != nil {
+		return false, err
+	}
+	l.SecretFp = fp
+	l.Secret = sealed
 	_, err = s.Insert(l)
 	return err == nil, err
 }
@@ -607,6 +625,18 @@ func (LootStore) Insert(l *Loot) (int64, error) {
 	if l.CreatedAt == "" {
 		l.CreatedAt = nowStamp()
 	}
+	// 仍然补算指纹：手动录入与自动入库可能撞上同一条口令，
+	// 有指纹列才能让后续去重（以及"两条是否同一口令"的排查）成立。
+	fp, err := lootFp(l.Secret)
+	if err != nil {
+		return 0, err
+	}
+	sealed, err := sealLootSecret(l.Secret)
+	if err != nil {
+		return 0, err
+	}
+	l.SecretFp = fp
+	l.Secret = sealed
 	return s.Insert(l)
 }
 
@@ -637,6 +667,9 @@ func (LootStore) PageFiltered(uid, lootType string, offset, limit int) ([]Loot, 
 	if err := build().Table("loot").Desc("id").Limit(limit, offset).Find(&items); err != nil {
 		return nil, 0, err
 	}
+	if err := decryptLootRows(items); err != nil {
+		return nil, 0, err
+	}
 	return items, total, nil
 }
 
@@ -652,17 +685,25 @@ func (LootStore) AddIfNotEmpty(uid, lootType, user, realm, host, secret, note, s
 	if s == nil {
 		return false, ErrStoreUnavailable
 	}
-	exists, err := s.Where("uid = ? AND user = ? AND realm = ? AND secret = ?",
-		uid, user, realm, secret).Exist(&Loot{})
+	fp, err := lootFp(secret)
+	if err != nil {
+		return false, err
+	}
+	exists, err := s.Where("uid = ? AND user = ? AND realm = ? AND secret_fp = ?",
+		uid, user, realm, fp).Exist(&Loot{})
 	if err != nil {
 		return false, err
 	}
 	if exists {
 		return false, nil
 	}
+	sealed, err := sealLootSecret(secret)
+	if err != nil {
+		return false, err
+	}
 	_, err = s.Insert(&Loot{
 		Uid: uid, Type: lootType, User: user, Realm: realm,
-		Host: host, Secret: secret, Note: note, Source: source,
+		Host: host, Secret: sealed, SecretFp: fp, Note: note, Source: source,
 		CreatedAt: nowStamp(),
 	})
 	return err == nil, err
@@ -675,7 +716,13 @@ func (LootStore) ListByUID(uid string) ([]Loot, error) {
 	if s == nil {
 		return nil, ErrStoreUnavailable
 	}
-	return out, s.Where("uid = ?", uid).Asc("id").Find(&out)
+	if err := s.Where("uid = ?", uid).Asc("id").Find(&out); err != nil {
+		return nil, err
+	}
+	if err := decryptLootRows(out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // ListAll 全部战利品（按 id 倒序 = 最新在前）
@@ -685,7 +732,13 @@ func (LootStore) ListAll() ([]Loot, error) {
 	if s == nil {
 		return nil, ErrStoreUnavailable
 	}
-	return out, s.Desc("id").Find(&out)
+	if err := s.Desc("id").Find(&out); err != nil {
+		return nil, err
+	}
+	if err := decryptLootRows(out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // GetByID 按主键取一条
@@ -696,7 +749,16 @@ func (LootStore) GetByID(id int64) (Loot, bool, error) {
 		return l, false, ErrStoreUnavailable
 	}
 	has, err := s.ID(id).Get(&l)
-	return l, has, err
+	if err != nil || !has {
+		return l, has, err
+	}
+	// decryptLootRows 作用于切片，所以包一层再写回
+	rows := []Loot{l}
+	if err := decryptLootRows(rows); err != nil {
+		return l, has, err
+	}
+	l.Secret = rows[0].Secret
+	return l, has, nil
 }
 
 // DeleteByID 删除一条

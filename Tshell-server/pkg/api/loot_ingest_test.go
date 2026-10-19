@@ -23,6 +23,10 @@ func lootRows(t *testing.T) []database.Loot {
 	if err := database.Engine.OrderBy("host").Find(&rows); err != nil {
 		t.Fatal(err)
 	}
+	// Secret 列已是密文（OPSEC P0-1），断言前先解回明文
+	for i := range rows {
+		rows[i].Secret = plainSecret(t, rows[i].Secret)
+	}
 	return rows
 }
 

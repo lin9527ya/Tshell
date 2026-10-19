@@ -118,6 +118,7 @@ func TestBrowserArtifactIngest(t *testing.T) {
 
 	var loot []database.Loot
 	database.Engine.Where("uid = ?", "uid-win").Asc("id").Find(&loot)
+	decryptLootForTest(t, loot)
 	if len(loot) != 3 {
 		t.Fatalf("应登记 3 条（1 条口令去重后 + 1 条 Cookie + 1 条制品本体），实际 %d: %+v", len(loot), loot)
 	}
@@ -152,6 +153,7 @@ func TestBrowserArtifactIngest(t *testing.T) {
 
 	var after []database.Loot
 	database.Engine.Where("uid = ? AND type = ?", "uid-win", "pwd").Find(&after)
+	decryptLootForTest(t, after)
 	if len(after) != 1 {
 		t.Fatalf("重复采集不应重复入库口令: %d 条", len(after))
 	}
@@ -187,6 +189,7 @@ func TestBrowserArtifactRejectsMalformed(t *testing.T) {
 			}
 			var loot []database.Loot
 			database.Engine.Find(&loot)
+			decryptLootForTest(t, loot)
 			if len(loot) != 0 {
 				t.Fatalf("畸形制品不应入库: %+v", loot)
 			}

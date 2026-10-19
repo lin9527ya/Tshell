@@ -35,6 +35,7 @@ func TestTicketArtifactIngest(t *testing.T) {
 
 	var loot []database.Loot
 	database.Engine.Where("uid = ?", "uid-win").Asc("id").Find(&loot)
+	decryptLootForTest(t, loot)
 	if len(loot) != 2 {
 		t.Fatalf("应登记 2 条 loot，实际 %d: %+v", len(loot), loot)
 	}

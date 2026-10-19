@@ -183,6 +183,20 @@ type SecurityConfig struct {
 	// SessionKeyInfo 会话密钥派生盐上下文(客户端生成时 patch 进二进制;修改后需重新生成客户端;
 	// 默认中性随机串,不带 c2/key/session 等明显特征)
 	SessionKeyInfo string `json:"session_key_info" yaml:"session_key_info" env:"SESSION_KEY_INFO" default:"8d2c91f4a6"`
+
+	// AtRestKeyFile 战果静态加密的独立密钥文件（可选）。
+	//
+	// 留空时由 JWT 私钥 HKDF 派生 —— 零配置即可用，且重启/多副本一致。
+	// 配置后请把该文件放在与数据库**不同的位置**（换盘/换机保管）：
+	// 密钥和库一起被拿走就失去了"静态加密"的意义。
+	// 文件内容：32 字节原始密钥，或等长的 hex/base64 文本。
+	AtRestKeyFile string `json:"at_rest_key_file" yaml:"at_rest_key_file" env:"AT_REST_KEY_FILE" default:""`
+
+	// LootRetentionDays 战果保留天数。0 = 永久保留（默认，保持既有语义）。
+	//
+	// 与任务日志的 7 天不同：任务是过程数据可短留，战果是结果数据默认长留，
+	// 由部署方按合规要求决定。
+	LootRetentionDays int `json:"loot_retention_days" yaml:"loot_retention_days" env:"LOOT_RETENTION_DAYS" default:"0"`
 }
 
 // BackupConfig 数据库备份配置。
