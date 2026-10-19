@@ -157,7 +157,10 @@ const techOptions = computed(() => {
         },
       ]
     case 'ticket':
-      return [{ value: 'files', zh: 'files（MIT ccache 文件）', en: 'files (MIT ccache)' }]
+      return [
+        { value: 'files', zh: 'files（MIT ccache 文件，任意平台）', en: 'files (MIT ccache, any OS)' },
+        { value: 'lsa', zh: 'lsa（Windows LSA 缓存：枚举 + 导出 kirbi）', en: 'lsa (Windows LSA cache: enumerate + export kirbi)' },
+      ]
     default:
       return [
         { value: 'auto', zh: 'auto（先签名进程路径，失败回退）', en: 'auto (signed-process first, fallback)' },
@@ -179,9 +182,14 @@ const techHint = computed(() => {
       : 'Reads only the Chromium Web Data: card numbers are v10/v20 AES-GCM (same browser master key) and are decrypted in implant memory; autofill entries are plaintext. Cards go into the credential store (type=card); autofill stays in the artifact JSON only — too noisy to ingest.'
   }
   if (form.kind === 'ticket') {
+    if (form.tech === 'lsa') {
+      return isZh.value
+        ? '走 Windows LSA（LsaCallAuthenticationPackage）：枚举当前登录会话的票据缓存，逐张导出为 kirbi（KRB_CRED）。kirbi 可直接 ptt，或用 impacket 的 ticketConverter 转成 ccache。导出的 enc-part 需要密钥才能解，因此 principal 等元数据由客户端随制品清单上报。'
+        : 'Uses the Windows LSA (LsaCallAuthenticationPackage): enumerates the current logon session ticket cache and exports each as kirbi (KRB_CRED). The kirbi can be passed-the-ticket directly or converted to ccache with impacket ticketConverter. The enc-part needs a key to decrypt, so principals are reported by the client in the artifact manifest.'
+    }
     return isZh.value
-      ? '采集本机的 MIT ccache 文件（%TEMP% 与用户目录下的 krb5cc*，以及 KRB5CCNAME 指向的文件），打包后由服务端解析 principal 与到期时间。导入方式：kinit -c <解压出的 ccache>（Windows 可用 Rubeus ptt）。Windows 原生 LSA 里的票据不在此列。'
-      : 'Collects MIT ccache files on the host (krb5cc* under %TEMP% and the user profile, plus whatever KRB5CCNAME points to); the server parses principals and expiry. Import with kinit -c <extracted ccache> (Rubeus ptt on Windows). Native Windows LSA tickets are not covered.'
+      ? '采集本机的 MIT ccache 文件（%TEMP% 与用户目录下的 krb5cc*，以及 KRB5CCNAME 指向的文件），打包后由服务端解析 principal 与到期时间。导入方式：kinit -c <解压出的 ccache>（Windows 可用 Rubeus ptt）。Windows 原生 LSA 里的票据请选 lsa。'
+      : 'Collects MIT ccache files on the host (krb5cc* under %TEMP% and the user profile, plus whatever KRB5CCNAME points to); the server parses principals and expiry. Import with kinit -c <extracted ccache> (Rubeus ptt on Windows). For native Windows LSA tickets choose lsa.'
   }
   if (form.kind === 'browser') {
     if (form.tech === 'firefox') {

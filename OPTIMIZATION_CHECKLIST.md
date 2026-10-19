@@ -441,3 +441,16 @@ cd Tshell-web && npm run build:embed
 | 157 | 信用卡入库（type=card） | `grep -c '"browser:card"' Tshell-server/pkg/api/cred_ingest.go` | ≥1 |
 | 158 | loot 新增 card 类型 | `grep -c '"card":' Tshell-server/pkg/api/loot.go` | ≥1 |
 | 159 | 入库测试（卡入库、自动填充不入库） | `grep -c "TestCardsArtifactIngest" Tshell-server/pkg/api/cred_cards_test.go` | ≥1 |
+
+## Q 组（Windows LSA 票据，2026-10-19 追加）
+
+| # | 优化 | 验证命令 | 期望 |
+|---|------|----------|------|
+| 160 | LSA 结构体与消息号（布局单测） | `grep -c "TestLSALayout\|TestLSAMessageTypes" Tshell-client/implant/core/services/lsa_types_test.go` | ≥2 |
+| 161 | 消息号与 ntsecapi.h 对齐 | `grep -c "kerbQueryTicketCacheEx2Message  int32 = 20\|kerbRetrieveEncodedTicketMessage int32 = 8" Tshell-client/implant/core/services/lsa_types.go` | ≥1 |
+| 162 | 当前登录会话 LUID（TOKEN_STATISTICS） | `grep -c "AuthenticationId" Tshell-client/implant/core/services/lsa_types.go Tshell-client/implant/core/services/lsa_windows.go` | ≥2 |
+| 163 | 枚举 + 逐张导出 kirbi | `grep -c "func lsaListTickets\|func lsaExportTicket\|func collectLSATickets" Tshell-client/implant/core/services/lsa_windows.go` | ≥3 |
+| 164 | LSA 制品打包（manifest.lsa_tickets + kirbi/） | `grep -c "writeLSATicketBundle" Tshell-client/implant/core/services/ticket.go` | ≥2 |
+| 165 | 服务端接受 kirbi 条目与清单元数据 | `grep -c "lsa_tickets" Tshell-server/pkg/cred/ticket.go` | ≥2 |
+| 166 | 入库区分 kerberos:lsa / kerberos:ccache | `grep -c "kerberos:lsa" Tshell-server/pkg/api/cred_ingest.go` | ≥1 |
+| 167 | 非 Windows 显式报错（不静默降级） | `grep -c "LSA 票据采集仅支持 Windows" Tshell-client/implant/core/services/lsa_stub.go` | ≥1 |

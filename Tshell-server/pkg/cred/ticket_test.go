@@ -131,3 +131,49 @@ func TestTicketKindWiring(t *testing.T) {
 		t.Fatalf("形态应为 zip: %s", FormatByKind(KindTicket))
 	}
 }
+
+// TestParseTicketArtifactLSA LSA 制品：kirbi 不解析二进制，元数据来自清单；
+// principal 由 client+realm 拼出，来源标记为 lsa。
+func TestParseTicketArtifactLSA(t *testing.T) {
+	manifest := []byte(`{
+	  "host": "WS01", "user": "alice", "collected_at": "2026-10-19 22:30:00",
+	  "errors": ["cifs/fs02: 导出失败"],
+	  "lsa_tickets": [
+	    {"file":"kirbi/01-krbtgt_CORP_LOCAL.kirbi","client":"alice","realm":"CORP.LOCAL",
+	     "server":"krbtgt/CORP.LOCAL","end":"2026-10-20T08:00:00Z","flags":1088421888,"size":4},
+	    {"file":"kirbi/02-cifs_fs01_corp_local.kirbi","client":"alice@CORP.LOCAL","realm":"CORP.LOCAL",
+	     "server":"cifs/fs01.corp.local","end":"2026-10-19T23:00:00Z","size":4}
+	  ]
+	}`)
+	path := buildTicketZip(t, map[string][]byte{
+		"manifest.json":                       manifest,
+		"kirbi/01-krbtgt_CORP_LOCAL.kirbi":    {0x61, 0x82, 0x01, 0x02},
+		"kirbi/02-cifs_fs01_corp_local.kirbi": {0x61, 0x82, 0x00, 0x10},
+	})
+
+	art, err := ParseTicketArtifact(path)
+	if err != nil {
+		t.Fatalf("解析失败: %v", err)
+	}
+	if len(art.Caches) != 2 {
+		t.Fatalf("应解析出 2 条 LSA 票据，实际 %d（errors: %v）", len(art.Caches), art.Errors)
+	}
+	first := art.Caches[0]
+	if first.Source != "lsa" || first.Server != "krbtgt/CORP.LOCAL" ||
+		first.Principal != "alice@CORP.LOCAL" || first.Tickets != 1 || first.Expires == "" {
+		t.Fatalf("LSA 条目字段不符: %+v", first)
+	}
+	if art.Caches[1].Principal != "alice@CORP.LOCAL" {
+		t.Fatalf("已带 @ 的 principal 不应重复拼接: %q", art.Caches[1].Principal)
+	}
+	info := art.Info()
+	if info.TicketCaches != 2 || info.Tickets != 2 {
+		t.Fatalf("Info 统计不符: %+v", info)
+	}
+
+	// 制品校验入口同样要认 LSA 制品
+	v, err := ValidateArtifact(KindTicket, "", path)
+	if err != nil || v.TicketCaches != 2 {
+		t.Fatalf("ValidateArtifact 未按票据解析: %+v, %v", v, err)
+	}
+}

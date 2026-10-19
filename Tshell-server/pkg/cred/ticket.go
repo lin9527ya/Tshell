@@ -34,12 +34,28 @@ const (
 
 // TicketCache 一个已解析的票据缓存
 type TicketCache struct {
-	File      string `json:"file"`      // ZIP 内条目名
-	Version   int    `json:"version"`   // ccache 版本（3 / 4）
-	Principal string `json:"principal"` // user@REALM（ccache.DefaultPrincipal）
+	File      string `json:"file"`             // ZIP 内条目名
+	Source    string `json:"source,omitempty"` // ccache（默认）| lsa
+	Server    string `json:"server,omitempty"` // LSA：服务名（krbtgt/DOMAIN、cifs/host）
+	Version   int    `json:"version"`          // ccache 版本（3 / 4）；LSA 为 0
+	Principal string `json:"principal"`        // user@REALM（ccache.DefaultPrincipal）
 	Realm     string `json:"realm,omitempty"`
-	Tickets   int    `json:"tickets"`           // 凭据条目数（含服务票据）
+	Tickets   int    `json:"tickets"`           // 凭据条目数（含服务票据）；LSA 每张 1
 	Expires   string `json:"expires,omitempty"` // 最晚 end_time（UTC，RFC3339）
+}
+
+// lsaTicketEntry 清单里的一条 LSA 票据元数据（客户端 core/services/ticket.go 写入）
+type lsaTicketEntry struct {
+	File    string `json:"file"`
+	Client  string `json:"client,omitempty"`
+	Realm   string `json:"realm,omitempty"`
+	Server  string `json:"server"`
+	Start   string `json:"start,omitempty"`
+	End     string `json:"end,omitempty"`
+	Renew   string `json:"renew,omitempty"`
+	Flags   uint32 `json:"flags,omitempty"`
+	EncType int32  `json:"enc_type,omitempty"`
+	Size    int    `json:"size,omitempty"`
 }
 
 // TicketArtifact 票据制品（解析结果）
@@ -106,16 +122,39 @@ func ParseTicketArtifact(path string) (TicketArtifact, error) {
 					User        string   `json:"user"`
 					CollectedAt string   `json:"collected_at"`
 					Errors      []string `json:"errors"`
+					// LSA 导出的是 kirbi（KRB_CRED）：enc-part 需要密钥才能解，
+					// 服务端拿不到客户端 principal —— 元数据由客户端随清单上报。
+					LSATickets []lsaTicketEntry `json:"lsa_tickets"`
 				}
 				if json.Unmarshal(raw, &m) == nil {
 					art.Host, art.User, art.CollectedAt = m.Host, m.User, m.CollectedAt
 					art.Errors = append(art.Errors, m.Errors...)
+					for _, t := range m.LSATickets {
+						if strings.TrimSpace(t.File) == "" {
+							continue
+						}
+						principal := t.Client
+						if principal != "" && t.Realm != "" && !strings.Contains(principal, "@") {
+							principal += "@" + t.Realm
+						}
+						art.Caches = append(art.Caches, TicketCache{
+							File: t.File, Source: "lsa", Server: t.Server,
+							Principal: principal, Realm: t.Realm,
+							Tickets: 1, Expires: t.End,
+						})
+						if len(art.Caches) >= MaxTicketCaches {
+							break
+						}
+					}
 				}
 			}
 			continue
 		}
 
 		lower := strings.ToLower(name)
+		if strings.HasPrefix(lower, "kirbi/") || strings.HasSuffix(lower, ".kirbi") {
+			continue // LSA 导出的 kirbi：不解析二进制，元数据在清单的 lsa_tickets 里
+		}
 		if !strings.HasPrefix(lower, "tickets/") && !strings.HasSuffix(lower, ".ccache") {
 			continue // 无关条目（未来可能加的说明文件）直接忽略
 		}
@@ -146,7 +185,7 @@ func ParseTicketArtifact(path string) (TicketArtifact, error) {
 	}
 
 	if len(art.Caches) == 0 {
-		return art, fmt.Errorf("制品里没有可解析的 ccache（errors: %s）", strings.Join(art.Errors, "；"))
+		return art, fmt.Errorf("制品里没有可解析的 ccache 或 LSA 票据（errors: %s）", strings.Join(art.Errors, "；"))
 	}
 	return art, nil
 }

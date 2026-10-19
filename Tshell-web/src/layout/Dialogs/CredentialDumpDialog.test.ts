@@ -13,7 +13,7 @@ vi.mock('@/api/cred', () => ({
     listArtifacts: (...a: unknown[]) => listArtifacts(...a),
   },
   // 对话框直接用到这几个导出的纯函数，mock 时必须一并给（否则渲染期就是 undefined）
-  CRED_TECHS: { lsass: ['auto', 'comsvcs', 'dbgcore'], dpapi: ['keys'], browser: ['all', 'chrome', 'edge', 'firefox', 'cards'], ticket: ['files'] },
+  CRED_TECHS: { lsass: ['auto', 'comsvcs', 'dbgcore'], dpapi: ['keys'], browser: ['all', 'chrome', 'edge', 'firefox', 'cards'], ticket: ['files', 'lsa'] },
   defaultTech: (kind: string) => ({ dpapi: 'keys', browser: 'all' } as Record<string, string>)[kind] || 'auto',
   sourceLabel: (source: string) =>
     ({ lsass: 'LSASS 转储', dpapi: 'DPAPI 主密钥', browser: '浏览器凭据' } as Record<string, string>)[source] || source,

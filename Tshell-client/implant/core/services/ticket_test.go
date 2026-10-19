@@ -2,6 +2,8 @@ package services
 
 import (
 	"archive/zip"
+	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -90,4 +92,92 @@ func TestCredTicketTechGating(t *testing.T) {
 	if got := defaultCredTech("ticket"); got != "files" {
 		t.Fatalf("默认技术应为 files，实际 %s", got)
 	}
+}
+
+// TestWriteLSATicketBundle LSA 制品布局：manifest.json（lsa_tickets 元数据）+
+// kirbi/<序号>-<服务名>.kirbi；服务名里的 / 与 . 都会被净化成 _。
+func TestWriteLSATicketBundle(t *testing.T) {
+	tickets := []lsaTicket{
+		{
+			Client: "alice", ClientRealm: "CORP.LOCAL",
+			Server: "krbtgt/CORP.LOCAL", Start: 1700000000, End: 1700086400,
+			Flags: 0x40e10000, EncType: 18, KerbCred: []byte{0x61, 0x82, 0x01, 0x02},
+		},
+		{
+			Client: "alice", ClientRealm: "CORP.LOCAL",
+			Server: "cifs/fs01.corp.local", End: 1700003600,
+			EncType: 17, KerbCred: []byte{0x61, 0x82, 0x00, 0x10},
+		},
+		{Server: "empty", KerbCred: nil}, // 没有字节 → 不写条目
+	}
+	out := filepath.Join(t.TempDir(), "lsa.zip")
+	n, err := writeLSATicketBundle(out, tickets, []string{"x: 导出失败"})
+	if err != nil {
+		t.Fatalf("打包失败: %v", err)
+	}
+	if n != 2 {
+		t.Fatalf("应写入 2 张票据，实际 %d", n)
+	}
+
+	zr, err := zip.OpenReader(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer zr.Close()
+
+	entries := map[string][]byte{}
+	for _, f := range zr.File {
+		rc, err := f.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw := make([]byte, f.UncompressedSize64)
+		_, _ = io.ReadFull(rc, raw)
+		rc.Close()
+		entries[f.Name] = raw
+	}
+
+	first := "kirbi/01-krbtgt_CORP_LOCAL.kirbi"
+	second := "kirbi/02-cifs_fs01_corp_local.kirbi"
+	if _, ok := entries[first]; !ok {
+		t.Fatalf("缺少条目 %s（实际: %v）", first, keysOf(entries))
+	}
+	if _, ok := entries[second]; !ok {
+		t.Fatalf("缺少条目 %s", second)
+	}
+
+	var m struct {
+		Host       string   `json:"host"`
+		Errors     []string `json:"errors"`
+		LSATickets []struct {
+			File   string `json:"file"`
+			Client string `json:"client"`
+			Realm  string `json:"realm"`
+			Server string `json:"server"`
+			End    string `json:"end"`
+			Flags  uint32 `json:"flags"`
+			Size   int    `json:"size"`
+		} `json:"lsa_tickets"`
+	}
+	if err := json.Unmarshal(entries["manifest.json"], &m); err != nil {
+		t.Fatalf("清单不是合法 JSON: %v", err)
+	}
+	if len(m.LSATickets) != 2 {
+		t.Fatalf("清单应含 2 条 LSA 票据，实际 %d", len(m.LSATickets))
+	}
+	if m.LSATickets[0].Server != "krbtgt/CORP.LOCAL" || m.LSATickets[0].Size != 4 ||
+		m.LSATickets[0].End == "" || m.LSATickets[0].Flags != 0x40e10000 {
+		t.Fatalf("清单元数据不符: %+v", m.LSATickets[0])
+	}
+	if len(m.Errors) != 1 {
+		t.Fatalf("导出错误应写进清单: %+v", m.Errors)
+	}
+}
+
+func keysOf(m map[string][]byte) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
 }

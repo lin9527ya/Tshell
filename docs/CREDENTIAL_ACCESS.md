@@ -237,24 +237,34 @@ pypykatz dpapi masterkey <GUID> <masterkey-base64>   # 或用 impacket 的 dpapi
 
 ## 10. Kerberos 票据（文件式 ccache，2026-10-19）
 
-**范围**：只做**文件式** —— 采集本机的 MIT ccache 文件。Windows 原生 LSA 里的票据
-（`LsaCallAuthenticationPackage` 枚举/导出，对应 `klist` / `Rubeus dump` 的能力）
-不在此列，属后续模块。
+**两种技术**：
+- `tech=files`：本机 MIT ccache 文件（任意平台）
+- `tech=lsa`：**Windows LSA 凭据缓存**（`LsaCallAuthenticationPackage`，对应
+  `klist` / `Rubeus dump` 的能力）—— `KerbQueryTicketCacheEx2Message`（20）枚举
+  当前登录会话的票据缓存，`KerbRetrieveEncodedTicketMessage`（8）逐张导出 **kirbi
+  （KRB_CRED）**。纯 syscall（secur32.dll），不引 CGO；结构体布局对照 ntsecapi.h
+  并有单测断言（`lsa_types_test.go`）。
+  导出的是未经解密的 KRB_CRED：enc-part 需要密钥才能解，**服务端拿不到客户端
+  principal**，因此 `tech=lsa` 的元数据（client/realm/server/时间/旗标）由客户端
+  随清单上报，服务端只做形态校验与入库。
 
 **制品布局**（客户端 `implant/core/services/ticket.go` 生成，服务端
 `pkg/cred/ticket.go` 解析）：
 
 ```
-manifest.json        {host,user,collected_at,errors,files:[{name,size}]}
-tickets/<文件名>      原始 ccache（v3/v4）
+manifest.json        {host,user,collected_at,errors,files:[{name,size}],
+                      lsa_tickets:[{file,client,realm,server,start,end,flags,...}]}
+tickets/<文件名>      原始 ccache（v3/v4）        —— tech=files
+kirbi/<序号>-<服务>.kirbi  原始 KRB_CRED         —— tech=lsa
 ```
 
 **采集范围**：`KRB5CCNAME`（`FILE:` 前缀或裸路径；`KEYRING:`/`DIR:` 等非文件后端会记一条
 说明）→ 临时目录（Windows `%TEMP%`）→ 用户主目录 → 非 Windows 的 `/tmp`，
 文件名前缀 `krb5cc`，单文件上限 4MB、单次上限 64 个。
 
-**服务端**：逐条目 `ParseCCache`（**客户端不解析**，避免两套实现漂移），
-每个缓存登记一条 `loot(type=ticket, source=kerberos:ccache)`：
+**服务端**：ccache 条目逐条 `ParseCCache`（**客户端不解析**，避免两套实现漂移），
+kirbi 条目不解析二进制、元数据取自清单；每张票据登记一条
+`loot(type=ticket, source=kerberos:ccache|kerberos:lsa)`：
 `user` = principal、`realm` = 域、`secret` = 制品内条目名、note 带票据数与最晚到期时间；
 原始 ccache 留在制品文件里，导入方式 `kinit -c <解压出的文件>`（Windows 用 Rubeus ptt /
 impacket）。坏条目只进 `errors`，不影响其它缓存；一个能解出 principal 的都没有时整单显式失败。

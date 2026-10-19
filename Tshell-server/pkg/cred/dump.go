@@ -39,7 +39,7 @@ var techsByKind = map[string][]string{
 	KindLsass:   {"auto", "comsvcs", "dbgcore"},
 	KindDPAPI:   {"keys"},
 	KindBrowser: {"all", "chrome", "edge", "firefox", "cards"}, // cards = Chromium Web Data（信用卡 + 自动填充）
-	KindTicket:  {"files"}, // 只做文件式 ccache（Windows 原生 LSA 票据不在此列）
+	KindTicket:  {"files", "lsa"}, // files = MIT ccache 文件；lsa = Windows LSA 缓存导出 kirbi
 }
 
 // DefaultTech 某类型的默认技术

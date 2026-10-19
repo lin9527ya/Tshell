@@ -96,12 +96,27 @@ func dpapiArtifactNote(info cred.ArtifactInfo) string {
 func ingestTicketArtifact(uid string, art cred.TicketArtifact) int {
 	n := 0
 	for _, c := range art.Caches {
-		note := fmt.Sprintf("Kerberos 票据缓存 %s；%d 张票据", c.File, c.Tickets)
-		if c.Expires != "" {
-			note += "；最晚到期 " + c.Expires
+		source := "kerberos:ccache"
+		var note string
+		if c.Source == "lsa" {
+			// LSA 导出的是 kirbi：可直接 ptt，或用 impacket ticketConverter 转 ccache
+			source = "kerberos:lsa"
+			note = fmt.Sprintf("LSA 票据 %s", c.Server)
+		} else {
+			note = fmt.Sprintf("Kerberos 票据缓存 %s", c.File)
 		}
-		note += "；原始 ccache 在制品文件中（kinit -c <文件> / Rubeus ptt / impacket）"
-		AddLootIfNotEmpty(uid, "ticket", c.Principal, c.Realm, art.Host, c.File, note, "kerberos:ccache")
+		if c.Tickets > 0 {
+			note += fmt.Sprintf("；%d 张票据", c.Tickets)
+		}
+		if c.Expires != "" {
+			note += "；到期 " + c.Expires
+		}
+		if c.Source == "lsa" {
+			note += "；原始 kirbi 在制品中（Rubeus ptt / mimikatz kerberos::ptt / impacket ticketConverter）"
+		} else {
+			note += "；原始 ccache 在制品中（kinit -c <文件> / Rubeus ptt / impacket）"
+		}
+		AddLootIfNotEmpty(uid, "ticket", c.Principal, c.Realm, art.Host, c.File, note, source)
 		n++
 	}
 	return n
