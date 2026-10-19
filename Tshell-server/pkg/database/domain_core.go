@@ -628,7 +628,10 @@ func (LootStore) PageFiltered(uid, lootType string, offset, limit int) ([]Loot, 
 		}
 		return sess
 	}
-	if _, err := build().Table("loot").Count(&total); err != nil {
+	// xorm v1.3.9 的 Count 只接受结构体指针：传 *int64 会返回 "unsupported type"，
+	// 且计数由返回值给出（与 TaskStore.PageFiltered 同形）
+	var err error
+	if total, err = build().Table("loot").Count(new(Loot)); err != nil {
 		return nil, 0, err
 	}
 	if err := build().Table("loot").Desc("id").Limit(limit, offset).Find(&items); err != nil {
