@@ -1,6 +1,6 @@
 # 剩余优化项说明（Windows 接力用）
 
-> **基线**：分支 `vshell-ui`，最后提交 `ea7cd91`（CI 状态以 GitHub Actions 为准；
+> **基线**：分支 `vshell-ui`，最后提交 `bdd5888`（本文所在提交；CI 状态以 GitHub Actions 为准；
 > `e716763` 及之前的提交均六 job 全绿）。已完成项见
 > [`ROADMAP.md`](./ROADMAP.md) §2，逐条限制见 [`KNOWN_LIMITATIONS.md`](./KNOWN_LIMITATIONS.md)。
 > 本文只列**还没做**的项，每项给：为什么没做 / 在 Windows 上怎么开始 / 验收标准。
