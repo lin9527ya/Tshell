@@ -123,10 +123,17 @@ func CreateSecureUser(username, password string) (*Users, error) {
 	}, nil
 }
 
-// InitializeDefaultUserFromConfig 从配置文件初始化默认管理员用户
-func InitializeDefaultUserFromConfig(username, password string) error {
+// InitializeDefaultUserFromConfig 从配置文件初始化默认管理员用户。
+//
+// opts 用可变参是为了不破坏既有调用：不传即走安全默认
+// （生成的密码只落 0600 文件、不进日志）。
+func InitializeDefaultUserFromConfig(username, password string, opts ...InitOptions) error {
 	if Engine == nil {
 		return fmt.Errorf("数据库引擎未初始化")
+	}
+	var opt InitOptions
+	if len(opts) > 0 {
+		opt = opts[0]
 	}
 
 	// 随机密码仅用于"创建新用户"场景；迁移恢复（哈希缺失）必须用配置密码，
@@ -147,7 +154,18 @@ func InitializeDefaultUserFromConfig(username, password string) error {
 		// 不存在则创建新用户（弱口令不落地：生成随机密码并显著告警）
 		if isWeakPassword(password) {
 			password = GenerateRandomPassword(16)
-			log.Printf("⚠️⚠️ 配置的默认密码为空或过于简单，已生成随机密码：username=%s, password=%s（请立即登录并修改）", username, password)
+			// OPSEC P0-3：不再把密码打进日志。
+			// 写 0600 文件 + 只打印路径；需要人工查看时显式加 -print-initial-password。
+			if path, ferr := writeInitialPasswordFile(opt, username, password); ferr != nil {
+				log.Printf("⚠️ 初始管理员密码无法写入文件（%v）。请用 -print-initial-password 重新获取，"+
+					"或用配置里的强口令重启。username=%s", ferr, username)
+			} else {
+				log.Printf("⚠️ 配置的默认密码为空或过于简单，已生成随机密码并写入：%s（该文件 0600，首次登录后请删除）", path)
+			}
+			if opt.PrintPasswordToStdout {
+				log.Printf("⚠️ [显式要求] username=%s password=%s（请立即登录并修改，并确认本段输出未被留存）",
+					username, password)
+			}
 		}
 		defaultUser, err := CreateSecureUser(username, password)
 		if err != nil {
@@ -1323,7 +1341,14 @@ func ConnectDateBase() {
 				log.Fatalf("更新管理员密码失败: %v", err)
 			}
 
-			log.Printf("⚠️ 旧版明文密码已迁移为随机密码：username=admin, password=%s（请立即登录并修改）", randomPass)
+			// OPSEC P0-3：这里原本也把 randomPass 打进日志 —— 与启动初始化那条同样的问题：
+			// stdout 会被 journald / 容器日志长期留存。改为写 0600 文件。
+			if path, ferr := writeInitialPasswordFile(InitOptions{}, "admin", randomPass); ferr != nil {
+				log.Printf("⚠️ 旧版明文密码已迁移为随机密码，但写入文件失败（%v）。"+
+					"请用 -print-initial-password 重启获取，或直接重置管理员密码。", ferr)
+			} else {
+				log.Printf("⚠️ 旧版明文密码已迁移为随机密码并写入：%s（该文件 0600，首次登录后请删除）", path)
+			}
 			log.Println("密码迁移完成，现在使用安全哈希存储")
 		}
 	}

@@ -92,6 +92,10 @@ func main() {
 	var restoreFrom = flag.String("restore", "", "用指定备份恢复数据库并退出（需先停止服务端）")
 	var restoreForce = flag.Bool("force", false, "恢复时跳过“数据库可能正在使用”检查")
 	var listBackups = flag.Bool("list-backups", false, "列出备份并退出")
+	// OPSEC：弱口令时生成的随机管理员密码默认只写入 0600 文件，不进日志。
+	// 需要人工查看时显式加这个开关（并确认当前输出不会被留存）。
+	var printInitPassword = flag.Bool("print-initial-password", false,
+		"把生成的初始管理员密码打印到 stdout（默认只写入 0600 文件）")
 	// 重定向器配置生成（阶段三）：按当前画像生成 nginx/apache 配置后退出
 	var genRedirector = flag.String("gen-redirector", "", "生成重定向器配置（nginx|apache）并退出")
 	var rdBackend = flag.String("backend", "", "重定向器后端地址 host:port（真正的 C2 服务端）")
@@ -368,10 +372,15 @@ func main() {
 		}
 	}()
 
-	// 从配置文件初始化默认管理员用户
+	// 从配置文件初始化默认管理员用户。
+	// 密码文件与 database.db 同目录，便于运维一起做权限收敛与清理。
 	err = database.InitializeDefaultUserFromConfig(
 		appConfig.Auth.DefaultUsername,
 		appConfig.Auth.DefaultPassword,
+		database.InitOptions{
+			PrintPasswordToStdout: *printInitPassword,
+			PasswordFileDir:       initialPasswordDir(appConfig),
+		},
 	)
 	if err != nil {
 		fmt.Printf("初始化默认管理员用户失败: %v\n", err)
@@ -1287,6 +1296,23 @@ func SafeAuthHeaderGuard() gin.HandlerFunc {
 // insecurePermPaths 返回权限过宽（组/其他用户可访问）的敏感文件路径。
 // 数据库与配置里存着监听器 VKey/Salt、战利品明文口令与平台密钥——
 // 评估发现默认部署下它们常是 644/664，同机任意用户可读。
+// initialPasswordDir 初始管理员密码文件的落盘目录。
+//
+// 优先与 database.db 同目录：运维做磁盘权限收敛和"删掉初始密码文件"时
+// 只需要盯一个目录。PostgreSQL 或未配置路径时回落到当前工作目录。
+func initialPasswordDir(c *config.Config) string {
+	if c == nil {
+		return "."
+	}
+	if c.Database.Type == "sqlite3" && c.Database.Path != "" {
+		if dir := filepath.Dir(c.Database.Path); dir != "" {
+			return dir
+		}
+	}
+	return "."
+}
+
+// insecurePermPaths 列出权限过宽的路径（供启动自检告警）。
 // 只报告，不自动 chmod：部署可能有意让备份账号读取，改权限应由运维决定。
 func insecurePermPaths(paths ...string) []string {
 	var bad []string
