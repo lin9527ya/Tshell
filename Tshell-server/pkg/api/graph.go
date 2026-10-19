@@ -100,11 +100,18 @@ func GetGraphData(c *gin.Context) {
 			Label:    label,
 			SubLabel: cl.ExternalIP,
 			Online:   cl.Online,
+			// os 是**操作系统**（linux/windows/darwin，客户端元数据上报），
+			// 前端据此画 Windows/Linux 图标；架构另给 arch —— 此前两者混在一个 "os" 键里，
+			// 图上显示成了 "os: x64"，看不出是 Windows 还是 Linux。
 			Meta: map[string]string{
-				"uid":      cl.Uid,
-				"username": cl.Username,
-				"internal": cl.InternalIP,
-				"os":       cl.Arch,
+				"uid":         cl.Uid,
+				"username":    cl.Username,
+				"internal":    cl.InternalIP,
+				"os":          cl.Os,
+				"arch":        cl.Arch,
+				"group":       cl.Group,
+				"note":        cl.Note,
+				"last_active": cl.LastActive,
 			},
 		})
 		if lid, ok := listenerSet[cl.Listener]; ok {

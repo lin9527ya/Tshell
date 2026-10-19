@@ -24,8 +24,8 @@ const SAMPLE = {
   nodes: [
     { id: 'server', type: 'server', label: 'Tshell Server' },
     { id: 'listener_tcp', type: 'listener', label: 'tcp', sub_label: '0.0.0.0:8089' },
-    { id: 'client_a', type: 'client', label: 'WEB-01', online: '1' },
-    { id: 'client_b', type: 'client', label: 'WEB-02', online: '2' },
+    { id: 'client_a', type: 'client', label: 'WEB-01', online: '1', meta: { os: 'windows' } },
+    { id: 'client_b', type: 'client', label: 'WEB-02', online: '2', meta: { os: 'linux' } },
     { id: 'tunnel_1', type: 'tunnel', label: '1080', sub_label: 'socks5' },
     { id: 'target_1', type: 'target', label: '10.0.0.5:445', meta: { note: 'DC' } },
   ],
@@ -287,5 +287,117 @@ describe('PivotGraphView 交互', () => {
     await w.findAll('.pg-viewbtn').find((b) => b.text().includes('分层'))!.trigger('click')
     await flushPromises()
     expect(localStorage.getItem('tshell-graph-positions')).toBe('{}')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 视觉区分：系统图标 / 离线置灰 / 离线虚线 / 导出
+// ---------------------------------------------------------------------------
+
+describe('PivotGraphView 辨识度与导出', () => {
+  beforeEach(() => {
+    getGraphData.mockReset()
+    localStorage.clear()
+  })
+
+  it('客户端节点画系统图标（Windows / Linux 各自一份 path）', async () => {
+    getGraphData.mockResolvedValue({ data: { data: SAMPLE } })
+    const w = mountView()
+    await flushPromises()
+
+    // 只有客户端画图标：server/listener/tunnel/target 不画
+    const icons = w.findAll('.pg-node-os')
+    expect(icons).toHaveLength(2)
+
+    const win = w.findAll('.pg-node').find((n) => n.text().includes('WEB-01'))!
+    const lin = w.findAll('.pg-node').find((n) => n.text().includes('WEB-02'))!
+    const winD = win.find('.pg-node-os').attributes('d')
+    const linD = lin.find('.pg-node-os').attributes('d')
+    expect(winD).not.toBe(linD)
+    expect(winD).toContain('M-5.5 -5.5') // Windows 四方块
+    expect(linD!.length).toBeGreaterThan(winD!.length) // Tux 形状更复杂
+  })
+
+  it('离线主机置灰：灰虚线空心圈 + 灰色标签', async () => {
+    getGraphData.mockResolvedValue({ data: { data: SAMPLE } })
+    const w = mountView()
+    await flushPromises()
+
+    const offline = w.findAll('.pg-node-offline')
+    expect(offline).toHaveLength(1)
+    const circle = offline[0].findAll('circle')[1] // [0] 是悬停光晕
+    expect(circle.attributes('stroke')).toBe('#9ca3af')
+    expect(circle.attributes('fill')).toBe('transparent')
+    expect(circle.attributes('stroke-dasharray')).toBe('3 2')
+
+    // 在线客户端仍是类型色实心
+    const online = w.findAll('.pg-node').find((n) => n.text().includes('WEB-01'))!
+    expect(online.findAll('circle')[1].attributes('fill')).toBe('#3b82f6')
+  })
+
+  it('连到离线主机的边画虚线，在线的不画', async () => {
+    getGraphData.mockResolvedValue({ data: { data: SAMPLE } })
+    const w = mountView()
+    await flushPromises()
+
+    // SAMPLE 里只有 e3（client_b→listener_tcp）连到离线主机
+    const dashed = w.findAll('.pg-edge-offline')
+    expect(dashed).toHaveLength(1)
+    expect(dashed[0].attributes('id')).toBeUndefined() // line 上没有 id 属性，用 class 断言数量即可
+    expect(w.findAll('.pg-edge')).toHaveLength(5)
+  })
+
+  it('缩得太小时边标签只是隐藏（class），DOM 里仍在 —— 导出才不会漏标签', async () => {
+    const withLabel = {
+      ...SAMPLE,
+      edges: SAMPLE.edges.map((e) => (e.id === 'e2' ? { ...e, label: 'tcp 回连' } : e)),
+    }
+    getGraphData.mockResolvedValue({ data: { data: withLabel } })
+    const w = mountView()
+    await flushPromises()
+    expect(w.find('.pg-edge-label').classes()).not.toContain('is-hidden')
+
+    const minus = w.findAll('.pg-viewbtn').find((b) => b.text().trim() === '−')!
+    for (let i = 0; i < 6; i++) await minus.trigger('click')
+
+    const label = w.find('.pg-edge-label')
+    expect(label.exists()).toBe(true)
+    expect(label.classes()).toContain('is-hidden')
+  })
+
+  it('导出菜单给出 PNG / SVG，选 SVG 会下载一份自包含文件', async () => {
+    getGraphData.mockResolvedValue({ data: { data: SAMPLE } })
+    const w = mountView()
+    await flushPromises()
+
+    const created: Blob[] = []
+    ;(URL as unknown as { createObjectURL: unknown }).createObjectURL = (b: Blob) => {
+      created.push(b)
+      return 'blob:fake'
+    }
+    ;(URL as unknown as { revokeObjectURL: unknown }).revokeObjectURL = () => {}
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+
+    await w.findAll('.pg-viewbtn').find((b) => b.text().includes('导出'))!.trigger('click')
+    const items = w.findAll('.pg-menu-item').map((b) => b.text())
+    expect(items.join('|')).toContain('PNG')
+    expect(items.join('|')).toContain('SVG')
+
+    await w.findAll('.pg-menu-item').find((b) => b.text().includes('SVG'))!.trigger('click')
+    await flushPromises()
+
+    expect(created).toHaveLength(1)
+    expect(created[0].type).toContain('image/svg+xml')
+    // jsdom 的 Blob 没有 .text()，用 FileReader 读
+    const text = await new Promise<string>((resolve, reject) => {
+      const fr = new FileReader()
+      fr.onload = () => resolve(String(fr.result))
+      fr.onerror = () => reject(fr.error)
+      fr.readAsText(created[0])
+    })
+    expect(text).toContain('<svg')
+    expect(text).toContain('class="pg-content"')
+    expect(click).toHaveBeenCalled()
+    click.mockRestore()
   })
 })

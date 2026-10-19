@@ -22,8 +22,26 @@
         {{ i18nStore.tl(TYPE_LABELS[t]?.zh || t, TYPE_LABELS[t]?.en || t) }}
       </span>
       <span class="pg-legend-item">
+        <svg class="pg-legend-glyph" viewBox="-8 -8 16 16" width="14" height="14" aria-hidden="true">
+          <path :d="OS_GLYPHS.windows.d" />
+        </svg>
+        Windows
+      </span>
+      <span class="pg-legend-item">
+        <svg class="pg-legend-glyph" viewBox="-8 -8 16 16" width="14" height="14" aria-hidden="true">
+          <path :d="OS_GLYPHS.linux.d" />
+        </svg>
+        Linux
+      </span>
+      <span class="pg-legend-item">
+        <svg class="pg-legend-glyph" viewBox="-8 -8 16 16" width="14" height="14" aria-hidden="true">
+          <path :d="OS_GLYPHS.other.d" />
+        </svg>
+        {{ i18nStore.tl('其它系统', 'Other OS') }}
+      </span>
+      <span class="pg-legend-item">
         <i class="pg-dot pg-dot-offline"></i>
-        {{ i18nStore.tl('离线客户端（灰色虚线）', 'Offline client (dashed)') }}
+        {{ i18nStore.tl('离线主机（置灰 + 虚线连接）', 'Offline host (grey, dashed link)') }}
       </span>
       <span class="pg-hint">
         {{ i18nStore.tl(
@@ -49,7 +67,7 @@
         @pointerdown="onCanvasPointerDown"
         @click="onCanvasClick"
       >
-        <g :transform="`translate(${view.x} ${view.y}) scale(${view.k})`">
+        <g class="pg-content" :transform="`translate(${view.x} ${view.y}) scale(${view.k})`">
           <!-- 边先画，节点压在上面 -->
           <g class="pg-edges">
             <line
@@ -59,13 +77,14 @@
               :y1="e.y1"
               :x2="e.x2"
               :y2="e.y2"
-              :class="['pg-edge', { 'pg-edge-active': isEdgeActive(e) }]"
+              :class="['pg-edge', { 'pg-edge-active': isEdgeActive(e), 'pg-edge-offline': e.offline }]"
             />
-            <!-- 边标签：只有后端给了 label 才画（备注之类的边语义），缩得太小就不画了 -->
+            <!-- 边标签：只有后端给了 label 才画（备注之类的边语义）。
+                 缩得太小时用 class 隐藏而不是 v-if —— 否则导出（克隆 DOM）会漏掉标签 -->
             <text
               v-for="e in labeledEdges"
               :key="'lb_' + e.id"
-              class="pg-edge-label"
+              :class="['pg-edge-label', { 'is-hidden': e.hidden }]"
               :x="(e.x1 + e.x2) / 2"
               :y="(e.y1 + e.y2) / 2 - 4"
             >{{ e.label }}</text>
@@ -88,14 +107,20 @@
               <!-- 悬停/选中的光晕（CS 拓扑图同款：节点周围一圈淡色） -->
               <circle class="pg-node-halo" r="16" :fill="TYPE_COLORS[nd.type] || '#6b7280'" opacity="0" />
               <circle
-                r="9"
-                :fill="isOnline(nd) ? TYPE_COLORS[nd.type] || '#6b7280' : 'transparent'"
-                :stroke="TYPE_COLORS[nd.type] || '#6b7280'"
+                :r="NODE_RADIUS"
+                :fill="nodeFill(nd)"
+                :stroke="nodeStroke(nd)"
                 stroke-width="2"
                 :stroke-dasharray="isOnline(nd) ? undefined : '3 2'"
               />
-              <text class="pg-node-label" x="16" y="4">{{ nd.label }}</text>
-              <text v-if="nd.sub_label" class="pg-node-sub" x="16" y="19">{{ nd.sub_label }}</text>
+              <!-- 客户端画系统图标：Windows / Linux / 其它，一眼看出这台是什么机器 -->
+              <path
+                v-if="nd.type === 'client'"
+                class="pg-node-os"
+                :d="OS_GLYPHS[osGlyphKey(nd.meta?.os)].d"
+              />
+              <text class="pg-node-label" :x="LABEL_DX" y="4">{{ nd.label }}</text>
+              <text v-if="nd.sub_label" class="pg-node-sub" :x="LABEL_DX" y="19">{{ nd.sub_label }}</text>
             </g>
           </g>
         </g>
@@ -120,6 +145,14 @@
         <button class="pg-viewbtn" :title="i18nStore.tl('清除手动位置，回到分层布局', 'Clear manual positions, back to layered')" @click="resetLayout">
           {{ i18nStore.tl('分层', 'Layered') }}
         </button>
+        <span class="pg-viewsep" />
+        <button
+          class="pg-viewbtn"
+          :title="i18nStore.tl('导出整张拓扑图（PNG / SVG）', 'Export the whole graph (PNG / SVG)')"
+          @click="openExportMenu"
+        >
+          {{ i18nStore.tl('导出', 'Export') }} ▾
+        </button>
         <template v-if="focused">
           <span class="pg-viewsep" />
           <button class="pg-viewbtn pg-focus-chip" :title="i18nStore.tl('退出聚焦，显示全部节点', 'Exit focus, show all nodes')" @click="clearFocus">
@@ -139,6 +172,21 @@
       >
         <button v-for="it in menuItems" :key="it.key" class="pg-menu-item" @click="runMenu(it.key)">
           {{ it.label }}
+        </button>
+      </div>
+
+      <div
+        v-if="exportMenu.open"
+        class="pg-menu"
+        :style="{ left: exportMenu.x + 'px', top: exportMenu.y + 'px' }"
+        @pointerdown.stop
+        @click.stop
+      >
+        <button class="pg-menu-item" @click="doExport('png')">
+          {{ i18nStore.tl('PNG 图片（2 倍像素）', 'PNG image (2x)') }}
+        </button>
+        <button class="pg-menu-item" @click="doExport('svg')">
+          {{ i18nStore.tl('SVG 矢量图', 'SVG vector') }}
         </button>
       </div>
 
@@ -200,13 +248,24 @@ import { useI18nStore } from '@/stores/i18n'
 import {
   computeLayout,
   forceLayout,
+  graphBounds,
   isOnline,
+  LABEL_DX,
+  NODE_RADIUS,
   TYPE_COLORS,
   TYPE_LABELS,
   type GraphEdge,
   type GraphNode,
   type LaidOutEdge,
 } from './layout'
+import { OS_GLYPHS, osGlyphKey } from './os-glyph'
+import {
+  buildExportSvg,
+  downloadBlob,
+  exportFilename,
+  svgToPngBlob,
+  type ExportTheme,
+} from './export'
 
 const i18nStore = useI18nStore()
 const router = useRouter()
@@ -223,6 +282,8 @@ const layout = computed(() => computeLayout(nodes.value, edges.value))
 const svgEl = ref<SVGSVGElement | null>(null)
 const canvasPanning = ref(false)
 const view = reactive({ x: 0, y: 0, k: 1 })
+/** 离线主机统一用这个灰：节点圈、标签、连线、系统图标都靠它区分 */
+const OFFLINE_GRAY = '#9ca3af'
 const MIN_K = 0.3
 const MAX_K = 2.5
 const hasFitted = ref(false)
@@ -232,13 +293,16 @@ let canvasObserver: ResizeObserver | null = null
 // 聚焦：只显示一个节点和它的直接邻居（大图里找"这个客户端连到哪"最快的方式）
 const focused = ref<string | null>(null)
 
-// 节点右键菜单（画布内绝对定位，坐标相对画布）
+// 节点右键菜单（fixed 定位，坐标是视口坐标）
 const menu = reactive<{ open: boolean; x: number; y: number; nodeId: string | null }>({
   open: false,
   x: 0,
   y: 0,
   nodeId: null,
 })
+
+// 导出菜单（同一个模式，锚在工具条按钮下方）
+const exportMenu = reactive({ open: false, x: 0, y: 0 })
 
 // 手动拖拽后的节点位置（localStorage 持久化；节点 id 稳定，服务端删掉的 id 自然失效）
 const POS_KEY = 'tshell-graph-positions'
@@ -293,20 +357,49 @@ const posOf = computed(() => {
 })
 
 const viewNodes = computed(() => visibleNodes.value.map((n) => ({ ...n, ...(posOf.value.get(n.id) || n) })))
+
+/** 离线客户端 id 集合：节点置灰、连线画虚线都看它 */
+const offlineIds = computed(() => {
+  const s = new Set<string>()
+  for (const n of visibleNodes.value) if (!isOnline(n)) s.add(n.id)
+  return s
+})
+
 const viewEdges = computed(() =>
   layout.value.edges
     .filter((e) => posOf.value.has(e.source) && posOf.value.has(e.target))
     .map((e) => {
       const sp = posOf.value.get(e.source)!
       const tp = posOf.value.get(e.target)!
-      return { ...e, x1: sp.x, y1: sp.y, x2: tp.x, y2: tp.y }
+      return {
+        ...e,
+        x1: sp.x,
+        y1: sp.y,
+        x2: tp.x,
+        y2: tp.y,
+        // 连到离线主机的边画虚线：只看线也知道那台掉线了
+        offline: offlineIds.value.has(e.source) || offlineIds.value.has(e.target),
+      }
     }),
 )
 
-/** 边标签：后端给了 label 才画；缩得太小（<55%）时文字会糊成一片，干脆不画 */
-const labeledEdges = computed((): LaidOutEdge[] =>
-  view.k > 0.55 ? (viewEdges.value.filter((e) => !!e.label) as LaidOutEdge[]) : [],
-)
+/**
+ * 边标签：后端给了 label 才画；缩得太小（<55%）时文字会糊成一片。
+ * 这里用 hidden 标记而不是过滤掉 —— 导出的 SVG 是克隆 DOM 的，过滤掉就永远导不出标签。
+ */
+const labeledEdges = computed(() => {
+  const hidden = view.k <= 0.55
+  return viewEdges.value.filter((e) => !!e.label).map((e) => ({ ...e, hidden }))
+})
+
+/** 节点填充：在线=类型色实心；离线=空心（灰虚线描边），一眼看出掉线 */
+function nodeFill(nd: { type: string; online?: string }) {
+  return isOnline(nd as GraphNode) ? TYPE_COLORS[nd.type] || '#6b7280' : 'transparent'
+}
+
+function nodeStroke(nd: { type: string; online?: string }) {
+  return isOnline(nd as GraphNode) ? TYPE_COLORS[nd.type] || '#6b7280' : OFFLINE_GRAY
+}
 
 /** 适配视图：把整张图（含右侧标签宽度）装进画布并居中 */
 function fitView() {
@@ -317,19 +410,15 @@ function fitView() {
   const w = rect.width || canvasSize.w
   const h = rect.height || canvasSize.h
   if (!w || !h) return
-  const xs = ns.map((n) => n.x)
-  const ys = ns.map((n) => n.y)
-  const minX = Math.min(...xs) - 40
-  const maxX = Math.max(...xs) + 220 // 标签在节点右侧
-  const minY = Math.min(...ys) - 30
-  const maxY = Math.max(...ys) + 30
-  const pad = 28
-  const bw = Math.max(1, maxX - minX)
-  const bh = Math.max(1, maxY - minY)
+  // 包围盒与导出共用同一套算法（标签宽度按字数估），否则"看到的"和"导出的"会差一截
+  const b = graphBounds(ns, 26)
+  const bw = Math.max(1, b.maxX - b.minX)
+  const bh = Math.max(1, b.maxY - b.minY)
+  const pad = 26
   const k = Math.min((w - pad * 2) / bw, (h - pad * 2) / bh)
   view.k = Math.min(MAX_K, Math.max(MIN_K, Math.min(k, 1.4)))
-  view.x = w / 2 - ((minX + maxX) / 2) * view.k
-  view.y = h / 2 - ((minY + maxY) / 2) * view.k
+  view.x = w / 2 - ((b.minX + b.maxX) / 2) * view.k
+  view.y = h / 2 - ((b.minY + b.maxY) / 2) * view.k
   hasFitted.value = true
 }
 
@@ -497,8 +586,57 @@ function openMenu(e: MouseEvent, nd: { id: string }) {
 function closeMenu() {
   menu.open = false
   menu.nodeId = null
+  exportMenu.open = false
   window.removeEventListener('pointerdown', onWindowPointerDown, true)
   window.removeEventListener('keydown', onWindowKeyDown)
+}
+
+/** 导出菜单：锚在按钮下方（fixed，画布 overflow:hidden 裁不到它） */
+function openExportMenu(e: MouseEvent) {
+  const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+  exportMenu.x = Math.max(4, Math.min(r.left, window.innerWidth - 176))
+  exportMenu.y = Math.min(r.bottom + 4, window.innerHeight - 70)
+  exportMenu.open = true
+  window.addEventListener('pointerdown', onWindowPointerDown, true)
+  window.addEventListener('keydown', onWindowKeyDown)
+}
+
+function readExportTheme(): Partial<ExportTheme> {
+  const el = svgEl.value
+  if (!el) return {}
+  const cs = getComputedStyle(el)
+  const v = (name: string, fb: string) => (cs.getPropertyValue(name) || '').trim() || fb
+  return {
+    // 卡片底色/正文色跟着主题走，导出图在暗色主题下才不会"白底黑字变白底白字"
+    bg: v('--vs-card-bg', '#ffffff'),
+    text: v('--vs-text', '#1f2937'),
+  }
+}
+
+/**
+ * 导出整张图（与当前缩放/平移无关）：
+ * 缩放状态导出会得到一张小得看不清的图，所以按包围盒重新摆正。
+ * 聚焦状态下导出的是当前可见的子图 —— 那是用户正看的东西。
+ */
+async function doExport(kind: 'png' | 'svg') {
+  closeMenu()
+  const svg = svgEl.value
+  if (!svg || !viewNodes.value.length) return
+  try {
+    const { text, width, height } = buildExportSvg(svg, graphBounds(viewNodes.value, 0), {
+      theme: readExportTheme(),
+    })
+    if (kind === 'svg') {
+      downloadBlob(new Blob([text], { type: 'image/svg+xml;charset=utf-8' }), exportFilename('svg'))
+    } else {
+      downloadBlob(await svgToPngBlob(text, width, height, 2), exportFilename('png'))
+    }
+    ElMessage.success(
+      i18nStore.tl(`已导出 ${kind.toUpperCase()}`, `Exported ${kind.toUpperCase()}`),
+    )
+  } catch {
+    ElMessage.error(i18nStore.tl('导出失败', 'Export failed'))
+  }
 }
 
 function onWindowPointerDown(e: PointerEvent) {
@@ -692,7 +830,13 @@ onMounted(load)
 }
 .pg-dot-offline {
   background: transparent;
-  border: 2px dashed #6b7280;
+  border: 2px dashed #9ca3af;
+}
+
+/* 图例里的系统图标（与节点上的同一份 path） */
+.pg-legend-glyph {
+  fill: currentColor;
+  opacity: 0.7;
 }
 .pg-error,
 .pg-empty {
@@ -820,7 +964,18 @@ onMounted(load)
   opacity: 0.9;
 }
 
+/* 连到离线主机的边：虚线 + 更淡（必须排在 .pg-edge-active 之后，同权重后者生效） */
+.pg-edge-offline {
+  stroke: #cbd5e1;
+  stroke-dasharray: 5 4;
+  opacity: 0.9;
+}
+
 /* 边标签描一圈底色，压在线上也读得清 */
+.pg-edge-label.is-hidden {
+  opacity: 0;
+}
+
 .pg-edge-label {
   font-size: 10px;
   fill: var(--vs-text, #e6e6e6);
@@ -856,8 +1011,28 @@ onMounted(load)
   fill: var(--vs-text, #e6e6e6);
   opacity: 0.55;
 }
+/* 离线主机整体置灰：圈是灰虚线空心、标签灰、系统图标灰 */
 .pg-node-offline .pg-node-label {
-  opacity: 0.5;
+  fill: #9ca3af;
+}
+
+.pg-node-offline .pg-node-sub {
+  fill: #9ca3af;
+  opacity: 0.8;
+}
+
+.pg-node-offline .pg-node-os {
+  fill: #9ca3af;
+}
+
+.pg-node-offline:hover .pg-node-halo {
+  opacity: 0.1;
+}
+
+/* 节点里的系统图标：在线白（压在类型色实心圆上） */
+.pg-node-os {
+  fill: #ffffff;
+  pointer-events: none;
 }
 .pg-node-selected .pg-node-label {
   font-weight: 700;

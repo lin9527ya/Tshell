@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   computeLayout,
+  estimateTextWidth,
   forceLayout,
+  graphBounds,
   isOnline,
   layerOf,
   LAYER_ORDER,
@@ -200,5 +202,31 @@ describe('forceLayout', () => {
     // 只是"别卡死主线程"的兜底，阈值放宽到 1.5s
     expect(Date.now() - t0).toBeLessThan(1500)
     expect(res.size).toBe(laid.length)
+  })
+})
+
+describe('graphBounds', () => {
+  it('右侧留出标签宽度（不留的话适配视图会把标签裁掉）', () => {
+    const short = graphBounds([{ x: 100, y: 100, label: 'a' }], 0)
+    const long = graphBounds([{ x: 100, y: 100, label: 'a-very-long-hostname' }], 0)
+    expect(long.maxX).toBeGreaterThan(short.maxX)
+  })
+
+  it('中文标签按整字宽估算（单个汉字比单个字母宽）', () => {
+    expect(estimateTextWidth('中', 12)).toBeGreaterThan(estimateTextWidth('a', 12))
+    expect(estimateTextWidth('中', 12)).toBe(12)
+  })
+
+  it('空输入给正尺寸，避免 0 宽画布', () => {
+    const b = graphBounds([], 0)
+    expect(b.maxX).toBeGreaterThan(b.minX)
+    expect(b.maxY).toBeGreaterThan(b.minY)
+  })
+
+  it('pad 均匀外扩', () => {
+    const a = graphBounds([{ x: 10, y: 10, label: 'x' }], 0)
+    const b = graphBounds([{ x: 10, y: 10, label: 'x' }], 20)
+    expect(a.minX - b.minX).toBe(20)
+    expect(b.maxX - a.maxX).toBe(20)
   })
 })

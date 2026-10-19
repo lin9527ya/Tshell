@@ -292,3 +292,55 @@ function clampStep(v: number, max: number): number {
   if (!Number.isFinite(v)) return 0
   return Math.max(-max, Math.min(max, v))
 }
+
+// ---------------------------------------------------------------------------
+// 包围盒：画布适配（fitView）与导出共用同一套算法，避免"导出比看到的少一截"
+// ---------------------------------------------------------------------------
+
+export interface GraphBounds {
+  minX: number
+  minY: number
+  maxX: number
+  maxY: number
+}
+
+/** 估算文本宽度：CJK 按整字宽算，其余按 0.56 字宽 —— 只为算包围盒，不需要精确 */
+export function estimateTextWidth(text: string, fontSize: number): number {
+  let w = 0
+  for (const ch of text) {
+    const cp = ch.codePointAt(0) ?? 0
+    w += cp > 0x2e80 ? fontSize : fontSize * 0.56
+  }
+  return w
+}
+
+/** 节点圆的半径（画布与导出共用） */
+export const NODE_RADIUS = 9
+/** 标签相对节点的偏移（画布与导出共用） */
+export const LABEL_DX = 16
+
+/**
+ * graphBounds 算节点（含右侧标签）的包围盒。
+ * 右侧必须留出标签宽度：不留的话适配视图时标签会被裁掉半截。
+ */
+export function graphBounds(
+  nodes: { x: number; y: number; label: string; sub_label?: string }[],
+  pad = 12,
+): GraphBounds {
+  if (!nodes.length) return { minX: 0, minY: 0, maxX: 1, maxY: 1 }
+  let minX = Infinity
+  let minY = Infinity
+  let maxX = -Infinity
+  let maxY = -Infinity
+  for (const n of nodes) {
+    const labelW = Math.max(
+      estimateTextWidth(n.label || '', 12),
+      n.sub_label ? estimateTextWidth(n.sub_label, 10) : 0,
+    )
+    minX = Math.min(minX, n.x - NODE_RADIUS - 4)
+    maxX = Math.max(maxX, n.x + LABEL_DX + labelW)
+    minY = Math.min(minY, n.y - NODE_RADIUS - 4)
+    maxY = Math.max(maxY, n.y + NODE_RADIUS + 12)
+  }
+  return { minX: minX - pad, minY: minY - pad, maxX: maxX + pad, maxY: maxY + pad }
+}
