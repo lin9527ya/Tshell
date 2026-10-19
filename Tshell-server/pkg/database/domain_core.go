@@ -770,6 +770,18 @@ func (LootStore) DeleteByID(id int64) (int64, error) {
 	return s.ID(id).Delete(new(Loot))
 }
 
+// PurgeOlderThan 删除 created_at 早于 cutoff 的战果（保留期清理用）。
+//
+// CreatedAt 是固定宽度、零填充的 "2006-01-02 15:04:05" 文本，
+// 字典序即时间序，所以可以直接用字符串比较，不必解析成时间再比。
+func (LootStore) PurgeOlderThan(cutoff time.Time) (int64, error) {
+	s := DB()
+	if s == nil {
+		return 0, ErrStoreUnavailable
+	}
+	return s.Where("created_at < ?", cutoff.Format("2006-01-02 15:04:05")).Delete(new(Loot))
+}
+
 // DeleteByUID 删客户端时清理其战利品
 func (LootStore) DeleteByUID(uid string) (int64, error) {
 	s := DB()

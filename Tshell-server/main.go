@@ -408,6 +408,19 @@ func main() {
 
 	// 启动批量任务记录 TTL 清理（防止内存无界增长）
 	api.StartTaskCleanup()
+
+	// OPSEC P0-5：战果保留期清理（默认关闭，由 security.loot_retention_days 开启）。
+	// 战果默认永久留存，与任务的 7 天、审计的按天清理不一致 ——
+	// 留存越久泄露面越大，所以给出显式开关，但**不替运维默认打开**
+	// （删除战果不可逆，不该由一次升级替人做决定）。
+	if days := appConfig.Security.LootRetentionDays; days > 0 {
+		stopLootRetention := api.StartLootRetention(days)
+		defer stopLootRetention()
+		logx.Infof("🧹 [安全] 战果保留期已启用：%d 天\n", days)
+	} else {
+		logx.Infof("ℹ️ [安全] 战果保留期为永久（security.loot_retention_days=0）；如需自动清理请显式配置\n")
+	}
+
 	// 任务队列可视化:命令历史 TTL 清理
 	go func() {
 		t := time.NewTicker(5 * time.Minute)
