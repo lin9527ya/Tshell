@@ -83,6 +83,20 @@ database.DBStats()         // 连接池统计，供 /metrics 采集，不把 xor
   所以迁移是零行为变更的机械替换；领域方法（如按 UID 取客户端）逐步在
   `pkg/database` 里沉淀，业务层优先用领域方法、其次用通用查询。
 
+## 4.5 战果静态加密
+
+`loot.secret` 列（口令/NTLM 哈希/票据密钥）**不以明文落库**：应用层用
+AES-256-GCM 加密后写入，格式为 `v1:<base64(nonce||ct||tag)>`。
+
+- 密钥：`security.at_rest_key_file`（推荐，与库分离保管）→ 未配置时由 JWT 私钥 HKDF 派生
+- 未初始化时**写入直接失败**，不会静默退化为明文
+- 去重改用 `loot.secret_fp`（带密钥的 HMAC-SHA256）—— GCM 每次密文不同，
+  不能再用 secret 本身做去重键；用 HMAC 而非裸哈希是为了防止字典反查
+- 升级后首次启动会把存量明文行加密回写（幂等）；源文件里若仍有明文，
+  `LootStore` 读取时会原样返回（`security.Open` 对无前缀值透传）
+- 加密在应用层完成，**SQLite 与 PostgreSQL 行为一致**；备份文件天然是密文
+
+细节与威胁模型见 `docs/OPSEC.md`。
 ## 5. 备份
 
 - SQLite：内置备份/恢复（VACUUM INTO，见 `docs/BACKUP_RESTORE.md`）。
