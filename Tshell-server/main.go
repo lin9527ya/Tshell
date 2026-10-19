@@ -23,7 +23,6 @@ import (
 	"BackendTemplate/pkg/proxy"
 	"BackendTemplate/pkg/security"
 	"BackendTemplate/pkg/sendcommand"
-	"BackendTemplate/pkg/utils"
 	"BackendTemplate/pkg/utils/logx"
 	"context"
 	"embed"
@@ -73,7 +72,6 @@ func main() {
 		}
 	}()
 
-	utils.InitFunction()
 	gin.SetMode(gin.ReleaseMode)
 
 	// 定期清理超时的下载文件句柄（客户端断线/完成后 120s 无活动自动关闭）
@@ -112,6 +110,16 @@ func main() {
 	}
 
 	appConfig := config.GetGlobalConfig()
+
+	// 下载制品目录（config.storage.downloads_dir）：缺失时按需创建，失败只告警
+	// —— 下载目录不可用不应阻断服务启动（与历史行为一致）
+	downloadsDir := config.GetDownloadsDir()
+	if st, statErr := os.Stat(downloadsDir); statErr != nil || !st.IsDir() {
+		if mkErr := os.MkdirAll(downloadsDir, os.ModePerm); mkErr != nil {
+			fmt.Printf("⚠️ 创建下载目录失败(%s): %v\n", downloadsDir, mkErr)
+		}
+	}
+	command.SetDownloadsDir(downloadsDir)
 
 	// ===== 备份/恢复 CLI（处理完即退出）=====
 	cliBackupMgr := backup.New(backup.Options{

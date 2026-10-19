@@ -1,6 +1,7 @@
 package api
 
 import (
+	"BackendTemplate/pkg/config"
 	"BackendTemplate/pkg/database"
 	"BackendTemplate/pkg/errors"
 	"BackendTemplate/pkg/sendcommand"
@@ -59,9 +60,10 @@ func DownloadFile(c *gin.Context) {
 	if dlClient, has, err := database.Clients_().GetByUID(fileBody.Uid); err == nil && has && dlClient.ID > 0 {
 		dirName = strconv.FormatInt(dlClient.ID, 10)
 	}
-	if _, statErr := os.Stat("./Downloads/" + dirName); os.IsNotExist(statErr) {
+	downloadsRoot := config.GetDownloadsDir()
+	if _, statErr := os.Stat(filepath.Join(downloadsRoot, dirName)); os.IsNotExist(statErr) {
 		// 文件夹不存在，创建文件夹
-		if mkErr := os.MkdirAll("./Downloads/"+dirName, os.ModePerm); mkErr != nil {
+		if mkErr := os.MkdirAll(filepath.Join(downloadsRoot, dirName), os.ModePerm); mkErr != nil {
 			log.Printf("创建下载目录失败: %v", mkErr)
 		}
 	}
@@ -142,7 +144,7 @@ func DownloadDownloadedFile(c *gin.Context) {
 		return
 	}
 	// 指定文件的完整路径（目录名使用客户端数字 ID，与 DownloadFile 存储一致）
-	fileph := filepath.Join("./Downloads", resolveDownloadDir(downloadBody.Uid), filepath.Base(downloadBody.FilePath))
+	fileph := filepath.Join(config.GetDownloadsDir(), resolveDownloadDir(downloadBody.Uid), filepath.Base(downloadBody.FilePath))
 
 	// 获取原始文件名（保持中文字符）
 	originalFileName := filepath.Base(downloadBody.FilePath)
@@ -175,7 +177,7 @@ func DeleteDownloadedFile(c *gin.Context) {
 
 	// 构造服务端文件路径（目录名使用客户端数字 ID，与 DownloadFile 存储一致）
 	fileName := filepath.Base(deleteBody.FilePath)
-	serverFilePath := filepath.Join("./Downloads", resolveDownloadDir(deleteBody.Uid), fileName)
+	serverFilePath := filepath.Join(config.GetDownloadsDir(), resolveDownloadDir(deleteBody.Uid), fileName)
 
 	// 删除物理文件
 	if err := os.Remove(serverFilePath); err != nil {

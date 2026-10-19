@@ -74,7 +74,7 @@ func (m *DownloadFileManager) Start(uid string, requestId uint32, filePath strin
 		}
 	}
 	baseDir := filepath.Base(filePath)
-	dir := "./Downloads/" + dirName
+	dir := filepath.Join(DownloadsDir(), dirName)
 	if err := os.MkdirAll(dir, os.ModePerm); err != nil {
 		return err
 	}

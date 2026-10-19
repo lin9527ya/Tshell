@@ -69,6 +69,17 @@ type Config struct {
 
 	// 载荷混淆配置（二进制特征规避）
 	Obfuscation ObfuscationConfig `json:"obfuscation" yaml:"obfuscation" env:"OBFUSCATION"`
+
+	// 本地存储路径（客户端下载制品等）
+	Storage StorageConfig `json:"storage" yaml:"storage" env:"STORAGE"`
+}
+
+// StorageConfig 本地存储路径配置。
+// 只读根文件系统（如 k8s readOnlyRootFilesystem）部署时，这些目录须指向可写卷。
+type StorageConfig struct {
+	// 客户端下载制品的落盘根目录；每个会话按其数字 ID 建子目录。
+	// 环境变量：TSHELL_STORAGE_DOWNLOADS_DIR
+	DownloadsDir string `json:"downloads_dir" yaml:"downloads_dir" env:"DOWNLOADS_DIR" default:"./Downloads"`
 }
 
 // ObfuscationConfig 载荷混淆配置（OPSEC：二进制特征规避）

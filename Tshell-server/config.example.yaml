@@ -26,6 +26,12 @@ database:
     max_idle_conns: 5         # 最大空闲连接数
     max_lifetime: 5m0s        # 连接最大存活时间（防陈旧连接）
 
+storage:
+    # 客户端下载制品的落盘根目录（每个会话按其数字 ID 建子目录）。
+    # 只读根文件系统部署（如 k8s readOnlyRootFilesystem）须指向可写卷，如 /data/downloads。
+    # 环境变量：TSHELL_STORAGE_DOWNLOADS_DIR
+    downloads_dir: ./Downloads
+
 jwt:
     secret_key_file: ./jwt_key.hex   # JWT 签名密钥文件（缺失自动生成）
     access_token_ttl: 15m0s    # 访问令牌有效期（15 分钟；前端过段时间退避，可调长，如 60m）

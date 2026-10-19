@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
-	"os"
 	"reflect"
 	"strconv"
 	"strings"
@@ -228,16 +227,6 @@ func SplitByteArray(data []byte, chunkSize int) [][]byte {
 	}
 	return result
 }
-func InitFunction() {
-	_, err := os.Stat("./Downloads")
-	if os.IsNotExist(err) {
-		// 文件夹不存在，创建文件夹；失败只告警（下载目录缺失不应阻断启动）
-		if err = os.MkdirAll("./Downloads", os.ModePerm); err != nil {
-			fmt.Printf("⚠️ 创建 Downloads 目录失败: %v\n", err)
-		}
-	}
-}
-
 // getExistingDrives 从给定的掩码中提取存在的逻辑驱动器
 func GetExistingDrives(drivesMask []byte) []string {
 	var existingDrives []string

@@ -40,6 +40,7 @@ GOMEMLIMIT=3GiB go build -ldflags "-s -w" -trimpath -o tshell-server.exe .\main.
 | `auth.force_change_password` | 是否强制首次改密 |
 | `auth.enable_hidden_access` | 隐藏访问入口(**默认关闭**;开启时需 ≥8 字符强密钥,自动限流) |
 | `logging.level` | debug/info/warn/error(排障时建议 info) |
+| `storage.downloads_dir` | 客户端下载制品目录(默认 `./Downloads`;只读根文件系统部署须指向可写卷) |
 
 ### 必读安全配置
 1. **监听器密钥**:每个监听器在"监听管理"页配置独立 VKey(≥32B)/加密盐(≥16B)。**默认/空密钥会被拒绝**(监听器启动、客户端生成、firstBlood 三处强制)。客户端模板未替换占位符时拒绝运行。

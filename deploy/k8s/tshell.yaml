@@ -77,6 +77,11 @@ data:
       # 定时备份目录同样落在 PVC 上（默认 ./backups 在只读根 FS 下不可写）
       dir: /data/backups
 
+    storage:
+      # 客户端下载制品目录：只读根 FS 下默认 ./Downloads 不可写，且它与服务端读取
+      # 下载列表用的是同一路径，故必须显式指向 PVC
+      downloads_dir: /data/downloads
+
     security:
       # 反代（Ingress）通常不传 X-Forwarded-Proto，此时 HSTS 不会下发；
       # 确认流量全程 HTTPS 后置 true
