@@ -12,6 +12,12 @@ vi.mock('@/api/clients', () => ({
   },
 }))
 
+// 右键菜单里的「打开会话」用 router 跳转；测试不挂真路由
+const routerPush = vi.fn()
+vi.mock('vue-router', () => ({
+  useRouter: () => ({ push: routerPush }),
+}))
+
 import PivotGraphView from './PivotGraphView.vue'
 
 const SAMPLE = {
@@ -40,6 +46,7 @@ function mountView() {
 describe('PivotGraphView', () => {
   beforeEach(() => {
     getGraphData.mockReset()
+    routerPush.mockReset()
   })
 
   it('把后端返回的节点与边画出来', async () => {
@@ -155,5 +162,130 @@ describe('PivotGraphView', () => {
     const w = mountView()
     await flushPromises()
     expect(w.findAll('.pg-edge')).toHaveLength(0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 交互：右键菜单 / 聚焦 / 边标签 / 力导向
+// ---------------------------------------------------------------------------
+
+describe('PivotGraphView 交互', () => {
+  beforeEach(() => {
+    getGraphData.mockReset()
+    routerPush.mockReset()
+    localStorage.clear()
+  })
+
+  it('右键节点弹出菜单，点"打开会话"跳到该客户端', async () => {
+    // 菜单里的「打开会话」需要 meta.uid
+    const data = {
+      ...SAMPLE,
+      nodes: SAMPLE.nodes.map((n) =>
+        n.id === 'client_a' ? { ...n, meta: { uid: 'uid-a' } } : n,
+      ),
+    }
+    getGraphData.mockResolvedValue({ data: { data } })
+    const w = mountView()
+    await flushPromises()
+
+    const clientA = w.findAll('.pg-node').find((n) => n.text().includes('WEB-01'))!
+    await clientA.trigger('contextmenu')
+    expect(w.find('.pg-menu').exists()).toBe(true)
+
+    const item = w.findAll('.pg-menu-item').find((b) => b.text().includes('打开会话'))!
+    await item.trigger('click')
+    expect(routerPush).toHaveBeenCalledWith('/client/uid-a/console')
+    expect(w.find('.pg-menu').exists()).toBe(false)
+  })
+
+  it('非客户端/非管理页节点不出现跳转项', async () => {
+    getGraphData.mockResolvedValue({ data: { data: SAMPLE } })
+    const w = mountView()
+    await flushPromises()
+
+    const target = w.findAll('.pg-node').find((n) => n.text().includes('10.0.0.5:445'))!
+    await target.trigger('contextmenu')
+    const labels = w.findAll('.pg-menu-item').map((b) => b.text())
+    expect(labels).not.toContain('打开会话')
+    expect(labels).not.toContain('监听管理')
+    expect(labels).toContain('仅看关联')
+    expect(labels).toContain('复制名称')
+    // target 节点 label 本身就是地址、没有 sub_label：不出现"复制地址"这种重复项
+    expect(labels).not.toContain('复制地址')
+
+    // 有 sub_label 的监听器节点才给"复制地址"
+    const listener = w.findAll('.pg-node').find((n) => n.text().includes('0.0.0.0:8089'))!
+    await listener.trigger('contextmenu')
+    expect(w.findAll('.pg-menu-item').map((b) => b.text())).toContain('复制地址')
+  })
+
+  it('"仅看关联"只留该节点与直接邻居', async () => {
+    getGraphData.mockResolvedValue({ data: { data: SAMPLE } })
+    const w = mountView()
+    await flushPromises()
+    expect(w.findAll('.pg-node')).toHaveLength(6)
+
+    const clientA = w.findAll('.pg-node').find((n) => n.text().includes('WEB-01'))!
+    await clientA.trigger('contextmenu')
+    await w.findAll('.pg-menu-item').find((b) => b.text().includes('仅看关联'))!.trigger('click')
+    await flushPromises()
+
+    // client_a 的邻居：listener_tcp + tunnel_1
+    expect(w.findAll('.pg-node')).toHaveLength(3)
+    expect(w.text()).toContain('WEB-01')
+    expect(w.text()).toContain('0.0.0.0:8089')
+    // 工具条出现"聚焦"胶囊，点击退出
+    const chip = w.findAll('.pg-viewbtn').find((b) => b.text().includes('聚焦'))!
+    expect(chip.exists()).toBe(true)
+    await chip.trigger('click')
+    await flushPromises()
+    expect(w.findAll('.pg-node')).toHaveLength(6)
+  })
+
+  it('后端给了边 label 才画标签', async () => {
+    const withLabel = {
+      ...SAMPLE,
+      edges: SAMPLE.edges.map((e) =>
+        e.id === 'e2' ? { ...e, label: 'tcp 回连' } : e,
+      ),
+    }
+    getGraphData.mockResolvedValue({ data: { data: withLabel } })
+    const w = mountView()
+    await flushPromises()
+    const labels = w.findAll('.pg-edge-label')
+    expect(labels).toHaveLength(1)
+    expect(labels[0].text()).toBe('tcp 回连')
+  })
+
+  it('"力导向"按斥力/弹簧重排节点坐标', async () => {
+    getGraphData.mockResolvedValue({ data: { data: SAMPLE } })
+    const w = mountView()
+    await flushPromises()
+
+    const before = w.findAll('.pg-node').map((n) => n.attributes('transform'))
+    await w.findAll('.pg-viewbtn').find((b) => b.text().includes('力导向'))!.trigger('click')
+    await flushPromises()
+    const after = w.findAll('.pg-node').map((n) => n.attributes('transform'))
+
+    expect(after).not.toEqual(before)
+    // 重排后仍是 6 个节点、5 条边（没丢数据）
+    expect(w.findAll('.pg-node')).toHaveLength(6)
+    expect(w.findAll('.pg-edge')).toHaveLength(5)
+    // 位置写进 localStorage，刷新后不跳
+    expect(localStorage.getItem('tshell-graph-positions')).toBeTruthy()
+  })
+
+  it('"分层"清掉力导向/拖拽写入的位置', async () => {
+    getGraphData.mockResolvedValue({ data: { data: SAMPLE } })
+    const w = mountView()
+    await flushPromises()
+
+    await w.findAll('.pg-viewbtn').find((b) => b.text().includes('力导向'))!.trigger('click')
+    await flushPromises()
+    expect(localStorage.getItem('tshell-graph-positions')).not.toBe('{}')
+
+    await w.findAll('.pg-viewbtn').find((b) => b.text().includes('分层'))!.trigger('click')
+    await flushPromises()
+    expect(localStorage.getItem('tshell-graph-positions')).toBe('{}')
   })
 })

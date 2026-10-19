@@ -25,6 +25,12 @@
         <i class="pg-dot pg-dot-offline"></i>
         {{ i18nStore.tl('离线客户端（灰色虚线）', 'Offline client (dashed)') }}
       </span>
+      <span class="pg-hint">
+        {{ i18nStore.tl(
+          '拖拽节点 / 拖空白平移 / 滚轮缩放 / 右键节点出菜单',
+          'Drag nodes, drag canvas to pan, wheel to zoom, right-click a node for actions',
+        ) }}
+      </span>
     </div>
 
     <div v-if="error" class="pg-error">{{ error }}</div>
@@ -55,6 +61,14 @@
               :y2="e.y2"
               :class="['pg-edge', { 'pg-edge-active': isEdgeActive(e) }]"
             />
+            <!-- 边标签：只有后端给了 label 才画（备注之类的边语义），缩得太小就不画了 -->
+            <text
+              v-for="e in labeledEdges"
+              :key="'lb_' + e.id"
+              class="pg-edge-label"
+              :x="(e.x1 + e.x2) / 2"
+              :y="(e.y1 + e.y2) / 2 - 4"
+            >{{ e.label }}</text>
           </g>
 
           <g class="pg-nodes">
@@ -67,6 +81,7 @@
               tabindex="0"
               @pointerdown.stop="onNodePointerDown($event, nd)"
               @click.stop="onNodeClick(nd)"
+              @contextmenu.prevent="openMenu($event, nd)"
               @keydown.enter.prevent="onNodeClick(nd)"
               @keydown.space.prevent="onNodeClick(nd)"
             >
@@ -95,36 +110,63 @@
         <button class="pg-viewbtn" :title="i18nStore.tl('适配视图', 'Fit view')" @click="fitView">
           {{ i18nStore.tl('适配', 'Fit') }}
         </button>
-        <button class="pg-viewbtn" :title="i18nStore.tl('节点复位到自动布局', 'Reset to auto layout')" @click="resetLayout">
-          {{ i18nStore.tl('自动布局', 'Auto layout') }}
+        <button
+          class="pg-viewbtn"
+          :title="i18nStore.tl('按斥力/弹簧重新排布，保留从左到右的分层方向', 'Force-directed arrange, layers kept left-to-right')"
+          @click="applyForce"
+        >
+          {{ i18nStore.tl('力导向', 'Force') }}
+        </button>
+        <button class="pg-viewbtn" :title="i18nStore.tl('清除手动位置，回到分层布局', 'Clear manual positions, back to layered')" @click="resetLayout">
+          {{ i18nStore.tl('分层', 'Layered') }}
+        </button>
+        <template v-if="focused">
+          <span class="pg-viewsep" />
+          <button class="pg-viewbtn pg-focus-chip" :title="i18nStore.tl('退出聚焦，显示全部节点', 'Exit focus, show all nodes')" @click="clearFocus">
+            {{ i18nStore.tl('聚焦', 'Focus') }}: {{ focusedLabel }} ✕
+          </button>
+        </template>
+      </div>
+
+      <!-- 节点右键菜单：图上放不下的动作集中在这里（点空白/按 Esc 关闭） -->
+      <div
+        v-if="menu.open"
+        class="pg-menu"
+        :style="{ left: menu.x + 'px', top: menu.y + 'px' }"
+        @pointerdown.stop
+        @click.stop
+        @contextmenu.prevent
+      >
+        <button v-for="it in menuItems" :key="it.key" class="pg-menu-item" @click="runMenu(it.key)">
+          {{ it.label }}
         </button>
       </div>
-    </div>
 
-    <!-- 选中节点的详情：图上一眼看不全的信息（meta）放这里 -->
-    <div v-if="selectedNode" class="pg-detail">
-      <div class="pg-detail-head">
-        <strong>{{ selectedNode.label }}</strong>
-        <span class="pg-detail-type">
-          {{ i18nStore.tl(
-            TYPE_LABELS[selectedNode.type]?.zh || selectedNode.type,
-            TYPE_LABELS[selectedNode.type]?.en || selectedNode.type,
-          ) }}
-        </span>
-        <span v-if="selectedNode.type === 'client'" :class="['pg-badge', isOnline(selectedNode) ? 'pg-badge-on' : 'pg-badge-off']">
-          {{ isOnline(selectedNode) ? (i18nStore.tl('在线', 'Online')) : (i18nStore.tl('离线', 'Offline')) }}
-        </span>
-        <button class="cs-btn cs-btn-xs" @click="selected = null">{{ i18nStore.tl('关闭', 'Close') }}</button>
+      <!-- 选中节点的详情：图上一眼看不全的信息（meta）放这里 -->
+      <div v-if="selectedNode" class="pg-detail" @pointerdown.stop @click.stop @wheel.stop>
+        <div class="pg-detail-head">
+          <strong>{{ selectedNode.label }}</strong>
+          <span class="pg-detail-type">
+            {{ i18nStore.tl(
+              TYPE_LABELS[selectedNode.type]?.zh || selectedNode.type,
+              TYPE_LABELS[selectedNode.type]?.en || selectedNode.type,
+            ) }}
+          </span>
+          <span v-if="selectedNode.type === 'client'" :class="['pg-badge', isOnline(selectedNode) ? 'pg-badge-on' : 'pg-badge-off']">
+            {{ isOnline(selectedNode) ? (i18nStore.tl('在线', 'Online')) : (i18nStore.tl('离线', 'Offline')) }}
+          </span>
+          <button class="cs-btn cs-btn-xs" @click="selected = null">{{ i18nStore.tl('关闭', 'Close') }}</button>
+        </div>
+        <div v-if="selectedNode.sub_label" class="pg-detail-sub">{{ selectedNode.sub_label }}</div>
+        <table v-if="metaRows.length" class="pg-meta">
+          <tbody>
+            <tr v-for="row in metaRows" :key="row.k">
+              <td class="pg-meta-k">{{ row.k }}</td>
+              <td class="pg-meta-v">{{ row.v }}</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
-      <div v-if="selectedNode.sub_label" class="pg-detail-sub">{{ selectedNode.sub_label }}</div>
-      <table v-if="metaRows.length" class="pg-meta">
-        <tbody>
-          <tr v-for="row in metaRows" :key="row.k">
-            <td class="pg-meta-k">{{ row.k }}</td>
-            <td class="pg-meta-v">{{ row.v }}</td>
-          </tr>
-        </tbody>
-      </table>
     </div>
   </div>
 </template>
@@ -138,17 +180,26 @@
  * 但**没有任何组件消费** —— 后端算好的关系图没人看。
  *
  * 这里把数据画出来，并刻意做了三件"图能看懂"的事：
- *  1. 分层布局（layout.ts）而不是力导向：这份数据本身是分层的，
- *     而且力导向每次刷新的坐标都不同，同一个拓扑看起来像变了一个网；
+ *  1. 默认用分层布局（layout.ts）：这份数据本身是分层的，
+ *     而且分层布局每次算出来的坐标都一样，同一个拓扑不会看起来像变了一个网。
+ *     某一层特别长（几十个客户端）时，可用工具条上的"力导向"手动散开一次 ——
+ *     它以当前坐标为初值，所以结果同样可复现；
  *  2. 离线客户端画成**灰色虚线空心**，与在线实心一眼可分 —— 否则一片点看不出谁掉线；
  *  3. 点击节点在下方列出 meta：图上放不下的地址/密钥指纹等信息集中在这里。
+ *
+ * 画布交互（CS 拓扑图同款）：拖节点、拖空白平移、滚轮缩放、右键节点出菜单
+ * （打开会话 / 跳对应管理页 / 仅看关联 / 居中 / 复制）。手动位置与分层布局互不影响：
+ * 前者存在 localStorage，清掉即回到分层结果。
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import PageHeader from '@/components/Common/PageHeader.vue'
 import ClientApi from '@/api/clients'
 import { useI18nStore } from '@/stores/i18n'
 import {
   computeLayout,
+  forceLayout,
   isOnline,
   TYPE_COLORS,
   TYPE_LABELS,
@@ -158,6 +209,7 @@ import {
 } from './layout'
 
 const i18nStore = useI18nStore()
+const router = useRouter()
 
 const nodes = ref<GraphNode[]>([])
 const edges = ref<GraphEdge[]>([])
@@ -176,6 +228,17 @@ const MAX_K = 2.5
 const hasFitted = ref(false)
 const canvasSize = reactive({ w: 0, h: 0 })
 let canvasObserver: ResizeObserver | null = null
+
+// 聚焦：只显示一个节点和它的直接邻居（大图里找"这个客户端连到哪"最快的方式）
+const focused = ref<string | null>(null)
+
+// 节点右键菜单（画布内绝对定位，坐标相对画布）
+const menu = reactive<{ open: boolean; x: number; y: number; nodeId: string | null }>({
+  open: false,
+  x: 0,
+  y: 0,
+  nodeId: null,
+})
 
 // 手动拖拽后的节点位置（localStorage 持久化；节点 id 稳定，服务端删掉的 id 自然失效）
 const POS_KEY = 'tshell-graph-positions'
@@ -199,22 +262,50 @@ function savePositions() {
   }
 }
 
+// 聚焦集合：节点自身 + 直接邻居；null = 不聚焦
+const focusSet = computed<Set<string> | null>(() => {
+  const id = focused.value
+  if (!id) return null
+  const set = new Set<string>([id])
+  for (const e of layout.value.edges) {
+    if (e.source === id) set.add(e.target)
+    if (e.target === id) set.add(e.source)
+  }
+  return set
+})
+
+const visibleNodes = computed(() => {
+  const set = focusSet.value
+  return set ? layout.value.nodes.filter((n) => set.has(n.id)) : layout.value.nodes
+})
+
+const focusedLabel = computed(
+  () => layout.value.nodes.find((n) => n.id === focused.value)?.label || '',
+)
+
 const posOf = computed(() => {
   const m = new Map<string, { x: number; y: number }>()
-  for (const n of layout.value.nodes) {
+  for (const n of visibleNodes.value) {
     const o = manualPos[n.id]
     m.set(n.id, o ? { x: o.x, y: o.y } : { x: n.x, y: n.y })
   }
   return m
 })
 
-const viewNodes = computed(() => layout.value.nodes.map((n) => ({ ...n, ...(posOf.value.get(n.id) || n) })))
+const viewNodes = computed(() => visibleNodes.value.map((n) => ({ ...n, ...(posOf.value.get(n.id) || n) })))
 const viewEdges = computed(() =>
-  layout.value.edges.map((e) => {
-    const sp = posOf.value.get(e.source)
-    const tp = posOf.value.get(e.target)
-    return { ...e, x1: sp?.x ?? e.x1, y1: sp?.y ?? e.y1, x2: tp?.x ?? e.x2, y2: tp?.y ?? e.y2 }
-  }),
+  layout.value.edges
+    .filter((e) => posOf.value.has(e.source) && posOf.value.has(e.target))
+    .map((e) => {
+      const sp = posOf.value.get(e.source)!
+      const tp = posOf.value.get(e.target)!
+      return { ...e, x1: sp.x, y1: sp.y, x2: tp.x, y2: tp.y }
+    }),
+)
+
+/** 边标签：后端给了 label 才画；缩得太小（<55%）时文字会糊成一片，干脆不画 */
+const labeledEdges = computed((): LaidOutEdge[] =>
+  view.k > 0.55 ? (viewEdges.value.filter((e) => !!e.label) as LaidOutEdge[]) : [],
 )
 
 /** 适配视图：把整张图（含右侧标签宽度）装进画布并居中 */
@@ -327,6 +418,139 @@ function resetLayout() {
   fitView()
 }
 
+/**
+ * 力导向整理：以当前坐标为初值散开一次（结果可复现），保留分层阅读方向。
+ * 只对当前可见节点做 —— 聚焦状态下整理的是子图。
+ */
+function applyForce() {
+  if (!visibleNodes.value.length) return
+  const res = forceLayout(visibleNodes.value, layout.value.edges)
+  for (const [id, p] of res) manualPos[id] = { x: Math.round(p.x), y: Math.round(p.y) }
+  savePositions()
+  fitView()
+}
+
+/** 把某个节点移到画布中心（缩放不变） */
+function centerOn(id: string) {
+  const p = posOf.value.get(id)
+  const r = svgEl.value?.getBoundingClientRect()
+  const w = r?.width || canvasSize.w
+  const h = r?.height || canvasSize.h
+  if (!p || !w || !h) return
+  view.x = w / 2 - p.x * view.k
+  view.y = h / 2 - p.y * view.k
+}
+
+// ---- 焦点 / 右键菜单 ----
+
+function toggleFocus(id: string) {
+  focused.value = focused.value === id ? null : id
+  selected.value = id
+  nextTick(fitView)
+}
+
+function clearFocus() {
+  focused.value = null
+  nextTick(fitView)
+}
+
+interface MenuItem {
+  key: string
+  label: string
+}
+
+const menuNode = computed(() => nodes.value.find((n) => n.id === menu.nodeId) || null)
+
+const menuItems = computed<MenuItem[]>(() => {
+  const nd = menuNode.value
+  if (!nd) return []
+  const zh = (a: string, b: string) => i18nStore.tl(a, b)
+  const items: MenuItem[] = []
+  if (nd.type === 'client' && nd.meta?.uid) {
+    items.push({ key: 'session', label: zh('打开会话', 'Open session') })
+  }
+  if (nd.type === 'listener') items.push({ key: 'listeners', label: zh('监听管理', 'Listeners page') })
+  if (nd.type === 'tunnel') items.push({ key: 'tunnel', label: zh('隧道代理', 'Tunnels page') })
+  items.push({
+    key: 'focus',
+    label: focused.value === nd.id ? zh('退出聚焦', 'Exit focus') : zh('仅看关联', 'Focus on this'),
+  })
+  items.push({ key: 'center', label: zh('居中显示', 'Center') })
+  items.push({ key: 'copyLabel', label: zh('复制名称', 'Copy label') })
+  if (nd.sub_label) items.push({ key: 'copySub', label: zh('复制地址', 'Copy address') })
+  return items
+})
+
+function openMenu(e: MouseEvent, nd: { id: string }) {
+  menu.nodeId = nd.id
+  selected.value = nd.id
+  // 菜单用 fixed 定位（画布是 overflow:hidden，绝对定位会被裁掉）；
+  // 先按条目数估高度再夹到视口内，贴着屏幕右下角打开时不会溢出
+  const h = Math.max(1, menuItems.value.length) * 28 + 8
+  menu.x = Math.max(4, Math.min(e.clientX, window.innerWidth - 156))
+  menu.y = Math.max(4, Math.min(e.clientY, window.innerHeight - h))
+  menu.open = true
+  window.addEventListener('pointerdown', onWindowPointerDown, true)
+  window.addEventListener('keydown', onWindowKeyDown)
+}
+
+function closeMenu() {
+  menu.open = false
+  menu.nodeId = null
+  window.removeEventListener('pointerdown', onWindowPointerDown, true)
+  window.removeEventListener('keydown', onWindowKeyDown)
+}
+
+function onWindowPointerDown(e: PointerEvent) {
+  // 捕获阶段先于菜单自身的 click：点在菜单里不算"点外面"
+  if ((e.target as Element)?.closest?.('.pg-menu')) return
+  closeMenu()
+}
+
+function onWindowKeyDown(e: KeyboardEvent) {
+  if (e.key === 'Escape') closeMenu()
+}
+
+async function copyText(text: string) {
+  try {
+    await navigator.clipboard.writeText(text)
+    ElMessage.success(i18nStore.tl('已复制', 'Copied'))
+  } catch {
+    ElMessage.warning(i18nStore.tl('复制失败，请手动选择', 'Copy failed, select manually'))
+  }
+}
+
+function runMenu(key: string) {
+  const nd = menuNode.value
+  closeMenu()
+  if (!nd) return
+  if (key === 'session' && nd.meta?.uid) {
+    router.push(`/client/${nd.meta.uid}/console`)
+    return
+  }
+  if (key === 'listeners') {
+    router.push('/listener')
+    return
+  }
+  if (key === 'tunnel') {
+    router.push('/tunnel')
+    return
+  }
+  if (key === 'focus') {
+    toggleFocus(nd.id)
+    return
+  }
+  if (key === 'center') {
+    centerOn(nd.id)
+    return
+  }
+  if (key === 'copyLabel') {
+    copyText(nd.label)
+    return
+  }
+  if (key === 'copySub' && nd.sub_label) copyText(nd.sub_label)
+}
+
 // 画布按需渲染（空数据/加载中不渲染），函数 ref 在元素出现时挂 ResizeObserver；
 // 首次拿到尺寸时自动适配一次
 function setCanvasRef(el: any) {
@@ -347,6 +571,7 @@ onBeforeUnmount(() => {
   canvasObserver?.disconnect()
   canvasObserver = null
   window.removeEventListener('pointermove', onPointerMove)
+  closeMenu()
 })
 
 const legendTypes = ['server', 'listener', 'client', 'tunnel', 'target']
@@ -378,6 +603,13 @@ async function load() {
     // 选中的节点可能在刷新后消失了（客户端被删），清掉避免详情区停在幽灵节点
     if (selected.value && !nodes.value.some((n) => n.id === selected.value)) {
       selected.value = null
+    }
+    // 聚焦/右键菜单同理：目标节点没了就退出，否则只剩一个空画布
+    if (focused.value && !nodes.value.some((n) => n.id === focused.value)) {
+      focused.value = null
+    }
+    if (menu.open && !nodes.value.some((n) => n.id === menu.nodeId)) {
+      closeMenu()
     }
   } catch (e: unknown) {
     // /graph/data 是 operatorOnly：auditor 拿到 403 属正常，不该弹全局报错
@@ -447,6 +679,10 @@ onMounted(load)
   display: inline-flex;
   align-items: center;
   gap: 5px;
+}
+.pg-hint {
+  margin-left: auto;
+  opacity: 0.5;
 }
 .pg-dot {
   width: 9px;
@@ -539,6 +775,41 @@ onMounted(load)
   margin: 0 2px;
   background: var(--cs-card-border, #333);
 }
+
+.pg-focus-chip {
+  color: var(--cs-active, #8b9dc3);
+}
+
+/* 节点右键菜单 */
+.pg-menu {
+  position: fixed;
+  z-index: 30;
+  min-width: 148px;
+  padding: 4px;
+  border: 1px solid var(--cs-card-border, #333);
+  border-radius: 6px;
+  background: var(--cs-panel, rgba(20, 24, 31, 0.96));
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
+}
+
+.pg-menu-item {
+  display: block;
+  width: 100%;
+  height: 26px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--cs-text, inherit);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pg-menu-item:hover {
+  background: var(--cs-hover);
+  color: var(--cs-active);
+}
 .pg-edge {
   stroke: #4b5563;
   stroke-width: 1.2;
@@ -547,6 +818,19 @@ onMounted(load)
 .pg-edge-active {
   stroke: #8b9dc3;
   opacity: 0.9;
+}
+
+/* 边标签描一圈底色，压在线上也读得清 */
+.pg-edge-label {
+  font-size: 10px;
+  fill: var(--vs-text, #e6e6e6);
+  opacity: 0.7;
+  text-anchor: middle;
+  paint-order: stroke;
+  stroke: var(--cs-bg, #111);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+  pointer-events: none;
 }
 .pg-node {
   cursor: grab;
@@ -578,9 +862,20 @@ onMounted(load)
 .pg-node-selected .pg-node-label {
   font-weight: 700;
 }
+/* 详情浮层：放在画布上而不是画布下面 —— 否则一条 meta 就能把画布挤扁 */
 .pg-detail {
-  border-top: 1px solid var(--vs-border, #333);
-  padding-top: 8px;
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  z-index: 2;
+  max-width: min(440px, 62%);
+  max-height: 62%;
+  overflow: auto;
+  padding: 8px 10px;
+  border: 1px solid var(--cs-card-border, #333);
+  border-radius: 6px;
+  background: var(--cs-panel, rgba(20, 24, 31, 0.94));
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22);
   font-size: 12px;
 }
 .pg-detail-head {

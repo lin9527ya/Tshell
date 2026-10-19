@@ -61,13 +61,20 @@ func GetGraphData(c *gin.Context) {
 		if addr == "" {
 			addr = l.ConnectAddress
 		}
+		// 备注在图上别处看不到（节点只放类型+地址），放进 meta 供详情面板展示，
+		// 同时作为 server→listener 边的标签 —— 边越长越难追，标签是唯一的线索。
+		var meta map[string]string
+		if l.Note != "" {
+			meta = map[string]string{"note": l.Note}
+		}
 		nodes = append(nodes, GraphNode{
 			ID:       id,
 			Type:     "listener",
 			Label:    l.Type,
 			SubLabel: addr,
+			Meta:     meta,
 		})
-		edges = append(edges, GraphEdge{ID: "e_srv_" + id, Source: "server", Target: id})
+		edges = append(edges, GraphEdge{ID: "e_srv_" + id, Source: "server", Target: id, Label: l.Note})
 		if _, ok := listenerSet[l.Type]; !ok {
 			listenerSet[l.Type] = id
 		}
@@ -126,6 +133,7 @@ func GetGraphData(c *gin.Context) {
 				ID:     "e_" + t.ClientUID + "_" + tid,
 				Source: "client_" + t.ClientUID,
 				Target: tid,
+				Label:  t.Note,
 			})
 		}
 		if t.TargetAddress != "" {
@@ -144,6 +152,7 @@ func GetGraphData(c *gin.Context) {
 				ID:     "e_" + tid + "_" + targetID,
 				Source: tid,
 				Target: targetID,
+				Label:  t.Note,
 			})
 		}
 	}
