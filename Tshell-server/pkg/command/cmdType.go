@@ -119,14 +119,14 @@ const (
 	INJECT_MEM = 127 // 内存注入（纯内存接收 shellcode，不落盘）
 
 	// A1-A7 客户端能力增强
-	ETW_PATCH      = 113 // ETW 补丁（屏蔽遥测）
-	UNHOOK_NTDLL   = 114 // ntdll unhooking
-	SANDBOX_CHECK  = 115 // 沙箱检测
-	ANTIDEBUG      = 116 // 反调试检查
-	WMI_PERSIST    = 117 // WMI 无文件持久化（add|remove|list）
-	PSEXEC         = 118 // 横向移动：远程执行（target|user|pass|cmd）
-	AD_ENUM        = 119 // 域信息收集
-	SELF_UPDATE    = 120 // 客户端自我更新
+	ETW_PATCH     = 113 // ETW 补丁（屏蔽遥测）
+	UNHOOK_NTDLL  = 114 // ntdll unhooking
+	SANDBOX_CHECK = 115 // 沙箱检测
+	ANTIDEBUG     = 116 // 反调试检查
+	WMI_PERSIST   = 117 // WMI 无文件持久化（add|remove|list）
+	PSEXEC        = 118 // 横向移动：远程执行（target|user|pass|cmd）
+	AD_ENUM       = 119 // 域信息收集
+	SELF_UPDATE   = 120 // 客户端自我更新
 	// 删除进程文件并退出（"删除客户端"流程）：重命名解锁 + 延迟删除 + 进程退出
 	SELFDELETE_EXIT = 121 // 客户端退出并删除自身二进制
 
@@ -156,4 +156,10 @@ const (
 	// 端口扫描（阶段三）：cmdBuf = "<targets> <ports> [timeoutMs]"。
 	// 客户端用 TCP connect 扫描（跨平台、无需 raw socket），结果按主机聚合回显。
 	PORT_SCAN = 131
+
+	// 提权（阶段三）：cmdBuf = "[auto|token|uac|uac_cleanup]"。
+	// 客户端只派生新会话，不改当前令牌模拟状态；失败不炸会话。
+	// **必须与客户端 core/services/types.go 的 GETSYSTEM 一致** —— 之前服务端漏了
+	// 这个常量，命令表里也没登记，`getsystem` 会落进 SHELL 兜底发给 cmd.exe。
+	GETSYSTEM = 132
 )

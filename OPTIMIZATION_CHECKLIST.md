@@ -454,3 +454,11 @@ cd Tshell-web && npm run build:embed
 | 165 | 服务端接受 kirbi 条目与清单元数据 | `grep -c "lsa_tickets" Tshell-server/pkg/cred/ticket.go` | ≥2 |
 | 166 | 入库区分 kerberos:lsa / kerberos:ccache | `grep -c "kerberos:lsa" Tshell-server/pkg/api/cred_ingest.go` | ≥1 |
 | 167 | 非 Windows 显式报错（不静默降级） | `grep -c "LSA 票据采集仅支持 Windows" Tshell-client/implant/core/services/lsa_stub.go` | ≥1 |
+
+## R 组（getsystem 接线修复，2026-10-19 追加）
+
+| # | 优化 | 验证命令 | 期望 |
+|---|------|----------|------|
+| 168 | 服务端命令号与客户端一致 | `grep -c "GETSYSTEM = 132" Tshell-server/pkg/command/cmdType.go Tshell-client/implant/core/services/types.go` | ≥2 |
+| 169 | 命令表登记（带参 & 无参） | `grep -c "getsystem" Tshell-server/pkg/sendcommand/sendCommand.go` | ≥2 |
+| 170 | 回归守卫：不得落进 SHELL 兜底 | `grep -c "落进了 SHELL 兜底" Tshell-server/pkg/sendcommand/sendCommand_test.go` | ≥1 |

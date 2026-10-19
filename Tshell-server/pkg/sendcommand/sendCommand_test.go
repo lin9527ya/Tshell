@@ -158,3 +158,34 @@ func TestPortScanCommand(t *testing.T) {
 		t.Logf("无参数 scan 被解析为类型 % x（走通用路径）", got[:4])
 	}
 }
+
+// TestGetSystemCommand getsystem 必须作为 GETSYSTEM 下发，而不是落进 SHELL 兜底。
+//
+// 回归背景：客户端早就实现了 GETSYSTEM 分支（含模板），但服务端命令表一直漏登记
+// `getsystem`，控制台里敲它会走"默认整条命令当 shell"，cmd.exe 报"不是内部或外部
+// 命令"，操作员以为提权坏了。全量对照客户端 80 个命令类型后确认这是唯一断点。
+func TestGetSystemCommand(t *testing.T) {
+	cases := []struct {
+		command string
+		payload []byte
+	}{
+		{"getsystem", nil},
+		{"getsystem uac", []byte("uac")},
+		{"getsystem token", []byte("token")},
+		{"getsystem uac_cleanup", []byte("uac_cleanup")},
+	}
+	for _, c := range cases {
+		got, send := resolveCommand("uid-1", c.command)
+		if !send {
+			t.Fatalf("%q 不应被就地处理", c.command)
+		}
+		want := append(uint32Bytes(command1.GETSYSTEM), c.payload...)
+		if string(got) != string(want) {
+			t.Fatalf("%q 编码不符: got=%x want=%x", c.command, got, want)
+		}
+		// 兜底路径的回归守卫：绝不能是 SHELL
+		if binary.BigEndian.Uint32(got[:4]) == command1.SHELL {
+			t.Fatalf("%q 落进了 SHELL 兜底（服务端漏登记命令）", c.command)
+		}
+	}
+}
