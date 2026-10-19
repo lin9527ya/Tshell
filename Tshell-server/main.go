@@ -205,6 +205,21 @@ func main() {
 				p, st.Mode().Perm(), p)
 		}
 	}
+
+	// OPSEC P0-4：自己管理的数据目录做一次权限收敛（目录 0700）。
+	//
+	// 历史部署里这些目录是 0777 建的，MkdirAll 不会修正已存在的目录，
+	// 所以每次启动收敛一次。改过哪些目录要记下来 —— 静默改权限不合适：
+	// 运维排查"共享账号读不到文件了"时需要知道是启动时收紧的。
+	if changed := security.TightenDataDirs(
+		config.GetDownloadsDir(),
+		config.GetPluginDir(),
+		"./sessions",
+	); len(changed) > 0 {
+		logx.Warnf("⚠️ [安全] 已把以下数据目录权限收敛为 0700（原权限过宽）：%s\n",
+			strings.Join(changed, ", "))
+	}
+
 	if strings.EqualFold(appConfig.Auth.DefaultPassword, "admin") || len(appConfig.Auth.DefaultPassword) < 8 {
 		logx.Warnf("⚠️ [安全] auth.default_password 为弱口令（长度<8 或为 admin），请修改配置\n")
 	}

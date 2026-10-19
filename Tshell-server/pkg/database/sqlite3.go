@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	mathrand "math/rand"
+	"os"
 	"reflect"
 	"strconv"
 	"strings"
@@ -1232,6 +1233,13 @@ func ConnectDateBase() {
 	engineMu.Unlock()
 	if err != nil {
 		log.Fatalf("连接%s数据库失败: %v", driver, err)
+	}
+
+	// OPSEC P0-4：SQLite 文件里是全部战果与会话记录。
+	// 驱动按进程 umask 建文件，常见的 0022 会得到 0644 —— 同机其他用户可读。
+	// 这里显式收敛到 0600（PostgreSQL 没有本地文件，跳过）。
+	if !IsPostgres() {
+		_ = os.Chmod(DatabaseName, 0o600)
 	}
 
 	// 优化 SQLite 连接池配置，提升并发吞吐

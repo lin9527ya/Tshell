@@ -13,6 +13,7 @@ import (
 	"BackendTemplate/pkg/command"
 	"BackendTemplate/pkg/config"
 	"BackendTemplate/pkg/database"
+	"BackendTemplate/pkg/security"
 	"BackendTemplate/pkg/utils/logx"
 )
 
@@ -54,7 +55,7 @@ func resolveCnaDir() string {
 	}
 	// 默认创建
 	dir := candidates[0]
-	_ = os.MkdirAll(dir, 0o755)
+	_ = security.SecureMkdirAll(dir)
 	return dir
 }
 
@@ -71,7 +72,7 @@ func ListCnaScripts(c *gin.Context) {
 // ListCnaFiles scripts 目录下的 .cna 文件
 func ListCnaFiles(c *gin.Context) {
 	dir := GetCnaScriptsDir()
-	_ = os.MkdirAll(dir, 0o755)
+	_ = security.SecureMkdirAll(dir)
 	files, err := os.ReadDir(dir)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"status": 500, "message": "读取脚本目录失败: " + err.Error()})
@@ -195,7 +196,7 @@ func UploadCnaScript(c *gin.Context) {
 		return
 	}
 	dir := GetCnaScriptsDir()
-	_ = os.MkdirAll(dir, 0o755)
+	_ = security.SecureMkdirAll(dir)
 	dst := filepath.Join(dir, name)
 	if err := c.SaveUploadedFile(file, dst); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"status": 500, "message": "保存失败: " + err.Error()})
@@ -305,7 +306,7 @@ func EvalCnaScript(c *gin.Context) {
 // InitCnaBridge 初始化 CNA 引擎与桥接（main 启动时调用）
 func InitCnaBridge() {
 	dir := GetCnaScriptsDir()
-	_ = os.MkdirAll(dir, 0o755)
+	_ = security.SecureMkdirAll(dir)
 	cna.InitEngine(dir)
 	// 注入回调（在 main 中注册 sendcommand）
 	RegisterCnaCallbacks()

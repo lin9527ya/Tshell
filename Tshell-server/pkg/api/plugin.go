@@ -17,6 +17,7 @@ import (
 	"BackendTemplate/pkg/config"
 	"BackendTemplate/pkg/database"
 	"BackendTemplate/pkg/errors"
+	"BackendTemplate/pkg/security"
 	"BackendTemplate/pkg/utils/logx"
 )
 
@@ -162,7 +163,8 @@ type GetPluginsResponse struct {
 func GetPlugins(c *gin.Context) {
 	plugginDir := config.GetPluginDir()
 	if _, err := os.Stat(plugginDir); os.IsNotExist(err) {
-		os.MkdirAll(plugginDir, os.ModePerm)
+		// 0700：插件目录里是上传的载荷，不能让同机其他用户直接读走
+		_ = security.SecureMkdirAll(plugginDir)
 	}
 
 	// 文件系统是事实来源：插件文件可以被手工拷入/删除，DB 只用来补元数据。

@@ -4,6 +4,7 @@ import (
 	"BackendTemplate/pkg/config"
 	"BackendTemplate/pkg/database"
 	"BackendTemplate/pkg/errors"
+	"BackendTemplate/pkg/security"
 	"BackendTemplate/pkg/sendcommand"
 	"BackendTemplate/pkg/utils"
 	"fmt"
@@ -63,7 +64,9 @@ func DownloadFile(c *gin.Context) {
 	downloadsRoot := config.GetDownloadsDir()
 	if _, statErr := os.Stat(filepath.Join(downloadsRoot, dirName)); os.IsNotExist(statErr) {
 		// 文件夹不存在，创建文件夹
-		if mkErr := os.MkdirAll(filepath.Join(downloadsRoot, dirName), os.ModePerm); mkErr != nil {
+		// 0700：目录里是客户端下载回来的文件（可能是凭据/配置等敏感内容），
+		// 原实现用 os.ModePerm(0777)，同机任何本地用户都能读走
+		if mkErr := security.SecureMkdirAll(filepath.Join(downloadsRoot, dirName)); mkErr != nil {
 			log.Printf("创建下载目录失败: %v", mkErr)
 		}
 	}

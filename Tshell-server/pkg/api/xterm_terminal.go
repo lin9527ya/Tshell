@@ -21,8 +21,8 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"path/filepath"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -44,13 +44,16 @@ type XTermSession struct {
 }
 
 // openSessionRecording 创建会话录像文件
+//
+// 权限按敏感数据处理：交互式 shell 录像里可能有操作员敲进去的口令/路径，
+// 原实现是 0777 目录 + 0644 文件，同机任何本地用户都能直接读走。
 func openSessionRecording(uid string) *os.File {
 	dir := "./sessions"
-	if err := os.MkdirAll(dir, os.ModePerm); err != nil {
+	if err := security.SecureMkdirAll(dir); err != nil {
 		return nil
 	}
 	path := fmt.Sprintf("%s/%s_%d.log", dir, filepath.Base(uid), time.Now().UnixNano()/1000)
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	f, err := security.SecureAppend(path)
 	if err != nil {
 		return nil
 	}
@@ -98,8 +101,8 @@ func init() {
 	ws.BroadcastToXTermSessions = BroadcastToXTermSessions
 	kcp.BroadcastToXTermSessions = BroadcastToXTermSessions
 	communication.BroadcastToXTermSessions = BroadcastToXTermSessions
-	oss.BroadcastToXTermSessions = BroadcastToXTermSessions  // B4 收敛后 OSS 回包走统一处理器，补注入
-	dns.BroadcastToXTermSessions = BroadcastToXTermSessions  // B4 收敛后 DNS 回包走统一处理器，补注入
+	oss.BroadcastToXTermSessions = BroadcastToXTermSessions // B4 收敛后 OSS 回包走统一处理器，补注入
+	dns.BroadcastToXTermSessions = BroadcastToXTermSessions // B4 收敛后 DNS 回包走统一处理器，补注入
 }
 
 // BroadcastToXTermSessions 广播数据到指定UID的所有XTerm会话
@@ -704,4 +707,3 @@ func GetXTermSession(uid string) *XTermSession {
 	}
 	return nil
 }
-
