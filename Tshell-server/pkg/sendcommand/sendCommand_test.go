@@ -189,3 +189,30 @@ func TestGetSystemCommand(t *testing.T) {
 		}
 	}
 }
+
+// TestKerberosActionCommand `kerberos ...` 必须作为 KERB_ACTION 下发（Windows LSA 动作），
+// 不能落进 SHELL 兜底 —— 与 getsystem 同样的接线陷阱。
+func TestKerberosActionCommand(t *testing.T) {
+	cases := []struct {
+		command string
+		payload []byte
+	}{
+		{"kerberos", nil},
+		{"kerberos list", []byte("list")},
+		{"kerberos purge", []byte("purge")},
+		{"kerberos purge krbtgt/CORP.LOCAL", []byte("purge krbtgt/CORP.LOCAL")},
+		{"kerberos ptt AQIDBA==", []byte("ptt AQIDBA==")},
+	}
+	for _, c := range cases {
+		got, send := resolveCommand("uid-1", c.command)
+		if !send {
+			t.Fatalf("%q 不应被就地处理", c.command)
+		}
+		if binary.BigEndian.Uint32(got[:4]) != command1.KERB_ACTION {
+			t.Fatalf("%q 应以 KERB_ACTION 下发，实际类型 %d", c.command, binary.BigEndian.Uint32(got[:4]))
+		}
+		if string(got[4:]) != string(c.payload) {
+			t.Fatalf("%q payload 不符: %q", c.command, got[4:])
+		}
+	}
+}

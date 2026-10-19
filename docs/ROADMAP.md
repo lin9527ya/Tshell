@@ -140,7 +140,9 @@ go test -race ./Tshell-server/...     # 见 §4 回归基线（注意用外层�
   - ✅ **Windows LSA 票据**（`tech=lsa`，2026-10-19）：`LsaCallAuthenticationPackage`
     枚举 + 导出 kirbi（纯 syscall，结构体布局有单测）；元数据随清单入库为
     `loot(type=ticket, source=kerberos:lsa)`。**实机未验证**
-  - ⏳ BloodHound 采集器、票据 purge/ptt 动作、kirbi↔ccache 互转
+  - ✅ **票据动作**（2026-10-19）：`kerberos list|purge [服务名]|ptt <base64>`
+    （命令号 `KERB_ACTION=133`；ptt 支持四种 base64 变体、上限 64KB）。实机未验证
+  - ⏳ BloodHound 采集器、kirbi↔ccache 互转
 - **入口**：
   - 客户端：`implant/core/services/cred.go`（按 kind 分派）、`browser*.go`、`dpapi_windows.go`、
     `core/sqlite/`（读取器）

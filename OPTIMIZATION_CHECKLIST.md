@@ -462,3 +462,16 @@ cd Tshell-web && npm run build:embed
 | 168 | 服务端命令号与客户端一致 | `grep -c "GETSYSTEM = 132" Tshell-server/pkg/command/cmdType.go Tshell-client/implant/core/services/types.go` | ≥2 |
 | 169 | 命令表登记（带参 & 无参） | `grep -c "getsystem" Tshell-server/pkg/sendcommand/sendCommand.go` | ≥2 |
 | 170 | 回归守卫：不得落进 SHELL 兜底 | `grep -c "落进了 SHELL 兜底" Tshell-server/pkg/sendcommand/sendCommand_test.go` | ≥1 |
+
+## S 组（Kerberos 票据动作：list/purge/ptt，2026-10-19 追加）
+
+| # | 优化 | 验证命令 | 期望 |
+|---|------|----------|------|
+| 171 | 命令号与客户端一致 | `grep -c "KERB_ACTION = 133" Tshell-server/pkg/command/cmdType.go Tshell-client/implant/core/services/types.go` | ≥2 |
+| 172 | 服务端命令表登记 | `grep -c "kerberos" Tshell-server/pkg/sendcommand/sendCommand.go` | ≥2 |
+| 173 | 客户端分派 | `grep -c "services.KERB_ACTION" Tshell-client/implant/core/app/dispatch.go` | ≥1 |
+| 174 | 动作解析（四种 base64 / 用法错误 / 上限） | `grep -c "func TestParseKerberosAction" Tshell-client/implant/core/services/kerberos_action_test.go` | ≥3 |
+| 175 | purge 原语 | `grep -c "func lsaPurgeTicket" Tshell-client/implant/core/services/lsa_windows.go` | ≥1 |
+| 176 | ptt 原语（结构体+blob 缓冲区） | `grep -c "KerbCredOffset" Tshell-client/implant/core/services/lsa_windows.go` | ≥1 |
+| 177 | 非 Windows 显式报错 | `grep -c "仅支持 Windows" Tshell-client/implant/core/services/kerberos_action_stub.go` | ≥1 |
+| 178 | 前端帮助 | `grep -c "kerberos ptt" Tshell-web/src/layout/BeaconConsole.vue` | ≥1 |

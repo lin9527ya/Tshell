@@ -94,7 +94,8 @@
     自动填充只留制品）；
   - 已实现：**Windows LSA 票据**（`kind=ticket, tech=lsa`）：枚举 + 导出 kirbi，
     元数据随制品清单入库（2026-10-19，实机未验证）；
-  - 未实现：票据的 purge/ptt 动作、kirbi↔ccache 互转、BloodHound 采集器；
+  - 已实现：票据动作 `kerberos list|purge [服务名]|ptt <base64>`（2026-10-19，实机未验证）；
+  - 未实现：kirbi↔ccache 互转、BloodHound 采集器；
   - 提权模块（getsystem / UAC bypass）已实现，见 §12c 之外的独立说明。
 - 详见 docs/CREDENTIAL_ACCESS.md（含 §7 第二批模块、§9 验证状态）。
 - 状态：✅（四条链路 + 单测）/ ⏳（实机验证 + LSA 票据/BloodHound/Web Data）

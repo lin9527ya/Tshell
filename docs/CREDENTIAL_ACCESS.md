@@ -292,3 +292,20 @@ impacket）。坏条目只进 `errors`，不影响其它缓存；一个能解出
 `MaxBrowserAutofill` 同值收口；超限显式失败而不是静默截断。
 
 **失败是显式的**：单张卡解不开只跳过该条并记日志；整份制品里一条可用条目都没有时校验失败。
+
+### 10.1 票据动作：`kerberos list|purge|ptt`（2026-10-19）
+
+采集之外，控制台提供三个动作（新命令号 `KERB_ACTION=133`，Windows LSA 专有）：
+
+| 命令 | 作用 | 风险 |
+|---|---|---|
+| `kerberos list` | 枚举当前登录会话的 LSA 票据缓存（服务名 / 客户端 / 起止时间 / 旗标） | 只读 |
+| `kerberos purge [服务名]` | 清除全部或指定服务票据（`KerbPurgeTicketCacheMessage`） | **破坏性**：清完需要重新认证/kinit |
+| `kerberos ptt <base64>` | 提交 kirbi（`KerbSubmitTicketMessage`），把票据注入 LSA 缓存 | 需要操作员提供 KRB_CRED |
+
+实现要点：
+- `ptt` 的 base64 兼容标准/URL 安全、带/不带 padding 四种变体；解码后上限 64KB
+- `ptt` 的请求缓冲区是"结构体 + KRB_CRED"，`KerbCredOffset = sizeof(KERB_SUBMIT_TKT_REQUEST)`（40，8 字节对齐）
+- 命令面：服务端 `sendCommand.go` 登记 `kerberos ` 前缀与无参精确项
+  （漏登记会落进 SHELL 兜底 —— 与 getsystem 同一个陷阱，已有回归测试）
+- 非 Windows 平台明确报错：动作依赖 LSA，文件式 ccache 采集仍然可用

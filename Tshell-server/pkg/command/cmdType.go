@@ -162,4 +162,8 @@ const (
 	// **必须与客户端 core/services/types.go 的 GETSYSTEM 一致** —— 之前服务端漏了
 	// 这个常量，命令表里也没登记，`getsystem` 会落进 SHELL 兜底发给 cmd.exe。
 	GETSYSTEM = 132
+
+	// Kerberos 票据动作（阶段三，须与客户端一致）：cmdBuf = "list" |
+	// "purge [服务名]" | "ptt <base64 的 kirbi>"。Windows LSA 专有。
+	KERB_ACTION = 133
 )

