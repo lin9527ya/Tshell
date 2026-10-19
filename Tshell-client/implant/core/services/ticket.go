@@ -35,9 +35,13 @@ const maxCCacheFiles = 64
 
 // lsaTicketEntry 清单里的 LSA 票据元数据。
 //
-// LSA 导出的是 **kirbi（KRB_CRED）**：它的 enc-part 需要密钥才能解，服务端拿到
-// 字节也无法还原客户端 principal —— 所以元数据由客户端随清单上报（客户端是
-// 我们自己的植入体），服务端只做形态校验与入库。
+// LSA 导出的是 **kirbi（KRB_CRED）**。原先这里写着"它的 enc-part 需要密钥才能解，
+// 服务端拿不到客户端 principal" —— 这个说法是**错的**：标准 kirbi 的 enc-part
+// etype 为 0，cipher 里就是明文 DER 的 EncKrbCredPart，服务端可以自行解析
+// （见 Tshell-server/pkg/cred/kirbi.go 与 ccache-v4-kirbi 夹具）。
+//
+// 清单仍然保留：客户端本来就知道票据的服务名/时间，写进来多一条交叉校验来源，
+// 也对只上传清单的老版本保持兼容。服务端以二进制解析结果为准。
 type lsaTicketEntry struct {
 	File    string `json:"file"`
 	Client  string `json:"client,omitempty"`

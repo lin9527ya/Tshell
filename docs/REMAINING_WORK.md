@@ -27,29 +27,39 @@ cd ../Tshell-web; npm ci --legacy-peer-deps; npx vitest run; npm run type-check
 
 ---
 
-## 1. kirbi ↔ ccache 互转（**M**，需 Windows/AD 验证）
+## 1. kirbi ↔ ccache 互转 —— **文件格式部分已完成（2026-10-20）**
 
 **现状**
 - ccache 解析已完成：`Tshell-server/pkg/cred/ccache.go`（v3/v4，真实夹具）
-- LSA 导出的 kirbi（KRB_CRED）已能作为制品回传、入库（`tech=lsa`），但**服务端不解析二进制**
-- 缺：`ccache → kirbi`（给 Windows 侧 ptt 用）与 `kirbi → ccache`（给 Linux 工具链用）
+- **kirbi 解析与互转已完成**：`Tshell-server/pkg/cred/kirbi.go` + 10 项测试
+  - `ParseKirbi`（kirbi → CCache）、`(*CCache).MarshalKirbi`（CCache → kirbi）、
+    `(*CCache).Marshal`（CCache → ccache v4 字节）；另 4 项制品层测试
+  - 真实夹具交叉验证：`ccache-v4-kirbi` 解出的 client/server/keytype/旗标/票据 DER
+    与 `ccache-v4` **逐字段一致**；两个方向都做了往返测试
+  - `ParseTicketArtifact` 现在**直接解析** `kirbi/*.kirbi` 条目，不再依赖客户端清单；
+    清单里同名条目不重复登记（以二进制解析结果为准）
+  - 顺带更正一处**在客户端与服务端注释里各写了一遍的错误说法**：
+    "kirbi 的 enc-part 需要密钥才能解" —— 实际 etype 为 0，cipher 就是明文 DER，
+    所以这一段根本不需要密钥，可完整离线验证
+- 仍缺（需 Windows/AD）：**ptt 的运行时接受度** —— 产出的 kirbi 被
+  `kerberos::ptt` / LSA 认可才算端到端成功。这是运行时行为，不是文件格式问题
 
-**为什么没做**
-- `ccache→kirbi` 要构造 KRB_CRED 的 `enc-part`（EncKrbCredPart：会话密钥 + 客户端
-  principal）。加密用的密钥/被 LSA 接受的形态**只能在 Windows 上验证**；ASN.1 写错
-  不会报错，只会产出"能解析但 ptt 不认"的票据 —— 盲写等于交付假功能
-- `kirbi→ccache` 需要密钥解密 enc-part（impacket 的 `ticketConverter -key`）
+**实现时踩到的坑（留给后续维护者）**
+- `KrbCredInfo` 的字段是 **EXPLICIT** context tag（`a1 { 1b "REALM" }`），不是隐式
+  （`81 "REALM"`）。按隐式写或读会**静默丢字段**（realm 在、用户名没了），不报错
+- `derTLV(derSequence, <已经是 SEQUENCE 的 TLV>)` 会多套一层，变成
+  `30 { 30 { a0, a1 } }`；解析侧按一层拆就找不到组件。这两处都只有**往返测试**能抓
+- 写 kirbi 时时间字段按 map 遍历会产生不确定的字节序，已按 tag 排序保证输出稳定
 
-**怎么开始**
-- 新文件 `pkg/cred/kirbi.go`：KRB_CRED 的 ASN.1 编码/解码（DER，可参考
-  `pkg/cred/ccache.go` 已有的 DER 工具；kirbi 夹具可取自 impacket 的 `ccache-v3-kirbi` / `ccache-v4-kirbi`）
-- 先做 **ccache→kirbi**（不涉密钥）：把每个 credential 的 `Ticket []byte`（本身就是
-  DER Ticket）放进 `tickets [2]`；`enc-part` 用首个 credential 的会话密钥构造
-- 验证步骤：自签 AD 环境拿一张 TGT → 导出 ccache → 转 kirbi → Windows
-  `kerberos ptt <base64>` 或 mimikatz `kerberos::ptt` → `klist` 看到票据
+**剩余验证（Windows 上做）**
+- 自签 AD 环境拿一张 TGT → 导出 ccache → `MarshalKirbi` 转 kirbi → Windows
+  `kerberos ptt <base64>` 或 mimikatz `kerberos::ptt` → `klist` / `kerberos list`
+  能看到该票据
+- 反方向：`kerberos` 导出 kirbi → 服务端 `ParseKirbi` → `Marshal` 出 ccache →
+  Linux `kinit -c` 接受
 
-**验收**：ccache→kirbi→ptt 后 `kerberos list` 能看到该票据；反方向 `-key` 解出的
-ccache 可被 `kinit -c` 接受。
+**验收**：上述两条在真实 AD 环境走通。文件格式层面已用真实夹具验证完毕，
+未通过的部分只可能是 ptt 的运行时细节（如 LSA 对 enc-part 的具体期望）。
 
 ---
 

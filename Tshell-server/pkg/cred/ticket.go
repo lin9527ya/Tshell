@@ -107,6 +107,12 @@ func ParseTicketArtifact(path string) (TicketArtifact, error) {
 		return art, fmt.Errorf("制品里没有任何文件")
 	}
 
+	// 直接解析成功的 kirbi 文件名：清单里同名的条目不再重复登记。
+	// 两条来源并存时以**二进制解析结果**为准 —— 它才是事实来源，
+	// 清单只是老客户端的兼容路径。
+	parsedKirbi := make(map[string]bool)
+	var manifestLSA []TicketCache
+
 	for _, f := range zr.File {
 		if f.FileInfo().IsDir() {
 			continue
@@ -122,8 +128,10 @@ func ParseTicketArtifact(path string) (TicketArtifact, error) {
 					User        string   `json:"user"`
 					CollectedAt string   `json:"collected_at"`
 					Errors      []string `json:"errors"`
-					// LSA 导出的是 kirbi（KRB_CRED）：enc-part 需要密钥才能解，
-					// 服务端拿不到客户端 principal —— 元数据由客户端随清单上报。
+					// LSA 导出的是 kirbi（KRB_CRED）。**更正**：kirbi 的 enc-part
+					// etype 为 0、cipher 就是明文 DER，服务端能自行解析（见 kirbi.go），
+					// 不再需要密钥。清单仍保留 —— 老客户端只上传清单，
+					// 且清单里可能有二进制解析拿不到的补充字段（如服务名简写）。
 					LSATickets []lsaTicketEntry `json:"lsa_tickets"`
 				}
 				if json.Unmarshal(raw, &m) == nil {
@@ -137,12 +145,14 @@ func ParseTicketArtifact(path string) (TicketArtifact, error) {
 						if principal != "" && t.Realm != "" && !strings.Contains(principal, "@") {
 							principal += "@" + t.Realm
 						}
-						art.Caches = append(art.Caches, TicketCache{
+						// 清单条目先收着：等整份制品扫完，
+						// 凡是二进制已解析成功的同名 kirbi 就不再重复登记。
+						manifestLSA = append(manifestLSA, TicketCache{
 							File: t.File, Source: "lsa", Server: t.Server,
 							Principal: principal, Realm: t.Realm,
 							Tickets: 1, Expires: t.End,
 						})
-						if len(art.Caches) >= MaxTicketCaches {
+						if len(manifestLSA) >= MaxTicketCaches {
 							break
 						}
 					}
@@ -153,7 +163,31 @@ func ParseTicketArtifact(path string) (TicketArtifact, error) {
 
 		lower := strings.ToLower(name)
 		if strings.HasPrefix(lower, "kirbi/") || strings.HasSuffix(lower, ".kirbi") {
-			continue // LSA 导出的 kirbi：不解析二进制，元数据在清单的 lsa_tickets 里
+			// LSA 导出的 kirbi：**直接解析二进制**。
+			//
+			// 更正：过去的注释说"enc-part 需要密钥才能解，服务端拿不到 principal"。
+			// 对标准 kirbi 而言这不成立 —— enc-part 的 etype 为 0，cipher 里存的就是
+			// 明文 DER（见 kirbi.go 文件头与 ccache-v4-kirbi 夹具）。
+			// 所以服务端可以自己解析，不再只能依赖客户端清单：
+			// 清单缺失或漏项时，票据照样能登记进凭据库。
+			if len(art.Caches) >= MaxTicketCaches {
+				art.Errors = append(art.Errors, fmt.Sprintf("缓存数超过上限 %d，其余条目未解析", MaxTicketCaches))
+				break
+			}
+			raw, rerr := readZipEntry(f, MaxTicketBytes)
+			if rerr != nil {
+				art.Errors = append(art.Errors, fmt.Sprintf("%s: %v", name, rerr))
+				continue
+			}
+			kc, kerr := ParseKirbi(raw)
+			if kerr != nil {
+				// 单张票据坏掉不影响其它票据，但要显式告诉操作员少了一张
+				art.Errors = append(art.Errors, fmt.Sprintf("%s: %v", name, kerr))
+				continue
+			}
+			art.Caches = append(art.Caches, ticketCacheFromCCache(name, "lsa", kc))
+			parsedKirbi[name] = true
+			continue
 		}
 		if !strings.HasPrefix(lower, "tickets/") && !strings.HasSuffix(lower, ".ccache") {
 			continue // 无关条目（未来可能加的说明文件）直接忽略
@@ -174,20 +208,43 @@ func ParseTicketArtifact(path string) (TicketArtifact, error) {
 			art.Errors = append(art.Errors, fmt.Sprintf("%s: %v", name, perr))
 			continue
 		}
-		art.Caches = append(art.Caches, TicketCache{
-			File:      name,
-			Version:   cc.Version,
-			Principal: cc.Principal.String(),
-			Realm:     cc.Principal.Realm,
-			Tickets:   len(cc.Credentials),
-			Expires:   ticketExpiry(cc),
-		})
+		art.Caches = append(art.Caches, ticketCacheFromCCache(name, "", cc))
+	}
+
+	// 合并清单里的 LSA 元数据：二进制已解析成功的同名条目跳过
+	for _, mc := range manifestLSA {
+		if parsedKirbi[mc.File] {
+			continue
+		}
+		if len(art.Caches) >= MaxTicketCaches {
+			art.Errors = append(art.Errors, fmt.Sprintf("缓存数超过上限 %d，清单其余条目未登记", MaxTicketCaches))
+			break
+		}
+		art.Caches = append(art.Caches, mc)
 	}
 
 	if len(art.Caches) == 0 {
 		return art, fmt.Errorf("制品里没有可解析的 ccache 或 LSA 票据（errors: %s）", strings.Join(art.Errors, "；"))
 	}
 	return art, nil
+}
+
+// ticketCacheFromCCache 把解析结果转成登记用的条目。
+// source 为空表示 ccache 文件；"lsa" 表示由 kirbi 解析而来（Version 记为 0，
+// 因为 kirbi 没有 ccache 版本号，填 4 会误导使用者以为这是 ccache 文件）。
+func ticketCacheFromCCache(file, source string, cc *CCache) TicketCache {
+	tc := TicketCache{
+		File:      file,
+		Source:    source,
+		Principal: cc.Principal.String(),
+		Realm:     cc.Principal.Realm,
+		Tickets:   len(cc.Credentials),
+		Expires:   ticketExpiry(cc),
+	}
+	if source == "" {
+		tc.Version = cc.Version
+	}
+	return tc
 }
 
 // ticketExpiry 取所有凭据里最晚的 end_time（UTC RFC3339）；全为零值时返回空串。
