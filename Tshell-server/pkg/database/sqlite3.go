@@ -195,8 +195,12 @@ type Users struct {
 	// pkg/security/mfa.go）：库文件/备份泄露时，明文 TOTP 密钥等于第二因子作废。
 	// 这三个字段一律不出现在任何 API 响应里（结构体 tag 上没有 omitempty 也是
 	// 有意的：序列化 Users 的地方都要显式挑字段，避免"顺手 json.Marshal 就泄出去"）。
+	//
+	// 布尔列的默认值写 false 而不是 0：PostgreSQL 的 boolean 列拒绝 `DEFAULT 0`
+	// （pq: column "mfa_enabled" is of type boolean but default expression is of type
+	// integer），会让 Sync2 直接失败、PG 后端根本起不来。SQLite 3.23+ 同样接受 false。
 	MFASecretEnc      string `xorm:"'mfa_secret_enc' default('')" json:"-"`      // 加密后的 TOTP 密钥
-	MFAEnabled        bool   `xorm:"'mfa_enabled' default(0)" json:"-"`          // 是否已确认开启
+	MFAEnabled        bool   `xorm:"'mfa_enabled' default(false)" json:"-"`      // 是否已确认开启
 	MFARecoveryHashes string `xorm:"'mfa_recovery_hashes' default('')" json:"-"` // 恢复码 bcrypt 哈希（JSON 数组串）
 }
 type Clients struct {
@@ -677,7 +681,8 @@ func migrateUsersMFATable() error {
 		describe string
 	}{
 		{"mfa_secret_enc", "TEXT DEFAULT ''", "加密后的 TOTP 密钥（AES-256-GCM）"},
-		{"mfa_enabled", "BOOLEAN DEFAULT 0", "是否已确认开启 MFA"},
+		// 同上：boolean 列的默认值必须是 false，不能是 0（PostgreSQL 会拒）
+		{"mfa_enabled", "BOOLEAN DEFAULT false", "是否已确认开启 MFA"},
 		{"mfa_recovery_hashes", "TEXT DEFAULT ''", "恢复码 bcrypt 哈希（JSON 数组串）"},
 	}
 
