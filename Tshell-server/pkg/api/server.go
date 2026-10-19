@@ -367,6 +367,7 @@ func GenServer(c *gin.Context) {
 		UserAgent:           profUA,
 		Format:              requestFormat,
 		HashPad:             cfgHashPad(),
+		Sign:                true, // 交付给操作员的载荷走签名（config.signing 未启用时为空操作）
 		HTTPGetURI:          profGetURI,
 		HTTPPostURI:         profPostURI,
 		WSPath:              profWSPath,

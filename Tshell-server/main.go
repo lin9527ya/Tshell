@@ -23,6 +23,7 @@ import (
 	"BackendTemplate/pkg/proxy"
 	"BackendTemplate/pkg/security"
 	"BackendTemplate/pkg/sendcommand"
+	"BackendTemplate/pkg/signing"
 	"BackendTemplate/pkg/utils/logx"
 	"context"
 	"embed"
@@ -153,6 +154,25 @@ func main() {
 	logx.SetLevel(logx.ParseLevel(appConfig.Logging.Level))
 	// 日志格式与输出（config.logging.format/output 此前是死配置：logx 恒为 text+stdout）
 	logx.SetFormat(appConfig.Logging.Format)
+
+	// 代码签名（可选）：启用后生成的 Windows 载荷必须签名成功，否则生成失败（不静默降级）。
+	// 校验放在启动期：证书缺失/工具不在 PATH 属于配置错误，越早暴露越好。
+	signingCfg := signing.Config{
+		Enabled:  appConfig.Signing.Enable,
+		Command:  appConfig.Signing.Command,
+		Args:     appConfig.Signing.Args,
+		PFX:      appConfig.Signing.PFX,
+		Password: appConfig.Signing.Password,
+		Timeout:  time.Duration(appConfig.Signing.TimeoutSeconds) * time.Second,
+	}
+	if err := signing.Validate(signingCfg); err != nil {
+		fmt.Printf("❌ 代码签名配置错误: %v\n", err)
+		os.Exit(1)
+	}
+	signing.Configure(signingCfg)
+	if signing.Enabled() {
+		fmt.Printf("✍️  代码签名已启用（%s）\n", signing.Current().Command)
+	}
 	if strings.EqualFold(appConfig.Logging.Output, "file") {
 		logDir := appConfig.Logging.AuditLogDir
 		if logDir == "" {

@@ -91,6 +91,7 @@ func loadAndPatchClient(listener, osType, archType, pass, format string) ([]byte
 		Pass:           pass,
 		Format:         format,
 		HashPad:        cfgHashPad(),
+		Sign:           true, // WebDelivery 交付的文件同样签名（未启用时为空操作）
 	})
 	if err != nil {
 		return nil, "", err

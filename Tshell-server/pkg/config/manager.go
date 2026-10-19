@@ -43,6 +43,9 @@ type Config struct {
 	// 可观测性：Prometheus 指标端点
 	Metrics MetricsConfig `json:"metrics" yaml:"metrics" env:"METRICS"`
 
+	// 代码签名（可选）：生成的 Windows 载荷用外部工具签 Authenticode
+	Signing SigningConfig `json:"signing" yaml:"signing" env:"SIGNING"`
+
 	// 数据库备份
 	Backup BackupConfig `json:"backup" yaml:"backup" env:"BACKUP"`
 
@@ -196,6 +199,20 @@ type BackupConfig struct {
 // MetricsConfig Prometheus 指标端点配置。
 // 默认只允许本机抓取：指标含 beacon 在线数、任务吞吐等运行情报，
 // 跨机抓取（allow_remote）必须同时配置 token。
+// SigningConfig 代码签名配置（外部命令形态，默认 osslsigncode）。
+//
+// 参数模板里可用占位符 {{in}} / {{out}} / {{pfx}} / {{password}}；
+// 唯一硬约束是"读 {{in}}、写 {{out}}"。注意密码走命令行参数，
+// 签名期间会出现在本机进程列表（建议用专用证书）。
+type SigningConfig struct {
+	Enable         bool     `json:"enable" yaml:"enable"`
+	Command        string   `json:"command" yaml:"command" default:"osslsigncode"`
+	Args           []string `json:"args" yaml:"args"`
+	PFX            string   `json:"pfx" yaml:"pfx"`
+	Password       string   `json:"password" yaml:"password"`
+	TimeoutSeconds int      `json:"timeout_seconds" yaml:"timeout_seconds" default:"60"`
+}
+
 type MetricsConfig struct {
 	Enabled     bool   `json:"enabled" yaml:"enabled" env:"METRICS_ENABLED" default:"true"`
 	Token       string `json:"token" yaml:"token" env:"METRICS_TOKEN" default:""`

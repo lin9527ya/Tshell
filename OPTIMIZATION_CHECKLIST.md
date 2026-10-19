@@ -475,3 +475,15 @@ cd Tshell-web && npm run build:embed
 | 176 | ptt 原语（结构体+blob 缓冲区） | `grep -c "KerbCredOffset" Tshell-client/implant/core/services/lsa_windows.go` | ≥1 |
 | 177 | 非 Windows 显式报错 | `grep -c "仅支持 Windows" Tshell-client/implant/core/services/kerberos_action_stub.go` | ≥1 |
 | 178 | 前端帮助 | `grep -c "kerberos ptt" Tshell-web/src/layout/BeaconConsole.vue` | ≥1 |
+
+## T 组（代码签名，2026-10-19 追加）
+
+| # | 优化 | 验证命令 | 期望 |
+|---|------|----------|------|
+| 179 | 签名配置段与结构体 | `grep -c "SigningConfig" Tshell-server/pkg/config/manager.go Tshell-server/pkg/signing/signing.go` | ≥2 |
+| 180 | 启动期校验（pfx/命令） | `grep -c "func Validate" Tshell-server/pkg/signing/signing.go` | ≥1 |
+| 181 | 参数模板占位符替换 | `grep -c "{{in}}" Tshell-server/pkg/signing/signing.go` | ≥1 |
+| 182 | 交付路径启用签名 | `grep -c "Sign:" Tshell-server/pkg/api/server.go Tshell-server/pkg/api/webdelivery.go` | ≥2 |
+| 183 | 签名在 patch/HashPad 之后 | `grep -c "代码签名必须在所有 patch/pad 之后" Tshell-server/pkg/delivery/payload.go` | ≥1 |
+| 184 | 假签名器单测（成功/失败/无输出/校验） | `grep -c "func TestSign\|func TestValidate" Tshell-server/pkg/signing/signing_test.go` | ≥5 |
+| 185 | 文档 | `grep -c "未验证" docs/CODE_SIGNING.md` | ≥1 |

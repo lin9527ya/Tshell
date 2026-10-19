@@ -395,10 +395,14 @@ go test -race ./Tshell-server/...     # 见 §4 回归基线（注意用外层�
   - API：`/webdelivery/commands` 一并回 `launch_methods` / `launch_note` /
     `launch_unsupported`（形态按保存的文件名后缀推断，因为 `format` 没落库）
   - 测试 27 项
-- **代码签名**：仍未做 —— 需要一张 Windows 代码签名证书（EV/OV）。
+- **代码签名**：✅ **已实现（外部命令形态，2026-10-19）** —— `signing` 配置段 +
+  `pkg/signing`：默认 `osslsigncode`、参数模板可换 `signtool`；只对 Windows PE 且
+  非 shellcode 格式执行，位置在所有 patch/HashPad 之后；启用后签名失败 = 载荷生成失败。
+  单测用假签名器覆盖参数替换/失败/输出缺失/配置校验。**未用真实证书验证**
+  （需要 EV/OV 证书与 Windows 环境）。详见 `docs/CODE_SIGNING.md`。
   签名本身是 `signtool`/`osslsigncode` 的外部步骤，接入点在
   `build_templates.ps1` 与 `pkg/delivery/payload.go` 生成之后；
-  没有证书无法验证签名结果，因此没有盲写。
+  没有证书无法验证签名结果 —— 因此接入逻辑已写并单测，但**未做真实签名验证**。
 
 #### 3.11 前端债 — **M**
 - **Pivot 拓扑图**：✅ 已实现（2026-10-19）。新增 `views/graph/`：

@@ -166,3 +166,14 @@ delivery:
 https:
     cert_file: certs/server.pem  # HTTPS 监听器证书文件（留空自动生成自签）
     key_file: certs/server.key   # HTTPS 监听器私钥文件
+
+# 代码签名（可选）：生成的 Windows 载荷用 osslsigncode 签 Authenticode。
+# 未签名 EXE 是 EDR/AV 与 SmartScreen 的直接特征；签名让载荷看起来来自有证书的主体。
+# 注意：密码走命令行参数，签名期间会出现在本机进程列表 —— 建议用专用证书。
+signing:
+    enable: false                 # true 时载荷生成必须签名成功，否则直接报错（不静默降级）
+    command: osslsigncode         # 需在 PATH 中（Windows 可换 signtool，配合自定义 args）
+    args: []                      # 空 = osslsigncode 默认参数（sign -pkcs12 {{pfx}} -pass {{password}} -in {{in}} -out {{out}}）
+    pfx: ./codesign.pfx           # PKCS#12 证书（含私钥）
+    password: ""                  # 证书口令
+    timeout_seconds: 60
