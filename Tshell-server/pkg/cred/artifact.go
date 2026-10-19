@@ -34,6 +34,8 @@ type ArtifactInfo struct {
 	Browsers     int    `json:"browsers,omitempty"`      // 浏览器制品：浏览器配置数
 	Credentials  int    `json:"credentials,omitempty"`   // 浏览器制品：明文口令条数
 	Cookies      int    `json:"cookies,omitempty"`       // 浏览器制品：Cookie 条数
+	Cards        int    `json:"cards,omitempty"`         // 浏览器制品：信用卡条数（Web Data）
+	Autofill     int    `json:"autofill,omitempty"`      // 浏览器制品：自动填充条数（不入库）
 	TicketCaches int    `json:"ticket_caches,omitempty"` // 票据制品：ccache 个数
 	Tickets      int    `json:"tickets,omitempty"`       // 票据制品：票据条目总数
 	SkippedItems int    `json:"skipped,omitempty"`       // 客户端上报的采集错误条数
@@ -104,6 +106,12 @@ func (a ArtifactInfo) Describe() string {
 		desc := fmt.Sprintf("%.2f MB / %d 个浏览器配置 / %d 条口令", mb, a.Browsers, a.Credentials)
 		if a.Cookies > 0 {
 			desc += fmt.Sprintf(" / %d 条 Cookie", a.Cookies)
+		}
+		if a.Cards > 0 {
+			desc += fmt.Sprintf(" / %d 张信用卡", a.Cards)
+		}
+		if a.Autofill > 0 {
+			desc += fmt.Sprintf(" / %d 条自动填充（未入库，见制品）", a.Autofill)
 		}
 		if a.SkippedItems > 0 {
 			desc += fmt.Sprintf(" / %d 条采集错误（见制品 errors 字段）", a.SkippedItems)

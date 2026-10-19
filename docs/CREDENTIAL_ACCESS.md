@@ -198,7 +198,7 @@ pypykatz dpapi masterkey <GUID> <masterkey-base64>   # 或用 impacket 的 dpapi
 | 提权模块 | getsystem（命名管道模拟）/ UAC 绕过 | 属"动作"类，不需要制品管线 |
 | 端口扫描 | ✅ 已实现（TCP connect 扫描，跨平台）：`scan <目标> <端口> [超时毫秒]` | 结果直接作为命令回显 |
 | Firefox / NSS 凭据 | ✅ 已实现并接线（`tech=firefox`） | 复用 `browser` 制品的 JSON 结构 |
-| Chromium `Web Data` | 自动填充/信用卡（价值与噪声都高，需单独开关） | 复用 `browser` 管线 |
+| Chromium `Web Data` | ✅ 2026-10-19 实现（`tech=cards`，见 §11）：信用卡入库、自动填充仅留制品 | 复用 `browser` 管线 |
 
 服务端侧每加一个模块只需：`pkg/cred` 的 `techsByKind` 加一项、客户端加一个取法、
 前端 `CRED_TECHS` 加一项 —— 登记/校验/归属/审计链路完全复用。
@@ -262,3 +262,23 @@ impacket）。坏条目只进 `errors`，不影响其它缓存；一个能解出
 **验证**：`pkg/cred/ticket_test.go` 用 impacket 的真实 ccache 夹具（v3/v4）打 ZIP 断言
 解析结果、坏条目隔离、`ValidateArtifact` 按 kind 分派；客户端 `ticket_test.go` 覆盖
 `KRB5CCNAME` 优先、非文件后端提示、制品布局与类型×技术校验。
+
+## 11. Chromium `Web Data`：信用卡与自动填充（2026-10-19）
+
+**开关**：`kind=browser, tech=cards` —— **单独技术**，不并入 `all`。
+理由是噪声：自动填充一个用户几百条地址碎片很常见，混进常规采集会把有用条目淹掉。
+
+**采集**（`<profile>/Web Data`，只读这一张库，不碰 Login Data/Cookies）：
+- `credit_cards`：`card_number_encrypted` 与口令同为 v10/v20 AES-GCM（**同一把浏览器主密钥**），
+  在植入体内存里解出；`name_on_card` / 有效期 / `nickname` 库里本就是明文
+- `autofill`：字段名与值都是明文（Chromium 不加密）
+
+**入库策略**：
+- 信用卡 → `loot(type=card, source=browser:card)`，`secret` = 卡号，note 带持卡人/有效期/昵称
+- 自动填充 → **不入库**，只在制品 JSON 里（`browsers[].autofill`）；制品备注与任务结果里会
+  标注条数（`%d 条自动填充（未入库，见制品）`），避免操作员以为漏采
+
+**上限**：客户端单配置 200 张卡 / 300 条自动填充，服务端 `MaxBrowserCards` /
+`MaxBrowserAutofill` 同值收口；超限显式失败而不是静默截断。
+
+**失败是显式的**：单张卡解不开只跳过该条并记日志；整份制品里一条可用条目都没有时校验失败。

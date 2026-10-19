@@ -135,8 +135,9 @@ go test -race ./Tshell-server/...     # 见 §4 回归基线（注意用外层�
   - ✅ **Kerberos 票据（文件式）**（`kind=ticket, tech=files`，2026-10-19）：采集
     `krb5cc*` / `KRB5CCNAME` 指向的 MIT ccache → ZIP（manifest + tickets/*）→ 服务端
     逐条目 `ParseCCache` 解析 principal/到期/票据数并登记 `loot(type=ticket)`
-  - ⏳ BloodHound 采集器、Windows LSA 原生票据（list/purge/ptt）、kirbi 互转、
-    Chromium `Web Data`
+  - ✅ **Chromium `Web Data`**（`tech=cards`，2026-10-19）：信用卡（v10/v20，同一把主密钥）
+    入库为 `loot(type=card)`；自动填充是明文但不入库（噪声大，只留制品）
+  - ⏳ BloodHound 采集器、Windows LSA 原生票据（list/purge/ptt）、kirbi 互转
 - **入口**：
   - 客户端：`implant/core/services/cred.go`（按 kind 分派）、`browser*.go`、`dpapi_windows.go`、
     `core/sqlite/`（读取器）

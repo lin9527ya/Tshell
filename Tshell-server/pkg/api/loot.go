@@ -26,6 +26,7 @@ var lootTypes = map[string]bool{
 	"dump":   true, // 内存转储制品(LSASS 等;secret 存服务端文件路径,由操作员本地解析)
 	"cookie": true, // 浏览器 Cookie(会话材料;secret 存 name=value)
 	"ticket": true, // Kerberos 票据缓存(secret 存制品内条目名,本体在制品文件里)
+	"card":   true, // 信用卡(secret 存卡号;来自浏览器 Web Data)
 }
 
 // ListLoot GET /api/loot?uid=&type=&page=&size=

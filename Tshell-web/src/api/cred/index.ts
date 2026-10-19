@@ -37,7 +37,7 @@ export interface CredArtifact {
 export const CRED_TECHS: Record<CredKind, string[]> = {
   lsass: ['auto', 'comsvcs', 'dbgcore'],
   dpapi: ['keys'],
-  browser: ['all', 'chrome', 'edge', 'firefox'],
+  browser: ['all', 'chrome', 'edge', 'firefox', 'cards'],
   ticket: ['files'],
 }
 

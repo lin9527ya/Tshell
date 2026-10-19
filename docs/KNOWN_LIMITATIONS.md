@@ -90,8 +90,10 @@
 - 遗留：
   - **Windows 端未在真实目标上验证**（本仓库只能交叉编译）；
   - 已实现：LSASS / DPAPI / 浏览器（Chrome/Edge/Firefox）/ **Kerberos 票据（文件式 ccache）**；
+  - 已实现：Chromium `Web Data`（信用卡 + 自动填充，`tech=cards`；卡进 `loot(type=card)`，
+    自动填充只留制品）；
   - 未实现：Windows LSA 原生票据（`LsaCallAuthenticationPackage`）、kirbi 解析与
-    kirbi↔ccache 互转、BloodHound 采集器、Chromium `Web Data`；
+    kirbi↔ccache 互转、BloodHound 采集器；
   - 提权模块（getsystem / UAC bypass）已实现，见 §12c 之外的独立说明。
 - 详见 docs/CREDENTIAL_ACCESS.md（含 §7 第二批模块、§9 验证状态）。
 - 状态：✅（四条链路 + 单测）/ ⏳（实机验证 + LSA 票据/BloodHound/Web Data）
