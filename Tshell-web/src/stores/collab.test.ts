@@ -32,18 +32,20 @@ const lock = (uid: string, owner: string) => ({
 describe('collab store（多操作员协作）', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
-    listOperators.mockReset().mockResolvedValue({ data: [] })
-    listLocks.mockReset().mockResolvedValue({ data: [] })
-    acquireLock.mockReset().mockResolvedValue({ data: {} })
-    releaseLock.mockReset().mockResolvedValue({ data: {} })
+    // 真实形状：request 拦截器返回完整 axios 响应，响应体为 {status, data}
+    listOperators.mockReset().mockResolvedValue({ data: { status: 200, data: [] } })
+    listLocks.mockReset().mockResolvedValue({ data: { status: 200, data: [] } })
+    acquireLock.mockReset().mockResolvedValue({ data: { status: 200 } })
+    releaseLock.mockReset().mockResolvedValue({ data: { status: 200 } })
   })
 
   it('refresh 拉取在线列表与会话锁', async () => {
     listOperators.mockResolvedValue({
-      data: [{ username: 'alice', role: 'admin', last_ip: '10.0.0.1', last_seen: '' },
-             { username: 'bob', role: 'operator', last_ip: '10.0.0.2', last_seen: '' }],
+      data: { status: 200, data: [
+        { username: 'alice', role: 'admin', last_ip: '10.0.0.1', last_seen: '' },
+        { username: 'bob', role: 'operator', last_ip: '10.0.0.2', last_seen: '' }] },
     })
-    listLocks.mockResolvedValue({ data: [lock('uid-1', 'bob')] })
+    listLocks.mockResolvedValue({ data: { status: 200, data: [lock('uid-1', 'bob')] } })
 
     const store = useCollabStore()
     await store.refresh()

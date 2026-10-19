@@ -29,11 +29,20 @@ export const useCollabStore = defineStore('collab', () => {
     return l.owner === useUserStore().username ? undefined : l
   }
 
+  // 统一解包列表：request 拦截器返回的是完整 axios 响应（res.data 才是响应体），
+  // 后端契约 {status, data:[...]}，故列表在 res.data.data；同时兼容直接返回数组的形态。
+  const unwrapList = <T,>(res: any): T[] => {
+    const body = res?.data
+    if (Array.isArray(body)) return body as T[]
+    if (Array.isArray(body?.data)) return body.data as T[]
+    return []
+  }
+
   const refresh = async () => {
     try {
       const [ops, lks] = await Promise.all([CollabAPI.listOperators(), CollabAPI.listLocks()])
-      operators.value = (ops as any)?.data ?? []
-      locks.value = (lks as any)?.data ?? []
+      operators.value = unwrapList<CollabOperator>(ops)
+      locks.value = unwrapList<SessionLock>(lks)
       loaded.value = true
     } catch {
       // 协作信息是辅助信息，失败不影响主流程（下一轮重试）
