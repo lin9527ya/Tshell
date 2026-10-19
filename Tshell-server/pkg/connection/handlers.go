@@ -141,7 +141,8 @@ func GetConnectionDetails(c *gin.Context) {
 	}
 
 	// 构建响应数据
-	var connectionData []gin.H
+	// 空列表序列化为 []（nil slice 会变 null，前端 Array.isArray 判定失败）
+	connectionData := make([]gin.H, 0)
 	for _, conn := range filteredConnections {
 		uptime, bytesRead, bytesWritten, errorCount := conn.GetStats()
 
@@ -319,7 +320,8 @@ func GetConnectionsByProtocol(c *gin.Context) {
 
 	connections := GlobalConnectionManager.GetConnectionsByProtocol(protocol)
 
-	var connectionData []gin.H
+	// 空列表序列化为 []（nil slice 会变 null，前端 Array.isArray 判定失败）
+	connectionData := make([]gin.H, 0)
 	for _, conn := range connections {
 		uptime, bytesRead, bytesWritten, errorCount := conn.GetStats()
 
