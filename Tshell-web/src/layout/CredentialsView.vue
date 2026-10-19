@@ -88,7 +88,7 @@
     <div class="cv-table-wrap">
       <el-table
         ref="tableRef"
-        :data="filteredList"
+        :data="pagedList"
         row-key="id"
         size="small"
         height="100%"
@@ -167,6 +167,21 @@
       </el-table>
     </div>
 
+    <!-- 底部分页（前端分页） -->
+    <div class="cs-table-pager">
+      <el-pagination
+        small
+        background
+        layout="prev, pager, next, sizes, total"
+        :total="filteredList.length"
+        :current-page="page"
+        :page-size="pageSize"
+        :page-sizes="[20, 50, 100]"
+        @current-change="onPageChange"
+        @size-change="onSizeChange"
+      />
+    </div>
+
     <!-- Add/Edit Credential Dialog -->
     <el-dialog
       v-model="editDialogVisible"
@@ -232,7 +247,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Key, Refresh, CopyDocument } from '@element-plus/icons-vue'
 import { useCredentialsStore, type CredentialItem } from '@/stores/credentials'
@@ -290,6 +305,19 @@ const filteredList = computed(() => {
     )
   })
 })
+
+// ---- 分页（前端分页）----
+const page = ref(1)
+const pageSize = ref(50)
+const pagedList = computed(() => {
+  const maxPage = Math.max(1, Math.ceil(filteredList.value.length / pageSize.value))
+  const p = Math.min(page.value, maxPage)
+  const start = (p - 1) * pageSize.value
+  return filteredList.value.slice(start, start + pageSize.value)
+})
+function onPageChange(p: number) { page.value = p }
+function onSizeChange(s: number) { pageSize.value = s; page.value = 1 }
+watch([searchKey, typeFilter], () => { page.value = 1 })
 
 function onCurrentChange(row: CredentialItem | null) {
   selectedRow.value = row
@@ -704,5 +732,14 @@ onBeforeUnmount(() => {
   height: 1px;
   margin: 4px 0;
   background: var(--cs-card-border);
+}
+
+.cs-table-pager {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: flex-end;
+  padding: 8px 16px;
+  background: var(--cs-panel);
+  border-top: 1px solid var(--cs-card-border);
 }
 </style>

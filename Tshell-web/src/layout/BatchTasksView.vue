@@ -127,13 +127,10 @@
             <span v-else class="text-dim">—</span>
           </template>
         </el-table-column>
+        <template #empty>
+          <EmptyState variant="inline" :title="i18nStore.tl('暂无任务', 'No tasks')" />
+        </template>
       </el-table>
-
-      <EmptyState
-        v-if="!tasks.length && !loading"
-        variant="overlay"
-        :title="i18nStore.tl('暂无任务', 'No tasks')"
-      />
     </div>
 
     <div class="bt-pager">

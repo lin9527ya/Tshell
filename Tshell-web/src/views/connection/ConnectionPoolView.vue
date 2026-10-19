@@ -77,7 +77,7 @@
 
         <div class="cp-table-wrap">
           <el-table
-            :data="connections"
+            :data="pagedConnections"
             height="100%"
             highlight-current-row
             class="cs-session-table"
@@ -118,16 +118,24 @@
             </el-table-column>
 
             <template #empty>
-              <div class="vs-empty">
-                <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
-                  <rect x="3" y="4" width="18" height="6" rx="2" />
-                  <rect x="3" y="14" width="18" height="6" rx="2" />
-                  <path d="M7 7h.01M7 17h.01" />
-                </svg>
-                <span>{{ i18nStore.tl('暂无活动连接', 'No active connections') }}</span>
-              </div>
+              <EmptyState variant="inline" icon="🔌" :title="i18nStore.tl('暂无活动连接', 'No active connections')" />
             </template>
           </el-table>
+        </div>
+
+        <!-- 底部分页（前端分页：/connection/details 单页上限 100） -->
+        <div class="cp-table-pager">
+          <el-pagination
+            small
+            background
+            layout="prev, pager, next, sizes, total"
+            :total="connections.length"
+            :current-page="page"
+            :page-size="pageSize"
+            :page-sizes="[10, 20, 50]"
+            @current-change="onPageChange"
+            @size-change="onSizeChange"
+          />
         </div>
       </div>
 
@@ -184,9 +192,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import ConnectionAPI from '@/api/connection'
+import EmptyState from '@/components/Common/EmptyState.vue'
 import { useI18nStore } from '@/stores/i18n'
 
 const i18nStore = useI18nStore()
@@ -217,9 +226,22 @@ const poolConfig = reactive({
 })
 
 const connections = ref<any[]>([])
+
 // 连接列表过滤：协议走 /connection/protocol/:protocol，UID 走 /connection/uid/:uid
 const protocolFilter = ref('')
 const uidFilter = ref('')
+// 分页（前端分页：/connection/details 单页上限 100）
+const page = ref(1)
+const pageSize = ref(20)
+const pagedConnections = computed(() => {
+  const maxPage = Math.max(1, Math.ceil(connections.value.length / pageSize.value))
+  const p = Math.min(page.value, maxPage)
+  const start = (p - 1) * pageSize.value
+  return connections.value.slice(start, start + pageSize.value)
+})
+function onPageChange(p: number) { page.value = p }
+function onSizeChange(s: number) { pageSize.value = s; page.value = 1 }
+watch([protocolFilter, uidFilter], () => { page.value = 1 })
 
 async function loadConnections() {
   if (uidFilter.value.trim()) {
@@ -640,5 +662,13 @@ onMounted(() => {
 .vs-empty svg {
   color: var(--cs-text-dim);
   opacity: 0.5;
+}
+
+.cp-table-pager {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: flex-end;
+  padding: 8px 12px;
+  border-top: 1px solid var(--cs-card-border);
 }
 </style>

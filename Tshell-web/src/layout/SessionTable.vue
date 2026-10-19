@@ -48,7 +48,7 @@
       <el-table
         ref="tableRef"
         v-loading="loading"
-        :data="filteredClients"
+        :data="pagedClients"
         row-key="Uid"
         size="small"
         height="100%"
@@ -294,10 +294,27 @@
             </div>
           </template>
         </el-table-column>
-      </el-table>
 
-      <!-- Empty State -->
-      <EmptyState v-if="!filteredClients.length && !loading" :title="t('empty.no_sessions')" />
+        <!-- 空状态放进表格空插槽：避免与 Element Plus 自带「暂无数据」叠加 -->
+        <template #empty>
+          <EmptyState variant="inline" :title="t('empty.no_sessions')" />
+        </template>
+      </el-table>
+    </div>
+
+    <!-- 底部分页（前端分页：搜索/过滤作用于全量，翻页只切显示窗口） -->
+    <div class="cs-table-pager">
+      <el-pagination
+        small
+        background
+        layout="prev, pager, next, sizes, total"
+        :total="filteredClients.length"
+        :current-page="page"
+        :page-size="pageSize"
+        :page-sizes="[20, 50, 100]"
+        @current-change="onPageChange"
+        @size-change="onSizeChange"
+      />
     </div>
 
     <!-- P3：页面内局部弹窗（替代原全局 workspace.dialogs 状态机） -->
@@ -311,7 +328,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useClientsStore, type ClientData } from '@/stores/clients'
@@ -371,6 +388,19 @@ const filteredClients = computed(() => {
     )
   })
 })
+
+// ---- 分页 ----
+const page = ref(1)
+const pageSize = ref(50)
+const pagedClients = computed(() => {
+  const maxPage = Math.max(1, Math.ceil(filteredClients.value.length / pageSize.value))
+  const p = Math.min(page.value, maxPage)
+  const start = (p - 1) * pageSize.value
+  return filteredClients.value.slice(start, start + pageSize.value)
+})
+function onPageChange(p: number) { page.value = p }
+function onSizeChange(s: number) { pageSize.value = s; page.value = 1 }
+watch(searchKey, () => { page.value = 1 })
 
 function getClientOsType(row: RowData): string {
   return detectClientOs(row)
@@ -1047,5 +1077,13 @@ onBeforeUnmount(() => {
   gap: 6px;
   flex-shrink: 0;
 }
-</style>
 
+.cs-table-pager {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: flex-end;
+  padding: 8px 16px;
+  background: var(--cs-panel);
+  border-top: 1px solid var(--cs-card-border);
+}
+</style>
