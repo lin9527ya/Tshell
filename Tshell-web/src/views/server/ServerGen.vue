@@ -22,53 +22,27 @@
       </el-dropdown>
     </PageHeader>
 
+    <!-- 页面级页签（vshell 骨架：页签在页面、内容卡片在下方） -->
+    <div class="sg-tabs">
+      <div
+        v-for="t in TABS"
+        :key="t.name"
+        class="sg-tab"
+        :class="{ active: activeTab === t.name }"
+        @click="switchTab(t.name)"
+      >
+        {{ t.label }}
+      </div>
+    </div>
+
     <div class="gen-card">
       <div class="payload-generator">
-        <!-- 载荷类型标签页（仅展示已实现能力；eBPF 未实现已隐藏） -->
-        <el-tabs v-model="activeTab" class="payload-tabs" @tab-change="handleTabChange">
-          <el-tab-pane :label="i18nStore.tl('分阶段(stage)', 'stage')" name="stage">
-            <div class="tab-content">
-              <el-icon class="tab-icon"><Document /></el-icon>
-              <span class="tab-description-large">{{ i18nStore.tl('分阶段载荷：依赖已配置的 WebDelivery，体积小，运行时二次拉取完整客户端', 'Staged payload: needs a configured WebDelivery, small size, fetches the full client at run time') }}</span>
-            </div>
-          </el-tab-pane>
-          <el-tab-pane :label="i18nStore.tl('Shellcode', 'shellcode')" name="shellcode">
-            <div class="tab-content">
-              <el-icon class="tab-icon"><DocumentAdd /></el-icon>
-              <span class="tab-description-large">{{ i18nStore.tl('Stage Shellcode：基于 WebDelivery 生成可注入 shellcode（Windows）', 'Stage Shellcode: injectable shellcode built from a WebDelivery (Windows)') }}</span>
-            </div>
-          </el-tab-pane>
-          <el-tab-pane :label="i18nStore.tl('无阶段(stageless)', 'stageless')" name="stageless">
-            <div class="tab-content">
-              <el-icon class="tab-icon"><Files /></el-icon>
-              <span class="tab-description-large">{{ i18nStore.tl('无阶段载荷：完整功能客户端，直接上线', 'Stageless payload: full-featured client, connects directly') }}</span>
-            </div>
-          </el-tab-pane>
-          <el-tab-pane :label="i18nStore.tl('DLL 无阶段', 'dll stageless')" name="dll">
-            <div class="tab-content">
-              <el-icon class="tab-icon"><Files /></el-icon>
-              <span class="tab-description-large">{{ i18nStore.tl('DLL 无阶段载荷：rundll32 / regsvr32 加载（仅 Windows）', 'DLL stageless payload: loaded via rundll32 / regsvr32 (Windows only)') }}</span>
-            </div>
-          </el-tab-pane>
-          <el-tab-pane :label="i18nStore.tl('正向监听(listen)', 'listen')" name="listen">
-            <div class="tab-content">
-              <el-icon class="tab-icon"><Connection /></el-icon>
-              <span class="tab-description-large">{{ i18nStore.tl('正向客户端：监听模式，由服务端主动连出上线', 'Forward client: listen mode, the server dials out to it') }}</span>
-            </div>
-          </el-tab-pane>
-          <el-tab-pane :label="i18nStore.tl('DLL 正向监听', 'dll listen')" name="dlllisten">
-            <div class="tab-content">
-              <el-icon class="tab-icon"><Connection /></el-icon>
-              <span class="tab-description-large">{{ i18nStore.tl('DLL 正向客户端：rundll32 / regsvr32 加载（仅 Windows）', 'DLL forward client: loaded via rundll32 / regsvr32 (Windows only)') }}</span>
-            </div>
-          </el-tab-pane>
-          <el-tab-pane :label="i18nStore.tl('投递', 'delivery')" name="delivery">
-            <div class="tab-content">
-              <el-icon class="tab-icon"><Link /></el-icon>
-              <span class="tab-description-large">{{ i18nStore.tl('Web 投递：Stager 托管 / 站点克隆 / 文件托管 / 投递日志', 'Web delivery: stager hosting / site clone / file hosting / delivery logs') }}</span>
-            </div>
-          </el-tab-pane>
-        </el-tabs>
+        <!-- 当前页签的说明（页签本身在页面级，见 .sg-tabs） -->
+        <div class="tab-content">
+          <el-icon class="tab-icon"><component :is="activeTabDef.icon" /></el-icon>
+          <span class="tab-description-large">{{ activeTabDef.desc }}</span>
+        </div>
+
 
         <!-- 配置表单 -->
         <el-form :model="formData" label-width="140px" class="config-form">
@@ -483,7 +457,7 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref, computed, nextTick } from 'vue';
+import { reactive, ref, computed, nextTick, markRaw } from 'vue';
 import { ElMessage } from 'element-plus';
 import { useI18nStore } from '@/stores/i18n';
 import {
@@ -512,6 +486,25 @@ const options = ref<string[]>([]);
 const listenerDetails = ref<any[]>([]);
 const webDeliveryOptions = ref<any[]>([]);
 const activeTab = ref('stageless');
+
+// 页签定义（图标 markRaw：组件对象不该被做成响应式代理）
+const TABS = computed(() => [
+  { name: 'stage', label: i18nStore.tl('分阶段(stage)', 'stage'), icon: markRaw(Document), desc: i18nStore.tl('分阶段载荷：依赖已配置的 WebDelivery，体积小，运行时二次拉取完整客户端', 'Staged payload: needs a configured WebDelivery, small size, fetches the full client at run time') },
+  { name: 'shellcode', label: i18nStore.tl('Shellcode', 'shellcode'), icon: markRaw(DocumentAdd), desc: i18nStore.tl('Stage Shellcode：基于 WebDelivery 生成可注入 shellcode（Windows）', 'Stage Shellcode: injectable shellcode built from a WebDelivery (Windows)') },
+  { name: 'stageless', label: i18nStore.tl('无阶段(stageless)', 'stageless'), icon: markRaw(Files), desc: i18nStore.tl('无阶段载荷：完整功能客户端，直接上线', 'Stageless payload: full-featured client, connects directly') },
+  { name: 'dll', label: i18nStore.tl('DLL 无阶段', 'dll stageless'), icon: markRaw(Files), desc: i18nStore.tl('DLL 无阶段载荷：rundll32 / regsvr32 加载（仅 Windows）', 'DLL stageless payload: loaded via rundll32 / regsvr32 (Windows only)') },
+  { name: 'listen', label: i18nStore.tl('正向监听(listen)', 'listen'), icon: markRaw(Connection), desc: i18nStore.tl('正向客户端：监听模式，由服务端主动连出上线', 'Forward client: listen mode, the server dials out to it') },
+  { name: 'dlllisten', label: i18nStore.tl('DLL 正向监听', 'dll listen'), icon: markRaw(Connection), desc: i18nStore.tl('DLL 正向客户端：rundll32 / regsvr32 加载（仅 Windows）', 'DLL forward client: loaded via rundll32 / regsvr32 (Windows only)') },
+  { name: 'delivery', label: i18nStore.tl('投递', 'delivery'), icon: markRaw(Link), desc: i18nStore.tl('Web 投递：Stager 托管 / 站点克隆 / 文件托管 / 投递日志', 'Web delivery: stager hosting / site clone / file hosting / delivery logs') },
+])
+
+const activeTabDef = computed(() => TABS.value.find((t) => t.name === activeTab.value) || TABS.value[0])
+
+function switchTab(name: string) {
+  if (activeTab.value === name) return
+  activeTab.value = name
+  handleTabChange(name)
+}
 const generating = ref(false);
 
 // 「高级格式 ▾」对话框（原全局 store 挂载 → 页内局部 ref）
@@ -1278,5 +1271,39 @@ const refreshAddress = () => {
 .config-form {
   /* 表单行限宽：宽屏下控件不拉满整卡（vshell 同款：字段贴左、右侧留白） */
   max-width: 920px;
+}
+
+/* 页面级页签（vshell 下划线页签） */
+.sg-tabs {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 20px;
+  background: var(--cs-panel);
+  border-bottom: 1px solid var(--cs-card-border);
+  overflow-x: auto;
+}
+
+.sg-tab {
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 14px;
+  font-size: 14px;
+  color: var(--cs-text);
+  cursor: pointer;
+  white-space: nowrap;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+
+.sg-tab:hover {
+  color: var(--cs-active);
+}
+
+.sg-tab.active {
+  color: var(--cs-active);
+  border-bottom-color: var(--cs-active);
 }
 </style>

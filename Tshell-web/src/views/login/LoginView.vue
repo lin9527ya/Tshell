@@ -69,7 +69,7 @@
         {{ i18nStore.tl('返回重新输入账号', 'Back') }}
       </button>
 
-      <div class="vs-login-foot">Tshell C2 · Team Server (v4.9.1)</div>
+      <div class="vs-login-foot">Tshell C2 · Team Server (v{{ appVersion }})</div>
     </div>
   </div>
 </template>
@@ -80,6 +80,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import VsIcon from '@/layout-vshell/VsIcon.vue'
 import logoUrl from '@/assets/logo.ico'
+import pkg from '../../../package.json'
 import { usePermissStore } from '@/stores/userpermiss'
 import { useUserStore } from '@/stores/user'
 import { useI18nStore } from '@/stores/i18n'
@@ -91,6 +92,7 @@ const router = useRouter()
 const permiss = usePermissStore()
 const userinfo = useUserStore()
 const i18nStore = useI18nStore()
+const appVersion = pkg.version
 const themeStore = useThemeStore()
 
 const isDark = computed(() => themeStore.isDark)

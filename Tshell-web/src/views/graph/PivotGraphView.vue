@@ -265,6 +265,8 @@ onMounted(load)
   flex: 1;
   min-height: 0;
   overflow: auto;
+  /* 图小于画布时居中（margin:auto 在溢出场景也不会裁掉左上角） */
+  display: flex;
   border: 1px solid var(--vs-border, #333);
   border-radius: 6px;
   background: var(--vs-bg-soft, rgba(255, 255, 255, 0.02));
@@ -338,5 +340,9 @@ onMounted(load)
 }
 .pg-meta-v {
   word-break: break-all;
+}
+
+.pg-canvas > svg {
+  margin: auto;
 }
 </style>

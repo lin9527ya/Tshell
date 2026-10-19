@@ -48,63 +48,15 @@
 
       <!-- Windows内存执行模式选择 -->
       <el-form-item :label="i18nStore.tl('执行模式', 'Execution Mode')">
-        <div class="execution-mode-buttons">
-          <el-button
-            :type="executionMode === 'execute-assembly' ? 'primary' : 'default'"
-            @click="setExecutionMode('execute-assembly')"
-            :disabled="!isWindowsClient"
-            class="mode-button"
-          >
-            {{ i18nStore.tl('Execute Assembly(.NET程序内存执行)', 'Execute Assembly (.NET in-memory)') }}
-          </el-button>
-          <el-button
-            :type="executionMode === 'inline-bin' ? 'primary' : 'default'"
-            @click="setExecutionMode('inline-bin')"
-            :disabled="!isWindowsClient"
-            class="mode-button"
-          >
-            {{ i18nStore.tl('Inline Bin(其他exe程序内存执行)', 'Inline Bin (other exe in-memory)') }}
-          </el-button>
-          <el-button
-            :type="executionMode === 'shellcode-inject' ? 'primary' : 'default'"
-            @click="setExecutionMode('shellcode-inject')"
-            :disabled="!isWindowsClient"
-            class="mode-button"
-          >
-            {{ i18nStore.tl('shellcode执行(执行shellcode,上线其他C2等)', 'Shellcode (run shellcode, stage other C2)') }}
-          </el-button>
-          <el-button
-            :type="executionMode === 'script' ? 'primary' : 'default'"
-            @click="setExecutionMode('script')"
-            :disabled="isWindowsClient"
-            class="mode-button"
-          >
-            {{ i18nStore.tl('Script(Linux脚本内存执行)', 'Script (Linux script in-memory)') }}
-          </el-button>
-          <el-button
-            :type="executionMode === 'binary' ? 'primary' : 'default'"
-            @click="setExecutionMode('binary')"
-            :disabled="isWindowsClient"
-            class="mode-button"
-          >
-            {{ i18nStore.tl('Binary(Linux二进制执行)', 'Binary (Linux binary exec)') }}
-          </el-button>
-          <el-button
-            :type="executionMode === 'bof' ? 'primary' : 'default'"
-            @click="setExecutionMode('bof')"
-            :disabled="!isWindowsClient"
-            class="mode-button"
-          >
-            {{ i18nStore.tl('BOF(COFF内存执行)', 'BOF (COFF in-memory)') }}
-          </el-button>
-          <el-button
-            :type="executionMode === 'exec-file' ? 'primary' : 'default'"
-            @click="setExecutionMode('exec-file')"
-            class="mode-button"
-          >
-            {{ i18nStore.tl('Exec File(临时文件执行,支持Go/Rust PE)', 'Exec File (temp file exec, Go/Rust PE)') }}
-          </el-button>
-        </div>
+        <el-radio-group v-model="executionMode" class="mode-group">
+          <el-radio-button
+            v-for="m in EXEC_MODES"
+            :key="m.value"
+            :label="m.value"
+            :disabled="modeDisabled(m)"
+            :title="modeTitle(m)"
+          >{{ m.label }}</el-radio-button>
+        </el-radio-group>
         <el-alert v-if="!isWindowsClient && pluginForm.clientUid" type="info" :closable="false" show-icon style="margin-top: 8px;">
           {{ i18nStore.tl('Linux 客户端：使用 Script 或 Binary 模式执行插件', 'Linux client: use Script or Binary mode') }}
         </el-alert>
@@ -402,6 +354,31 @@ const filterOpts = (kind: 'mode' | 'mimikatz'): FilterOptions => ({
         : 'No output for the current execution mode.\n\nRun a plugin and check the result.',
   log: (...args: unknown[]) => console.log(...args),
 })
+
+// 执行模式：platform = windows / linux / any（any 不随客户端平台禁用）
+const EXEC_MODES = computed(() => [
+  { value: 'execute-assembly', label: i18nStore.tl('Execute Assembly (.NET)', 'Execute Assembly (.NET)'), platform: 'windows' },
+  { value: 'inline-bin', label: i18nStore.tl('Inline Bin (exe)', 'Inline Bin (exe)'), platform: 'windows' },
+  { value: 'shellcode-inject', label: i18nStore.tl('Shellcode', 'Shellcode'), platform: 'windows' },
+  { value: 'script', label: i18nStore.tl('Script (Linux)', 'Script (Linux)'), platform: 'linux' },
+  { value: 'binary', label: i18nStore.tl('Binary (Linux)', 'Binary (Linux)'), platform: 'linux' },
+  { value: 'bof', label: 'BOF (COFF)', platform: 'windows' },
+  { value: 'exec-file', label: i18nStore.tl('Exec File (临时文件)', 'Exec File (temp)'), platform: 'any' },
+])
+
+type ExecMode = { value: string; label: string; platform: string }
+
+function modeDisabled(m: ExecMode): boolean {
+  if (m.platform === 'windows') return !isWindowsClient.value
+  if (m.platform === 'linux') return isWindowsClient.value
+  return false
+}
+
+function modeTitle(m: ExecMode): string {
+  if (m.platform === 'windows') return isWindowsClient.value ? '' : i18nStore.tl('仅 Windows 客户端可用', 'Windows clients only')
+  if (m.platform === 'linux') return isWindowsClient.value ? i18nStore.tl('仅 Linux 客户端可用', 'Linux clients only') : ''
+  return ''
+}
 
 const setExecutionMode = (mode: string) => {
   executionMode.value = mode;
@@ -1410,30 +1387,7 @@ Note: polling transports fetch commands on their next check-in.`;
 }
 
 /* 执行模式选择：下划线页签（激活项主色 + 2px 下划线） */
-.execution-mode-buttons {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 0;
-  width: 100%;
-  border-bottom: 1px solid var(--cs-card-border);
-}
 
-.mode-button {
-  height: 36px;
-  margin: 0 0 -1px 0 !important;
-  padding: 0 12px !important;
-  min-width: 0;
-  font-size: 14px;
-  font-weight: 400;
-  border: none !important;
-  border-bottom: 2px solid transparent !important;
-  border-radius: 0 !important;
-  background: transparent !important;
-  color: var(--cs-text) !important;
-  box-shadow: none !important;
-  transition: color 120ms ease, border-color 120ms ease;
-}
 
 .mode-button + .mode-button {
   margin-left: 4px !important;
@@ -1486,4 +1440,8 @@ Note: polling transports fetch commands on their next check-in.`;
   }
 }
 
+/* 执行模式：Element Plus 分段控件（替代原无边框按钮排） */
+.mode-group {
+  flex-wrap: wrap;
+}
 </style>
