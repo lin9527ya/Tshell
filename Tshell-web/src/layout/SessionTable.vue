@@ -489,7 +489,8 @@ function heartbeatIntervalSeconds(row: RowData): number {
 }
 
 function isClientOnline(row: RowData): boolean {
-  return row.Online === '1' || row.Online === 'true' || row.Online === true as any
+  // Online 可能是 '1'/'true'/true（服务端历史字段类型不一致），统一按字符串比较
+  return row.Online === '1' || String(row.Online) === 'true'
 }
 
 function getRowClass({ row }: { row: RowData }) {
@@ -574,7 +575,7 @@ function onRowCmd(cmd: string, row: RowData) {
 
 // isWindowsSession 凭据获取当前只支持 Windows（技术路径均为 Windows 专有）
 function isWindowsSession(row: RowData): boolean {
-  return detectClientOs(row as any) === 'windows'
+  return detectClientOs(row) === 'windows'
 }
 
 // 占用/释放会话：告诉别人"这台我在动"，避免互相踩踏（服务端据此拒绝他人下发）

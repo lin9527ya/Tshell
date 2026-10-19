@@ -23,8 +23,8 @@ const injectedUid = inject<Ref<string> | ComputedRef<string> | null>('realUid', 
 
 const clientUid = computed(() => {
   if (props.uid && props.uid.length > 5) return props.uid
-  if (injectedUid && (injectedUid as any).value && String((injectedUid as any).value).length > 5) {
-    return String((injectedUid as any).value)
+  if (injectedUid && injectedUid.value && String(injectedUid.value).length > 5) {
+    return String(injectedUid.value)
   }
   const mapped = useClientUid(route)
   return typeof mapped === 'string' && mapped.length > 5 ? mapped : ''

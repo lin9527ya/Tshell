@@ -758,7 +758,7 @@ const getListenerDetails = (listener: string) => {
         );
       }
       return false;
-    }) as any;
+    });
 
     if (detail && (detail.id != null || detail.ID != null)) {
       const parts = listener.split('://');
@@ -876,7 +876,7 @@ const handleGenerate = async () => {
         const selectedListenerDetail = listenerDetails.value.find((detail: any) => {
           const itemUrl = detail.url || `${detail.protocol}://${detail.connectAddress}`;
           return itemUrl === formData.listener;
-        }) as any;
+        });
         if (selectedListenerDetail) {
           try {
             const listenerAPI = await import('@/api/listener');

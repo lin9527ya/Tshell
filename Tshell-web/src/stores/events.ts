@@ -13,6 +13,19 @@ export interface C2Event {
   uid?: string
   timestamp?: number
   detail?: Record<string, any>
+  // 部分事件把字段放在**根上**（历史格式），消费方需要兼容两种形态
+  username?: string
+  user?: string
+  computer?: string
+  ip?: string
+  pid?: string
+  arch?: string
+  os?: string
+  listener?: string
+  process?: string
+  operator?: string
+  message?: string
+  text?: string
 }
 
 const CLIENT_STATE_EVENTS = ['client_online', 'client_offline', 'client_new']

@@ -431,9 +431,9 @@ const loadOnlineClients = async () => {
         .map((c: ClientInfo) => ({
           Uid: c.uid || c.Uid || '',
           Computer: c.computer || c.Computer || 'unknown',
-          ExternalIP: (c as any).external_ip || (c as any).ExternalIP || '-',
+          ExternalIP: c.external_ip || c.ExternalIP || '-',
           Username: c.username || c.Username || 'user',
-          Listener: (c as any).listener || (c as any).Listener || 'tcp',
+          Listener: c.listener || c.Listener || 'tcp',
           Online: '1',
         } as ClientData))
 

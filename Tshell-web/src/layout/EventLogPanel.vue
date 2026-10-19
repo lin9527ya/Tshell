@@ -208,12 +208,23 @@ function sendChat() {
   chatInput.value = ''
 }
 
+// AuditLogRow /api/audit/logs 返回的行（只声明事件日志用到的字段）
+interface AuditLogRow {
+  id?: string
+  timestamp?: string
+  category?: string
+  action?: string
+  username?: string
+  client_ip?: string
+  message?: string
+}
+
 // 1. 加载服务端审计日志与客户端初始上线状态（过滤掉纯 API 轮询，仅保留用户、会话与核心系统事件）
 async function loadAuditAndClientLogs() {
   try {
     const res = await AuditAPI.getAuditLogs({ page: 1, page_size: 100 })
     if (res.data?.status === 200 && res.data.data?.logs) {
-      const logs = res.data.data.logs as any[]
+      const logs = res.data.data.logs as AuditLogRow[]
       for (const row of logs) {
         const time = row.timestamp ? new Date(row.timestamp).getTime() : Date.now()
         const cat = (row.category || '').toUpperCase()
@@ -352,7 +363,7 @@ watch(
     for (const e of eventsStore.events) {
       if (processedEvents.has(e)) break // 旧事件都在后面,已处理过
       processedEvents.add(e)
-      const raw = e as any
+      const raw = e
       const time = e.timestamp ? e.timestamp * 1000 : Date.now()
       const t = String(e.type || '').toLowerCase()
       const detail = e.detail || {}

@@ -163,6 +163,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import type { ClientInfo } from '@/api/plugin'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18nStore } from '@/stores/i18n'
 import { useScriptConsoleStore } from '@/stores/scriptConsole'
@@ -224,9 +225,9 @@ async function refreshClients() {
   try {
     const res = await ClientAPI.get_clients_list({ page: 1, page_size: 1000 })
     const list = res?.data?.data?.list || res?.data?.list || []
-    clients.value = (list as any[])
+    clients.value = (list as ClientInfo[])
       .filter((c) => String(c.Online) === '1')
-      .map((c) => ({ uid: c.Uid, label: `${c.Computer || c.Uid} (${c.ExternalIP || '-'})` }))
+      .map((c) => ({ uid: c.Uid || '', label: `${c.Computer || c.Uid || ''} (${c.ExternalIP || '-'})` }))
   } catch (err) {
     console.error('加载在线客户端失败:', err)
   }

@@ -186,8 +186,8 @@ const isZh = computed(() => i18nStore.isZh)
 const injectedUid = inject<Ref<string> | ComputedRef<string> | null>('realUid', null)
 const resolvedUid = computed(() => {
   if (props.uid && props.uid.length > 5) return props.uid
-  if (injectedUid && (injectedUid as any).value && String((injectedUid as any).value).length > 5) {
-    return String((injectedUid as any).value)
+  if (injectedUid && injectedUid.value && String(injectedUid.value).length > 5) {
+    return String(injectedUid.value)
   }
   return ''
 })

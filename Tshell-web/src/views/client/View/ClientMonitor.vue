@@ -167,7 +167,7 @@ const screenshotsStore = useScreenshotsStore()
 const injectedUid = inject<Ref<string> | ComputedRef<string> | null>('realUid', null)
 
 const getUid = () => {
-  const v = injectedUid && (injectedUid as any).value ? String((injectedUid as any).value) : ''
+  const v = injectedUid && injectedUid.value ? String(injectedUid.value) : ''
   if (v && v.length > 10) return v
   const mapped = useClientUid(route)
   return typeof mapped === 'string' && mapped.length > 10 ? mapped : ''

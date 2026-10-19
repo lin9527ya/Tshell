@@ -227,7 +227,7 @@ export async function generateClientBinary(opts: {
   const proto = String(opts.listener).split('://')[0] || 'client'
   const fname = `${proto}_${opts.osType}_${opts.archType}_${Date.now()}${ext ? '.' + ext : ''}`
   const fakeRes = { data: blob, headers: {} }
-  return downloadBlob(fakeRes as any, fname)
+  return downloadBlob(fakeRes, fname)
 }
 
 // generateClientBinaryBlob 生成载荷并返回 Blob（不触发下载；供上传/注入迁移等流程复用）

@@ -1291,7 +1291,7 @@ async function openDownloadFolder() {
       // responseType='blob' 时 res.data 已是 Blob；兼容字符串/JSON 兜底包装
       const blob = res.data instanceof Blob
         ? res.data
-        : new Blob([res.data as any], { type: 'application/octet-stream' })
+        : new Blob([res.data as BlobPart], { type: 'application/octet-stream' })
       const link = document.createElement('a')
       link.href = URL.createObjectURL(blob)
       link.download = currentDownloadFile.value.name || 'download'

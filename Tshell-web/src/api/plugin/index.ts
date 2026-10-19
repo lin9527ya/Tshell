@@ -78,6 +78,10 @@ export interface ClientInfo {
   online?: string;
   FirstStart?: string;
   first_start?: string;
+  ExternalIP?: string;
+  external_ip?: string;
+  Listener?: string;
+  listener?: string;
 }
 
 export interface PluginInfo {

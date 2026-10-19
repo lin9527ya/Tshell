@@ -92,7 +92,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, inject, ref } from 'vue'
+import { computed, inject, ref, type ComputedRef, type Ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import ClientAPI from '@/api/clients'
 import { useI18nStore } from '@/stores/i18n'
@@ -100,9 +100,9 @@ import { useI18nStore } from '@/stores/i18n'
 const i18nStore = useI18nStore()
 const isZh = computed(() => i18nStore.isZh)
 
-const injectedUid = inject('realUid', null) as any
+const injectedUid = inject<Ref<string> | ComputedRef<string> | null>('realUid', null)
 const getUid = () => {
-  const v = injectedUid && injectedUid.value ? String(injectedUid.value) : ''
+  const v = injectedUid?.value ? String(injectedUid.value) : ''
   return v && v.length > 10 ? v : ''
 }
 
