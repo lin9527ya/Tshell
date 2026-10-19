@@ -98,9 +98,10 @@ describe('前端债棘轮', () => {
   })
 
   it('`as any` 不再增长', () => {
-    // 2026-10-19 从 63 降到 32（axios 配置扩展、performance.memory 接口、
-    // 厂商前缀全屏 API 声明各消掉一批）。清理时同步调小。
-    const CAP = 32
+    // 2026-10-19：63 → 32（类型声明替代断言）→ 0（inject 的冗余 cast、C2Event 根字段、
+    // 审计行类型、ClientInfo snake_case 字段等）。此后**不允许再出现**，需用真实类型
+    // 或 unknown + 收窄。
+    const CAP = 0
     const { total, byFile } = countMatches(/\bas\s+any\b/g)
     if (total > CAP) {
       throw new Error(

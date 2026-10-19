@@ -432,15 +432,18 @@ go test -race ./Tshell-server/...     # 见 §4 回归基线（注意用外层�
   - **刻意不动的 6 处**：`api/cred/index.ts` 与 `stores/screenshots.ts` 里 `isZh` 是
     **函数参数**（它们不是组件，把语言作为显式参数传入是正确设计），
     改成 store 调用反而破坏可测试性
-- **`as any`**：63 → **32**（2026-10-19）
+- **`as any`**：63 → 32 → **0**（2026-10-19）
   - 消掉的三批都是"用类型声明代替断言"的真实改进：
     axios 配置扩展（`declare module 'axios'`，字段名拼错现在会编译失败，
     此前 `as any` 会让 `metadata` 写成 `metaData` 静默拿到 undefined）、
     `performance.memory` 显式接口、厂商前缀全屏 API 的 `declare global`（10 处 → 1 处声明）
   - 顺带修掉一处纯噪音：`(injectedUid as any).value` —— 它的类型本来就是
     `Ref<string> | ComputedRef<string>`，两者都有 `.value`，断言毫无必要
+  - 第二批（26 → 0）：6 个页面的 inject 冗余 cast；`C2Event` 补齐服务端放在根上的
+    字段；审计日志行新增 `AuditLogRow`；`ClientInfo` 补 `external_ip`/`listener`；
+    SessionTable 的 `true as any` 改成字符串比较；Blob 参数改 `as BlobPart`
 - **棘轮守卫**：`src/techdebt.test.ts` 钉住两条 ——
-  组件内联三元上限 **0**（清零后不允许回涨）、`as any` 上限 **32**（只许降）。
+  组件内联三元上限 **0**（清零后不允许回涨）、`as any` 上限 **0**（已清零，此后不允许再出现）。
   另有第三条钉住 `tl` 按 locale **真的分支**：它若退化成恒返回中文，
   1600 处调用点的语言切换会静默失效而没人立刻发现
 - **大文件拆分**：已开始（2026-10-19）

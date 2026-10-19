@@ -487,3 +487,12 @@ cd Tshell-web && npm run build:embed
 | 183 | 签名在 patch/HashPad 之后 | `grep -c "代码签名必须在所有 patch/pad 之后" Tshell-server/pkg/delivery/payload.go` | ≥1 |
 | 184 | 假签名器单测（成功/失败/无输出/校验） | `grep -c "func TestSign\|func TestValidate" Tshell-server/pkg/signing/signing_test.go` | ≥5 |
 | 185 | 文档 | `grep -c "未验证" docs/CODE_SIGNING.md` | ≥1 |
+
+## U 组（前端类型逃逸清零，2026-10-19 追加）
+
+| # | 优化 | 验证命令 | 期望 |
+|---|------|----------|------|
+| 186 | 非测试源码中 `as any` 清零（不含注释） | `grep -rn "as any" Tshell-web/src --include=*.vue --include=*.ts | grep -v test | grep -v "//" | wc -l` | 0 |
+| 187 | C2Event 根字段类型化 | `grep -c "operator?: string" Tshell-web/src/stores/events.ts` | ≥1 |
+| 188 | 审计行类型 | `grep -c "interface AuditLogRow" Tshell-web/src/layout/EventLogPanel.vue` | ≥1 |
+| 189 | ClientInfo 补 snake_case | `grep -c "external_ip" Tshell-web/src/api/plugin/index.ts` | ≥1 |
