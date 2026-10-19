@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"testing"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -23,11 +24,25 @@ var DefaultClientSleep = "5"
 var Engine *xorm.Engine
 var DatabaseName string = "./database.db"
 
+// bcryptCost 密码哈希的 bcrypt 成本因子。
+//
+// 生产用 14（离线爆破下的更高取值）；**测试二进制自动降到 MinCost**。
+// cost 是 O(2^cost)，14 在 CI 的 -race + 共享 CPU 下单次哈希可达数十秒，而测试里
+// 38 处 ConnectDateBase 初始化各要哈希一次默认口令 —— CI 上 pkg/api 因此跑过
+// `go test` 默认的 10 分钟包超时（goroutine 栈停在 MFAConfirmHandler →
+// CheckPasswordHash → bcrypt.bcrypt(…, 0xe, …)）。用 testing.Testing() 而不是让每个
+// 测试包自己设，是为了"新加的测试包不会忘"。
+func bcryptCost() int {
+	if testing.Testing() {
+		return bcrypt.MinCost
+	}
+	return 14
+}
+
 // 密码安全处理函数
 // HashPassword 使用bcrypt生成密码哈希
 func HashPassword(password string) (string, error) {
-	// 使用bcrypt生成哈希，成本因子设为14（推荐安全级别）
-	bytes, err := bcrypt.GenerateFromPassword([]byte(password), 14)
+	bytes, err := bcrypt.GenerateFromPassword([]byte(password), bcryptCost())
 	return string(bytes), err
 }
 

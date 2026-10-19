@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"strings"
+	"testing"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -50,11 +51,21 @@ func NewRecoveryCodes(n int) ([]string, error) {
 	return codes, nil
 }
 
+// recoveryCodeCost 恢复码哈希的 bcrypt 成本因子：生产用 DefaultCost(10)，
+// 测试二进制降到 MinCost —— 注册一次要哈希 RecoveryCodeCount(10) 个码，
+// 在 -race 的 CI 上同样是可观的开销（密码侧见 pkg/database 的 bcryptCost）。
+func recoveryCodeCost() int {
+	if testing.Testing() {
+		return bcrypt.MinCost
+	}
+	return bcrypt.DefaultCost
+}
+
 // HashRecoveryCodes 把明文恢复码转成可入库的哈希列表
 func HashRecoveryCodes(codes []string) ([]string, error) {
 	hashes := make([]string, 0, len(codes))
 	for _, c := range codes {
-		h, err := bcrypt.GenerateFromPassword([]byte(normalizeRecoveryCode(c)), bcrypt.DefaultCost)
+		h, err := bcrypt.GenerateFromPassword([]byte(normalizeRecoveryCode(c)), recoveryCodeCost())
 		if err != nil {
 			return nil, fmt.Errorf("哈希恢复码失败: %w", err)
 		}
