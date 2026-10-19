@@ -1,12 +1,9 @@
 <template>
   <div class="servergen-page cs-font-ui">
-    <!-- CS Toolbar -->
-    <div class="sg-toolbar">
-      <div class="sg-title-group">
-        <span class="sg-title">{{ i18nStore.tl('分阶段载荷生成器', 'Payload Generator (Staged)') }}</span>
-        <span class="sg-desc">{{ i18nStore.tl('无阶段 / 分阶段 / DLL / Shellcode / 正向客户端', 'Stageless / Stage / DLL / Shellcode / Forward Client') }}</span>
-      </div>
-      <div class="sg-spacer" />
+    <PageHeader
+      :title="i18nStore.tl('客户端生成', 'Payloads')"
+      :subtitle="i18nStore.tl('载荷生成器', 'Payload Generator')"
+    >
       <span class="sg-tip">{{ i18nStore.tl('根据监听器自动注入 VKey 与加密盐', 'Automatic VKey & Salt injection based on Listener') }}</span>
       <!-- 高级格式：HTA / Office 宏 / Windows EXE（原全局对话框收编到页内，下拉右对齐） -->
       <el-dropdown trigger="click" placement="bottom-end" class="sg-dropdown" @command="openAdvDialog">
@@ -23,7 +20,7 @@
           </el-dropdown-menu>
         </template>
       </el-dropdown>
-    </div>
+    </PageHeader>
 
     <div class="gen-card">
       <div class="payload-generator">
@@ -1276,5 +1273,10 @@ const refreshAddress = () => {
   padding: 12px 32px;
   font-size: 16px;
   border-radius: 8px;
+}
+
+.config-form {
+  /* 表单行限宽：宽屏下控件不拉满整卡（vshell 同款：字段贴左、右侧留白） */
+  max-width: 920px;
 }
 </style>

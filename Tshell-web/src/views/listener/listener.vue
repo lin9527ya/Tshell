@@ -1,12 +1,9 @@
 <template>
-  <div class="cs-listeners-panel cs-font-ui" @click="closeContextMenu">
+  <div class="cs-listeners-panel cs-font-ui">
+    <PageHeader :title="i18nStore.tl('监听管理', 'Listeners')" />
+
     <!-- vshell 工具条：内容上方一行（左：标题 / 下划线页签，右：搜索 + 操作） -->
     <div class="cs-listener-toolbar">
-      <div class="cs-title-group">
-        <el-icon class="cs-title-icon"><Headset /></el-icon>
-        <span class="cs-title">{{ i18nStore.tl('监听器管理', 'Listeners') }}</span>
-      </div>
-
       <!-- 正/反向监听器：下划线页签（激活 = 主色字 + 2px 主色下划线） -->
       <div class="cs-view-tabs">
         <button
@@ -52,21 +49,21 @@
         <span>{{ i18nStore.tl('刷新', 'Refresh') }}</span>
       </button>
 
-      <!-- 攻击工具：正向连接 / 鱼叉式钓鱼（页面内局部弹窗） -->
-      <span class="cs-toolbar-divider" />
-      <button class="cs-btn" @click="showForwardConnect = true">{{ i18nStore.tl('正向连接', 'Forward Connect') }}</button>
-      <button class="cs-btn" @click="showSpearPhish = true">{{ i18nStore.tl('钓鱼邮件', 'Spear Phish') }}</button>
+      <!-- 次要入口收进「更多」；单条启停/编辑/删除在表格行操作列 -->
+      <el-dropdown trigger="click" @command="onMoreCmd">
+        <button class="cs-btn">{{ i18nStore.tl('更多', 'More') }} ▾</button>
+        <template #dropdown>
+          <el-dropdown-menu>
+            <el-dropdown-item command="forward">{{ i18nStore.tl('正向连接', 'Forward Connect') }}</el-dropdown-item>
+            <el-dropdown-item command="phish">{{ i18nStore.tl('钓鱼邮件', 'Spear Phish') }}</el-dropdown-item>
+            <el-dropdown-item command="help">{{ i18nStore.tl('帮助', 'Help') }}</el-dropdown-item>
+          </el-dropdown-menu>
+        </template>
+      </el-dropdown>
 
-      <!-- 反向监听器操作（正向视图的操作条由子面板自带） -->
       <template v-if="activeView === 'normal'">
         <span class="cs-toolbar-divider" />
         <button class="cs-btn cs-btn-primary" @click="openAddDialog">{{ i18nStore.tl('添加', 'Add') }}</button>
-        <button class="cs-btn" :disabled="!selectedRow" @click="openEditDialog()">{{ i18nStore.tl('编辑', 'Edit') }}</button>
-        <button class="cs-btn" :disabled="!selectedRow || selectedRow.Status === 1" @click="() => handleStart(selectedRow)">{{ i18nStore.tl('开启', 'Start') }}</button>
-        <button class="cs-btn" :disabled="!selectedRow || selectedRow.Status !== 1" @click="() => handleStop(selectedRow)">{{ i18nStore.tl('关闭', 'Stop') }}</button>
-        <button class="cs-btn" :disabled="!selectedRow" @click="() => handleRestart(selectedRow)">{{ i18nStore.tl('重启', 'Restart') }}</button>
-        <button class="cs-btn cs-btn-danger" :disabled="!selectedRow" @click="() => handleRemove(selectedRow)">{{ i18nStore.tl('删除', 'Remove') }}</button>
-        <button class="cs-btn" @click="handleHelp">{{ i18nStore.tl('帮助', 'Help') }}</button>
       </template>
     </div>
 
@@ -82,11 +79,9 @@
             size="small"
             height="100%"
             highlight-current-row
-            :row-style="getRowStyle"
             class="cs-session-table"
             @row-click="onRowClick"
             @row-dblclick="onRowDblClick"
-            @row-contextmenu="onRowContextMenu"
           >
             <el-table-column prop="name" :label="i18nStore.tl('名称', 'name')" min-width="110" sortable show-overflow-tooltip />
             <el-table-column prop="payload" :label="i18nStore.tl('载荷', 'payload')" min-width="160" sortable show-overflow-tooltip />
@@ -112,6 +107,26 @@
               </template>
             </el-table-column>
 
+            <el-table-column :label="i18nStore.tl('操作', 'Actions')" width="210" fixed="right">
+              <template #default="{ row }">
+                <div class="row-actions">
+                  <a
+                    v-if="row.Status === 1"
+                    class="row-link"
+                    @click.stop="handleStop(row)"
+                  >{{ i18nStore.tl('停用', 'Stop') }}</a>
+                  <a
+                    v-else
+                    class="row-link"
+                    @click.stop="handleStart(row)"
+                  >{{ i18nStore.tl('启用', 'Start') }}</a>
+                  <a class="row-link" @click.stop="handleRestart(row)">{{ i18nStore.tl('重启', 'Restart') }}</a>
+                  <a class="row-link" @click.stop="openEditDialog(row)">{{ i18nStore.tl('编辑', 'Edit') }}</a>
+                  <a class="row-link row-link-danger" @click.stop="handleRemove(row)">{{ i18nStore.tl('删除', 'Remove') }}</a>
+                </div>
+              </template>
+            </el-table-column>
+
             <template #empty>
               <EmptyState variant="inline" icon="📡" :title="i18nStore.tl('暂无反向监听器', 'No Listeners Configured')" />
             </template>
@@ -129,54 +144,6 @@
         />
       </div>
     </div>
-
-    <!-- Right-Click Context Menu -->
-    <Teleport to="body">
-      <div
-        v-if="ctxMenu.visible"
-        class="cs-listener-ctx-menu cs-font-ui"
-        :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }"
-        @mousedown.stop
-        @contextmenu.prevent
-      >
-        <div class="ctx-item" :class="{ disabled: ctxMenu.row?.Status === 1 }" @click="handleStart(ctxMenu.row)">
-          <span class="ctx-text">{{ i18nStore.tl('开启监听', 'Start Listener') }}</span>
-        </div>
-        <div class="ctx-item" :class="{ disabled: ctxMenu.row?.Status !== 1 }" @click="handleStop(ctxMenu.row)">
-          <span class="ctx-text">{{ i18nStore.tl('关闭监听', 'Stop Listener') }}</span>
-        </div>
-        <div class="ctx-item" @click="handleRestart(ctxMenu.row)">
-          <span class="ctx-text">{{ i18nStore.tl('重启监听', 'Restart Listener') }}</span>
-        </div>
-        <div class="ctx-item" @click="openEditDialog(ctxMenu.row)">
-          <span class="ctx-text">{{ i18nStore.tl('编辑...', 'Edit...') }}</span>
-        </div>
-        <div class="ctx-divider" />
-        <div
-          class="ctx-item has-sub"
-          @mouseenter="ctxMenu.showColor = true"
-          @mouseleave="ctxMenu.showColor = false"
-        >
-          <span class="ctx-text">{{ i18nStore.tl('颜色', 'Color') }}</span>
-          <span class="ctx-arrow">▶</span>
-
-          <div v-show="ctxMenu.showColor" class="ctx-color-palette">
-            <div
-              v-for="c in colorPalette"
-              :key="c.value"
-              class="color-box"
-              :style="{ backgroundColor: c.value }"
-              :title="i18nStore.tl(c.zh, c.en)"
-              @click.stop="setColor(c.value)"
-            />
-          </div>
-        </div>
-        <div class="ctx-divider" />
-        <div class="ctx-item ctx-danger" @click="handleRemove(ctxMenu.row)">
-          <span class="ctx-text">{{ i18nStore.tl('删除', 'Remove') }}</span>
-        </div>
-      </div>
-    </Teleport>
 
     <!-- New / Edit Listener Dialog -->
     <EditListenerDialog
@@ -196,13 +163,14 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Headset, Refresh } from '@element-plus/icons-vue'
+import { Refresh } from '@element-plus/icons-vue'
 import EditListenerDialog from '@/layout/Dialogs/EditListenerDialog.vue'
 import ForwardConnectDialog from '@/layout/Dialogs/Attacks/ForwardConnectDialog.vue'
 import SpearPhishDialog from '@/layout/Dialogs/Attacks/SpearPhishDialog.vue'
 import ForwardListeners from './ForwardListeners.vue'
 import ListenerAPI from '@/api/listener'
 import { useI18nStore } from '@/stores/i18n'
+import PageHeader from '@/components/Common/PageHeader.vue'
 import EmptyState from '@/components/Common/EmptyState.vue'
 
 interface ListenerItem {
@@ -246,25 +214,6 @@ const showSpearPhish = ref(false)
 
 const currentLoading = computed(() => (activeView.value === 'normal' ? loading.value : (forwardRef.value?.loading ?? false)))
 
-const ctxMenu = ref({
-  visible: false,
-  x: 0,
-  y: 0,
-  row: null as ListenerItem | null,
-  showColor: false,
-})
-
-const colorPalette = [
-  { value: '#ffffff', zh: '默认白色', en: 'White' },
-  { value: '#ef5350', zh: '红色', en: 'Red' },
-  { value: '#ff9800', zh: '橙色', en: 'Orange' },
-  { value: '#ffee58', zh: '黄色', en: 'Yellow' },
-  { value: '#66bb6a', zh: '绿色', en: 'Green' },
-  { value: '#26c6da', zh: '青色', en: 'Cyan' },
-  { value: '#42a5f5', zh: '蓝色', en: 'Blue' },
-  { value: '#ab47bc', zh: '紫色', en: 'Purple' },
-]
-
 const filteredListeners = computed(() => {
   const q = searchKey.value.toLowerCase().trim()
   if (!q) return listenersList.value
@@ -305,17 +254,6 @@ function maskSecret(secret?: string): string {
   if (!secret) return isZh.value ? '默认' : 'DEFAULT'
   if (secret.length <= 4) return '****'
   return `${secret.slice(0, 4)}****${secret.slice(-2)}`
-}
-
-function getRowStyle({ row }: { row: ListenerItem }) {
-  if (row.color && row.color !== '#ffffff') {
-    return {
-      '--el-table-tr-bg-color': `${row.color}30`,
-      backgroundColor: `${row.color}30`,
-      borderLeft: `3px solid ${row.color}`,
-    }
-  }
-  return {}
 }
 
 async function fetchListeners() {
@@ -376,28 +314,10 @@ function onRowDblClick(row: ListenerItem) {
   openEditDialog(row)
 }
 
-function onRowContextMenu(row: ListenerItem, col: any, e: MouseEvent) {
-  e.preventDefault()
-  selectedRow.value = row
-  ctxMenu.value = {
-    visible: true,
-    x: e.clientX,
-    y: e.clientY,
-    row,
-    showColor: false,
-  }
-}
-
-function closeContextMenu() {
-  ctxMenu.value.visible = false
-  ctxMenu.value.showColor = false
-}
-
-function setColor(color: string) {
-  if (ctxMenu.value.row) {
-    ctxMenu.value.row.color = color
-  }
-  closeContextMenu()
+function onMoreCmd(cmd: string) {
+  if (cmd === 'forward') showForwardConnect.value = true
+  else if (cmd === 'phish') showSpearPhish.value = true
+  else if (cmd === 'help') handleHelp()
 }
 
 function openAddDialog() {
@@ -410,12 +330,10 @@ function openEditDialog(item?: ListenerItem | null) {
   if (!target) return
   editingListener.value = { ...target }
   showEditDialog.value = true
-  closeContextMenu()
 }
 
 async function handleStart(item: ListenerItem | null) {
   if (!item) return
-  closeContextMenu()
   try {
     const res = await ListenerAPI.openListener({ listenAddress: item.ListenAddress })
     if (res.data?.status === 200 || res.status === 200) {
@@ -431,7 +349,6 @@ async function handleStart(item: ListenerItem | null) {
 
 async function handleStop(item: ListenerItem | null) {
   if (!item) return
-  closeContextMenu()
   try {
     const res = await ListenerAPI.closeListener({ listenAddress: item.ListenAddress })
     if (res.data?.status === 200 || res.status === 200) {
@@ -447,7 +364,6 @@ async function handleStop(item: ListenerItem | null) {
 
 async function handleRestart(item: ListenerItem | null) {
   if (!item) return
-  closeContextMenu()
   // 重启会断开该监听器下全部客户端连接(客户端将自动重连),需确认
   try {
     await ElMessageBox.confirm(
@@ -474,7 +390,6 @@ async function handleRestart(item: ListenerItem | null) {
 function handleRemove(item?: ListenerItem | null) {
   const target = item || selectedRow.value
   if (!target) return
-  closeContextMenu()
   ElMessageBox.confirm(
     isZh.value
       ? `确定要删除监听器 "${target.ListenAddress}" 吗？`
@@ -557,11 +472,9 @@ function handleHelp() {
 
 onMounted(() => {
   fetchListeners()
-  window.addEventListener('mousedown', closeContextMenu)
 })
 
 onBeforeUnmount(() => {
-  window.removeEventListener('mousedown', closeContextMenu)
 })
 </script>
 
@@ -818,5 +731,27 @@ onBeforeUnmount(() => {
 
 .color-box:hover {
   border-color: var(--cs-active);
+}
+
+/* 行内操作（vshell 范式：文字链接） */
+.row-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.row-link {
+  color: var(--cs-active);
+  font-size: 14px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.row-link:hover {
+  text-decoration: underline;
+}
+
+.row-link-danger {
+  color: var(--cs-error, #f56c6c);
 }
 </style>

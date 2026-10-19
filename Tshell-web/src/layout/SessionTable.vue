@@ -1,8 +1,12 @@
 <template>
   <div class="session-table-container cs-font-ui">
+    <PageHeader
+      :title="i18nStore.tl('客户端管理', 'Clients')"
+      :subtitle="i18nStore.tl('会话列表', 'Sessions')"
+    />
+
     <!-- Search / Count Toolbar(常驻;接原 searchKey 死代码,Ctrl+F 聚焦) -->
     <div class="cs-session-toolbar">
-      <span class="cs-session-title">{{ i18nStore.tl('会话列表', 'Sessions') }}</span>
       <div class="cs-session-search-wrap">
         <input
           ref="searchInputRef"
@@ -340,6 +344,7 @@ import VsIcon from '@/layout-vshell/VsIcon.vue'
 import { useVisibilityInterval } from '@/utils/useVisibilityInterval'
 import { detectClientOs } from '@/utils/clientUtils'
 import ClientAPI from '@/api/clients'
+import PageHeader from '@/components/Common/PageHeader.vue'
 import EmptyState from '@/components/Common/EmptyState.vue'
 import OsIcon from '@/components/Common/OsIcon.vue'
 // P3：会话操作对话框（页面内局部弹窗）

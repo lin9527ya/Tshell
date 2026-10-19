@@ -1,5 +1,7 @@
 <template>
 <div class="plugin-container cs-font-ui">
+  <PageHeader :title="i18nStore.tl('插件运行', 'Plugins')" />
+
   <!-- 页签：插件 / 脚本（vshell：同域功能并页） -->
   <div class="plug-tabs">
     <div class="plug-tab" :class="{ active: view === 'plugins' }" @click="view = 'plugins'">
@@ -14,7 +16,6 @@
   <!-- 工具条：左侧标题/计数，右侧操作 -->
   <div class="plug-toolbar">
     <div class="plug-title-group">
-      <span class="plug-title">{{ i18nStore.tl('内存执行与插件模块', 'Memory Execution & Plugins') }}</span>
       <span class="plug-count">({{ plugins.length }} {{ i18nStore.tl('个插件可用', 'plugins available') }})</span>
     </div>
 

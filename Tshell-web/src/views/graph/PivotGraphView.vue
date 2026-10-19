@@ -1,8 +1,9 @@
 <template>
   <div class="pg-root">
-    <div class="pg-head">
-      <span class="pg-title">{{ i18nStore.tl('拓扑网络图', 'Pivot Graph') }}</span>
-      <span class="pg-sub">{{ i18nStore.tl('服务端 → 监听器 → 客户端 → 隧道 → 目标', 'Server → Listener → Client → Tunnel → Target') }}</span>
+    <PageHeader
+      :title="i18nStore.tl('拓扑网络图', 'Pivot Graph')"
+      :subtitle="i18nStore.tl('服务端 → 监听器 → 客户端 → 隧道 → 目标', 'Server → Listener → Client → Tunnel → Target')"
+    >
       <div class="pg-actions">
         <span class="pg-stat">
           {{ i18nStore.tl('节点', 'Nodes') }} {{ layout.nodes.length }} ·
@@ -12,7 +13,7 @@
           {{ loading ? (i18nStore.tl('刷新中…', 'Loading…')) : (i18nStore.tl('刷新', 'Refresh')) }}
         </button>
       </div>
-    </div>
+    </PageHeader>
 
     <!-- 图例：颜色/实心空心的含义必须在图上说明，否则用户只能猜 -->
     <div class="pg-legend">
@@ -122,6 +123,7 @@
  *  3. 点击节点在下方列出 meta：图上放不下的地址/密钥指纹等信息集中在这里。
  */
 import { computed, onMounted, ref } from 'vue'
+import PageHeader from '@/components/Common/PageHeader.vue'
 import ClientApi from '@/api/clients'
 import { useI18nStore } from '@/stores/i18n'
 import {

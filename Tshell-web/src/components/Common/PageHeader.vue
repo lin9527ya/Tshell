@@ -1,5 +1,6 @@
 <script setup lang="ts">
-// 页面统一头部：标题+副标题+右侧操作区
+// 页面统一头部（vshell 骨架）：20px 标题 + 副标题 + 右侧操作。
+// 渲染在页面背景上（透明），页签由各页在头部下方自行摆放。
 defineProps<{
   title: string
   subtitle?: string
@@ -9,7 +10,7 @@ defineProps<{
 <template>
   <div class="page-header">
     <div class="page-header-left">
-      <h2 class="page-title">{{ title }}</h2>
+      <h1 class="page-title">{{ title }}</h1>
       <span v-if="subtitle" class="page-subtitle">{{ subtitle }}</span>
       <div class="page-header-extra">
         <slot name="left-extra" />
@@ -23,14 +24,13 @@ defineProps<{
 
 <style scoped>
 .page-header {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 16px 20px;
-  background: var(--bg-panel, #161b22);
-  border-bottom: 1px solid var(--border-color, #30363d);
-  flex-shrink: 0;
+  padding: 16px 20px 8px;
+  background: transparent;
 }
 
 .page-header-left {
@@ -44,23 +44,25 @@ defineProps<{
 .page-header-extra {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 
 .page-title {
   margin: 0;
-  font-size: 16px;
+  font-size: 20px;
   font-weight: 600;
-  color: var(--text-primary, #e6edf3);
+  line-height: 1.4;
+  color: var(--cs-text-bright);
   white-space: nowrap;
 }
 
 .page-subtitle {
-  font-size: 12px;
-  color: var(--text-tertiary, #6e7681);
+  font-size: 14px;
+  color: var(--cs-text-dim);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 0;
 }
 
 .page-header-right {
@@ -68,5 +70,12 @@ defineProps<{
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
+}
+
+@media (max-width: 1100px) {
+  .page-header {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
 }
 </style>

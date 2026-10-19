@@ -1,5 +1,7 @@
 <template>
   <div class="tunnel-proxy-container cs-font-ui">
+    <PageHeader :title="i18nStore.tl('隧道代理', 'Tunnels')" />
+
     <!-- 页签：隧道 / SOCKS5（vshell：同域功能并页） -->
     <div class="tp-tabs">
       <div class="tp-tab" :class="{ active: view === 'tunnel' }" @click="view = 'tunnel'">
@@ -14,7 +16,6 @@
     <!-- vshell 工具条：左（标题 + 计数），右（筛选 + 操作） -->
     <div class="tp-toolbar">
       <div class="tp-title-group">
-        <span class="tp-title">{{ i18nStore.tl('隧道代理', 'Proxy Pivots') }}</span>
         <span class="tp-count">({{ filteredTunnelList.filter(t => t.status === 'active').length }} {{ i18nStore.tl('个活跃', 'active') }} / {{ filteredTunnelList.length }} {{ i18nStore.tl('个总数', 'total') }})</span>
       </div>
 
