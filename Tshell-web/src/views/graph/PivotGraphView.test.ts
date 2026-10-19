@@ -147,7 +147,12 @@ describe('PivotGraphView', () => {
     // 第二次返回里 WEB-02 已被删除
     const shrunk = { ...SAMPLE, nodes: SAMPLE.nodes.filter((n) => n.id !== 'client_b') }
     getGraphData.mockResolvedValue({ data: { data: shrunk } })
-    await w.find('.pg-actions button').trigger('click')
+    // 页头现在有"自动刷新 / 刷新"两个按钮："自动刷新"也含"刷新"，要排除掉
+    const refreshBtn = w.findAll('.pg-actions button').find((b) => {
+      const t = b.text().trim()
+      return t.includes('刷新') && !t.includes('自动')
+    })!
+    await refreshBtn.trigger('click')
     await flushPromises()
 
     expect(w.find('.pg-detail').exists()).toBe(false)
@@ -494,5 +499,108 @@ describe('PivotGraphView 目标节点图标', () => {
     expect(tunnel.find('.pg-node-glyph').attributes('d')).toBe(TUNNEL_GLYPHS.socks5.d)
     // 服务端仍然没有图标
     expect(w.findAll('.pg-node-glyph')).toHaveLength(1)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// 搜索定位 / 隐藏离线 / 自动刷新
+// ---------------------------------------------------------------------------
+
+describe('PivotGraphView 搜索与筛选', () => {
+  beforeEach(() => {
+    getGraphData.mockReset()
+    localStorage.clear()
+  })
+
+  it('搜到节点：命中保持原样，其余淡出，并显示匹配数', async () => {
+    getGraphData.mockResolvedValue({ data: { data: SAMPLE } })
+    const w = mountView()
+    await flushPromises()
+
+    await w.find('.pg-search-input').setValue('WEB-01')
+    const hit = w.findAll('.pg-node.is-hit')
+    expect(hit).toHaveLength(1)
+    expect(hit[0].text()).toContain('WEB-01')
+    expect(w.findAll('.pg-node.is-dim')).toHaveLength(5)
+    expect(w.find('.pg-search-count').text()).toContain('1')
+
+    // 清空后恢复
+    await w.find('.pg-search-input').setValue('')
+    expect(w.findAll('.pg-node.is-dim')).toHaveLength(0)
+  })
+
+  it('搜不到时不做淡出（不要把画布整个灰掉）', async () => {
+    getGraphData.mockResolvedValue({ data: { data: SAMPLE } })
+    const w = mountView()
+    await flushPromises()
+
+    await w.find('.pg-search-input').setValue('不存在的节点')
+    expect(w.findAll('.pg-node.is-dim')).toHaveLength(0)
+    expect(w.find('.pg-search-count').text()).toContain('无匹配')
+  })
+
+  it('按内网 IP / UID 搜也行（meta 里的值也参与匹配）', async () => {
+    const data = {
+      ...SAMPLE,
+      nodes: SAMPLE.nodes.map((n) =>
+        n.id === 'client_a'
+          ? { ...n, meta: { os: 'windows', internal: '172.16.5.9', uid: 'a1b2c3d4' } }
+          : n,
+      ),
+    }
+    getGraphData.mockResolvedValue({ data: { data } })
+    const w = mountView()
+    await flushPromises()
+
+    for (const q of ['172.16.5.9', 'a1b2c3d4']) {
+      await w.find('.pg-search-input').setValue(q)
+      expect(w.findAll('.pg-node.is-hit'), q).toHaveLength(1)
+      expect(w.find('.pg-node.is-hit').text()).toContain('WEB-01')
+    }
+  })
+
+  it('隐藏离线：客户端与其连线一起消失，取消后恢复', async () => {
+    getGraphData.mockResolvedValue({ data: { data: SAMPLE } })
+    const w = mountView()
+    await flushPromises()
+    expect(w.findAll('.pg-node')).toHaveLength(6)
+    expect(w.findAll('.pg-edge')).toHaveLength(5)
+
+    await w.find('.pg-search-toggle input').setValue(true)
+    expect(w.findAll('.pg-node')).toHaveLength(5)
+    expect(w.findAll('.pg-node-offline')).toHaveLength(0)
+    // e3（client_b→listener）随节点一起消失
+    expect(w.findAll('.pg-edge')).toHaveLength(4)
+
+    await w.find('.pg-search-toggle input').setValue(false)
+    expect(w.findAll('.pg-node')).toHaveLength(6)
+    expect(w.findAll('.pg-edge')).toHaveLength(5)
+  })
+
+  it('自动刷新：开启后每 15 秒重新拉一次，关掉后停止', async () => {
+    getGraphData.mockResolvedValue({ data: { data: SAMPLE } })
+    const w = mountView()
+    await flushPromises()
+    expect(getGraphData).toHaveBeenCalledTimes(1)
+
+    const autoBtn = () =>
+      w.findAll('.pg-actions button').find((b) => b.text().includes('自动刷新'))!
+
+    vi.useFakeTimers()
+    await autoBtn().trigger('click')
+    vi.advanceTimersByTime(15000)
+    vi.useRealTimers()
+    await flushPromises()
+    expect(getGraphData).toHaveBeenCalledTimes(2)
+
+    await autoBtn().trigger('click')
+    await flushPromises()
+    vi.useFakeTimers()
+    vi.advanceTimersByTime(60000)
+    vi.useRealTimers()
+    await flushPromises()
+    expect(getGraphData).toHaveBeenCalledTimes(2)
+
+    w.unmount()
   })
 })

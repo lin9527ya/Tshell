@@ -9,6 +9,14 @@
           {{ i18nStore.tl('节点', 'Nodes') }} {{ layout.nodes.length }} ·
           {{ i18nStore.tl('在线', 'Online') }} {{ onlineCount }} / {{ clientCount }}
         </span>
+        <button
+          class="cs-btn cs-btn-xs pg-auto"
+          :class="{ 'is-on': autoRefresh }"
+          :title="i18nStore.tl('每 15 秒自动刷新（切到后台时暂停）', 'Auto refresh every 15s (pauses when hidden)')"
+          @click="autoRefresh = !autoRefresh"
+        >
+          {{ i18nStore.tl('自动刷新', 'Auto refresh') }}{{ autoRefresh ? ' · 15s' : '' }}
+        </button>
         <button class="cs-btn cs-btn-xs" :disabled="loading" @click="load">
           {{ loading ? (i18nStore.tl('刷新中…', 'Loading…')) : (i18nStore.tl('刷新', 'Refresh')) }}
         </button>
@@ -85,7 +93,7 @@
               :y1="e.y1"
               :x2="e.x2"
               :y2="e.y2"
-              :class="['pg-edge', { 'pg-edge-active': isEdgeActive(e), 'pg-edge-offline': e.offline }]"
+              :class="['pg-edge', { 'pg-edge-active': isEdgeActive(e), 'pg-edge-offline': e.offline, 'is-dim': e.dim }]"
             />
             <!-- 边标签：只有后端给了 label 才画（备注之类的边语义）。
                  缩得太小时用 class 隐藏而不是 v-if —— 否则导出（克隆 DOM）会漏掉标签 -->
@@ -103,7 +111,15 @@
               v-for="nd in viewNodes"
               :key="nd.id"
               :transform="`translate(${nd.x}, ${nd.y})`"
-              :class="['pg-node', { 'pg-node-selected': selected === nd.id, 'pg-node-offline': !isOnline(nd) }]"
+              :class="[
+                'pg-node',
+                {
+                  'pg-node-selected': selected === nd.id,
+                  'pg-node-offline': !isOnline(nd),
+                  'is-hit': nd.hit,
+                  'is-dim': nd.dim,
+                },
+              ]"
               role="button"
               tabindex="0"
               @pointerdown.stop="onNodePointerDown($event, nd)"
@@ -134,6 +150,26 @@
           </g>
         </g>
       </svg>
+
+      <!-- 画布左上：搜索定位 + 隐藏离线（图一大就找不到节点，也看不清谁掉线） -->
+      <div class="pg-searchbar" @pointerdown.stop @click.stop @wheel.stop>
+        <input
+          v-model="query"
+          class="pg-search-input"
+          type="text"
+          :placeholder="i18nStore.tl('搜索节点：名称 / IP / UID', 'Search: name / IP / UID')"
+          @keydown.enter.prevent="locateMatches"
+        />
+        <span v-if="query.trim()" class="pg-search-count" :class="{ 'is-none': matchIds && matchIds.size === 0 }">
+          {{ matchIds && matchIds.size ? i18nStore.tl(`${matchIds.size} 个匹配`, `${matchIds.size} matches`) : i18nStore.tl('无匹配', 'No match') }}
+        </span>
+        <button v-if="query" class="pg-search-clear" :title="i18nStore.tl('清空', 'Clear')" @click="query = ''">×</button>
+        <span class="pg-search-sep" />
+        <label class="pg-search-toggle" :title="i18nStore.tl('只显示在线客户端（离线连到的东西会暂时消失）', 'Hide offline clients')">
+          <input v-model="hideOffline" type="checkbox" />
+          {{ i18nStore.tl('隐藏离线', 'Hide offline') }}
+        </label>
+      </div>
 
       <!-- 画布工具条：缩放 / 适配 / 节点复位 -->
       <div class="pg-viewbar" @pointerdown.stop @click.stop>
@@ -248,7 +284,7 @@
  * （打开会话 / 跳对应管理页 / 仅看关联 / 居中 / 复制）。手动位置与分层布局互不影响：
  * 前者存在 localStorage，清掉即回到分层结果。
  */
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import PageHeader from '@/components/Common/PageHeader.vue'
@@ -317,6 +353,20 @@ const menu = reactive<{ open: boolean; x: number; y: number; nodeId: string | nu
 // 导出菜单（同一个模式，锚在工具条按钮下方）
 const exportMenu = reactive({ open: false, x: 0, y: 0 })
 
+// 搜索与筛选：图一大，找节点和找在线主机是两件最常做的事
+const query = ref('')
+const hideOffline = ref(false)
+const autoRefresh = ref(false)
+let autoTimer: ReturnType<typeof setInterval> | null = null
+// 本页签是否是当前激活页签：路由是 keep-alive 的，切走的页签不该继续轮询
+const pageActive = ref(true)
+onActivated(() => {
+  pageActive.value = true
+})
+onDeactivated(() => {
+  pageActive.value = false
+})
+
 // 手动拖拽后的节点位置（localStorage 持久化；节点 id 稳定，服务端删掉的 id 自然失效）
 const POS_KEY = 'tshell-graph-positions'
 const manualPos = reactive<Record<string, { x: number; y: number }>>(loadPositions())
@@ -353,12 +403,36 @@ const focusSet = computed<Set<string> | null>(() => {
 
 const visibleNodes = computed(() => {
   const set = focusSet.value
-  return set ? layout.value.nodes.filter((n) => set.has(n.id)) : layout.value.nodes
+  let list = set ? layout.value.nodes.filter((n) => set.has(n.id)) : layout.value.nodes
+  // 隐藏离线只影响客户端（其它类型没有在线状态）
+  if (hideOffline.value) list = list.filter((n) => isOnline(n))
+  return list
 })
 
 const focusedLabel = computed(
   () => layout.value.nodes.find((n) => n.id === focused.value)?.label || '',
 )
+
+/**
+ * 搜索命中集合（null = 没在搜索）。
+ * 匹配范围：标签、副标签（地址）、meta 里的值（uid/用户名/内网 IP…）——
+ * 搜 UID 和搜 IP 都是常见操作。
+ */
+const matchIds = computed<Set<string> | null>(() => {
+  const q = query.value.trim().toLowerCase()
+  if (!q) return null
+  const set = new Set<string>()
+  for (const n of visibleNodes.value) {
+    const hay = [n.id, n.label, n.sub_label || '', ...Object.values(n.meta || {})]
+      .join(' ')
+      .toLowerCase()
+    if (hay.includes(q)) set.add(n.id)
+  }
+  return set
+})
+
+/** 有命中才淡出其余节点：一个都搜不到时保持原样，不要整个画布都灰掉 */
+const dimming = computed(() => !!matchIds.value && matchIds.value.size > 0)
 
 const posOf = computed(() => {
   const m = new Map<string, { x: number; y: number }>()
@@ -372,11 +446,14 @@ const posOf = computed(() => {
 const viewNodes = computed(() =>
   visibleNodes.value.map((n) => {
     const g = nodeGlyph(n)
+    const hit = !!matchIds.value?.has(n.id)
     return {
       ...n,
       ...(posOf.value.get(n.id) || n),
       glyph: g,
       glyphT: g ? glyphTransform(g.vb, GLYPH_HALF) : '',
+      hit,
+      dim: dimming.value && !hit,
     }
   }),
 )
@@ -402,6 +479,11 @@ const viewEdges = computed(() =>
         y2: tp.y,
         // 连到离线主机的边画虚线：只看线也知道那台掉线了
         offline: offlineIds.value.has(e.source) || offlineIds.value.has(e.target),
+        // 搜索时，两端都不是命中节点的边淡出
+        dim:
+          dimming.value &&
+          !matchIds.value?.has(e.source) &&
+          !matchIds.value?.has(e.target),
       }
     }),
 )
@@ -426,8 +508,12 @@ function nodeStroke(nd: { type: string; online?: string }) {
 
 /** 适配视图：把整张图（含右侧标签宽度）装进画布并居中 */
 function fitView() {
+  fitNodes(viewNodes.value)
+}
+
+/** 把一组节点（含右侧标签）装进画布并居中 */
+function fitNodes(ns: { x: number; y: number; label: string; sub_label?: string }[]) {
   const el = svgEl.value
-  const ns = viewNodes.value
   if (!el || !ns.length) return
   const rect = el.getBoundingClientRect()
   const w = rect.width || canvasSize.w
@@ -521,6 +607,19 @@ function onNodeClick(nd: { id: string }) {
 function onCanvasClick(e: MouseEvent) {
   if (Date.now() < suppressClickUntil) return
   if (!(e.target as Element).closest('.pg-node')) selected.value = null
+}
+
+/** 定位到搜索命中的节点（Enter）；只有一个命中时直接居中到它 */
+function locateMatches() {
+  const ids = matchIds.value
+  if (!ids || !ids.size) return
+  const hits = viewNodes.value.filter((n) => ids.has(n.id))
+  if (hits.length === 1) {
+    centerOn(hits[0].id)
+    selected.value = hits[0].id
+    return
+  }
+  fitNodes(hits)
 }
 
 /** 清掉手动位置，节点回到分层自动布局 */
@@ -728,9 +827,24 @@ function setCanvasRef(el: any) {
   canvasObserver.observe(el)
 }
 
+// 自动刷新：15 秒一次；标签页在后台时跳过（回来时定时器继续，不补跑）
+watch(autoRefresh, (on) => {
+  if (autoTimer) {
+    clearInterval(autoTimer)
+    autoTimer = null
+  }
+  if (!on) return
+  autoTimer = setInterval(() => {
+    // 切到别的页签或浏览器标签不可见时跳过（回来时定时器继续，不补跑）
+    if (!pageActive.value || document.visibilityState === 'hidden') return
+    if (!loading.value) load()
+  }, 15000)
+})
+
 onBeforeUnmount(() => {
   canvasObserver?.disconnect()
   canvasObserver = null
+  if (autoTimer) clearInterval(autoTimer)
   window.removeEventListener('pointermove', onPointerMove)
   closeMenu()
 })
@@ -769,6 +883,12 @@ function isEdgeActive(e: LaidOutEdge): boolean {
   if (!selected.value) return true
   return e.source === selected.value || e.target === selected.value
 }
+
+// 隐藏离线 / 聚焦切换后，选中的节点可能已经不在图上 —— 清掉详情，避免"幽灵面板"
+watch(visibleNodes, (list) => {
+  if (selected.value && !list.some((n) => n.id === selected.value)) selected.value = null
+  if (focused.value && !list.some((n) => n.id === focused.value)) focused.value = null
+})
 
 async function load() {
   loading.value = true
@@ -928,6 +1048,100 @@ onMounted(load)
   width: 100%;
   height: 100%;
   user-select: none;
+}
+
+/* 画布左上：搜索 + 隐藏离线 */
+.pg-searchbar {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--cs-card-border, #333);
+  border-radius: 6px;
+  background: var(--cs-panel, rgba(20, 24, 31, 0.9));
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+  cursor: default;
+}
+
+.pg-search-input {
+  width: 190px;
+  height: 22px;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--cs-text, inherit);
+  font-size: 12px;
+}
+
+.pg-search-input::placeholder {
+  color: var(--cs-text, inherit);
+  opacity: 0.45;
+}
+
+.pg-search-count {
+  font-size: 11px;
+  opacity: 0.7;
+  white-space: nowrap;
+}
+
+.pg-search-count.is-none {
+  color: #d97706;
+  opacity: 1;
+}
+
+.pg-search-clear {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  opacity: 0.6;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 2px;
+  cursor: pointer;
+}
+
+.pg-search-clear:hover {
+  opacity: 1;
+}
+
+.pg-search-sep {
+  width: 1px;
+  height: 14px;
+  background: var(--cs-card-border, #333);
+}
+
+.pg-search-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  opacity: 0.8;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+/* 搜索时：命中节点正常，其余淡出（边也跟着淡） —— 保留结构上下文，不直接过滤 */
+.pg-node.is-dim {
+  opacity: 0.16;
+}
+
+.pg-node.is-hit .pg-node-halo {
+  opacity: 0.28;
+}
+
+.pg-edge.is-dim {
+  opacity: 0.1;
+}
+
+/* 自动刷新开启时按钮着色 */
+.pg-auto.is-on {
+  color: var(--cs-active);
+  border-color: var(--cs-active);
 }
 
 /* 画布悬浮工具条：缩放 / 适配 / 节点复位 */

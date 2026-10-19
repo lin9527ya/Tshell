@@ -56,9 +56,11 @@ svg { font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microso
   font-size: 10px; fill: ${t.text}; opacity: 0.75; text-anchor: middle;
   paint-order: stroke; stroke: ${t.bg}; stroke-width: 3px; stroke-linejoin: round;
 }
-/* 导出不画悬停/选中的光晕 */
+/* 导出不画悬停/选中的光晕；搜索时的淡出也不带进导出（导出要一张完整可读的图） */
 .pg-node-halo { opacity: 0; }
 .pg-node-selected .pg-node-halo { opacity: 0; }
+.pg-node.is-dim { opacity: 1; }
+.pg-edge.is-dim { opacity: 0.55; }
 .pg-node-label { font-size: 12px; fill: ${t.text}; }
 .pg-node-sub { font-size: 10px; fill: ${t.text}; opacity: 0.55; }
 .pg-node-offline .pg-node-label { fill: ${t.offline}; }
