@@ -10,8 +10,14 @@ describe('osGlyphKey', () => {
     expect(osGlyphKey('ubuntu')).toBe('linux')
   })
 
+  it('macOS 的各种写法都归到 darwin', () => {
+    expect(osGlyphKey('darwin')).toBe('darwin')
+    expect(osGlyphKey('macOS')).toBe('darwin')
+    expect(osGlyphKey('osx')).toBe('darwin')
+  })
+
   it('认不出的走 other，而不是返回空（空图标与"没数据"分不清）', () => {
-    expect(osGlyphKey('darwin')).toBe('other')
+    expect(osGlyphKey('freebsd')).toBe('other')
     expect(osGlyphKey('')).toBe('other')
     expect(osGlyphKey(undefined)).toBe('other')
     expect(osGlyphKey('   ')).toBe('other')
@@ -20,7 +26,7 @@ describe('osGlyphKey', () => {
 
 describe('OS_GLYPHS', () => {
   it('每种都有可画的 path 与显示名', () => {
-    for (const key of ['windows', 'linux', 'other'] as const) {
+    for (const key of ['windows', 'linux', 'darwin', 'other'] as const) {
       const g = OS_GLYPHS[key]
       expect(g.d.length).toBeGreaterThan(10)
       expect(g.d).toMatch(/^[Mm]/)
@@ -34,7 +40,7 @@ describe('OS_GLYPHS', () => {
     const ARITY: Record<string, number> = {
       M: 2, L: 2, H: 1, V: 1, C: 6, S: 4, Q: 4, T: 2, A: 7, Z: 0,
     }
-    for (const key of ['windows', 'linux', 'other'] as const) {
+    for (const key of ['windows', 'linux', 'darwin', 'other'] as const) {
       const tokens = OS_GLYPHS[key].d.match(/[MmLlHhVvCcSsQqTtAaZz]|-?\d*\.?\d+/g) || []
       let i = 0
       let arity = 0

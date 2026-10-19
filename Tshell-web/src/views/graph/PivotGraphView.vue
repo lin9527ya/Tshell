@@ -35,6 +35,12 @@
       </span>
       <span class="pg-legend-item">
         <svg class="pg-legend-glyph" viewBox="-8 -8 16 16" width="14" height="14" aria-hidden="true">
+          <path :d="OS_GLYPHS.darwin.d" />
+        </svg>
+        macOS
+      </span>
+      <span class="pg-legend-item">
+        <svg class="pg-legend-glyph" viewBox="-8 -8 16 16" width="14" height="14" aria-hidden="true">
           <path :d="OS_GLYPHS.other.d" />
         </svg>
         {{ i18nStore.tl('其它系统', 'Other OS') }}

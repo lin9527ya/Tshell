@@ -19,6 +19,7 @@ vi.mock('vue-router', () => ({
 }))
 
 import PivotGraphView from './PivotGraphView.vue'
+import { OS_GLYPHS } from './os-glyph'
 
 const SAMPLE = {
   nodes: [
@@ -316,6 +317,22 @@ describe('PivotGraphView 辨识度与导出', () => {
     expect(winD).not.toBe(linD)
     expect(winD).toContain('M-5.5 -5.5') // Windows 四方块
     expect(linD!.length).toBeGreaterThan(winD!.length) // Tux 形状更复杂
+  })
+
+  it('macOS 客户端画苹果（darwin 单独一份图标，不再落进"其它系统"）', async () => {
+    const data = {
+      ...SAMPLE,
+      nodes: SAMPLE.nodes.map((n) => (n.id === 'client_a' ? { ...n, meta: { os: 'darwin' } } : n)),
+    }
+    getGraphData.mockResolvedValue({ data: { data } })
+    const w = mountView()
+    await flushPromises()
+
+    const mac = w.findAll('.pg-node').find((n) => n.text().includes('WEB-01'))!
+    const d = mac.find('.pg-node-os').attributes('d')!
+    expect(d).toContain('A3 3 0 0 1') // 咬口那段圆弧
+    expect(d).not.toBe(OS_GLYPHS.other.d)
+    expect(d).toBe(OS_GLYPHS.darwin.d)
   })
 
   it('离线主机置灰：灰虚线空心圈 + 灰色标签', async () => {
