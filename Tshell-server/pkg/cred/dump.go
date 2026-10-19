@@ -37,7 +37,7 @@ var Kinds = []string{KindLsass, KindDPAPI, KindBrowser}
 var techsByKind = map[string][]string{
 	KindLsass:   {"auto", "comsvcs", "dbgcore"},
 	KindDPAPI:   {"keys"},
-	KindBrowser: {"all", "chrome", "edge"},
+	KindBrowser: {"all", "chrome", "edge", "firefox"},
 }
 
 // DefaultTech 某类型的默认技术

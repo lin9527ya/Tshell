@@ -36,7 +36,7 @@ export interface CredArtifact {
 export const CRED_TECHS: Record<CredKind, string[]> = {
   lsass: ['auto', 'comsvcs', 'dbgcore'],
   dpapi: ['keys'],
-  browser: ['all', 'chrome', 'edge'],
+  browser: ['all', 'chrome', 'edge', 'firefox'],
 }
 
 // 类型 → 默认技术（与服务端 cred.DefaultTech 一致）

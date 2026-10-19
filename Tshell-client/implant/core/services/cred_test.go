@@ -47,7 +47,7 @@ func TestCredTechMatrix(t *testing.T) {
 	ok := []struct{ kind, tech string }{
 		{"lsass", "auto"}, {"lsass", "comsvcs"}, {"lsass", "dbgcore"},
 		{"dpapi", "keys"},
-		{"browser", "all"}, {"browser", "chrome"}, {"browser", "edge"},
+		{"browser", "all"}, {"browser", "chrome"}, {"browser", "edge"}, {"browser", "firefox"},
 	}
 	for _, c := range ok {
 		if !credTechAllowed(c.kind, c.tech) {

@@ -80,7 +80,7 @@ func credTechAllowed(kind, tech string) bool {
 	case "dpapi":
 		return tech == "keys"
 	case "browser":
-		return tech == "all" || tech == "chrome" || tech == "edge"
+		return tech == "all" || tech == "chrome" || tech == "edge" || tech == "firefox"
 	default:
 		return false
 	}

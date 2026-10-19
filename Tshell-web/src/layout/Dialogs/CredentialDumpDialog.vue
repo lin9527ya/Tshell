@@ -165,9 +165,14 @@ const techHint = computed(() => {
       : 'Decrypts each master key file under Protect (skips Preferred and BK-* backups). Failures are reported in the artifact errors field, never silently dropped.'
   }
   if (form.kind === 'browser') {
+    if (form.tech === 'firefox') {
+      return isZh.value
+        ? 'Firefox 走 NSS：key4.db 解出主密钥后逐条解密 logins.json，不依赖 DPAPI；Cookie 存在 cookies.sqlite 里且是明文。设了主口令（master password）的 profile 解不开，会记进 errors。'
+        : 'Firefox uses NSS: the key4.db master key decrypts logins.json entries (no DPAPI involved); cookies are plaintext in cookies.sqlite. Profiles protected by a master password cannot be decrypted and are reported in errors.'
+    }
     return isZh.value
-      ? '先用 Local State 里的 DPAPI 保护密钥解出浏览器主密钥，再读 Login Data / Cookies 并逐条 AES-GCM 解密。库被浏览器独占时会先复制副本再读；解不开的条目会跳过并计入 errors。'
-      : 'Unwraps the browser master key from Local State via DPAPI, then reads Login Data / Cookies and decrypts each entry with AES-GCM. Locked DBs are copied first; undecryptable entries are skipped and counted in errors.'
+      ? 'Chromium 系（Chrome/Edge）：先用 Local State 里的 DPAPI 保护密钥解出主密钥，再读 Login Data / Cookies 并逐条 AES-GCM 解密；Firefox 走 NSS（见选 firefox 时的说明）。库被浏览器独占时会先复制副本再读；解不开的条目会跳过并计入 errors。'
+      : 'Chromium (Chrome/Edge): unwraps the master key from Local State via DPAPI, then decrypts Login Data / Cookies with AES-GCM; Firefox uses NSS (see the firefox hint). Locked DBs are copied first; undecryptable entries are skipped and counted in errors.'
   }
   switch (form.tech) {
     case 'comsvcs':
