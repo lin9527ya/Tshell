@@ -1,0 +1,1 @@
+import{s as r}from"./index.BMFFlgJv.js";const i={listProfiles(){return r({url:"/c2profile/list",method:"get"})},previewProfile(e){return r({url:"/c2profile/preview",method:"get",params:{name:e}})},saveProfile(e,o){return r({url:"/c2profile/save",method:"post",data:{name:e,content:o}})}};export{i as c};
