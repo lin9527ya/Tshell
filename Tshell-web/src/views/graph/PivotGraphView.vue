@@ -15,46 +15,41 @@
       </div>
     </PageHeader>
 
-    <!-- 图例：颜色/实心空心的含义必须在图上说明，否则用户只能猜 -->
+    <!-- 图例：颜色/实心空心/图标/线型的含义必须在图上说明，否则用户只能猜 -->
     <div class="pg-legend">
-      <span v-for="t in legendTypes" :key="t" class="pg-legend-item">
-        <i class="pg-dot" :style="{ background: TYPE_COLORS[t] }"></i>
-        {{ i18nStore.tl(TYPE_LABELS[t]?.zh || t, TYPE_LABELS[t]?.en || t) }}
-      </span>
-      <span class="pg-legend-item">
-        <svg class="pg-legend-glyph" viewBox="-8 -8 16 16" width="14" height="14" aria-hidden="true">
-          <path :d="OS_GLYPHS.windows.d" />
-        </svg>
-        Windows
-      </span>
-      <span class="pg-legend-item">
-        <svg class="pg-legend-glyph" viewBox="-8 -8 16 16" width="14" height="14" aria-hidden="true">
-          <path :d="OS_GLYPHS.linux.d" />
-        </svg>
-        Linux
-      </span>
-      <span class="pg-legend-item">
-        <svg class="pg-legend-glyph" viewBox="-8 -8 16 16" width="14" height="14" aria-hidden="true">
-          <path :d="OS_GLYPHS.darwin.d" />
-        </svg>
-        macOS
-      </span>
-      <span class="pg-legend-item">
-        <svg class="pg-legend-glyph" viewBox="-8 -8 16 16" width="14" height="14" aria-hidden="true">
-          <path :d="OS_GLYPHS.other.d" />
-        </svg>
-        {{ i18nStore.tl('其它系统', 'Other OS') }}
-      </span>
-      <span class="pg-legend-item">
-        <i class="pg-dot pg-dot-offline"></i>
-        {{ i18nStore.tl('离线主机（置灰 + 虚线连接）', 'Offline host (grey, dashed link)') }}
-      </span>
-      <span class="pg-hint">
-        {{ i18nStore.tl(
-          '拖拽节点 / 拖空白平移 / 滚轮缩放 / 右键节点出菜单',
-          'Drag nodes, drag canvas to pan, wheel to zoom, right-click a node for actions',
-        ) }}
-      </span>
+      <div class="pg-legend-row">
+        <span class="pg-legend-cap">{{ i18nStore.tl('节点', 'Nodes') }}</span>
+        <span v-for="t in legendTypes" :key="t" class="pg-legend-item">
+          <i class="pg-dot" :style="{ background: TYPE_COLORS[t] }"></i>
+          {{ i18nStore.tl(TYPE_LABELS[t]?.zh || t, TYPE_LABELS[t]?.en || t) }}
+        </span>
+        <span class="pg-legend-item">
+          <i class="pg-dot pg-dot-offline"></i>
+          {{ i18nStore.tl('离线主机（置灰 + 虚线连接）', 'Offline host (grey, dashed link)') }}
+        </span>
+        <span class="pg-hint">
+          {{ i18nStore.tl(
+            '拖拽节点 / 拖空白平移 / 滚轮缩放 / 右键节点出菜单',
+            'Drag nodes, drag canvas to pan, wheel to zoom, right-click a node for actions',
+          ) }}
+        </span>
+      </div>
+      <div class="pg-legend-row">
+        <span class="pg-legend-cap">{{ i18nStore.tl('客户端图标（按系统）', 'Client icons (by OS)') }}</span>
+        <span v-for="k in OS_KEYS" :key="'os-' + k" class="pg-legend-item">
+          <svg class="pg-legend-glyph" viewBox="-8 -8 16 16" width="14" height="14" aria-hidden="true">
+            <path :d="OS_GLYPHS[k].d" />
+          </svg>
+          {{ i18nStore.tl(OS_GLYPHS[k].zh, OS_GLYPHS[k].en) }}
+        </span>
+        <span class="pg-legend-cap">{{ i18nStore.tl('目标图标（按端口推测）', 'Target icons (by port)') }}</span>
+        <span v-for="k in TARGET_KEYS" :key="'tg-' + k" class="pg-legend-item">
+          <svg class="pg-legend-glyph" viewBox="-8 -8 16 16" width="14" height="14" aria-hidden="true">
+            <path :d="TARGET_GLYPHS[k].d" />
+          </svg>
+          {{ i18nStore.tl(TARGET_GLYPHS[k].zh, TARGET_GLYPHS[k].en) }}
+        </span>
+      </div>
     </div>
 
     <div v-if="error" class="pg-error">{{ error }}</div>
@@ -119,12 +114,8 @@
                 stroke-width="2"
                 :stroke-dasharray="isOnline(nd) ? undefined : '3 2'"
               />
-              <!-- 客户端画系统图标：Windows / Linux / 其它，一眼看出这台是什么机器 -->
-              <path
-                v-if="nd.type === 'client'"
-                class="pg-node-os"
-                :d="OS_GLYPHS[osGlyphKey(nd.meta?.os)].d"
-              />
+              <!-- 节点图标：客户端按系统（Windows/Linux/macOS），目标按端口推测服务类型 -->
+              <path v-if="nodeGlyph(nd)" class="pg-node-glyph" :d="nodeGlyph(nd)!" />
               <text class="pg-node-label" :x="LABEL_DX" y="4">{{ nd.label }}</text>
               <text v-if="nd.sub_label" class="pg-node-sub" :x="LABEL_DX" y="19">{{ nd.sub_label }}</text>
             </g>
@@ -265,6 +256,7 @@ import {
   type LaidOutEdge,
 } from './layout'
 import { OS_GLYPHS, osGlyphKey } from './os-glyph'
+import { portOf, TARGET_GLYPHS, targetGlyphKey, targetService } from './target-glyph'
 import {
   buildExportSvg,
   downloadBlob,
@@ -719,16 +711,41 @@ onBeforeUnmount(() => {
 })
 
 const legendTypes = ['server', 'listener', 'client', 'tunnel', 'target']
+const OS_KEYS = ['windows', 'linux', 'darwin', 'other'] as const
+const TARGET_KEYS = ['windows', 'terminal', 'web', 'database', 'generic'] as const
+
+/**
+ * 节点图标：客户端按上报的系统，目标按端口推测（地址里带端口才有意义）。
+ * 其它类型（服务端/监听器/隧道）不画 —— 它们没有"是什么系统/什么服务"这层信息。
+ */
+function nodeGlyph(nd: GraphNode): string | null {
+  if (nd.type === 'client') return OS_GLYPHS[osGlyphKey(nd.meta?.os)].d
+  if (nd.type === 'target') return TARGET_GLYPHS[targetGlyphKey(nd.label)].d
+  return null
+}
 
 const clientCount = computed(() => nodes.value.filter((n) => n.type === 'client').length)
 const onlineCount = computed(() => nodes.value.filter((n) => n.type === 'client' && isOnline(n)).length)
 
 const selectedNode = computed(() => nodes.value.find((n) => n.id === selected.value) || null)
-const metaRows = computed(() =>
-  Object.entries(selectedNode.value?.meta || {})
+const metaRows = computed(() => {
+  const nd = selectedNode.value
+  const rows = Object.entries(nd?.meta || {})
     .filter(([, v]) => v !== '')
-    .map(([k, v]) => ({ k, v: String(v) })),
-)
+    .map(([k, v]) => ({ k, v: String(v) }))
+  // 目标节点的服务名是从端口推的，不是上报值 —— 标出来，别让推测看起来像事实
+  if (nd?.type === 'target') {
+    const svc = targetService(nd.label)
+    if (svc) {
+      rows.unshift({
+        k: 'service',
+        v: `${i18nStore.tl(svc.zh, svc.en)}（${i18nStore.tl('按端口推测', 'inferred from port')}）`,
+      })
+    }
+    if (portOf(nd.label) === null) rows.unshift({ k: 'port', v: i18nStore.tl('地址里没有端口', 'no port in address') })
+  }
+  return rows
+})
 
 /** 选中节点相关的边高亮，其余淡出 —— 否则节点一多就分不清谁连谁 */
 function isEdgeActive(e: LaidOutEdge): boolean {
@@ -814,10 +831,22 @@ onMounted(load)
 }
 .pg-legend {
   display: flex;
-  flex-wrap: wrap;
-  gap: 14px;
+  flex-direction: column;
+  gap: 4px;
   font-size: 12px;
   opacity: 0.85;
+}
+
+.pg-legend-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+}
+
+/* 分组小标题：图标行里"客户端按系统 / 目标按端口"两组的说明 */
+.pg-legend-cap {
+  opacity: 0.6;
 }
 .pg-legend-item {
   display: inline-flex;
@@ -1027,7 +1056,7 @@ onMounted(load)
   opacity: 0.8;
 }
 
-.pg-node-offline .pg-node-os {
+.pg-node-offline .pg-node-glyph {
   fill: #9ca3af;
 }
 
@@ -1035,8 +1064,8 @@ onMounted(load)
   opacity: 0.1;
 }
 
-/* 节点里的系统图标：在线白（压在类型色实心圆上） */
-.pg-node-os {
+/* 节点里的图标（系统/服务）：在线白（压在类型色实心圆上） */
+.pg-node-glyph {
   fill: #ffffff;
   pointer-events: none;
 }

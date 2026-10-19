@@ -80,7 +80,7 @@ describe('buildExportSvg', () => {
       'pg-node-halo',
       'pg-node-label',
       'pg-node-sub',
-      'pg-node-os',
+      'pg-node-glyph',
       'pg-node-offline',
       'pg-node-selected',
     ]) {

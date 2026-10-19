@@ -20,6 +20,7 @@ vi.mock('vue-router', () => ({
 
 import PivotGraphView from './PivotGraphView.vue'
 import { OS_GLYPHS } from './os-glyph'
+import { TARGET_GLYPHS } from './target-glyph'
 
 const SAMPLE = {
   nodes: [
@@ -306,14 +307,15 @@ describe('PivotGraphView 辨识度与导出', () => {
     const w = mountView()
     await flushPromises()
 
-    // 只有客户端画图标：server/listener/tunnel/target 不画
-    const icons = w.findAll('.pg-node-os')
-    expect(icons).toHaveLength(2)
+    // 客户端与目标节点画图标；server/listener/tunnel 不画
+    // （SAMPLE 里 2 个客户端 + 1 个目标 10.0.0.5:445）
+    const icons = w.findAll('.pg-node-glyph')
+    expect(icons).toHaveLength(3)
 
     const win = w.findAll('.pg-node').find((n) => n.text().includes('WEB-01'))!
     const lin = w.findAll('.pg-node').find((n) => n.text().includes('WEB-02'))!
-    const winD = win.find('.pg-node-os').attributes('d')
-    const linD = lin.find('.pg-node-os').attributes('d')
+    const winD = win.find('.pg-node-glyph').attributes('d')
+    const linD = lin.find('.pg-node-glyph').attributes('d')
     expect(winD).not.toBe(linD)
     expect(winD).toContain('M-5.5 -5.5') // Windows 四方块
     expect(linD!.length).toBeGreaterThan(winD!.length) // Tux 形状更复杂
@@ -329,7 +331,7 @@ describe('PivotGraphView 辨识度与导出', () => {
     await flushPromises()
 
     const mac = w.findAll('.pg-node').find((n) => n.text().includes('WEB-01'))!
-    const d = mac.find('.pg-node-os').attributes('d')!
+    const d = mac.find('.pg-node-glyph').attributes('d')!
     expect(d).toContain('A3 3 0 0 1') // 咬口那段圆弧
     expect(d).not.toBe(OS_GLYPHS.other.d)
     expect(d).toBe(OS_GLYPHS.darwin.d)
@@ -416,5 +418,58 @@ describe('PivotGraphView 辨识度与导出', () => {
     expect(text).toContain('class="pg-content"')
     expect(click).toHaveBeenCalled()
     click.mockRestore()
+  })
+})
+
+describe('PivotGraphView 目标节点图标', () => {
+  beforeEach(() => {
+    getGraphData.mockReset()
+    localStorage.clear()
+  })
+
+  const withTarget = (addr: string) => ({
+    nodes: [
+      { id: 'server', type: 'server', label: 'Tshell Server' },
+      { id: 'listener_tcp', type: 'listener', label: 'tcp', sub_label: '0.0.0.0:8089' },
+      { id: 't1', type: 'target', label: addr, sub_label: 'target' },
+    ],
+    edges: [{ id: 'e1', source: 'listener_tcp', target: 't1' }],
+  })
+
+  it('目标按端口画对应图标（445→Windows 服务，3306→数据库，80→Web）', async () => {
+    for (const [addr, key] of [
+      ['10.0.0.5:445', 'windows'],
+      ['10.0.0.6:3306', 'database'],
+      ['10.0.0.7:80', 'web'],
+      ['10.0.0.8:22', 'terminal'],
+      ['10.0.0.9:12345', 'generic'],
+    ] as const) {
+      getGraphData.mockResolvedValue({ data: { data: withTarget(addr) } })
+      const w = mountView()
+      await flushPromises()
+      const t = w.findAll('.pg-node').find((n) => n.text().includes(addr))!
+      expect(t.find('.pg-node-glyph').attributes('d'), addr).toBe(TARGET_GLYPHS[key].d)
+    }
+  })
+
+  it('详情面板把服务名标成"按端口推测"，不当成上报值', async () => {
+    getGraphData.mockResolvedValue({ data: { data: withTarget('10.0.0.5:445') } })
+    const w = mountView()
+    await flushPromises()
+
+    const t = w.findAll('.pg-node').find((n) => n.text().includes('10.0.0.5:445'))!
+    await t.trigger('click')
+    const meta = w.find('.pg-meta').text()
+    expect(meta).toContain('SMB')
+    expect(meta).toContain('按端口推测')
+  })
+
+  it('监听器/服务端节点不画图标（它们没有系统/服务这层信息）', async () => {
+    getGraphData.mockResolvedValue({ data: { data: withTarget('10.0.0.5:445') } })
+    const w = mountView()
+    await flushPromises()
+    const listener = w.findAll('.pg-node').find((n) => n.text().includes('tcp'))!
+    expect(listener.find('.pg-node-glyph').exists()).toBe(false)
+    expect(w.findAll('.pg-node-glyph')).toHaveLength(1)
   })
 })

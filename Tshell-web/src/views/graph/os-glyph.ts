@@ -6,9 +6,11 @@
  *  2. 这两个形状手写只要几十字节，不值得为此拉一个依赖（本项目对前端依赖一向克制）。
  *
  * 坐标系：以 (0,0) 为中心的 16×16 方框。节点圆半径 9，图形最远点 ~7.9，正好落在圆内。
- * 单色填充：颜色由 CSS 的 fill 决定（在线=白色，离线=灰色），见 PivotGraphView 的 .pg-node-os。
+ * 单色填充：颜色由 CSS 的 fill 决定（在线=白色，离线=灰色），见 PivotGraphView 的 .pg-node-glyph。
+ * 需要"空心"的图形（准星、地球）靠**子路径反向缠绕**实现（nonzero 填充规则下互相抵消），
+ * 所以那些路径里同一个图形画两遍（外圈顺时针、内圈逆时针），不能随手改方向。
  */
-export interface OsGlyph {
+export interface Glyph {
   /** 单条 path 的 d（多个子路径用空格分隔） */
   d: string
   zh: string
@@ -39,14 +41,19 @@ const DARWIN_D = [
   'M.4 -3.6C1.2 -5.2 2.9 -5.9 4.2 -5.8C4 -4.2 2.6 -3.2 .4 -3.6Z', // 叶子
 ].join('')
 
-/** 显示器（未知系统）：与项目里 desktop 图标同形，一眼是"某台机器" */
+/**
+ * 显示器（未知系统）：与项目里 desktop 图标同形，一眼是"某台机器"。
+ * 屏 + 支架 + 底座三段，左右对称、上下居中（此前左侧两段圆弧写成了鼓包：
+ * 图形歪了 0.75、宽到 15.9、还往下偏 1.0 —— 由 path-bounds 的单测兜住）。
+ * 底座在下方会让重心偏低，所以整块上移 1 个单位，让包围盒居中。
+ */
 const OTHER_D = [
-  'M-6 -5.5h12a1.5 1.5 0 0 1 1.5 1.5v6a1.5 1.5 0 0 1-1.5 1.5h-12A1.5 1.5 0 0 1-7.5 3.5v-6A1.5 1.5 0 0 1-6 -5.5z',
-  'M-1.2 3.5h2.4v2h-2.4z',
-  'M-4 5.5h8a.9 .9 0 0 1 .9 .9v.1a.9 .9 0 0 1-.9 .9h-8a.9 .9 0 0 1-.9-.9v-.1a.9 .9 0 0 1 .9-.9z',
+  'M-4.5 -6.5h9a1.5 1.5 0 0 1 1.5 1.5v6a1.5 1.5 0 0 1-1.5 1.5h-9a1.5 1.5 0 0 1-1.5-1.5v-6a1.5 1.5 0 0 1 1.5-1.5z',
+  'M-1.2 2.5h2.4v2h-2.4z',
+  'M-4.4 4.5h8.8v2h-8.8z',
 ].join(' ')
 
-export const OS_GLYPHS: Record<OsGlyphKey, OsGlyph> = {
+export const OS_GLYPHS: Record<OsGlyphKey, Glyph> = {
   windows: { d: WINDOWS_D, zh: 'Windows', en: 'Windows' },
   linux: { d: LINUX_D, zh: 'Linux', en: 'Linux' },
   darwin: { d: DARWIN_D, zh: 'macOS', en: 'macOS' },

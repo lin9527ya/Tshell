@@ -63,8 +63,8 @@ svg { font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microso
 .pg-node-sub { font-size: 10px; fill: ${t.text}; opacity: 0.55; }
 .pg-node-offline .pg-node-label { fill: ${t.offline}; }
 .pg-node-offline .pg-node-sub { fill: ${t.offline}; opacity: 0.7; }
-.pg-node-os { fill: #ffffff; }
-.pg-node-offline .pg-node-os { fill: ${t.offline}; }
+.pg-node-glyph { fill: #ffffff; }
+.pg-node-offline .pg-node-glyph { fill: ${t.offline}; }
 `.trim()
 }
 
