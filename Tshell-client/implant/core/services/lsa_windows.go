@@ -25,12 +25,17 @@ import (
 )
 
 var (
+	// DLL 归属按 mingw 的 libsecur32.a / libadvapi32.a 导出符号核对：
+	//   secur32  : LsaConnectUntrusted / LsaLookupAuthenticationPackage /
+	//              LsaCallAuthenticationPackage / LsaFreeReturnBuffer
+	//   advapi32 : LsaClose ← 不在 secur32（从 secur32 取会运行时 "procedure not found" panic）
 	modSecur32                         = windows.NewLazySystemDLL("secur32.dll")
+	modAdvapi32                        = windows.NewLazySystemDLL("advapi32.dll")
 	procLsaConnectUntrusted            = modSecur32.NewProc("LsaConnectUntrusted")
 	procLsaLookupAuthenticationPackage = modSecur32.NewProc("LsaLookupAuthenticationPackage")
 	procLsaCallAuthenticationPackage   = modSecur32.NewProc("LsaCallAuthenticationPackage")
 	procLsaFreeReturnBuffer            = modSecur32.NewProc("LsaFreeReturnBuffer")
-	procLsaClose                       = modSecur32.NewProc("LsaClose")
+	procLsaClose                       = modAdvapi32.NewProc("LsaClose")
 )
 
 const kerberosAuthPackage = "Kerberos"
