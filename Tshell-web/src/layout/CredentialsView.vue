@@ -1,10 +1,13 @@
 <template>
-  <div class="credentials-view cs-font-ui" @click="closeContextMenu">
+  <div class="credentials-view cs-font-ui">
+    <PageHeader
+      :title="i18nStore.tl('密码凭证', 'Credentials')"
+      :subtitle="i18nStore.tl('凭据保险箱', 'Credentials Vault')"
+    />
+
     <!-- Toolbar -->
     <div class="cv-toolbar">
       <div class="cv-title-group">
-        <el-icon class="cv-title-icon"><Key /></el-icon>
-        <span class="cv-title">{{ i18nStore.tl('密码凭据保险箱', 'Credentials Vault') }}</span>
         <span class="cv-count">({{ filteredList.length }} {{ i18nStore.tl('条凭证', 'credentials') }})</span>
       </div>
 
@@ -57,15 +60,6 @@
       <button class="cs-btn cs-btn-primary" @click="openAddDialog">
         {{ i18nStore.tl('添加凭证', 'Add') }}
       </button>
-      <button class="cs-btn" :disabled="!selectedRow" @click="openEditDialog">
-        {{ i18nStore.tl('编辑凭据', 'Edit') }}
-      </button>
-      <button class="cs-btn" :disabled="!selectedRow || !selectedRow.password" @click="copySelectedPassword">
-        {{ i18nStore.tl('复制密码', 'Copy Pwd') }}
-      </button>
-      <button class="cs-btn" :disabled="!selectedRow || !selectedRow.hash" @click="copySelectedHash">
-        {{ i18nStore.tl('复制哈希', 'Copy Hash') }}
-      </button>
       <button class="cs-btn" :disabled="!credsStore.credentials.length" @click="exportData">
         {{ i18nStore.tl('导出凭证', 'Export') }}
       </button>
@@ -96,7 +90,6 @@
         class="cs-session-table"
         @current-change="onCurrentChange"
         @selection-change="onSelectionChange"
-        @row-contextmenu="onContextMenu"
       >
         <el-table-column type="selection" width="38" align="center" :reserve-selection="true" />
 
@@ -153,6 +146,17 @@
         <el-table-column prop="updatedAt" :label="i18nStore.tl('更新时间', 'Updated')" width="170" align="center" sortable show-overflow-tooltip>
           <template #default="{ row }">
             <span class="cs-font-mono text-dim">{{ row.updatedAt || '-' }}</span>
+          </template>
+        </el-table-column>
+
+        <el-table-column :label="i18nStore.tl('操作', 'Actions')" width="220" fixed="right">
+          <template #default="{ row }">
+            <div class="row-actions">
+              <a class="row-link" @click.stop="editRow(row)">{{ i18nStore.tl('编辑', 'Edit') }}</a>
+              <a v-if="row.password" class="row-link" @click.stop="copyRowPassword(row)">{{ i18nStore.tl('复制密码', 'Copy Pwd') }}</a>
+              <a v-if="row.hash" class="row-link" @click.stop="copyRowHash(row)">{{ i18nStore.tl('复制哈希', 'Copy Hash') }}</a>
+              <a class="row-link row-link-danger" @click.stop="deleteRow(row)">{{ i18nStore.tl('删除', 'Delete') }}</a>
+            </div>
           </template>
         </el-table-column>
 
@@ -225,34 +229,17 @@
       </template>
     </el-dialog>
 
-    <!-- Context Menu -->
-    <Teleport to="body">
-      <div
-        v-if="ctxMenu.visible"
-        class="cs-listener-ctx-menu cs-font-ui"
-        :style="{ left: ctxMenu.x + 'px', top: ctxMenu.y + 'px' }"
-        @mousedown.stop
-        @contextmenu.prevent
-      >
-        <div class="ctx-item" @click="copySelectedUser">{{ i18nStore.tl('复制用户', 'Copy User') }}</div>
-        <div class="ctx-item is-highlight" @click="copySelectedPassword">{{ i18nStore.tl('复制密码', 'Copy Password') }}</div>
-        <div class="ctx-item" @click="copySelectedHash">{{ i18nStore.tl('复制 NTLM 哈希', 'Copy NTLM Hash') }}</div>
-        <div class="ctx-item" @click="copyUserPass">{{ i18nStore.tl('复制（用户:密码）', 'Copy (User:Password)') }}</div>
-        <div class="ctx-divider" />
-        <div class="ctx-item" @click="openEditDialog">{{ i18nStore.tl('编辑凭据...', 'Edit Credential...') }}</div>
-        <div class="ctx-item ctx-danger" @click="deleteSelected">{{ i18nStore.tl('删除凭据', 'Delete Credential') }}</div>
-      </div>
-    </Teleport>
-  </div>
+    </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Key, Refresh, CopyDocument } from '@element-plus/icons-vue'
+import { Refresh, CopyDocument } from '@element-plus/icons-vue'
 import { useCredentialsStore, type CredentialItem } from '@/stores/credentials'
 import { useI18nStore } from '@/stores/i18n'
 import { useSessionSelectionStore } from '@/stores/sessionSelection'
+import PageHeader from '@/components/Common/PageHeader.vue'
 import EmptyState from '@/components/Common/EmptyState.vue'
 
 const credsStore = useCredentialsStore()
@@ -279,8 +266,6 @@ const formCred = reactive({
 })
 
 // Context Menu
-const ctxMenu = ref({ visible: false, x: 0, y: 0, item: null as CredentialItem | null })
-
 const filteredList = computed(() => {
   let list = credsStore.credentials
 
@@ -339,10 +324,6 @@ function copyText(text: string, label: string) {
   })
 }
 
-function copySelectedUser() {
-  if (selectedRow.value?.user) copyText(selectedRow.value.user, isZh.value ? '用户名' : 'Username')
-}
-
 function copySelectedPassword() {
   if (selectedRow.value?.password) copyText(selectedRow.value.password, isZh.value ? '密码' : 'Password')
 }
@@ -351,11 +332,23 @@ function copySelectedHash() {
   if (selectedRow.value?.hash) copyText(selectedRow.value.hash, 'Hash')
 }
 
-function copyUserPass() {
-  if (selectedRow.value) {
-    const pair = `${selectedRow.value.realm ? selectedRow.value.realm + '\\' : ''}${selectedRow.value.user}:${selectedRow.value.password || selectedRow.value.hash}`
-    copyText(pair, isZh.value ? '用户凭据对' : 'User:Pass')
-  }
+// 行内操作（vshell 范式：文字链接）
+function editRow(row: CredentialItem) {
+  selectedRow.value = row
+  openEditDialog()
+}
+
+function copyRowPassword(row: CredentialItem) {
+  if (row.password) copyText(row.password, isZh.value ? '密码' : 'Password')
+}
+
+function copyRowHash(row: CredentialItem) {
+  if (row.hash) copyText(row.hash, 'Hash')
+}
+
+function deleteRow(row: CredentialItem) {
+  selectedRow.value = row
+  deleteSelected()
 }
 
 function openAddDialog() {
@@ -372,7 +365,6 @@ function openAddDialog() {
 
 function openEditDialog() {
   if (!selectedRow.value) return
-  closeContextMenu()
   isEditing.value = true
   formCred.id = selectedRow.value.id
   formCred.realm = selectedRow.value.realm || ''
@@ -418,7 +410,6 @@ function saveCredential() {
 }
 
 function deleteSelected() {
-  closeContextMenu()
   if (!selectedRow.value) return
   const id = selectedRow.value.id
   ElMessageBox.confirm(
@@ -476,24 +467,12 @@ function showHelp() {
   )
 }
 
-function onContextMenu(row: CredentialItem, col: any, e: MouseEvent) {
-  e.preventDefault()
-  selectedRow.value = row
-  ctxMenu.value = { visible: true, x: e.clientX, y: e.clientY, item: row }
-}
-
-function closeContextMenu() {
-  ctxMenu.value.visible = false
-}
-
 onMounted(() => {
-  window.addEventListener('click', closeContextMenu)
   // 从服务端 loot 库拉取凭据(持久层;失败静默保持本地内存态)
   credsStore.fetchFromServer()
 })
 
 onBeforeUnmount(() => {
-  window.removeEventListener('click', closeContextMenu)
 })
 </script>
 
@@ -741,5 +720,26 @@ onBeforeUnmount(() => {
   padding: 8px 16px;
   background: var(--cs-panel);
   border-top: 1px solid var(--cs-card-border);
+}
+
+.row-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.row-link {
+  color: var(--cs-active);
+  font-size: 14px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.row-link:hover {
+  text-decoration: underline;
+}
+
+.row-link-danger {
+  color: var(--cs-error, #f56c6c);
 }
 </style>
