@@ -1,45 +1,23 @@
-# 多阶段构建
-# 阶段1：构建阶段
-FROM node:18-alpine AS builder
+# Tshell 前端镜像（nginx 托管 SPA，并将 /api 反代到服务端）
+#
+# 构建上下文为 Tshell-web/ 目录：
+#   docker build -t tshell-web:latest Tshell-web
+#
+# 说明：服务端镜像已内嵌前端（//go:embed dist），本镜像用于"nginx 在前"的部署形态
+# （见 nginx.conf 的 proxy_pass tshell-server:8089）。
 
-# 设置工作目录
+FROM node:20-alpine AS builder
 WORKDIR /app
-
-# 复制package.json和package-lock.json
-COPY package*.json ./
-
-# 安装依赖
-RUN npm ci --only=production --silent
-
-# 复制源代码
+COPY package.json package-lock.json ./
+# vite 等构建工具在 devDependencies：不能用 --production，否则 npm run build 找不到 vite
+RUN npm ci --legacy-peer-deps
 COPY . .
-
-# 构建应用
 RUN npm run build
 
-# 阶段2：生产阶段
 FROM nginx:1.25-alpine
-
-# 安装必要工具
-RUN apk --no-cache add curl
-
-# 复制构建产物
 COPY --from=builder /app/dist /usr/share/nginx/html
-
-# 复制nginx配置
 COPY nginx.conf /etc/nginx/conf.d/default.conf
-
-# 创建nginx用户和组（如果不存在）
-RUN addgroup -g 101 -S nginx || true && \\n    adduser -S -D -H -u 101 -h /var/cache/nginx -s /sbin/nologin -G nginx -g nginx nginx || true
-
-# 设置权限
-RUN chown -R nginx:nginx /usr/share/nginx/html && \\n    chmod -R 755 /usr/share/nginx/html
-
-# 暴露端口
 EXPOSE 80
-
-# 健康检查
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \\n    CMD curl -f http://localhost/ || exit 1
-
-# 启动nginx
-CMD [\"nginx\", \"-g\", \"daemon off;\"]
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+  CMD wget -q --spider http://127.0.0.1/ || exit 1
+CMD ["nginx", "-g", "daemon off;"]

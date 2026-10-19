@@ -1,0 +1,36 @@
+# 构建上下文为仓库根目录；下列内容不进上下文（体积 + 敏感数据）
+
+# 依赖与产物：镜像内自行安装/构建
+**/node_modules
+**/dist
+dist/repro
+Tshell-server/tshell
+Tshell-server/tshell-server
+Tshell-server/tshell-server.exe
+Tshell-server/tshell.exe
+
+# 本机运行时数据与敏感文件（绝不进构建上下文）
+Tshell-server/database.db
+Tshell-server/database.db-shm
+Tshell-server/database.db-wal
+Tshell-server/jwt_key.hex
+Tshell-server/jwt_private.pem
+Tshell-server/jwt_public.pem
+Tshell-server/jwt_state.json
+Tshell-server/config.yaml
+Tshell-server/config.yaml.bak-*
+Tshell-server/logs
+Tshell-server/backups
+Tshell-server/Downloads
+Tshell-server/Plugins
+Tshell-server/sessions
+Tshell-server/certs
+
+# 版本控制与本地工具产物
+.git
+.github
+.claude
+.playwright-mcp
+docs/archive
+**/__pycache__
+**/*.pyc
