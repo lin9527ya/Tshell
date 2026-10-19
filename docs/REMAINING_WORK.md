@@ -139,8 +139,11 @@ cd ../Tshell-web; npm ci --legacy-peer-deps; npx vitest run; npm run type-check
 - **`ClientFiles.vue` 拆分**：当前 **2101 行**（下载/上传/编辑/浏览混在一个文件）。
   已有安全网：组件级测试 + 全量 294 用例。建议按"上传 / 下载 / 编辑"三个组合式函数
   拆，保持模板不变，逐步搬逻辑
-- **redirector 模板无 UI 入口**：目前只有 CLI（`tshell -gen-redirector`）与
-  `GET /api/redirector/template`。需要的话在监听器页加一个"生成重定向器配置"对话框
+- **redirector 模板的 UI 入口**：**已完成（2026-10-20）**。监听器页「更多 → 重定向器配置」
+  打开 `layout/Dialogs/RedirectorDialog.vue`：按当前画像生成 nginx/apache 配置，
+  可填后端/域名/诱饵/证书路径，生成后展示文件名、行数、转发路径清单与全文，
+  支持复制与下载。7 项组件测试。此前只有 CLI（`tshell -gen-redirector`）与
+  `GET /api/redirector/template`
 - 其他（低优先）：生命周期钩子里的 `any` 已清零，棘轮上限为 0 —— 新代码别再加
 
 ---

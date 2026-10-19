@@ -56,6 +56,7 @@
           <el-dropdown-menu>
             <el-dropdown-item command="forward">{{ i18nStore.tl('正向连接', 'Forward Connect') }}</el-dropdown-item>
             <el-dropdown-item command="phish">{{ i18nStore.tl('钓鱼邮件', 'Spear Phish') }}</el-dropdown-item>
+            <el-dropdown-item command="redirector">{{ i18nStore.tl('重定向器配置', 'Redirector Config') }}</el-dropdown-item>
             <el-dropdown-item command="help">{{ i18nStore.tl('帮助', 'Help') }}</el-dropdown-item>
           </el-dropdown-menu>
         </template>
@@ -154,9 +155,11 @@
       @save="onListenerSaved"
     />
 
-    <!-- 页面内局部攻击弹窗（入口在本页工具条） -->
+    <!-- 页面内局部弹窗（入口在本页工具条） -->
     <ForwardConnectDialog v-model="showForwardConnect" />
     <SpearPhishDialog v-model="showSpearPhish" />
+    <!-- 重定向器配置：按当前画像生成，避免手写配置与画像漂移 -->
+    <RedirectorDialog v-model:visible="showRedirector" />
   </div>
 </template>
 
@@ -168,6 +171,7 @@ import EditListenerDialog from '@/layout/Dialogs/EditListenerDialog.vue'
 import ForwardConnectDialog from '@/layout/Dialogs/Attacks/ForwardConnectDialog.vue'
 import SpearPhishDialog from '@/layout/Dialogs/Attacks/SpearPhishDialog.vue'
 import ForwardListeners from './ForwardListeners.vue'
+import RedirectorDialog from '@/layout/Dialogs/RedirectorDialog.vue'
 import ListenerAPI from '@/api/listener'
 import { useI18nStore } from '@/stores/i18n'
 import PageHeader from '@/components/Common/PageHeader.vue'
@@ -211,6 +215,7 @@ const showEditDialog = ref(false)
 // 攻击工具弹窗（页面内局部状态）
 const showForwardConnect = ref(false)
 const showSpearPhish = ref(false)
+const showRedirector = ref(false)
 
 const currentLoading = computed(() => (activeView.value === 'normal' ? loading.value : (forwardRef.value?.loading ?? false)))
 
@@ -317,6 +322,7 @@ function onRowDblClick(row: ListenerItem) {
 function onMoreCmd(cmd: string) {
   if (cmd === 'forward') showForwardConnect.value = true
   else if (cmd === 'phish') showSpearPhish.value = true
+  else if (cmd === 'redirector') showRedirector.value = true
   else if (cmd === 'help') handleHelp()
 }
 
