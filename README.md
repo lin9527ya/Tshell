@@ -78,6 +78,7 @@ CGO_ENABLED=1 GOPROXY=https://goproxy.cn,direct go build -ldflags "-s -w" -trimp
 - 关键优化项与验证命令:[OPTIMIZATION_CHECKLIST.md](./OPTIMIZATION_CHECKLIST.md)
 - 已知限制:[docs/KNOWN_LIMITATIONS.md](./docs/KNOWN_LIMITATIONS.md)
 - 优化路线图与现状(已完成/未完成 + 待办入口):[docs/ROADMAP.md](./docs/ROADMAP.md)
+- 剩余项说明(Windows 接力用):[docs/REMAINING_WORK.md](./docs/REMAINING_WORK.md)
 
 ## 免责声明
 

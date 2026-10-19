@@ -607,3 +607,4 @@ CI 会在 push 时跑同一套门禁（`.github/workflows/ci.yml`，六个 job�
 | [`RELAY.md`](./RELAY.md) | 多级中继部署 |
 | [`../DEPLOYMENT.md`](../DEPLOYMENT.md) | 构建、配置、部署、单实例约束 |
 | [`../OPTIMIZATION_CHECKLIST.md`](../OPTIMIZATION_CHECKLIST.md) | 既有优化的 grep 回归检查清单 |
+| [`REMAINING_WORK.md`](./REMAINING_WORK.md) | **剩余项说明（Windows 接力用）**：每项的现状/入口/验收 |
