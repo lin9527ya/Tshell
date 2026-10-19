@@ -460,7 +460,7 @@
     <el-dialog
       v-model="downloadDialogVisible"
       :title="i18nStore.tl('文件下载进度', 'Download Progress')"
-      @close="stopDownloadPoll"
+      @close="dl.stop"
       width="480px"
       :close-on-click-modal="false"
       class="cs-dialog"
@@ -484,7 +484,7 @@
           <button v-if="downloadStatus === 'success'" class="cs-btn cs-btn-primary" @click="openDownloadFolder">
             {{ i18nStore.tl('保存到本地', 'Save Locally') }}
           </button>
-          <button class="cs-btn" @click="downloadDialogVisible = false">{{ i18nStore.tl('关闭', 'Close') }}</button>
+          <button class="cs-btn" @click="dl.close">{{ i18nStore.tl('关闭', 'Close') }}</button>
         </div>
       </template>
     </el-dialog>
@@ -528,6 +528,7 @@ import {
   parseToDate,
 } from '@/views/client/files/format'
 import { decodeFileContent } from '@/views/client/files/decodeContent'
+import { useFileDownload } from '@/views/client/files/useFileDownload'
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -651,11 +652,13 @@ const wgetForm = reactive({
   path: '',
 })
 
-const downloadDialogVisible = ref(false)
-const downloadProgress = ref(0)
-// 下载进度轮询句柄(组件作用域,便于关闭/卸载时清理,见 stopDownloadPoll)
-let downloadPollTimer: number | null = null
-const downloadStatus = ref('')
+// 下载进度轮询与终态判定已抽到 files/useFileDownload.ts（19 项测试）。
+// 那段是组件里最容易改错的**状态机**：同时追字节进度与任务终态，
+// 还得保证每条退出路径都停掉计时器（原实现曾漏掉 close/卸载两条）。
+const dl = useFileDownload({ uid: () => uid.value })
+const downloadDialogVisible = dl.dialogVisible
+const downloadProgress = dl.progress
+const downloadStatus = dl.status
 const currentDownloadFile = ref<any>(null)
 const downloadSpeed = ref('')
 
@@ -1067,7 +1070,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
-  stopDownloadPoll()
+  dl.stop()
   window.removeEventListener('click', closeContextMenu)
   window.removeEventListener('blur', closeContextMenu)
   fileTree.value = []
@@ -1196,89 +1199,9 @@ function handleFileDownload(file?: any) {
     ElMessage.warning(isZh.value ? '无法直接下载目录' : 'Cannot download directory directly')
     return
   }
-  downloadFile(target)
+  dl.start(target)
 }
 
-async function downloadFile(file: any) {
-  currentDownloadFile.value = file
-  downloadProgress.value = 0
-  downloadStatus.value = 'downloading'
-  downloadSpeed.value = ''
-  downloadDialogVisible.value = true
-
-  // 【修复】轮询句柄提升到组件作用域:原实现仅 pct>=100 才 clearInterval,
-  // 关掉对话框/卸载组件后 1.5s 轮询仍永久运行(目标文件若被清理则永远到不了 100)。
-  stopDownloadPoll()
-  try {
-    const res = await ClientAPI.download_file({ uid: uid.value, filePath: file.path })
-    // 下载已是任务（后端建 kind=download 的任务并回传 ID）：
-    // 完成/失败由任务终态给出，字节进度只用于进度条展示。
-    // 原实现只盯百分比，失败（目标离线、连接中断）要等 6 分钟轮询超时才提示。
-    const taskId = Number(res?.data?.task_id) || 0
-    let attempts = 0
-    const maxAttempts = 400 // 上限 10 分钟,兜底防永久轮询
-    downloadPollTimer = window.setInterval(async () => {
-      if (++attempts > maxAttempts) {
-        stopDownloadPoll()
-        downloadStatus.value = 'error'
-        ElMessage.warning(
-          isZh.value
-            ? '等待下载结果超时,请到任务中心查看该任务状态'
-            : 'Timed out waiting for the download; check the Task Center',
-        )
-        return
-      }
-      try {
-        // 1) 字节进度（真实进度条数据）
-        const infoRes = await ClientAPI.get_downloads_info({ uid: uid.value })
-        const downloads = infoRes.data?.data || []
-        const target = downloads.find((d: any) => d.filePath === file.path)
-        if (target) {
-          const pct = parseInt(target.downloadPart, 10) || 0
-          downloadProgress.value = Math.min(pct, 100)
-        }
-
-        // 2) 终态判定：任务状态
-        if (taskId) {
-          try {
-            const taskRes = await TaskAPI.get(taskId)
-            const status = taskRes.data?.data?.status
-            if (status === 'completed') {
-              stopDownloadPoll()
-              downloadProgress.value = 100
-              downloadStatus.value = 'success'
-              ElMessage.success(isZh.value ? `文件 ${file.name} 已下载至团队服务器` : `Downloaded ${file.name}`)
-              return
-            }
-            if (status === 'failed' || status === 'timeout' || status === 'cancelled') {
-              stopDownloadPoll()
-              downloadStatus.value = 'error'
-              const reason = taskRes.data?.data?.error || (isZh.value ? '下载未完成' : 'Download did not finish')
-              ElMessage.error(reason)
-              return
-            }
-          } catch { /* 单次查询失败不判定，下一轮重试 */ }
-        } else if ((parseInt(target?.downloadPart, 10) || 0) >= 100) {
-          // 无任务 ID（后端未建任务）时的兜底：仍按百分比判定
-          stopDownloadPoll()
-          downloadStatus.value = 'success'
-          ElMessage.success(isZh.value ? `文件 ${file.name} 已下载至团队服务器` : `Downloaded ${file.name}`)
-        }
-      } catch {}
-    }, 1500)
-  } catch (e: any) {
-    downloadStatus.value = 'error'
-    ElMessage.error(e?.response?.data?.error || (isZh.value ? '下发下载任务失败' : 'Download failed'))
-  }
-}
-
-// 停止下载进度轮询(关闭对话框/组件卸载/重新下载时调用)
-function stopDownloadPoll() {
-  if (downloadPollTimer !== null) {
-    clearInterval(downloadPollTimer)
-    downloadPollTimer = null
-  }
-}
 
 async function openDownloadFolder() {
   if (!currentDownloadFile.value) return
