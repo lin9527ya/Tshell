@@ -303,13 +303,27 @@ func GetPidList(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	// 客户端不在线时立即返回：否则会一直等到超时，而等待时长一旦超过服务端
+	// write_timeout（30s），408 响应已经写不出去，浏览器只能收到一个空 500。
+	connection.MuClientListenerType.Lock()
+	_, connected := connection.ClientListenerType[shellContent.Uid]
+	connection.MuClientListenerType.Unlock()
+	if !connected {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "客户端未连接，请确保客户端正在运行并已连接到服务器",
+			"code":  "CLIENT_NOT_CONNECTED",
+			"uid":   shellContent.Uid,
+		})
+		return
+	}
+
 	// 创建 UID 对应的通道队列
 	queue := command.VarPidQueue.GetOrCreateQueue(shellContent.Uid)
 
 	sendcommand.SendCommand(shellContent.Uid, "ps")
 
-	// 创建一个 context 并设置合理的超时时间（获取进程列表6◅秒）
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	// 等待客户端回包：必须短于服务端 write_timeout(30s)，否则超时响应写不出去
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
 	// 等待从通道接收 PID 列表

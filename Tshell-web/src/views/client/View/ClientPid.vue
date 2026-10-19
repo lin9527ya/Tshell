@@ -519,9 +519,17 @@ async function fetchProcessList() {
       processList.value = []
       ElMessage.error(isZh.value ? '无法获取进程列表' : 'Failed to load process list')
     }
-  } catch {
+  } catch (e: any) {
     processList.value = []
-    ElMessage.error(isZh.value ? '无法获取进程列表' : 'Failed to load process list')
+    const resp = e?.response
+    if (resp?.data?.code === 'CLIENT_NOT_CONNECTED') {
+      // 离线会话：这是正常状态而非故障，用 warning 且展示服务端说明
+      ElMessage.warning(resp?.data?.error || (isZh.value ? '客户端未连接' : 'Client not connected'))
+    } else if (resp?.status === 408) {
+      ElMessage.warning(isZh.value ? '客户端响应超时，请稍后刷新' : 'Client response timed out, refresh later')
+    } else {
+      ElMessage.error(isZh.value ? '无法获取进程列表' : 'Failed to load process list')
+    }
   } finally {
     loading.value = false
   }

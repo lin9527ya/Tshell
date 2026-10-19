@@ -170,7 +170,8 @@ service.interceptors.response.use(
 
       // 后台数据源静默失败：监控帧拉取 408/429/404 与拓扑图 403/失败均属正常状态，
       // 由 PivotGraph / ClientMonitor 自行回退或消化，不弹全局错误提示
-      if (error.config?.url?.includes('/client/monitor/frame') || error.config?.url?.includes('/graph/data') || error.config?.url?.includes('/connection/uid/') || error.config?.url?.includes('/client/smart-offline-check')) {
+      // /client/pid：离线会话返回 CLIENT_NOT_CONNECTED / 408 属正常状态，由 ClientPid 分级提示
+      if (error.config?.url?.includes('/client/monitor/frame') || error.config?.url?.includes('/graph/data') || error.config?.url?.includes('/connection/uid/') || error.config?.url?.includes('/client/smart-offline-check') || error.config?.url?.includes('/client/pid')) {
         return Promise.reject(error);
       }
 
