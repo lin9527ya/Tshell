@@ -72,3 +72,27 @@ func dpapiArtifactNote(info cred.ArtifactInfo) string {
 			"配合浏览器 Local State 可还原浏览器主密钥。解析：pypykatz dpapi masterkey <GUID> <masterkey> 或 impacket dpapi。",
 		info.Describe())
 }
+
+// ingestTicketArtifact 把解析出的 ccache 登记成 ticket 战果。
+//
+// secret 存制品内条目名而不是票据字节：票据本体（可导入的 .ccache）在制品文件里，
+// 凭据库只做"哪台机器上有谁的票据、什么时候到期"的索引。
+func ingestTicketArtifact(uid string, art cred.TicketArtifact) int {
+	n := 0
+	for _, c := range art.Caches {
+		note := fmt.Sprintf("Kerberos 票据缓存 %s；%d 张票据", c.File, c.Tickets)
+		if c.Expires != "" {
+			note += "；最晚到期 " + c.Expires
+		}
+		note += "；原始 ccache 在制品文件中（kinit -c <文件> / Rubeus ptt / impacket）"
+		AddLootIfNotEmpty(uid, "ticket", c.Principal, c.Realm, art.Host, c.File, note, "kerberos:ccache")
+		n++
+	}
+	return n
+}
+
+// ticketArtifactNote 制品本体入库时的备注
+func ticketArtifactNote(info cred.ArtifactInfo) string {
+	return fmt.Sprintf("Kerberos 票据缓存（%s）；导入方式: kinit -c <解压出的 .ccache>，"+
+		"Windows 可用 Rubeus ptt / impacket 的 ticket 工具；票据到期后需重新采集。", info.Describe())
+}

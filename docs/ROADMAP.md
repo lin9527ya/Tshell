@@ -129,7 +129,14 @@ go test -race ./Tshell-server/...     # 见 §4 回归基线（注意用外层�
     （`pkg/cred/browser.go`、`pkg/api/cred_ingest.go`）
   - ✅ 支撑件：自写纯 Go SQLite 只读读取器（含 WAL），
     见 `Tshell-client/implant/core/sqlite/` 与 KNOWN_LIMITATIONS §12h
-  - ⏳ Kerberos 票据、BloodHound 采集器、Firefox(NSS)、Chromium `Web Data`
+  - ✅ **Firefox/NSS**（`kind=browser, tech=firefox`）：key4.db → 主密钥 → logins.json 逐条解密；
+    Cookie 走 `cookies.sqlite`（Firefox 不加密）。**注意**：解析库一度是死代码（无调用点，
+    被链接器裁掉），2026-10-19 补上接线并加了 `TestBrowserTechsIncludeFirefox` 守卫
+  - ✅ **Kerberos 票据（文件式）**（`kind=ticket, tech=files`，2026-10-19）：采集
+    `krb5cc*` / `KRB5CCNAME` 指向的 MIT ccache → ZIP（manifest + tickets/*）→ 服务端
+    逐条目 `ParseCCache` 解析 principal/到期/票据数并登记 `loot(type=ticket)`
+  - ⏳ BloodHound 采集器、Windows LSA 原生票据（list/purge/ptt）、kirbi 互转、
+    Chromium `Web Data`
 - **入口**：
   - 客户端：`implant/core/services/cred.go`（按 kind 分派）、`browser*.go`、`dpapi_windows.go`、
     `core/sqlite/`（读取器）

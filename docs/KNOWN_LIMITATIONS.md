@@ -89,10 +89,12 @@
     `CRED_ACCESS` 审计、`tshell_cred_artifacts_total{kind}` 指标、失败显式（不登记半截制品）。
 - 遗留：
   - **Windows 端未在真实目标上验证**（本仓库只能交叉编译）；
-  - Kerberos 票据 / BloodHound / Firefox(NSS) / Chromium `Web Data` 未实现；
-  - 提权模块（getsystem / UAC bypass）未实现。
+  - 已实现：LSASS / DPAPI / 浏览器（Chrome/Edge/Firefox）/ **Kerberos 票据（文件式 ccache）**；
+  - 未实现：Windows LSA 原生票据（`LsaCallAuthenticationPackage`）、kirbi 解析与
+    kirbi↔ccache 互转、BloodHound 采集器、Chromium `Web Data`；
+  - 提权模块（getsystem / UAC bypass）已实现，见 §12c 之外的独立说明。
 - 详见 docs/CREDENTIAL_ACCESS.md（含 §7 第二批模块、§9 验证状态）。
-- 状态：✅（三条链路 + 单测）/ ⏳（实机验证 + 后续模块）
+- 状态：✅（四条链路 + 单测）/ ⏳（实机验证 + LSA 票据/BloodHound/Web Data）
 
 ## 12h. 自写 SQLite 只读读取器（浏览器凭据模块的依赖）
 - 现状：✅ 已实现（本轮）：`implant/core/sqlite/`，纯 Go、零依赖，只做

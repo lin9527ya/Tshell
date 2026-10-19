@@ -411,3 +411,20 @@ cd Tshell-web && npm run build:embed
   而 api 包测试默认没加载过 profiles/ 目录，于是所有监听器用例都得到
   "C2 画像不存在: default"。加了 `ensureTestProfiles`（用 `t.TempDir()` 写一份
   default.yaml + `InitNoWatch`），测试不再依赖工作目录里有没有那个文件夹。
+
+## O 组（Kerberos 票据 · 文件式，2026-10-19 追加）
+
+> 用法同前：改动涉及凭据链路时逐条 grep，期望值 ≥1（0 = 被回滚）。
+
+| # | 优化 | 验证命令 | 期望 |
+|---|------|----------|------|
+| 142 | 票据制品类型与形态登记 | `grep -c "KindTicket" Tshell-server/pkg/cred/dump.go` | ≥3 |
+| 143 | 票据 ZIP 逐条目解析（真实夹具） | `grep -c "func ParseTicketArtifact" Tshell-server/pkg/cred/ticket.go` | ≥1 |
+| 144 | 制品校验按 kind 分派（票据不走通用 ZIP 校验） | `grep -c "kind == KindTicket" Tshell-server/pkg/cred/artifact.go` | ≥1 |
+| 145 | 票据入库到凭据库 | `grep -c "func ingestTicketArtifact" Tshell-server/pkg/api/cred_ingest.go` | ≥1 |
+| 146 | loot 新增 ticket 类型 | `grep -c '"ticket": true' Tshell-server/pkg/api/loot.go` | ≥1 |
+| 147 | 客户端 ccache 发现（KRB5CCNAME + krb5cc*） | `grep -c "func findCCacheFiles" Tshell-client/implant/core/services/ticket.go` | ≥1 |
+| 148 | 票据制品打包（manifest + tickets/） | `grep -c "writeTicketBundle" Tshell-client/implant/core/services/ticket.go` | ≥2 |
+| 149 | 客户端分派与类型×技术校验含 ticket | `grep -c "credDumpTickets\|ticket\"" Tshell-client/implant/core/services/cred.go` | ≥2 |
+| 150 | 前端类型/技术清单含 ticket | `grep -c "ticket" Tshell-web/src/api/cred/index.ts` | ≥2 |
+| 151 | Firefox 接线守卫（防再退化成死代码） | `grep -c "TestBrowserTechsIncludeFirefox" Tshell-server/pkg/cred/cred_test.go` | ≥1 |

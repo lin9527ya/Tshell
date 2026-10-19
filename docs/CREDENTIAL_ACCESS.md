@@ -193,11 +193,11 @@ pypykatz dpapi masterkey <GUID> <masterkey-base64>   # 或用 impacket 的 dpapi
 |---|---|---|
 | DPAPI 凭据/主密钥 | ✅ 本轮实现（见 §7） | 制品类型 `dpapi` |
 | 浏览器凭据 / Cookie | ✅ 本轮实现（见 §7） | 制品类型 `browser` |
-| Kerberos 票据 | 列出/导出/注入/清除票据 | 票据文件即制品 |
+| Kerberos 票据（文件式） | ✅ 2026-10-19 实现（见 §10）：采集 MIT ccache 文件 | 制品类型 `ticket` |
 | BloodHound 采集 | 域对象与 ACL 采集，产出 JSON | 制品类型加 `bloodhound` |
 | 提权模块 | getsystem（命名管道模拟）/ UAC 绕过 | 属"动作"类，不需要制品管线 |
 | 端口扫描 | ✅ 已实现（TCP connect 扫描，跨平台）：`scan <目标> <端口> [超时毫秒]` | 结果直接作为命令回显 |
-| Firefox / NSS 凭据 | `logins.json` + `key4.db`（NSS 解密，非 DPAPI） | 复用 `browser` 制品的 JSON 结构 |
+| Firefox / NSS 凭据 | ✅ 已实现并接线（`tech=firefox`） | 复用 `browser` 制品的 JSON 结构 |
 | Chromium `Web Data` | 自动填充/信用卡（价值与噪声都高，需单独开关） | 复用 `browser` 管线 |
 
 服务端侧每加一个模块只需：`pkg/cred` 的 `techsByKind` 加一项、客户端加一个取法、
@@ -234,3 +234,31 @@ pypykatz dpapi masterkey <GUID> <masterkey-base64>   # 或用 impacket 的 dpapi
   浏览器库里 >1KB 的 Cookie 密文才会走到这条路径，实测样本见
   `scripts/fit_sqlite_overflow.py`。
 
+
+## 10. Kerberos 票据（文件式 ccache，2026-10-19）
+
+**范围**：只做**文件式** —— 采集本机的 MIT ccache 文件。Windows 原生 LSA 里的票据
+（`LsaCallAuthenticationPackage` 枚举/导出，对应 `klist` / `Rubeus dump` 的能力）
+不在此列，属后续模块。
+
+**制品布局**（客户端 `implant/core/services/ticket.go` 生成，服务端
+`pkg/cred/ticket.go` 解析）：
+
+```
+manifest.json        {host,user,collected_at,errors,files:[{name,size}]}
+tickets/<文件名>      原始 ccache（v3/v4）
+```
+
+**采集范围**：`KRB5CCNAME`（`FILE:` 前缀或裸路径；`KEYRING:`/`DIR:` 等非文件后端会记一条
+说明）→ 临时目录（Windows `%TEMP%`）→ 用户主目录 → 非 Windows 的 `/tmp`，
+文件名前缀 `krb5cc`，单文件上限 4MB、单次上限 64 个。
+
+**服务端**：逐条目 `ParseCCache`（**客户端不解析**，避免两套实现漂移），
+每个缓存登记一条 `loot(type=ticket, source=kerberos:ccache)`：
+`user` = principal、`realm` = 域、`secret` = 制品内条目名、note 带票据数与最晚到期时间；
+原始 ccache 留在制品文件里，导入方式 `kinit -c <解压出的文件>`（Windows 用 Rubeus ptt /
+impacket）。坏条目只进 `errors`，不影响其它缓存；一个能解出 principal 的都没有时整单显式失败。
+
+**验证**：`pkg/cred/ticket_test.go` 用 impacket 的真实 ccache 夹具（v3/v4）打 ZIP 断言
+解析结果、坏条目隔离、`ValidateArtifact` 按 kind 分派；客户端 `ticket_test.go` 覆盖
+`KRB5CCNAME` 优先、非文件后端提示、制品布局与类型×技术校验。

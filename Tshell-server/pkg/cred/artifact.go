@@ -28,13 +28,15 @@ const (
 type ArtifactInfo struct {
 	Size         int64  `json:"size"`
 	Format       string `json:"format"`
-	Entries      int    `json:"entries,omitempty"`      // ZIP：条目数；minidump：数据流数
-	HasManifest  bool   `json:"has_manifest,omitempty"` // ZIP：是否含 manifest.json
-	HasMemory    bool   `json:"has_memory,omitempty"`   // minidump：是否含完整内存
-	Browsers     int    `json:"browsers,omitempty"`     // 浏览器制品：浏览器配置数
-	Credentials  int    `json:"credentials,omitempty"`  // 浏览器制品：明文口令条数
-	Cookies      int    `json:"cookies,omitempty"`      // 浏览器制品：Cookie 条数
-	SkippedItems int    `json:"skipped,omitempty"`      // 客户端上报的采集错误条数
+	Entries      int    `json:"entries,omitempty"`       // ZIP：条目数；minidump：数据流数
+	HasManifest  bool   `json:"has_manifest,omitempty"`  // ZIP：是否含 manifest.json
+	HasMemory    bool   `json:"has_memory,omitempty"`    // minidump：是否含完整内存
+	Browsers     int    `json:"browsers,omitempty"`      // 浏览器制品：浏览器配置数
+	Credentials  int    `json:"credentials,omitempty"`   // 浏览器制品：明文口令条数
+	Cookies      int    `json:"cookies,omitempty"`       // 浏览器制品：Cookie 条数
+	TicketCaches int    `json:"ticket_caches,omitempty"` // 票据制品：ccache 个数
+	Tickets      int    `json:"tickets,omitempty"`       // 票据制品：票据条目总数
+	SkippedItems int    `json:"skipped,omitempty"`       // 客户端上报的采集错误条数
 }
 
 // ValidateArtifact 按制品形态校验回传文件。
@@ -53,6 +55,17 @@ func ValidateArtifact(kind, format, path string) (ArtifactInfo, error) {
 			Size: d.Size, Format: FormatMinidump, Entries: d.Streams, HasMemory: d.HasMemory,
 		}, nil
 	case FormatZip:
+		if kind == KindTicket {
+			art, err := ParseTicketArtifact(path)
+			if err != nil {
+				return ArtifactInfo{Format: format}, err
+			}
+			info := art.Info()
+			if st, err := os.Stat(path); err == nil {
+				info.Size = st.Size()
+			}
+			return info, nil
+		}
 		return ValidateZip(path)
 	case FormatJSON:
 		art, err := ParseBrowserArtifact(path)
@@ -77,6 +90,14 @@ func (a ArtifactInfo) Describe() string {
 		manifest := ""
 		if a.HasManifest {
 			manifest = " / 含 manifest.json"
+		}
+		if a.TicketCaches > 0 {
+			desc := fmt.Sprintf("%.2f MB / %d 个 Kerberos 缓存 / %d 张票据%s",
+				mb, a.TicketCaches, a.Tickets, manifest)
+			if a.SkippedItems > 0 {
+				desc += fmt.Sprintf(" / %d 条解析错误", a.SkippedItems)
+			}
+			return desc
 		}
 		return fmt.Sprintf("%.2f MB / ZIP %d 个条目%s", mb, a.Entries, manifest)
 	case FormatJSON:
