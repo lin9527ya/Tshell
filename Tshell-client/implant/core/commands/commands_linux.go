@@ -11,24 +11,13 @@ import (
 	"fmt"
 	"implant/core/communication"
 	"implant/core/debuglog"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
-)
-
-// ================ 交互式Shell会话管理 ================
-var (
-	// 保留原有变量以兼容其他功能
-	interactiveCmd      *exec.Cmd
-	interactiveCmdMutex sync.Mutex
-	isInteractiveMode   bool
-	interactiveStdin    io.WriteCloser
 )
 
 // ================ PTY系统调用定义 ================

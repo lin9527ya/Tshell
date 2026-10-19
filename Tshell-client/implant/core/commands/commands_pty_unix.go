@@ -38,14 +38,13 @@ type TerminalSize struct {
 
 // XTermPTY 基于github.com/creack/pty的PTY终端管理器
 type XTermPTY struct {
-	cmd         *exec.Cmd      // shell进程
-	ptyFile     *os.File       // PTY文件（github.com/creack/pty库返回）
-	isActive    bool           // 终端活跃状态
-	mutex       sync.RWMutex   // 读写锁
-	size        TerminalSize   // 当前终端大小
-	buffer      *bytes.Buffer  // 输出缓冲区
-	bufferMutex sync.Mutex     // 缓冲区锁
-	signalChan  chan os.Signal // 信号处理通道
+	cmd        *exec.Cmd      // shell进程
+	ptyFile    *os.File       // PTY文件（github.com/creack/pty库返回）
+	isActive   bool           // 终端活跃状态
+	mutex      sync.RWMutex   // 读写锁
+	size       TerminalSize   // 当前终端大小
+	buffer     *bytes.Buffer  // 输出缓冲区
+	signalChan chan os.Signal // 信号处理通道
 	// cleanupOnce 保证 cleanup 只执行一次（Stop / 信号 / 进程退出三条路径都可能触发）
 	cleanupOnce  sync.Once
 	closeSigOnce sync.Once

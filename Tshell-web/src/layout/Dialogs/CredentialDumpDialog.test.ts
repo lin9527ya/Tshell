@@ -210,6 +210,54 @@ describe('CredentialDumpDialog（凭据获取）', () => {
     expect(dump).toHaveBeenCalledWith({ uid: 'uid-win-1', kind: 'browser', tech: 'chrome' })
   })
 
+  it('browser 的技术选项包含 Firefox 与 cards（Web Data）', async () => {
+    const wrapper = mountDialog()
+    await flushPromises()
+    const vm = wrapper.vm as any
+
+    vm.form.kind = 'browser'
+    await flushPromises()
+
+    const values = (vm.techOptions as Array<{ value: string }>).map((t) => t.value)
+    expect(values).toEqual(['all', 'chrome', 'edge', 'firefox', 'cards'])
+  })
+
+  it('选定 firefox / cards 时按对应技术下发', async () => {
+    const wrapper = mountDialog()
+    await flushPromises()
+    const vm = wrapper.vm as any
+    vm.form.kind = 'browser'
+
+    for (const tech of ['firefox', 'cards']) {
+      dump.mockClear()
+      vm.form.tech = tech
+      await flushPromises()
+      findButton(/开始获取|Start/)!.click()
+      await flushPromises()
+      expect(dump).toHaveBeenCalledWith({ uid: 'uid-win-1', kind: 'browser', tech })
+    }
+  })
+
+  it('ticket 类型提供 files / lsa 两种技术，lsa 提示 kirbi', async () => {
+    const wrapper = mountDialog()
+    await flushPromises()
+    const vm = wrapper.vm as any
+
+    vm.form.kind = 'ticket'
+    await flushPromises()
+
+    const values = (vm.techOptions as Array<{ value: string }>).map((t) => t.value)
+    expect(values).toEqual(['files', 'lsa'])
+
+    vm.form.tech = 'lsa'
+    await flushPromises()
+    expect(bodyText()).toMatch(/kirbi|LSA/i)
+
+    findButton(/开始获取|Start/)!.click()
+    await flushPromises()
+    expect(dump).toHaveBeenCalledWith({ uid: 'uid-win-1', kind: 'ticket', tech: 'lsa' })
+  })
+
   it('制品列表按来源显示类型徽标', async () => {
     listArtifacts.mockResolvedValue({
       data: {

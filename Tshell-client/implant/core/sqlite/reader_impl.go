@@ -565,15 +565,6 @@ func (db *DB) readOverflowChain(local []byte, payloadLen int) ([]byte, error) {
 	return buf, nil
 }
 
-// readPayload 组装载荷（单候选便捷入口，测试与诊断用）
-func (db *DB) readPayload(page []byte, off, payloadLen, pageType int) ([]byte, error) {
-	cands, err := db.payloadCandidates(page, off, payloadLen, pageType)
-	if err != nil {
-		return nil, err
-	}
-	return cands[0], nil
-}
-
 // decodeRecord 解码一条记录：headerSize(varint) + serial types + body
 func (db *DB) decodeRecord(payload []byte) ([]Value, error) {
 	headerLen64, n := getVarint(payload)

