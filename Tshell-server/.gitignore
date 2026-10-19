@@ -30,3 +30,7 @@ temp
 /tshell-server
 /tshell-server.exe
 /tshell.exe
+
+# cgo 生成头（Tshell-client/implant/build_templates.ps1 产出，非源码；会被
+# //go:embed server/* 一并嵌入，本地有、CI 无会造成构建产物不一致，故不入库）
+pkg/api/server/**/*.dll.h
