@@ -84,17 +84,17 @@
           class="cs-session-table"
           @current-change="onSelectTool"
         >
-          <el-table-column prop="name" :label="i18nStore.tl('功能模块', 'Module')" width="160" sortable show-overflow-tooltip>
+          <el-table-column prop="name" :label="i18nStore.tl('功能模块', 'Module')" width="148" sortable show-overflow-tooltip>
             <template #default="{ row }">
               <span class="tool-name font-bold">{{ row.name }}</span>
             </template>
           </el-table-column>
-          <el-table-column prop="category" :label="i18nStore.tl('分类', 'Category')" width="110" sortable align="center">
+          <el-table-column prop="category" :label="i18nStore.tl('分类', 'Category')" width="86" sortable align="center">
             <template #default="{ row }">
               <span class="category-badge">{{ row.category }}</span>
             </template>
           </el-table-column>
-          <el-table-column prop="desc" :label="i18nStore.tl('功能说明', 'Description')" min-width="180" show-overflow-tooltip>
+          <el-table-column prop="desc" :label="i18nStore.tl('功能说明', 'Description')" min-width="150" show-overflow-tooltip>
             <template #default="{ row }">
               <span class="text-dim">{{ row.desc }}</span>
             </template>

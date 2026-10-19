@@ -66,9 +66,10 @@
             <a class="row-link bk-danger" @click="remove(row)">{{ i18nStore.tl('删除', 'Delete') }}</a>
           </template>
         </el-table-column>
+        <template #empty>
+          <EmptyState variant="inline" :title="i18nStore.tl('暂无备份', 'No backups yet')" />
+        </template>
       </el-table>
-
-      <EmptyState v-if="!list.length && !loading" variant="overlay" :title="i18nStore.tl('暂无备份', 'No backups yet')" />
     </div>
   </div>
 </template>

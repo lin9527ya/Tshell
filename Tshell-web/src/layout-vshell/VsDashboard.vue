@@ -1,5 +1,11 @@
 <template>
   <div class="vs-dash">
+    <!-- 页头：与其它页一致（20px 标题 + 副标题），否则仪表盘看起来是"没有标题的一张卡" -->
+    <PageHeader
+      :title="i18nStore.tl('仪表盘', 'Dashboard')"
+      :subtitle="i18nStore.tl('服务器概况、审计活动与实时动态', 'Server overview, audit activity and live events')"
+    />
+
     <!-- 统计卡行（vshell: 蓝色标题链接 + 右侧彩色大图标） -->
     <div class="vs-dash-cards">
       <div class="vs-card vs-stat-card">
@@ -238,6 +244,7 @@
 <script setup lang="ts">
 import { computed, defineOptions, onBeforeUnmount, onMounted, ref } from 'vue'
 import VsIcon from './VsIcon.vue'
+import PageHeader from '@/components/Common/PageHeader.vue'
 import { getDashboardStats } from '@/api/dashboard'
 import auditApi from '@/api/audit'
 import securityApi from '@/api/security'

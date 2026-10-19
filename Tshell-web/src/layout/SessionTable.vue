@@ -17,8 +17,8 @@
         />
         <span v-if="searchKey" class="cs-session-search-clear" :title="i18nStore.tl('清空过滤', 'Clear')" @click="searchKey = ''">✕</span>
       </div>
-      <span class="cs-session-count" :title="i18nStore.tl('匹配/总数', 'matched / total')">
-        {{ filteredClients.length }}/{{ clientsStore.clientsList.length }}
+      <span class="cs-session-count" :title="i18nStore.tl('匹配 / 总数', 'matched / total')">
+        {{ i18nStore.tl('匹配', 'Matched') }} {{ filteredClients.length }}/{{ clientsStore.clientsList.length }}
       </span>
 
       <!-- 凭据/战利品库入口：/loot 在路由表里是 menu:false，此前全仓没有任何跳转入口，
@@ -234,16 +234,17 @@
         <el-table-column
           prop="last_active"
           :label="t('table.last')"
-          min-width="140"
+          min-width="160"
           sortable
           :sort-orders="['ascending', 'descending', null]"
           align="left"
         >
           <template #default="{ row }">
-            <span class="vs-online-tag" :class="row.Online ? 'is-online' : 'is-offline'">
-              {{ row.Online ? (i18nStore.tl('在线', 'ON')) : (i18nStore.tl('离线', 'OFF')) }}
+            <!-- 用 isClientOnline 判断：Online 是字符串，"2"（离线）也是真值 -->
+            <span class="vs-online-tag" :class="isClientOnline(row) ? 'is-online' : 'is-offline'">
+              {{ isClientOnline(row) ? (i18nStore.tl('在线', 'ON')) : (i18nStore.tl('离线', 'OFF')) }}
             </span>
-            <span class="cs-cell-last cs-font-mono" :class="{ stale: !row.Online }">
+            <span class="cs-cell-last cs-font-mono" :class="{ stale: !isClientOnline(row) }">
               {{ formatLastActive(row) }}
             </span>
           </template>
@@ -967,6 +968,8 @@ onBeforeUnmount(() => {
   font-weight: 500;
   font-style: italic;
   color: var(--cs-text);
+  /* "已离线 101 h" 中间的空格会把 h 挤到下一行，行高被撑高 */
+  white-space: nowrap;
 }
 
 .cs-cell-last.stale {

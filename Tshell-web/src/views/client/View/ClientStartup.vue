@@ -162,6 +162,10 @@ const persist = async (method: string) => {
 }
 
 .cs-startup-toolbar {
+  max-width: 760px;
+  width: 100%;
+  margin-left: auto;
+  margin-right: auto;
   height: 48px;
   background: var(--cs-panel);
   border-bottom: 1px solid var(--cs-card-border);
@@ -189,6 +193,10 @@ const persist = async (method: string) => {
   flex-direction: column;
   gap: 16px;
   max-width: 760px;
+  /* 限宽后居中对齐，与其它页签的居中卡片一致（标题栏同样限宽，保持同一列） */
+  width: 100%;
+  margin-left: auto;
+  margin-right: auto;
   min-height: 320px;
   width: 100%;
   box-sizing: border-box;

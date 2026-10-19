@@ -253,6 +253,8 @@ async function copy(text: string) {
 
 .mfa-card {
   max-width: 560px;
+  /* 与「隐蔽访问」的居中卡一致：宽屏下不要贴在左边 */
+  margin: 0 auto;
   padding: 18px;
   border: 1px solid var(--cs-border, #e4e7ed);
   border-radius: 8px;

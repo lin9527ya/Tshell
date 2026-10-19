@@ -233,8 +233,13 @@ function submitMfa() {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding-top: 12vh;
+  /* 垂直居中：原来 padding-top: 12vh 会让表单压在顶部、下方留一大片空白；
+     小屏用 padding + overflow 兜底，避免表单被裁 */
+  justify-content: center;
+  padding: 24px 16px;
   position: relative;
+  overflow: auto;
+  box-sizing: border-box;
   user-select: none;
 }
 

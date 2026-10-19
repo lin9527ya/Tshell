@@ -1273,6 +1273,12 @@ const refreshAddress = () => {
   max-width: 920px;
 }
 
+/* 下拉框此前会撑满表单（780px），与 320px 的输入框并排时一宽一窄；
+   统一成 320，表单列看起来才是"一列控件" */
+.config-form :deep(.el-select) {
+  width: 320px;
+}
+
 /* 页面级页签（vshell 下划线页签） */
 .sg-tabs {
   flex-shrink: 0;
