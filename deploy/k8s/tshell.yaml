@@ -69,6 +69,13 @@ data:
       level: info
       format: json
       output: stdout
+      # 审计日志默认写 ./logs；本清单 readOnlyRootFilesystem=true，写不进去会让
+      # InitAuditLogger 失败并 os.Exit(1)（崩溃循环），故显式指向 PVC
+      audit_log_dir: /data/logs
+
+    backup:
+      # 定时备份目录同样落在 PVC 上（默认 ./backups 在只读根 FS 下不可写）
+      dir: /data/backups
 
     security:
       # 反代（Ingress）通常不传 X-Forwarded-Proto，此时 HSTS 不会下发；
