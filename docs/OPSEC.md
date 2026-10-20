@@ -56,6 +56,7 @@
 | 睡眠期 PEB 模块摘链（三条 `In*Order` 链表，醒来原/尾挂回） | 已实现·有测试（实机 Toolhelp 快照"摘链后看不到、挂回后看得到"） | `core/evasion/modhide_windows.go` |
 | ntdll 函数体解析兼容 Win11 24H2（`test [0x7ffe0308],1` + `jne`，syscall 在偏移 0x12 而非 8） | 已实现·有测试（实机逐个 Nt\* 断言 + 真进内核） | `core/evasion/trampoline.go` `ParseSyscallStub` |
 | 文件自删（删当前映像/改名解锁/延迟重试） | 已实现 | `commands_windows.go` `DeleteSelf` |
+| 启动期能力**可撤销**（patch 台账 + `evasion off` 真正还原） | **已实现·有测试**（2026-10-20）：写入前存原始字节、逆序还原、被外部改过则跳过；台账仅在进程内 | `core/evasion/patch_registry_windows.go` |
 | ETW patch 覆盖面扩到 5 个导出（`EtwEventWrite`/`Ex`/`Full`/`String`/`Transfer`），返回 `STATUS_SUCCESS` 而非裸 `ret` | 已实现·有测试（实机 5/5，patch 后返回值断言） | `core/evasion/evasion.go` `etwPatchTargets` |
 | AMSI patch 覆盖 `AmsiScanBuffer` + `AmsiScanString` | 已实现·有测试（实机 2/2） | 同上 `amsiPatchTargets` |
 | ntdll/kernel32/kernelbase（仅 amd64）**全可执行节**对照磁盘映像恢复（走 PE 节表换算，不再用 RVA 直索引文件；只写差异字节） | 已实现·有测试（种假 hook 后抹掉、幂等、本机无害） | `core/evasion/pe_image.go`、`unhook_windows.go` |
@@ -80,7 +81,7 @@
 | DNS beacon 子域前缀可定制 | 已实现 | `pkg/c2profile` `dns.beacon_prefix` |
 | 心跳默认值与全局配置一致（5s，防两处漂移） | 已实现·有测试 | `pkg/c2profile/default_sleep_test.go` |
 | 主密钥**运行时**派生（每会话 ECDH） | **11/12 已接线**（2026-10-20，仅剩 oss）：X25519+HKDF、`ReplaceMasterKey` 接缝、握手缓存、会话前交换均已实现并有测试（含完整往返断言）。**仅 oss 未接**，故载荷内仍含静态主密钥 | `pkg/encrypt/{ecdh,kx_cache}.go`、`pkg/api/communication/kx.go`、`implant/core/encrypt/ecdh.go`、`cmd/single/transport_{http,https}.go`；见 §6 |
-| 流量体积整形（固定大小填充） | **未做**（目前只 pad 请求头） | — |
+| 流量体积整形（定长分桶） | **已实现·有测试**（2026-10-20）：HTTP 家族请求/响应已定长分桶；**非 HTTP 传输的载荷长度仍未整形** | `core/communication/padding.go`、`api/communication/get.go` |
 
 ### C. 服务端数据面（磁盘/日志）
 
@@ -333,7 +334,7 @@ AEAD 缓存里还另有一份。现在改为 `MaskForSleep` **就地遮蔽真身
 | 模块摘链的 VAD 层可见性 | 已实现 PEB 链表摘除（2026-10-20）；页表/VAD 不动，按内存区域扫仍可见镜像页 | 需要改映射方式（`SEC_IMAGE`+回填）或 unbacked 执行内存，代价高于收益 |
 | APC 分发 syscall 化（`NtQueueApcThread`） | 未接：APC 路径还要同时改线程恢复（`NtResumeThread`）与句柄管理，改一半没有意义 | 有实机可验证注入成功/失败的时机 |
 | 主密钥运行时派生（ECDH） | **11/12 已接线（仅剩 oss）**，故载荷内仍含静态主密钥。各传输的接入方式与剩余工作量见 `docs/REMAINING_WORK.md` §3.3 | 1c 剩余 + 1d；无外部阻塞 |
-| 流量体积整形 | 需要与 padding 策略统一设计，否则两种填充互相打架 | 排期 |
+| 流量体积整形 | **已完成（2026-10-20）**：两侧统一 2 的幂定长桶、值改标准 base64。**未做**：非 HTTP 传输的载荷长度整形 | 需要按帧格式逐传输设计 |
 | 审计日志防篡改（哈希链） | **已完成（2026-10-20）**：链在 flushMu 串行区内计算、重启/轮转自动接续、`-verify-audit` 定位断点。**未做**：链尾外部锚点（截断末尾仍不可发现） | 需要独立介质存锚点 |
 | `cleanup` 统一清理现场命令 | 已实现（2026-10-20），**未在实机验证过持久化卸载**（需真实注册表/任务计划/cron/launchd 环境） | 授权 Windows/Linux/macOS VM 各一台做回归 |
 | 自更新 `.old` 残留清理 | 已实现（新映像启动后后台重试删除） | 同上 |
