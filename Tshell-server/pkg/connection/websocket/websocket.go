@@ -267,9 +267,14 @@ func handleWSConn(ws *websocket.Conn, vkey, salt []byte, derivedMK []byte) {
 			// 会话密钥建立（与 TCP/KCP FirstBlood 对齐）：监听器特定密钥派生 + nonce 唯一化下发。
 			// 缺失时 sendByProtocol 会回退默认密钥派生 → 与客户端监听器密钥不一致 → GCM 解密失败（命令全挂）。
 			if encrypt.GlobalKeyManager != nil {
-				listenerKey, listenerSalt := encrypt.GetListenerKeyConfigForForward("websocket")
-				if len(vkey) > 0 && len(salt) > 0 {
-					listenerKey, listenerSalt = encrypt.NormalizeListenerKeyConfig(vkey, salt)
+				// 【唯一密钥来源】复用 resolveWSMetaKey 已解析好的 metaMasterKey（含 KX 派生），
+				// **不要**重新取静态监听器密钥。曾经两处分别解析：MetaInfo 用派生密钥解
+				// （客户端能上线），会话密钥却用静态密钥派生 → 与客户端不一致 →
+				// 之后每条命令与结果都加解密失败。同 tcp.go / kcp.go 的同类修复。
+				listenerKey, listenerSalt := metaMasterKey, salt
+				if len(listenerSalt) == 0 {
+					// 正向连接可能未显式传盐：回落到监听器配置（仅盐，密钥仍用上面解析出的）
+					_, listenerSalt = encrypt.GetListenerKeyConfigForForward("websocket")
 				}
 				if encrypt.IsDefaultListenerKey(listenerKey, listenerSalt) {
 					logx.Warnf("⚠️ [WS-FIRSTBLOOD] 监听器使用公开默认密钥，拒绝连接: %s\n", uid)

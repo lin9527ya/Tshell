@@ -302,12 +302,11 @@ func HandleKCPConnectionForWithKeys(conn *kcp.UDPSession, listenerType string, m
 
 			// 立即为客户端生成会话密钥（确保与客户端同步）
 			if encrypt.GlobalKeyManager != nil {
-				// 获取监听器特定的密钥配置（正向连接可显式覆盖）
-				masterKey, encryptionSalt := encrypt.GetListenerKeyConfigForForward(listenerType)
-				if len(masterKeyOverride) > 0 && len(saltOverride) > 0 {
-					// 规范化为 32/16 字节，与客户端占位符切片规则一致
-					masterKey, encryptionSalt = encrypt.NormalizeListenerKeyConfig(masterKeyOverride, saltOverride)
-				}
+				// 【唯一密钥来源】复用上面 KX 感知解析出的 metaMasterKey/metaSalt，
+				// 不要重新取静态监听器密钥。曾经两处分别解析：MetaInfo 用派生密钥解
+				// （客户端能上线），会话密钥却用静态密钥派生 → 与客户端不一致 →
+				// 命令与结果全部加解密失败。同 tcp.go 的同类修复。
+				masterKey, encryptionSalt := metaMasterKey, metaSalt
 				_, err = encrypt.GlobalKeyManager.DeriveSessionKeyForListenerWithKeys(uid, encryptionSalt, masterKey, encryptionSalt)
 				if err != nil {
 					logx.Warnf("⚠️ [%s-FIRSTBLOOD] 为客户端 %s 生成会话密钥失败: %v\n", listenerType, uid, err)
