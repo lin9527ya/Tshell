@@ -216,7 +216,20 @@ cd ../Tshell-web; npm ci --legacy-peer-deps; npx vitest run; npm run type-check
   - 降级安全：无 `X-Kx` → 走原静态密钥路径（逐字节同老行为）；
     声明了 `X-Kx` 但交换失败 → **明确 400 拒绝**，不降级
   - 顺带修掉 `getRaw` 里 err 检查在 `Header.Set` 之后导致的 nil 解引用
-- ⬜ **1c 其余传输**（未做，且**比看起来大得多**，见下方）
+- ✅ **1c 首条传输：`tcp`**（2026-10-20 完成）
+  - 分帧已存在（`len(4)|msgType(4)|payload`），故新增 `msgType=200`（KX），
+    两端改动都局限在各自的消息分发 switch 里
+  - 派生主密钥挂在**连接级状态** `connKXState` 上跨帧保留 —— 不用全局 map，
+    省掉生命周期与清理；`processMessage` 是私有函数、只有一个调用方，改签名成本低
+  - 修掉一个真 bug：覆盖主密钥时**盐没跟着覆盖**，两端用不同盐派生会算出不同密钥，
+    现场只表现为"解密失败"。现在由 `resolveMetaKey` 固定优先级并有专门用例钉住
+- ⬜ **1c 剩余传输**（未做）：`websocket` / `kcp` / `dns` / `oss` +
+  `http_forward` / `https_forward` / `tcp_forward` / `kcp_forward` / `ws_forward`
+  - `websocket` 已勘察：它是 HTTP 升级，同样能读 `X-Kx` 头，
+    `handleWSConn` 的密钥解析与 tcp 同构，接入方式可沿用 1b 的头方案
+  - `kcp` 走 `AcceptKCP`，帧格式与 tcp 一致，可复用 `msgType=200` 的做法
+  - `dns`/`oss` 编码通道不同，需单独设计
+  - forward 类是反的（客户端监听、服务端拨入后 hijack）
 - ⬜ **1d 模板重建**（未做，必须做）：客户端代码变了 ⇒ 178 个预置模板要重建，
   否则旧模板会 fail-closed 拒绝运行（现有设计如此，属正确行为）
 
