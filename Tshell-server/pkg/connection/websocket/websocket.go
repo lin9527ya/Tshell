@@ -74,12 +74,55 @@ func HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 // HandleWebSocketWithKeys 带监听器密钥入口(与 J4 拒绝默认密钥逻辑配套)
 func HandleWebSocketWithKeys(w http.ResponseWriter, r *http.Request, vkey, salt []byte) {
-	ws, err := upgrader.Upgrade(w, r, nil)
+	// 会话前 ECDH 交换（阶段一 1c）：WS 是 HTTP 升级，升级请求同样能带头部。
+	//
+	// 时序之所以可行：客户端把 MetaInfo 放在**升级后的第一帧**，
+	// 而不是升级请求头里 —— 所以"升级请求带公钥 / 升级响应回公钥"这一个来回
+	// 就足够让双方在主密钥上达成一致，MetaInfo 随后再用派生密钥加密。
+	derivedMK, kxHeader, kxErr := resolveWSKX(r, salt)
+	if kxErr != nil {
+		// 声明了 X-Kx 却交换失败：明确拒绝，不降级到静态密钥
+		http.Error(w, "密钥交换失败", http.StatusBadRequest)
+		return
+	}
+	respHeader := http.Header{}
+	if kxHeader != "" {
+		respHeader.Set(encrypt.KxHeaderName, kxHeader)
+	}
+
+	ws, err := upgrader.Upgrade(w, r, respHeader)
 	if err != nil {
 		logx.Warnf("⚠️ [WS] upgrade failed: %v\n", err)
 		return
 	}
-	handleWSConn(ws, vkey, salt)
+	handleWSConn(ws, vkey, salt, derivedMK)
+}
+
+// resolveWSKX 处理升级请求上的 X-Kx 头。
+//
+// 返回 (派生主密钥, 要回给客户端的服务端公钥 base64, 错误)。
+// 没有该头时返回 (nil, "", nil) —— 老载荷走静态密钥，行为与改造前一致。
+func resolveWSKX(r *http.Request, salt []byte) ([]byte, string, error) {
+	kxHeader := r.Header.Get(encrypt.KxHeaderName)
+	if kxHeader == "" {
+		return nil, "", nil
+	}
+	peerPub, err := encrypt.ParsePeerPublicKey(kxHeader)
+	if err != nil {
+		logx.Warnf("⚠️ [WS-KX] 客户端公钥不可用，拒绝连接: %v\n", err)
+		return nil, "", err
+	}
+	srv, err := encrypt.NewServerKeyExchange()
+	if err != nil {
+		return nil, "", err
+	}
+	mk, err := srv.DeriveMasterKey(peerPub, salt)
+	if err != nil {
+		logx.Warnf("⚠️ [WS-KX] 派生失败，拒绝连接: %v\n", err)
+		return nil, "", err
+	}
+	logx.Infof("🔑 [WS-KX] 完成会话前密钥交换\n")
+	return mk, srv.HeaderValue(), nil
 }
 
 // HandleWebSocketFor ws_forward 正向客户端入口(连接已建立)
@@ -90,18 +133,23 @@ func HandleWebSocketFor(ws *websocket.Conn) {
 
 // HandleWebSocketForWithKeys ws_forward 带显式密钥入口
 func HandleWebSocketForWithKeys(ws *websocket.Conn, vkey, salt []byte) {
-	handleWSConn(ws, vkey, salt)
+	handleWSConn(ws, vkey, salt, nil)
 }
 
 // handleWSConn 连接主循环(普通监听器与正向客户端共用)。
 // B3 重构:接入统一离线检测器与连接池(与 TCP/KCP/DNS 一致),删除遗留
 // per-client checkHeartbeats(300s 才判死、含死锁路径)与死代码 func main();
 // 新增断连 defer 完整清理(原读循环退出后无任何清理,幽灵连接滞留)。
-func handleWSConn(ws *websocket.Conn, vkey, salt []byte) {
+func handleWSConn(ws *websocket.Conn, vkey, salt []byte, derivedMK []byte) {
 	// 监听器主密钥(MetaInfo 传输 AES-GCM 解密;显式密钥优先,否则按类型查配置)
 	metaMasterKey, _ := encrypt.GetListenerKeyConfig("websocket")
 	if len(vkey) > 0 && len(salt) > 0 {
 		metaMasterKey, _ = encrypt.NormalizeListenerKeyConfig(vkey, salt)
+	}
+	// KX 已完成时用派生主密钥覆盖：MetaInfo 解密与会话密钥派生都跟着它走。
+	// 未携带 X-Kx 的老载荷保持静态密钥，行为不变。
+	if len(derivedMK) >= encrypt.ECDHSharedKeySize {
+		metaMasterKey = derivedMK
 	}
 
 	// 记录客户端UID,用于连接断开时清理
