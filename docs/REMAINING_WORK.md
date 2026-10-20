@@ -223,8 +223,9 @@ cd ../Tshell-web; npm ci --legacy-peer-deps; npx vitest run; npm run type-check
     省掉生命周期与清理；`processMessage` 是私有函数、只有一个调用方，改签名成本低
   - 修掉一个真 bug：覆盖主密钥时**盐没跟着覆盖**，两端用不同盐派生会算出不同密钥，
     现场只表现为"解密失败"。现在由 `resolveMetaKey` 固定优先级并有专门用例钉住
-- ✅ **1c 已接 10 条**：`http` / `https` / `tcp` / `kcp` / `websocket` /
-  `tcp_forward` / `kcp_forward` / `ws_forward` / `http_forward` / `https_forward`
+- ✅ **1c 已接 11 条**：`http` / `https` / `tcp` / `kcp` / `websocket` /
+  `tcp_forward` / `kcp_forward` / `ws_forward` / `http_forward` / `https_forward` /
+  `dns`
   - `websocket`：HTTP 升级，公钥搭在升级请求/响应头（`upgrader.Upgrade(w,r,respHeader)`）。
     关键时序：WS 客户端的 MetaInfo 是**升级后第一帧**，所以一个来回即可完成交换
   - `kcp`：分帧与 tcp 一致，复用 `msgType=200`。差别只在派生密钥怎么交回 ——
@@ -239,7 +240,16 @@ cd ../Tshell-web; npm ci --legacy-peer-deps; npx vitest run; npm run type-check
 - ✅ `http_forward` / `https_forward`（2026-10-20）：**服务端零改动** ——
   协议循环复用 `tcp.HandleTcpConnectionForWithKeys`，KX case 在共享循环里。
   beacon hijack 后自己手写 200 响应，之后已是裸流，所以只需在写元数据前发 KX 帧
-- ⬜ **1c 剩余 2 条**：`dns` / `oss`
+- ✅ `dns`（2026-10-20）：最受限的通道（子域标签 ≤63 / TXT ≤255）。
+  32 字节公钥 base32 后正好 52 字符，两处限制都满足（已用测试钉住）。
+  查询 `<b32(pub)>.1_1.kx.<uid>.<domain>`、响应 TXT 回服务端公钥；
+  因格式与 `mi` 同形，**uid 在这一步就已知**，服务端直接按 uid 绑定派生结果，
+  后续 `mi` 分块按 uid 命中即可
+- ⬜ **1c 剩余 1 条**：`oss`
+  - 形态与其它 11 条都不同：没有请求/响应语义，只有「上传对象 + 列表轮询」。
+    交换需要"上传 kx 请求对象 → 服务端处理后写响应对象 → 客户端轮询取回"，
+    多一次 RTT 且要处理轮询超时；服务端侧还要在对象处理循环里加 kx 分支。
+    这是设计工作而非接线工作，单独一轮处理
   - `ws_forward`（已勘察，落点明确）：与前面几条**方向真的相反** ——
     C2 侧是 WS 拨号方、beacon 侧是 upgrader。所以交换由 **C2 发起**：
       1. `pkg/api/forward_connection.go` 的 `dialForwardSession` 里
