@@ -79,7 +79,7 @@
 | TLS JA3 伪装（对齐主流浏览器 ClientHello） | 已实现 | `pkg/c2profile` `tls.ja3` |
 | DNS beacon 子域前缀可定制 | 已实现 | `pkg/c2profile` `dns.beacon_prefix` |
 | 心跳默认值与全局配置一致（5s，防两处漂移） | 已实现·有测试 | `pkg/c2profile/default_sleep_test.go` |
-| 主密钥**运行时**派生（每会话 ECDH） | **核心已完成、传输未接线**（2026-10-20）：X25519+HKDF 与 `ReplaceMasterKey` 接缝、服务端握手缓存均已实现并有测试；**12 条传输尚未接**，故载荷内仍含静态主密钥 | `pkg/encrypt/ecdh.go`、`pkg/encrypt/kx_cache.go`、`implant/core/encrypt/ecdh.go`；见 §6 |
+| 主密钥**运行时**派生（每会话 ECDH） | **http/https 已接线**（2026-10-20）：X25519+HKDF、`ReplaceMasterKey` 接缝、握手缓存、会话前交换均已实现并有测试（含完整往返断言）。**其余 10 条传输未接**，故载荷内仍含静态主密钥 | `pkg/encrypt/{ecdh,kx_cache}.go`、`pkg/api/communication/kx.go`、`implant/core/encrypt/ecdh.go`、`cmd/single/transport_{http,https}.go`；见 §6 |
 | 流量体积整形（固定大小填充） | **未做**（目前只 pad 请求头） | — |
 
 ### C. 服务端数据面（磁盘/日志）
@@ -332,7 +332,7 @@ AEAD 缓存里还另有一份。现在改为 `MaskForSleep` **就地遮蔽真身
 | 调用栈伪造覆盖面（kernel32/ntdll 直调路径） | 已实现 direct syscall 路径的伪栈（2026-10-20）；`CreateProcessW`/`VirtualAllocEx` 这类直调仍长在 Go 线程栈上 | 需 `stdcall` 汇编桩 + 独立线程，属另一个量级 |
 | 模块摘链的 VAD 层可见性 | 已实现 PEB 链表摘除（2026-10-20）；页表/VAD 不动，按内存区域扫仍可见镜像页 | 需要改映射方式（`SEC_IMAGE`+回填）或 unbacked 执行内存，代价高于收益 |
 | APC 分发 syscall 化（`NtQueueApcThread`） | 未接：APC 路径还要同时改线程恢复（`NtResumeThread`）与句柄管理，改一半没有意义 | 有实机可验证注入成功/失败的时机 |
-| 主密钥运行时派生（ECDH） | **核心与握手缓存已完成（2026-10-20）**；12 条传输**尚未接线**，故载荷内仍含静态主密钥。协议约定见 `docs/REMAINING_WORK.md` §3.3 | 接线（1b/1c）+ 重建 178 模板（1d）；无外部阻塞 |
+| 主密钥运行时派生（ECDH） | **http/https 已接线（2026-10-20）**；其余 10 条传输未接，故载荷内仍含静态主密钥。1c 的实际工作量见 `docs/REMAINING_WORK.md` §3.3（涉及 Reacon 独立模块 + 重建 178 个入库二进制） | 1c + 1d；无外部阻塞 |
 | 流量体积整形 | 需要与 padding 策略统一设计，否则两种填充互相打架 | 排期 |
 | 审计日志防篡改（哈希链） | 需要与日志轮转/清理策略一起设计 | 排期 |
 | `cleanup` 统一清理现场命令 | 已实现（2026-10-20），**未在实机验证过持久化卸载**（需真实注册表/任务计划/cron/launchd 环境） | 授权 Windows/Linux/macOS VM 各一台做回归 |

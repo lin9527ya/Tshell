@@ -204,11 +204,39 @@ cd ../Tshell-web; npm ci --legacy-peer-deps; npx vitest run; npm run type-check
 - ✅ **1b-0 握手缓存**：`pkg/encrypt/kx_cache.go`
   - 按客户端公钥哈希存（握手时服务端还不知道 uid）、TTL 30s、容量 4096 LRU 淘汰、
     过期清零、Get 返回副本、解出 uid 后 `Bind`
-- ⬜ **1b 传输接线**（未做）：`http` / `https` / `http_forward`
-- ⬜ **1c 其余 9 条传输**（未做）：tcp/kcp/ws 用固定首帧头、dns 用 base32 标签、
-  oss 用对象名/元数据
+- ✅ **1b 传输接线**（2026-10-20 完成）：`http` + `https`
+  - 协议：请求头 `X-Kx: base64(clientPub)` → 响应头 `X-Kx: base64(serverPub)`
+  - **关键顺序**：必须在生成 MetaInfo **之前**交换。MetaInfo 含主机名/用户名/进程，
+    先加密再交换的话首包仍会被静态密钥解开，改造就只剩表面效果。所以首包是
+    "只带公钥的 GET"（服务端识别为纯握手直接回 200），交换完成后才生成 MetaInfo
+  - 服务端只改 `metaMK` 的来源（它同时用于解 MetaInfo 与派生会话密钥），
+    下游 RegisterClient / nonce 唯一化 / 命令加解密全部自动跟随
+  - 自愈：服务端把**公钥也存进缓存**并在每次响应回传，客户端每次据此重派生 ——
+    否则条目过期重建密钥对后，客户端手里的主密钥就与新密钥不匹配
+  - 降级安全：无 `X-Kx` → 走原静态密钥路径（逐字节同老行为）；
+    声明了 `X-Kx` 但交换失败 → **明确 400 拒绝**，不降级
+  - 顺带修掉 `getRaw` 里 err 检查在 `Header.Set` 之后导致的 nil 解引用
+- ⬜ **1c 其余传输**（未做，且**比看起来大得多**，见下方）
 - ⬜ **1d 模板重建**（未做，必须做）：客户端代码变了 ⇒ 178 个预置模板要重建，
   否则旧模板会 fail-closed 拒绝运行（现有设计如此，属正确行为）
+
+**1c 为什么比看起来大（勘察结论，2026-10-20）**
+
+两类传输的接入方式根本不同，不能照抄 1b：
+
+1. **裸流型**（tcp/kcp/ws 及 forward 变体）：没有 HTTP 头可用，必须加**固定首帧**
+   `KX1 | pub(32)` / `KX2 | pub(32)`，两端都要改帧格式
+2. **服务端不是 Gin**：`http`/`https` 改动小，是因为复用了同一个 Gin handler。
+   其余传输的服务端是 **`Tshell-client/Reacon_*` 独立模块**（各自 `main.go`，
+   go 1.19，多数在 `_archived_reacon/` 下），编译产物以**二进制**形式入库在
+   `Tshell-server/pkg/api/server/<transport>/`（那一目录只有产物、没有源码）。
+
+所以 1c 的实际工作是：改 Reacon 模块帧格式 + 改客户端 + **重建入库的 178 个二进制/模板**。
+forward 类更特殊：客户端**监听**、服务端拨入后 hijack，连方向都是反的
+（参照 `HTTPForwardClient.Connect`）。
+
+建议顺序：先打通 `tcp` 一条（帧最简单、两端都在活跃代码里）验证 `KX1/KX2` 设计；
+再按同模式铺 kcp/ws；dns/oss 单独设计（编码通道不同）；forward 类最后做。
 
 **已定协议约定（供 1b/1c 遵守）**
 
