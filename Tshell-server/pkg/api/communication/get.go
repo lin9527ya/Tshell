@@ -59,16 +59,53 @@ func wrapResponsePad(resp map[string]interface{}) map[string]interface{} {
 		return resp
 	}
 	if data, ok := resp["data"].(map[string]interface{}); ok {
-		// 随机 16-31 字符 pad
-		padLen := 16 + mrand.Intn(16)
-		b := make([]byte, padLen)
-		for i := range b {
-			b[i] = byte('a' + mrand.Intn(26))
+		// 阶段二：定长分桶（与客户端的请求 padding 同一套规则）。
+		// 原实现是 16-31 字符**随机长度**小写串：长度随机等于把定长指纹换成
+		// 随机长度指纹，对长度分析没有帮助。现在按"本条响应体积"选桶，
+		// 使 (体积 + pad) 落在固定桶上。
+		bodyLen := 0
+		if raw, err := json.Marshal(data); err == nil {
+			bodyLen = len(raw)
 		}
-		data["pad"] = string(b)
+		data["pad"] = ResponsePadFor(bodyLen)
 	}
 	return resp
 }
+
+// ResponsePadBuckets 响应 padding 分桶（2 的幂，与客户端请求侧同一思路）
+var ResponsePadBuckets = []int{256, 512, 1024, 2048, 4096, 8192}
+
+// MinResponsePad 响应 padding 下限（16 与原实现的上界量级一致）
+const MinResponsePad = 16
+
+// ResponsePadFor 计算响应用的填充长度（根据本条响应体积选桶）。
+//
+// 与客户端 padding.go 的 PaddingValueFor 规则一致：找最小的桶使
+// (bodyLen + pad) 不超过它且 pad 不小于下限；超过最大桶时退化为下限。
+// 之所以在两侧各写一份而不是共享：客户端与服务端是不同的 Go module，无法互相引用；
+// 两边的行为由各自的用例钉住（服务端这一份见 get_padding_test.go）。
+func ResponsePadFor(bodyLen int) string {
+	padLen := MinResponsePad
+	if bodyLen > 0 {
+		for _, b := range ResponsePadBuckets {
+			if p := b - bodyLen; p >= MinResponsePad {
+				padLen = p
+				break
+			}
+		}
+	}
+	if padLen > 4096 {
+		padLen = 4096
+	}
+	// 标准 base64 字符集（与请求侧一致；小写字母串不像真实字段值）
+	b := make([]byte, padLen)
+	for i := range b {
+		b[i] = base64Alphabet[mrand.Intn(len(base64Alphabet))]
+	}
+	return string(b)
+}
+
+const base64Alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 
 // listenerKeys 归一化监听器密钥：显式传入（handleOpenPort 从该监听器记录取出）优先，
 // 缺省时按类型查库——单监听器场景两者等价，故显式路径是纯增量修复。

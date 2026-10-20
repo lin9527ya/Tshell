@@ -158,13 +158,16 @@ func (s *HTTPClient) applyRequestPadding(req *http.Request) {
 	if !config.PaddingEnabled() {
 		return
 	}
-	padLen := 32 + rand.Intn(96)
-	pad := make([]byte, padLen)
-	const alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~"
-	for i := range pad {
-		pad[i] = alphabet[rand.Intn(len(alphabet))]
+	// 阶段二：定长分桶。
+	// 原实现是 32~127 的**随机长度**随机串 —— 那只是把定长指纹换成了随机长度指纹，
+	// 对长度分析毫无帮助，而且值不是 base64 形态（真实 Chrome 的 X-Client-Data 是
+	// base64 blob）。现在长度由载荷长度决定、落在固定桶上，值用标准 base64。
+	//
+	// 用 MetaInfo 长度作为"载荷长度"的代表：它是首包前后唯一显著的可变部分。
+	pad := communication.PaddingForRequest(len(utils.MetaInfo))
+	if pad != "" {
+		req.Header.Set(communication.PaddingHeader, pad)
 	}
-	req.Header.Set("X-Client-Data", string(pad))
 }
 
 // kxPub 本次会话的临时公钥（base64）。非空表示握手成功，后续请求要带着它，
