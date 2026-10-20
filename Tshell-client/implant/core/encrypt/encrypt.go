@@ -169,6 +169,13 @@ func exitKeyUse()  { keyUsersInFlight.Add(-1) }
 
 // InitClientKeyManager 初始化客户端密钥管理器
 func InitClientKeyManager(clientID string) {
+	// 新建管理器意味着"还没有发生过任何 KX 交换"：把全局标记一并复位。
+	// 不复位会让「上一条连接已替换主密钥」的状态泄漏到新会话，
+	// 导致 SetSessionKeyPreferringKX 误用派生密钥（而实际没有派生值）。
+	masterKeyReplacedMu.Lock()
+	masterKeyReplaced = false
+	masterKeyReplacedMu.Unlock()
+
 	ckm := &ClientKeyManager{clientID: clientID}
 	ckm.unmasked = sync.NewCond(&ckm.mu)
 	GlobalClientKeyManager = ckm

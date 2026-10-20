@@ -172,7 +172,7 @@ func (s *HTTPSClient) Connect(host string) error {
 
 	// 会话密钥（与服务端 https 监听器配置一致；占位符由 patch 管线替换）
 	salt, masterKey := app.GetListenerKeyConfig("https")
-	if err := encrypt.GlobalClientKeyManager.SetSessionKey(salt[:16], masterKey[:32]); err != nil {
+	if err := encrypt.GlobalClientKeyManager.SetSessionKeyPreferringKX(salt[:16], masterKey[:32]); err != nil {
 		s.fail()
 		return err
 	}

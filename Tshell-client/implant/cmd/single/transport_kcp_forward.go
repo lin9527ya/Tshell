@@ -142,7 +142,7 @@ func (s *KCPForwardClient) Connect(spec string) error {
 
 	// 会话密钥（kcp_forward 用占位符 key，与服务端 kcp_forward 分支一致）
 	salt, masterKey := app.GetListenerKeyConfig("kcp_forward")
-	if err := encrypt.GlobalClientKeyManager.SetSessionKey(salt[:16], masterKey[:32]); err != nil {
+	if err := encrypt.GlobalClientKeyManager.SetSessionKeyPreferringKX(salt[:16], masterKey[:32]); err != nil {
 		s.fail()
 		return err
 	}

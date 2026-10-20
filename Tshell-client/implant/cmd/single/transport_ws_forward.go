@@ -3,13 +3,13 @@
 package main
 
 import (
+	"fmt"
 	"implant/core/app"
-	"implant/core/debuglog"
 	"implant/core/communication"
+	"implant/core/debuglog"
 	"implant/core/encrypt"
 	"implant/core/reconnect"
 	"implant/core/utils"
-	"fmt"
 	"net"
 	"net/http"
 	"sync"
@@ -17,7 +17,6 @@ import (
 
 	"github.com/gorilla/websocket"
 )
-
 
 // NewTransport 构造 ws_forward 传输（单二进制 build tag 入口）
 // init 注册到运行时传输表（多传输构建下按 scheme 选择；单传输构建下只有自己）
@@ -118,7 +117,7 @@ func (c *WSForwardClient) Connect(spec string) error {
 
 		// 会话密钥（ws_forward 用占位符 key，与服务端 ws_forward 分支一致）
 		salt, masterKey := app.GetListenerKeyConfig("ws_forward")
-		if err := encrypt.GlobalClientKeyManager.SetSessionKey(salt[:16], masterKey[:32]); err != nil {
+		if err := encrypt.GlobalClientKeyManager.SetSessionKeyPreferringKX(salt[:16], masterKey[:32]); err != nil {
 			select {
 			case c.connectedCh <- err:
 			default:
@@ -134,8 +133,8 @@ func (c *WSForwardClient) Connect(spec string) error {
 			close(c.stopCh)
 		}
 		c.stopCh = make(chan struct{})
-stop := c.stopCh
-	go app.HeartbeatLoop(stop, c.keepAlive)
+		stop := c.stopCh
+		go app.HeartbeatLoop(stop, c.keepAlive)
 
 		go c.readLoop()
 		select {
@@ -235,7 +234,7 @@ func (c *WSForwardClient) rawSend(msg []byte) error {
 }
 
 func (c *WSForwardClient) keepAlive() {
-		c.rawSend(communication.HeartbeatMsg())
+	c.rawSend(communication.HeartbeatMsg())
 }
 
 func (c *WSForwardClient) Close() error {

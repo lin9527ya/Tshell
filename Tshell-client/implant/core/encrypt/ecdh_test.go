@@ -313,3 +313,98 @@ func TestGoldenVectorMatchesServer(t *testing.T) {
 			goldenMasterKeyHex, hex.EncodeToString(got))
 	}
 }
+
+// ===== KX 之后建立会话密钥（回归守卫）=====
+//
+// 下面这条守的是一个真实踩到的坑：SetSessionKey(salt, staticMasterKey) 会用
+// **参数里的**静态主密钥覆盖 globalMasterKey。若在 kxHandshake 之后仍调用它，
+// 客户端会话密钥变成 HKDF(静态密钥,…)，而服务端是 HKDF(派生密钥,…)：
+// 两者不同 → 上线后所有加解密失败，现象只是"连上又掉"。
+//
+// 这个 bug 是靠人工复查发现、而不是测试 —— 因为端到端跑 Connect 需要 DB/网络
+// 全局状态。所以这里至少把"该用哪把密钥"这一层钉住。
+
+func TestSetSessionKeyPreferringKXHonorsDerivedKey(t *testing.T) {
+	InitClientKeyManager("test-client-preferring")
+	ckm := GlobalClientKeyManager
+	salt := []byte("0123456789abcdef")
+	staticMK := bytes.Repeat([]byte{0xAA}, 32)
+
+	// 先走静态路径：会话密钥应由静态密钥派生
+	if err := ckm.SetSessionKeyPreferringKX(salt, staticMK); err != nil {
+		t.Fatalf("静态路径失败: %v", err)
+	}
+	if MasterKeyReplaced() {
+		t.Fatal("未替换时不应标记为已替换")
+	}
+	staticSession, err := ckm.GetSessionKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 替换主密钥（模拟 KX 完成）
+	derivedMK := bytes.Repeat([]byte{0x55}, 32)
+	if err := ckm.ReplaceMasterKey(derivedMK); err != nil {
+		t.Fatal(err)
+	}
+	if !MasterKeyReplaced() {
+		t.Fatal("替换后应标记为已替换")
+	}
+
+	// 再次建立会话密钥：必须用**派生**密钥，而不是再次传入的静态值
+	if err := ckm.SetSessionKeyPreferringKX(salt, staticMK); err != nil {
+		t.Fatalf("KX 路径失败: %v", err)
+	}
+	kxSession, err := ckm.GetSessionKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Equal(staticSession, kxSession) {
+		t.Fatal("KX 完成后会话密钥仍由静态密钥派生 —— " +
+			"服务端用的是派生密钥，双方会完全对不上（上线即失败）")
+	}
+
+	// 且必须与"直接用派生密钥调 SetSessionKey"的结果一致
+	InitClientKeyManager("test-client-preferring")
+	ref := GlobalClientKeyManager
+	if err := ref.ReplaceMasterKey(derivedMK); err != nil {
+		t.Fatal(err)
+	}
+	if err := ref.SetSessionKey(salt, derivedMK); err != nil {
+		t.Fatal(err)
+	}
+	refSession, err := ref.GetSessionKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(refSession, kxSession) {
+		t.Error("SetSessionKeyPreferringKX 的结果应与直接用派生密钥派生一致")
+	}
+}
+
+// 未替换时必须与原始 SetSessionKey 完全等价（老载荷路径行为不变）
+func TestSetSessionKeyPreferringKXEqualsLegacyWhenNotReplaced(t *testing.T) {
+	salt := []byte("0123456789abcdef")
+	staticMK := bytes.Repeat([]byte{0x77}, 32)
+
+	InitClientKeyManager("legacy-a")
+	if err := GlobalClientKeyManager.SetSessionKey(salt, staticMK); err != nil {
+		t.Fatal(err)
+	}
+	legacy, err := GlobalClientKeyManager.GetSessionKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	InitClientKeyManager("legacy-a")
+	if err := GlobalClientKeyManager.SetSessionKeyPreferringKX(salt, staticMK); err != nil {
+		t.Fatal(err)
+	}
+	viaHelper, err := GlobalClientKeyManager.GetSessionKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(legacy, viaHelper) {
+		t.Error("未替换主密钥时，PreferringKX 必须与 SetSessionKey 结果完全相同")
+	}
+}
