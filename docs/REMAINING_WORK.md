@@ -235,8 +235,21 @@ cd ../Tshell-web; npm ci --legacy-peer-deps; npx vitest run; npm run type-check
     （beacon 监听、C2 拨入），但**协议角色不变** —— 仍由 beacon 发 firstBlood，
     所以交换也由 beacon 发起，与反向模式完全同一套代码
 - ⬜ **1c 剩余 5 条**：`dns` / `oss` / `http_forward` / `https_forward` / `ws_forward`
-  - `http_forward`/`https_forward`/`ws_forward` 服务端侧走
-    `HandleWebSocketForWithKeys` 等入口（当前 KX 传 nil），需单独接
+  - `ws_forward`（已勘察，落点明确）：与前面几条**方向真的相反** ——
+    C2 侧是 WS 拨号方、beacon 侧是 upgrader。所以交换由 **C2 发起**：
+      1. `pkg/api/forward_connection.go` 的 `dialForwardSession` 里
+         `gorillaws.DefaultDialer.Dial("ws://"+address+"/ws", nil)` ——
+         第三参当前是 `nil`，改成带 `X-Kx` 的 header 即可
+      2. 从 dial 返回的 `resp.Header` 取服务端（beacon）公钥并派生
+      3. beacon 侧（`implant/.../transport_ws_forward.go`）在
+         `upgrader.Upgrade(w, r, nil)` 改为读 `X-Kx`、派生、并把公钥放进
+         `upgrader.Upgrade(w, r, respHeader)`
+      4. 派生密钥要显式传给 `websocket.HandleWebSocketForWithKeys`（当前
+         `handleWSConn` 的 `derivedMK` 参数已存在，但 forward 入口传的是 nil，
+         需要多一个参数而不是靠 `NormalizeListenerKeyConfig(vkey)` 隐式复用 ——
+         后者依赖"32 字节恰好原样返回"的实现细节，太脆）
+  - `http_forward`/`https_forward`：结构类似（C2 侧 dial、beacon 侧 ServeHTTP），
+    但入口是 HTTP 请求而非 WS 升级，可复用 1b 的头方案
   - `dns`/`oss` 编码通道不同（base32 子域 / 对象名），需单独设计
 
 **多传输构建的一个坑（已修，勿回退）**：`kxMsgType` 必须放在**无 build tag** 的
