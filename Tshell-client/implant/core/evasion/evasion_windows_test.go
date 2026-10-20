@@ -67,7 +67,7 @@ func TestPatchAMSIPatchesBothEntries(t *testing.T) {
 
 // TestPatchReportRecordsFailures 不存在的导出要记账为失败，而不是静默跳过
 func TestPatchReportRecordsFailures(t *testing.T) {
-	rep, err := patchExports("ntdll.dll", []string{"TshellNoSuchExport", "EtwEventWrite"}, patchEtwWrite, false)
+	rep, err := patchExports(TagETW, "ntdll.dll", []string{"TshellNoSuchExport", "EtwEventWrite"}, patchEtwWrite, false)
 	if err == nil {
 		t.Fatal("有失败项时应该返回错误")
 	}

