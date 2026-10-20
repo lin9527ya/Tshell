@@ -28,7 +28,8 @@ import (
 // KxCache 全局握手缓存。TTL 5 分钟而不是 30 秒：
 // 客户端的 FirstBlood 带指数退避（最长 31s），30s 会在重试途中过期。
 // 5 分钟仍是有界的，且条目数量受容量上限约束。
-var KxCache = encrypt.NewKxCache(5*time.Minute, 8192)
+// KxCache 复用 pkg/encrypt 的共享单例（与 dns/tcp/kcp 等传输共用同一份缓存）
+var KxCache = encrypt.GlobalKxCache
 
 // ResolveRequestKey 解析本次请求应使用的主密钥。
 //

