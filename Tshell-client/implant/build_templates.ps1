@@ -78,7 +78,12 @@ $Protos = @(
     @{ proto="ws_forward";  prefix="ws_forward" },
     @{ proto="http_forward";  prefix="http_forward" },
     @{ proto="https_forward"; prefix="https_forward" },
-    @{ proto="dns";         prefix="dns" }
+    @{ proto="dns";         prefix="dns" },
+    # multi：13 个 build tag 全编入的"一把梭"载荷（transport_multi）。
+    # 它单独占 14 个 EXE + 2 个 DLL，原先漏在这个列表外 ——
+    # 结果是每次重建都留下 16 个旧产物（服务端照样能用，但代码是旧的），
+    # 而且不会报错，属于"静默不更新"，所以必须列入。
+    @{ proto="multi";       prefix="multi" }
 )
 
 # OS/架构对（服务端模板集；与 sh 的 ARCHES 完全一致：darwin amd64/arm64，
