@@ -78,6 +78,39 @@ func HandleKCPForwardConnectionWithKeys(conn *kcp.UDPSession, masterKey, salt []
 	HandleKCPConnectionForWithKeys(conn, "kcp_forward", masterKey, salt)
 }
 
+// MsgTypeKX 会话前 ECDH 交换帧类型（与 tcp 用同一个值，便于两端共用常量语义）。
+// 分帧与 firstBlood 一致：len(4)|msgType(4)|payload，payload = base64(公钥)。
+const MsgTypeKX = 200
+
+// handleKXFrame 处理一个 KX 帧：解析客户端公钥 → 派生 → 回服务端公钥 → 返回派生密钥。
+//
+// 与 tcp 版本的差别只在"结果怎么交回"：KCP 的 metaMasterKey 是所在函数的局部变量，
+// 所以这里返回值、由调用方赋值，不需要连接级状态结构。
+func handleKXFrame(conn net.Conn, payload []byte, salt []byte) ([]byte, error) {
+	peerPub, err := encrypt.ParsePeerPublicKey(strings.TrimSpace(string(payload)))
+	if err != nil {
+		return nil, fmt.Errorf("KX 客户端公钥不可用: %w", err)
+	}
+	srv, err := encrypt.NewServerKeyExchange()
+	if err != nil {
+		return nil, err
+	}
+	mk, err := srv.DeriveMasterKey(peerPub, salt)
+	if err != nil {
+		return nil, fmt.Errorf("KX 派生失败: %w", err)
+	}
+	body := []byte(srv.HeaderValue())
+	frame := make([]byte, 8+len(body))
+	binary.BigEndian.PutUint32(frame[0:4], uint32(4+len(body)))
+	binary.BigEndian.PutUint32(frame[4:8], MsgTypeKX)
+	copy(frame[8:], body)
+	if _, err := conn.Write(frame); err != nil {
+		return nil, fmt.Errorf("KX 回帧失败: %w", err)
+	}
+	logx.Infof("🔑 [KCP-KX] 完成会话前密钥交换\n")
+	return mk, nil
+}
+
 // HandleKCPConnectionFor 按监听器类型处理 KCP 连接（反向 kcp / 正向 kcp_forward 共用）
 func HandleKCPConnectionFor(conn *kcp.UDPSession, listenerType string) {
 	HandleKCPConnectionForWithKeys(conn, listenerType, nil, nil)
@@ -86,9 +119,10 @@ func HandleKCPConnectionFor(conn *kcp.UDPSession, listenerType string) {
 // HandleKCPConnectionForWithKeys 支持显式会话密钥覆盖（正向连接自定义密钥时使用；nil 则用 GetListenerKeyConfig）
 func HandleKCPConnectionForWithKeys(conn *kcp.UDPSession, listenerType string, masterKeyOverride, saltOverride []byte) {
 	// 监听器主密钥（MetaInfo 传输的 AES-GCM 解密用）
-	metaMasterKey, _ := encrypt.GetListenerKeyConfigForForward(listenerType)
+	metaMasterKey, metaSalt := encrypt.GetListenerKeyConfigForForward(listenerType)
 	if len(masterKeyOverride) > 0 && len(saltOverride) > 0 {
-		metaMasterKey, _ = encrypt.NormalizeListenerKeyConfig(masterKeyOverride, saltOverride)
+		// 覆盖时盐也要跟着覆盖：KX 派生必须与之一致，否则两端算出的密钥不同
+		metaMasterKey, metaSalt = encrypt.NormalizeListenerKeyConfig(masterKeyOverride, saltOverride)
 	}
 	// 崩溃防护：任何 panic 都记录并关闭连接，不让异常扩散到整个进程
 	defer func() {
@@ -225,6 +259,16 @@ func HandleKCPConnectionForWithKeys(conn *kcp.UDPSession, listenerType string, m
 
 		msgType := binary.BigEndian.Uint32(msgTypeBytes)
 		switch msgType {
+		case MsgTypeKX: // 会话前 ECDH 交换（与 tcp 同一 msgType）
+			// metaMasterKey 声明在循环之前，直接把派生结果赋回去即对后续帧生效，
+			// 不需要额外的连接级状态结构。
+			derived, kxErr := handleKXFrame(conn, message[4:], metaSalt)
+			if kxErr != nil {
+				logx.Warnf("⚠️ [KCP-KX] 交换失败，断开连接: %v\n", kxErr)
+				return
+			}
+			metaMasterKey = derived
+			continue
 		case 1: //firstBlood
 			msg := message[4:]
 			tmpMetainfo, err := encrypt.DecodeBase64(msg)

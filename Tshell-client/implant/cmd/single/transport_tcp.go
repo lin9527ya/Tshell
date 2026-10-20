@@ -70,10 +70,6 @@ func (s *TCPClient) closeClientLocked() {
 	}
 }
 
-// kxMsgType 与 service 端 connection/tcp.MsgTypeKX 一致（200）。
-// 分帧沿用 len(4)|msgType(4)|payload，payload = base64(公钥)。
-const kxMsgType = 200
-
 // kxHandshake 会话前密钥交换：发 KX 帧（客户端公钥），收 KX 帧（服务端公钥），
 // 派生主密钥并替换编译期静态主密钥。
 //

