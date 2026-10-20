@@ -107,3 +107,65 @@ func TestResolveWSKXDependsOnSalt(t *testing.T) {
 		t.Error("不同盐应得到不同主密钥")
 	}
 }
+
+// ===== 密钥优先级（含 forward 派生密钥）=====
+//
+// 这几条守的是"派生密钥必须压过静态密钥"。tcp 那边曾经因为同类逻辑写错
+// （覆盖主密钥时盐没跟着覆盖）导致两端算出不同密钥，现场只表现为"解密失败"。
+
+func TestResolveWSMetaKeyPrecedence(t *testing.T) {
+	staticMK := make([]byte, 32)
+	for i := range staticMK {
+		staticMK[i] = 0xAA
+	}
+	derived := make([]byte, encrypt.ECDHSharedKeySize)
+	for i := range derived {
+		derived[i] = 0x33
+	}
+
+	// 1) 无派生密钥：显式 vkey 生效
+	got := resolveWSMetaKey(staticMK, []byte("0123456789abcdef"), nil)
+	if string(got) != string(staticMK) {
+		t.Error("无 KX 时应使用显式 vkey")
+	}
+
+	// 2) 有派生密钥：必须压过 vkey
+	got2 := resolveWSMetaKey(staticMK, []byte("0123456789abcdef"), derived)
+	if string(got2) != string(derived) {
+		t.Error("KX 完成后必须使用派生主密钥（否则上线后所有收发失败）")
+	}
+
+	// 3) 派生密钥过短：忽略并回落
+	got3 := resolveWSMetaKey(staticMK, []byte("0123456789abcdef"), make([]byte, 16))
+	if string(got3) != string(staticMK) {
+		t.Error("过短的派生密钥应被忽略")
+	}
+
+	// 4) 什么都没有：回落到监听器配置（不 panic 即可）
+	if len(resolveWSMetaKey(nil, nil, nil)) == 0 {
+		t.Error("应回落到监听器配置")
+	}
+}
+
+// forward 入口必须把派生密钥透传到 handleWSConn（通过返回值体现）
+func TestResolveWSMetaKeyForwardsDerivedKey(t *testing.T) {
+	derived := make([]byte, encrypt.ECDHSharedKeySize)
+	for i := range derived {
+		derived[i] = 0x77
+	}
+	// ws_forward 场景：vkey/salt 都有，但派生密钥仍须胜出
+	got := resolveWSMetaKey(bytes32(0x11), bytes32(0x22), derived)
+	for i := range got {
+		if got[i] != 0x77 {
+			t.Fatal("ws_forward 的派生密钥未生效")
+		}
+	}
+}
+
+func bytes32(b byte) []byte {
+	out := make([]byte, 32)
+	for i := range out {
+		out[i] = b
+	}
+	return out
+}

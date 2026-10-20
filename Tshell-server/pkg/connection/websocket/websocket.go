@@ -136,21 +136,41 @@ func HandleWebSocketForWithKeys(ws *websocket.Conn, vkey, salt []byte) {
 	handleWSConn(ws, vkey, salt, nil)
 }
 
+// HandleWebSocketForWithDerivedKey ws_forward 且已完成会话前 ECDH 交换的入口。
+//
+// 派生密钥必须**显式**传进来，不能靠把派生值塞进 vkey 让
+// NormalizeListenerKeyConfig 原样返回 —— 那依赖"32 字节恰好不被改写"的实现细节，
+// 一旦归一化逻辑变化就会静默用错密钥。
+func HandleWebSocketForWithDerivedKey(ws *websocket.Conn, vkey, salt, derivedMK []byte) {
+	handleWSConn(ws, vkey, salt, derivedMK)
+}
+
+// resolveWSMetaKey 决定本次连接用哪把主密钥。
+//
+// 优先级：**KX 派生密钥最高** —— 交换一旦完成，整条连接都必须用它，
+// 否则 MetaInfo 解密与会话密钥派生会各用一套密钥（表现为上线后全部收发失败）。
+// 其次是显式 vkey（正向连接由拨号方传入），最后才是监听器配置。
+//
+// 抽成独立函数是为了能直接测"优先级"这一层：handleWSConn 需要真实 ws 连接，
+// 单测里造不出来，而优先级恰恰是最容易写错的地方。
+func resolveWSMetaKey(vkey, salt, derivedMK []byte) []byte {
+	if len(derivedMK) >= encrypt.ECDHSharedKeySize {
+		return derivedMK
+	}
+	metaMasterKey, _ := encrypt.GetListenerKeyConfig("websocket")
+	if len(vkey) > 0 && len(salt) > 0 {
+		metaMasterKey, _ = encrypt.NormalizeListenerKeyConfig(vkey, salt)
+	}
+	return metaMasterKey
+}
+
 // handleWSConn 连接主循环(普通监听器与正向客户端共用)。
 // B3 重构:接入统一离线检测器与连接池(与 TCP/KCP/DNS 一致),删除遗留
 // per-client checkHeartbeats(300s 才判死、含死锁路径)与死代码 func main();
 // 新增断连 defer 完整清理(原读循环退出后无任何清理,幽灵连接滞留)。
 func handleWSConn(ws *websocket.Conn, vkey, salt []byte, derivedMK []byte) {
 	// 监听器主密钥(MetaInfo 传输 AES-GCM 解密;显式密钥优先,否则按类型查配置)
-	metaMasterKey, _ := encrypt.GetListenerKeyConfig("websocket")
-	if len(vkey) > 0 && len(salt) > 0 {
-		metaMasterKey, _ = encrypt.NormalizeListenerKeyConfig(vkey, salt)
-	}
-	// KX 已完成时用派生主密钥覆盖：MetaInfo 解密与会话密钥派生都跟着它走。
-	// 未携带 X-Kx 的老载荷保持静态密钥，行为不变。
-	if len(derivedMK) >= encrypt.ECDHSharedKeySize {
-		metaMasterKey = derivedMK
-	}
+	metaMasterKey := resolveWSMetaKey(vkey, salt, derivedMK)
 
 	// 记录客户端UID,用于连接断开时清理
 	var currentUID string
