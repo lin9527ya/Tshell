@@ -80,7 +80,7 @@
 | TLS JA3 伪装（对齐主流浏览器 ClientHello） | 已实现 | `pkg/c2profile` `tls.ja3` |
 | DNS beacon 子域前缀可定制 | 已实现 | `pkg/c2profile` `dns.beacon_prefix` |
 | 心跳默认值与全局配置一致（5s，防两处漂移） | 已实现·有测试 | `pkg/c2profile/default_sleep_test.go` |
-| 主密钥**运行时**派生（每会话 ECDH） | **11/12 已接线**（2026-10-20，仅剩 oss）：X25519+HKDF、`ReplaceMasterKey` 接缝、握手缓存、会话前交换均已实现并有测试（含完整往返断言）。**仅 oss 未接**，故载荷内仍含静态主密钥 | `pkg/encrypt/{ecdh,kx_cache}.go`、`pkg/api/communication/kx.go`、`implant/core/encrypt/ecdh.go`、`cmd/single/transport_{http,https}.go`；见 §6 |
+| 主密钥**运行时**派生（每会话 ECDH） | **12/12 已接线并重建载荷**（2026-10-20）：X25519+HKDF、`ReplaceMasterKey` 接缝、握手缓存、会话前交换均已实现并有测试；206 个产物逐个验证含 ECDH | `core/encrypt/ecdh.go`、`pkg/encrypt/ecdh.go` |
 | 流量体积整形（定长分桶） | **已实现·有测试**（2026-10-20）：HTTP 家族请求/响应已定长分桶；**非 HTTP 传输的载荷长度仍未整形** | `core/communication/padding.go`、`api/communication/get.go` |
 
 ### C. 服务端数据面（磁盘/日志）
@@ -333,8 +333,31 @@ AEAD 缓存里还另有一份。现在改为 `MaskForSleep` **就地遮蔽真身
 | 调用栈伪造覆盖面（kernel32/ntdll 直调路径） | 已实现 direct syscall 路径的伪栈（2026-10-20）；`CreateProcessW`/`VirtualAllocEx` 这类直调仍长在 Go 线程栈上 | 需 `stdcall` 汇编桩 + 独立线程，属另一个量级 |
 | 模块摘链的 VAD 层可见性 | 已实现 PEB 链表摘除（2026-10-20）；页表/VAD 不动，按内存区域扫仍可见镜像页 | 需要改映射方式（`SEC_IMAGE`+回填）或 unbacked 执行内存，代价高于收益 |
 | APC 分发 syscall 化（`NtQueueApcThread`） | 未接：APC 路径还要同时改线程恢复（`NtResumeThread`）与句柄管理，改一半没有意义 | 有实机可验证注入成功/失败的时机 |
-| 主密钥运行时派生（ECDH） | **11/12 已接线（仅剩 oss）**，故载荷内仍含静态主密钥。各传输的接入方式与剩余工作量见 `docs/REMAINING_WORK.md` §3.3 | 1c 剩余 + 1d；无外部阻塞 |
-| 流量体积整形 | **已完成（2026-10-20）**：两侧统一 2 的幂定长桶、值改标准 base64。**未做**：非 HTTP 传输的载荷长度整形 | 需要按帧格式逐传输设计 |
+| 主密钥运行时派生（ECDH） | **已完成（2026-10-20）**：12/12 传输接线 + 206 个载荷产物全量重建；**残留风险**：静态主密钥仍作为占位符编译进载荷（生成期被 patch 覆盖），所以 `strings` 仍可提取到它 —— 见 §4 第 1 条 | 需要改为"载荷内不含密钥"的注入模型 |
+
+### ECDH 之后的两个**未解决**安全性质（别把它当成"已经安全了"）
+
+**A. 客户端是"静默降级"的 —— 主动攻击者可强制退回静态密钥**
+
+12 条传输的 `kxHandshake()` 在任何失败路径（拿不到服务端公钥、公钥非法、网络中断）
+都**直接 return**，随后照旧用静态主密钥生成 MetaInfo。设计意图是"老服务端也能连"，
+代价是：能阻断 KX 应答的人（MITM、按域名拦截的设备）可以让客户端退回静态链路，
+而静态密钥**就在载荷里**（`strings` 可提取）→ 那条链路可被解密。
+
+服务端侧确实是"不降级"的（带了 KX 就必须合法，否则 400/断开），
+但**决定权在客户端**，所以服务端的严格并不构成保护。
+
+解除条件（未做）：加"必须 ECDH"的强制开关（生成期占位符），
+强制模式下 KX 失败即**拒绝上线**而不是回落。这需要改 12 个传输的 Connect 流程。
+
+**B. ECDH 未认证 —— 主动 MITM 本来就能拦**
+
+交换只做 X25519 + HKDF，没有签名、没有证书固定（http_forward/https_forward 的
+TLS 校验只覆盖"服务端证书是否可信"，不绑定载荷身份）。所以能主动介入链路的人
+可以直接做中间人，而不必走 A 的降级路径。
+
+解除条件（未做）：给服务端公钥加签名（预置公钥/证书），或把 KX 绑到已有的
+TLS 通道上并固定指纹。两者都需要生成期注入密钥材料 —— 与"载荷里不含密钥"同一批工作。| 流量体积整形 | **已完成（2026-10-20）**：两侧统一 2 的幂定长桶、值改标准 base64。**未做**：非 HTTP 传输的载荷长度整形 | 需要按帧格式逐传输设计 |
 | 审计日志防篡改（哈希链） | **已完成（2026-10-20）**：链在 flushMu 串行区内计算、重启/轮转自动接续、`-verify-audit` 定位断点。**未做**：链尾外部锚点（截断末尾仍不可发现） | 需要独立介质存锚点 |
 | `cleanup` 统一清理现场命令 | 已实现（2026-10-20），**未在实机验证过持久化卸载**（需真实注册表/任务计划/cron/launchd 环境） | 授权 Windows/Linux/macOS VM 各一台做回归 |
 | 自更新 `.old` 残留清理 | 已实现（新映像启动后后台重试删除） | 同上 |
@@ -387,7 +410,7 @@ cd ../../Tshell-server && go test ./pkg/api/ ./pkg/delivery/ ./pkg/config/ ./pkg
 | 断言 | 怎么验 |
 |---|---|
 | 库文件里没有明文口令 | `strings database.db \| grep <测试口令>`（对应 `TestDatabaseFileContainsNoPlaintextSecret`） |
-| 载荷里没有固定主密钥 | `strings <payload> \| grep LISTENER_MASTER_KEY`（**当前仍会命中，见 §6**） |
+| 载荷里没有固定主密钥 | `strings <payload> \| grep LISTENER_MASTER_KEY` —— **仍会命中**。ECDH 只保证"会话密钥由每次握手派生"，载荷里那把静态密钥是生成期 patch 进去的占位符，仍然存在。**该验收项未满足**，原因与解除条件见 §6 |
 | 日志里没有口令 | 捕获 stdout 断言（对应 `TestNoPasswordInLogStatements`） |
 | 目录权限已收敛 | `stat -c %a Downloads sessions plugins`（对应 `pkg/security/fsperm_test.go`，POSIX 用例在 CI 的 ubuntu job 执行） |
 | 注入不申请 RWX、镂空的可执行节最终是 RX | `TestStagePayloadAllocWriteThenExecute` / `TestHardenImageOnlyTightensExecutableSections`；实机侧看注入回包的 `后端=` 与镂空回包的 `prot=[...]` |
