@@ -223,13 +223,25 @@ cd ../Tshell-web; npm ci --legacy-peer-deps; npx vitest run; npm run type-check
     省掉生命周期与清理；`processMessage` 是私有函数、只有一个调用方，改签名成本低
   - 修掉一个真 bug：覆盖主密钥时**盐没跟着覆盖**，两端用不同盐派生会算出不同密钥，
     现场只表现为"解密失败"。现在由 `resolveMetaKey` 固定优先级并有专门用例钉住
-- ⬜ **1c 剩余传输**（未做）：`websocket` / `kcp` / `dns` / `oss` +
-  `http_forward` / `https_forward` / `tcp_forward` / `kcp_forward` / `ws_forward`
-  - `websocket` 已勘察：它是 HTTP 升级，同样能读 `X-Kx` 头，
-    `handleWSConn` 的密钥解析与 tcp 同构，接入方式可沿用 1b 的头方案
-  - `kcp` 走 `AcceptKCP`，帧格式与 tcp 一致，可复用 `msgType=200` 的做法
-  - `dns`/`oss` 编码通道不同，需单独设计
-  - forward 类是反的（客户端监听、服务端拨入后 hijack）
+- ✅ **1c 已接 5 条**：`http` / `https` / `tcp` / `kcp` / `websocket`
+  - `websocket`：HTTP 升级，公钥搭在升级请求/响应头（`upgrader.Upgrade(w,r,respHeader)`）。
+    关键时序：WS 客户端的 MetaInfo 是**升级后第一帧**，所以一个来回即可完成交换
+  - `kcp`：分帧与 tcp 一致，复用 `msgType=200`。差别只在派生密钥怎么交回 ——
+    KCP 的 `metaMasterKey` 是循环外的局部变量，helper 直接返回值由调用方赋值即可
+- ⬜ **1c 剩余 7 条**：`dns` / `oss` / `http_forward` / `https_forward` /
+  `tcp_forward` / `kcp_forward` / `ws_forward`
+  - **forward 类的服务端侧已经覆盖**：`tcp_forward`/`kcp_forward` 复用
+    `HandleTcpConnectionForWithKeys` / `HandleKCPConnectionForWithKeys`，
+    KX case 在共享循环里，所以服务端无需再改。缺的是**客户端侧要扮演应答方**
+    （forward 是 beacon 监听、C2 拨入，角色与反向相反）
+  - `http_forward`/`https_forward`/`ws_forward` 服务端侧走
+    `HandleWebSocketForWithKeys` 等入口（当前 KX 传 nil），需单独接
+  - `dns`/`oss` 编码通道不同（base32 子域 / 对象名），需单独设计
+
+**多传输构建的一个坑（已修，勿回退）**：`kxMsgType` 必须放在**无 build tag** 的
+`cmd/single/kx_const.go` 里共享。tcp 与 kcp 若各自定义一份，`transport_multi`
+（同时编入所有传输）会因重复声明而编译失败 —— 这类失败只在多传输构建里出现，
+单传输构建完全正常，很容易漏。
 - ⬜ **1d 模板重建**（未做，必须做）：客户端代码变了 ⇒ 178 个预置模板要重建，
   否则旧模板会 fail-closed 拒绝运行（现有设计如此，属正确行为）
 
