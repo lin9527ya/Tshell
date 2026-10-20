@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"BackendTemplate/pkg/utils/logx"
+	"github.com/gin-gonic/gin"
 )
 
 // LogLevel 日志级别
@@ -53,21 +53,28 @@ type AuditLog struct {
 	StatusCode int                    `json:"status_code,omitempty"`
 	Duration   time.Duration          `json:"duration,omitempty"`
 	Details    map[string]interface{} `json:"details,omitempty"`
-	Result     string                 `json:"result"`
-	Message    string                 `json:"message"`
-	ErrorMsg   string                 `json:"error_msg,omitempty"`
+	// PrevHash / Hash 审计哈希链（阶段三）：每条 Hash = SHA256(PrevHash || 规范化JSON)。
+	// 任何改动/删除/重排都会让后续链条断裂，并由 VerifyAuditFile 定位到行号。
+	// 为空表示该条早于哈希链上线（历史记录不参与校验，也不会被判为篡改）。
+	PrevHash string `json:"prev_hash,omitempty"`
+	Hash     string `json:"hash,omitempty"`
+	Result   string `json:"result"`
+	Message  string `json:"message"`
+	ErrorMsg string `json:"error_msg,omitempty"`
 }
 
 // AuditLogger 审计日志管理器
 type AuditLogger struct {
-	mu         sync.RWMutex
-	flushMu    sync.Mutex // 串行化落盘（锁外执行，避免 fsync/轮转阻塞日志写入）
-	logFile    *os.File
-	logger     *log.Logger
-	logDir     string
-	maxSize    int64 // 最大文件大小 (bytes)
-	maxDays    int   // 日志保留天数
-	logBuffer  []AuditLog
+	mu        sync.RWMutex
+	flushMu   sync.Mutex // 串行化落盘（锁外执行，避免 fsync/轮转阻塞日志写入）
+	logFile   *os.File
+	logger    *log.Logger
+	logDir    string
+	maxSize   int64 // 最大文件大小 (bytes)
+	maxDays   int   // 日志保留天数
+	logBuffer []AuditLog
+	// lastHash 链尾哈希（受 flushMu 保护：链条计算与落盘在同一串行区内）
+	lastHash   string
 	bufferSize int
 	flushTimer *time.Timer
 }
@@ -117,6 +124,19 @@ func (al *AuditLogger) openLogFile() error {
 
 	al.logFile = file
 	al.logger = log.New(file, "", 0)
+
+	// 阶段三：接续哈希链。**必须按 flushMu 保护并只取文件末尾**，
+	// 因为 openLogFile 在 NewAuditLogger 与轮转两处都会被调用：
+	//   - 启动时：把上一次运行的链尾读回来，否则重启后链条从空开始，
+	//     校验会把"重启"误判成"篡改"
+	//   - 轮转时：沿用内存里的 lastHash 即可，不要回读新文件（新文件是空的）
+	al.flushMu.Lock()
+	defer al.flushMu.Unlock()
+	if al.lastHash == "" {
+		if h, err := recoverLastHash(filePath); err == nil {
+			al.lastHash = h
+		}
+	}
 
 	return nil
 }
@@ -292,7 +312,15 @@ func ensureFlushWorker() {
 	auditFlushOnce.Do(func() {
 		go func() {
 			for batch := range auditFlushCh {
-				GlobalAuditLogger.flushBatch(batch)
+				// 防御：worker 是进程级单例，但 GlobalAuditLogger 可能尚未设置
+				// （启动早期、或用 NewAuditLogger 建了非全局实例的场景）。
+				// 原实现直接解引用 → nil panic 会杀掉整个进程，
+				// 而审计写失败绝不应该导致服务端崩溃。
+				if lg := GlobalAuditLogger; lg != nil {
+					lg.flushBatch(batch)
+				} else {
+					logx.Infof("[AUDIT] 全局审计日志器未初始化，丢弃 %d 条待落盘记录\n", len(batch))
+				}
 			}
 		}()
 	})
@@ -335,6 +363,16 @@ func (al *AuditLogger) flushBatch(batch []AuditLog) {
 	al.checkAndRotateLog()
 
 	for _, logEntry := range batch {
+		// 阶段三：落盘前接上哈希链。计算与写入同在 flushMu 串行区内，
+		// 所以链条顺序与文件顺序严格一致（并发写会让链无法校验）。
+		logEntry.PrevHash = al.lastHash
+		h, herr := chainHash(al.lastHash, logEntry)
+		if herr != nil {
+			logx.Infof("审计链哈希计算失败: %v\n", herr)
+		} else {
+			logEntry.Hash = h
+		}
+
 		logData, err := json.Marshal(logEntry)
 		if err != nil {
 			logx.Infof("序列化日志失败: %v\n", err)
@@ -342,6 +380,9 @@ func (al *AuditLogger) flushBatch(batch []AuditLog) {
 		}
 
 		al.logger.Printf("%s\n", string(logData))
+		if logEntry.Hash != "" {
+			al.lastHash = logEntry.Hash
+		}
 	}
 
 	// 强制刷新到磁盘
@@ -353,12 +394,18 @@ func (al *AuditLogger) flushBatch(batch []AuditLog) {
 	al.persistBatch(batch)
 }
 
-// flushBuffer 刷新当前缓冲区（锁内 swap 后投递后台落盘）。
-func (al *AuditLogger) flushBuffer() {
+// drainBuffer 在锁内换出当前缓冲并返回（不落盘）。
+func (al *AuditLogger) drainBuffer() []AuditLog {
 	al.mu.Lock()
+	defer al.mu.Unlock()
 	batch := al.logBuffer
 	al.logBuffer = make([]AuditLog, 0, al.bufferSize)
-	al.mu.Unlock()
+	return batch
+}
+
+// flushBuffer 刷新当前缓冲区（锁内 swap 后投递后台落盘）。
+func (al *AuditLogger) flushBuffer() {
+	batch := al.drainBuffer()
 	if len(batch) == 0 {
 		return
 	}
@@ -445,8 +492,12 @@ func (al *AuditLogger) Close() error {
 		al.flushTimer.Stop()
 	}
 
-	// 刷新剩余日志（flushBuffer 内部自锁 swap + flushMu 落盘，不能在持有 mu 时调用）
-	al.flushBuffer()
+	// 刷新剩余日志：这里必须**同步**落盘，不能复用 flushBuffer（它把批次投给后台 worker）。
+	// 原实现投递后立刻关文件，worker 可能在关文件之后才写 → 关停时最后一批日志丢失。
+	// 审计日志丢失发生在关停时刻最不该被接受：那正是"操作收尾"的记录。
+	if batch := al.drainBuffer(); len(batch) > 0 {
+		al.flushBatch(batch)
+	}
 
 	// 关闭文件
 	al.flushMu.Lock()

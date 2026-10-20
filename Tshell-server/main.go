@@ -94,6 +94,8 @@ func main() {
 	var listBackups = flag.Bool("list-backups", false, "列出备份并退出")
 	// OPSEC：弱口令时生成的随机管理员密码默认只写入 0600 文件，不进日志。
 	// 需要人工查看时显式加这个开关（并确认当前输出不会被留存）。
+	// OPSEC 阶段三：审计日志哈希链校验（只读，校验后退出）
+	var verifyAudit = flag.String("verify-audit", "", "校验审计日志文件的哈希链并退出（传入文件路径）")
 	var printInitPassword = flag.Bool("print-initial-password", false,
 		"把生成的初始管理员密码打印到 stdout（默认只写入 0600 文件）")
 	// 重定向器配置生成（阶段三）：按当前画像生成 nginx/apache 配置后退出
@@ -133,6 +135,23 @@ func main() {
 		Keep:   appConfig.Backup.Keep,
 		Prefix: "tshell-backup",
 	})
+	if *verifyAudit != "" {
+		// 审计哈希链校验：篡改/删除/重排都会定位到具体行号。
+		// 退出码 0=完好、1=断链、2=无法读取（便于脚本化巡检）。
+		res, verr := audit.VerifyAuditFile(*verifyAudit)
+		if verr != nil {
+			fmt.Printf("❌ 无法读取审计日志 %s: %v\n", *verifyAudit, verr)
+			os.Exit(2)
+		}
+		if res.OK() {
+			fmt.Printf("✅ 审计链完好：%s（%d 条，链尾 %s）\n",
+				*verifyAudit, res.Entries, shortHash(res.LastHash))
+			os.Exit(0)
+		}
+		fmt.Printf("❌ 审计链断裂：%s\n   位置：第 %d 行（此前 %d 条校验通过）\n   原因：%s\n",
+			*verifyAudit, res.BadLine, res.Entries, res.Reason)
+		os.Exit(1)
+	}
 	if *listBackups {
 		os.Exit(cli.RunListBackups(cliBackupMgr))
 	}
@@ -1358,6 +1377,13 @@ func SafeAuthHeaderGuard() gin.HandlerFunc {
 //
 // 优先与 database.db 同目录：运维做磁盘权限收敛和"删掉初始密码文件"时
 // 只需要盯一个目录。PostgreSQL 或未配置路径时回落到当前工作目录。
+// shortHash 展示用短哈希（前 12 位足够区分，且日志里不刷屏）
+func shortHash(h string) string {
+	if len(h) > 12 {
+		return h[:12]
+	}
+	return h
+}
 func initialPasswordDir(c *config.Config) string {
 	if c == nil {
 		return "."
