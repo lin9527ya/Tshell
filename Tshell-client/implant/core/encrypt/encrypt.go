@@ -31,11 +31,18 @@ var globalMasterKey []byte
 var globalSalt []byte
 
 // SetMasterKey 注入监听器主密钥（app.Init 时调用；MetaInfo 等 FirstBlood 前传输的 AES-GCM 加密用）
+//
+// 注意：这里注入的是**编译期 patch 进二进制**的静态主密钥。
+// ECDH 交换成功后会被 ReplaceMasterKey 替换（见 ecdh.go），
+// 届时本函数的产物即作废；masterKeyReplaced 标记随之复位，供自检区分两态。
 func SetMasterKey(masterKey []byte) {
 	if len(masterKey) >= 32 {
 		mk := make([]byte, 32)
 		copy(mk, masterKey[:32])
 		globalMasterKey = mk
+		masterKeyReplacedMu.Lock()
+		masterKeyReplaced = false
+		masterKeyReplacedMu.Unlock()
 	}
 }
 
