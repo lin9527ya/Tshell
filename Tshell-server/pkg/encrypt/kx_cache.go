@@ -155,6 +155,8 @@ func (c *KxCache) GetExchange(clientPub []byte) (masterKey, serverPub []byte, ok
 		c.removeFromOrderLocked(key)
 		return nil, nil, false
 	}
+	// 命中即续期，与 Get 同一理由（滑动过期，避免活跃会话被过期后重建密钥）
+	e.expiresAt = c.now().Add(c.ttl)
 	return append([]byte{}, e.MasterKey...), append([]byte{}, e.ServerPub...), true
 }
 
@@ -179,6 +181,16 @@ func (c *KxCache) Get(clientPub []byte) ([]byte, bool) {
 		c.removeFromOrderLocked(key)
 		return nil, false
 	}
+	// 命中即续期（滑动过期）。
+	//
+	// 不续期的后果很严重、而且很难查：HTTP 家族每个请求都独立解析密钥，
+	// 会话存活期间会持续携带 X-Kx。若条目按固定 TTL 过期，服务端会在
+	// **下一次请求时重新生成临时密钥对**、派生出一把与客户端**不同**的主密钥
+	// （客户端手里那把是用旧临时公钥派生的）→ MetaInfo 解不开 → 表现为
+	// "跑了 N 分钟后突然所有命令失效"，而重启客户端又好 —— 极易误判为网络问题。
+	//
+	// 滑动过期让活跃会话永不过期；被遗弃的会话仍会自然淘汰。
+	e.expiresAt = c.now().Add(c.ttl)
 	return append([]byte{}, e.MasterKey...), true
 }
 

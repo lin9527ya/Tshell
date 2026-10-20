@@ -73,9 +73,18 @@ func TestKxCacheTTLExpiry(t *testing.T) {
 		t.Error("未到期时不应失效")
 	}
 
-	adv(2 * time.Second) // 共 31s，已过期
+	// 命中会续期：再走 29s（总计 58s，早于"刷新后"的 59s）仍应有效。
+	// 这里断言的是**滑动过期**语义 —— 否则活跃会话会在固定 TTL 到期后被回收，
+	// 服务端下次请求重建密钥对，派生出与客户端不同的主密钥（见 Get 的注释）。
+	adv(29 * time.Second)
+	if _, ok := c.Get(pub(1)); !ok {
+		t.Error("命中续期后，活跃会话不应失效")
+	}
+
+	// 但 TTL 仍必须回收**空闲**条目：此后不再命中，超过 TTL 即失效
+	adv(40 * time.Second)
 	if _, ok := c.Get(pub(1)); ok {
-		t.Error("过期后不应再取到")
+		t.Error("空闲超过 TTL 后不应再取到")
 	}
 	if c.Len() != 0 {
 		t.Errorf("过期条目应被移除，实际剩 %d", c.Len())
