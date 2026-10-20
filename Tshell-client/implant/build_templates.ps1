@@ -9,7 +9,7 @@
 # （服务端 embed 时只携带压缩数据，二进制体积降至约 1/3；GenServer/WebDelivery
 # 读取时按 gzip 魔数自动解压再 patch）。
 #
-# 用法： powershell -ExecutionPolicy Bypass -File build_templates.ps1
+# 用法： pwsh -ExecutionPolicy Bypass -File build_templates.ps1（powershell 5.1 需文件带 UTF-8 BOM，已加）
 # 失败的架构（如 darwin 缺桩函数）保留旧二进制，不覆盖。
 # OPSEC：Windows EXE 使用 GUI 子系统(-H windowsgui)，启动无控制台窗口闪烁
 #（HideConsole 运行时二次隐藏）。
@@ -145,7 +145,12 @@ $CCx86_64 = $null; $CC386 = $null
 if ($null -ne (Get-Command x86_64-w64-mingw32-gcc -ErrorAction SilentlyContinue)) {
     $CCx86_64 = "x86_64-w64-mingw32-gcc"; $CC386 = "i686-w64-mingw32-gcc"
 } elseif ($null -ne (Get-Command gcc -ErrorAction SilentlyContinue)) {
-    $CCx86_64 = "gcc"; $CC386 = "gcc"
+    # 回退到单套 gcc 时必须显式加 -m32：否则 GOARCH=386 仍用 64 位工具链，
+    # c-shared 会在 runtime/cgo 处链接失败（原先 $CC386 = "gcc" 就是这个错误，
+    # 表现为所有 windows/386 DLL 静默保留旧产物）。
+    # TDM-GCC-64 这类发行版带 multilib，-m32 可用；纯 64 位发行版会在此失败，
+    # 仍按原逻辑保留旧 DLL。
+    $CCx86_64 = "gcc"; $CC386 = "gcc -m32"
 } else {
     Write-Host "WARN: gcc not found - skipping DLL templates (install mingw-w64 to enable)"
 }
