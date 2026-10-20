@@ -189,11 +189,42 @@ cd ../Tshell-web; npm ci --legacy-peer-deps; npx vitest run; npm run type-check
   fail-closed（**必须全量重建 178 个模板**）、未做三平台实机回归。
   详见 `docs/KNOWN_LIMITATIONS.md` §20。
 
-### 3.3 主密钥运行时派生（**协议迁移**，服务端 + 客户端同时改）- 目标：主密钥不再明文 patch 进二进制（`pkg/delivery/payload.go` 的
+### 3.3 主密钥运行时派生（**协议迁移**，服务端 + 客户端同时改）
+
+**进度（2026-10-20）**
+
+- ✅ **1a 密码学核心 + 接缝**：`pkg/encrypt/ecdh.go`、`implant/core/encrypt/ecdh.go`
+  - X25519（标准库 `crypto/ecdh`）+ HKDF-SHA256（info = `tshell-ecdh-v1`）
+  - 拒绝长度错误与**低阶点**：X25519 对低阶点不报错，共享密钥会是全零，
+    攻击者可借此把它固定成已知值（小子群攻击）
+  - `ReplaceMasterKey` 是唯一接缝：会话密钥重派生、AEAD 缓存、sleep mask
+    全都只依赖 `globalMasterKey`，换源后下游零改动
+  - 互通性：RFC 7748 §6.1 向量 + **同一个黄金向量在两侧各钉一次**（`4fd4f22a…4b8`）。
+    跨 module 无法互相 import，这是唯一可靠办法；只测"两端算一样"没用 —— 一起错照样通过
+- ✅ **1b-0 握手缓存**：`pkg/encrypt/kx_cache.go`
+  - 按客户端公钥哈希存（握手时服务端还不知道 uid）、TTL 30s、容量 4096 LRU 淘汰、
+    过期清零、Get 返回副本、解出 uid 后 `Bind`
+- ⬜ **1b 传输接线**（未做）：`http` / `https` / `http_forward`
+- ⬜ **1c 其余 9 条传输**（未做）：tcp/kcp/ws 用固定首帧头、dns 用 base32 标签、
+  oss 用对象名/元数据
+- ⬜ **1d 模板重建**（未做，必须做）：客户端代码变了 ⇒ 178 个预置模板要重建，
+  否则旧模板会 fail-closed 拒绝运行（现有设计如此，属正确行为）
+
+**已定协议约定（供 1b/1c 遵守）**
+
+- 公钥走**明文头**可接受：公钥本就公开，攻击者拿到也算不出共享密钥。
+  但**首包不得携带任何敏感载荷**（MetaInfo 顺延到第二条消息），
+  否则静态密钥仍能解出敏感数据，改造只剩表面效果
+- 服务端按 `sha256(clientPub)` 命中缓存；客户端握手后继续重复带同一公钥头直到会话建立；
+  服务端在首条有效消息解出 uid 时 `Bind`
+- `security.ecdh_mode: required|preferred|off`（默认 `preferred`）；
+  `required` 下旧载荷必须被**明确拒绝**并提示重新生成，不能静默降级
+
+- 目标：主密钥不再明文 patch 进二进制（`pkg/delivery/payload.go` 的
   `LISTENER_MASTER_KEY_*` 占位符），改为首连时 X25519 临时交换派生
-- 为什么没做：要在 **13 种传输的首包**插入交换；轮询型传输（HTTP/DNS/OSS）服务端
-  要为每个 beacon 缓存临时密钥直到会话建立 —— 一次真正的协议迁移
-- 验收：二进制里提取不到可用主密钥；首次上线 + 命令往返在 13 传输上全绿
+- 为什么这是 XL：要在 **12 条传输的首包**插入交换；轮询型传输（HTTP/DNS/OSS）服务端
+  要为每个 beacon 缓存临时密钥直到会话建立
+- 验收：二进制里提取不到可用主密钥；首次上线 + 命令往返在全部传输上全绿
 
 ---
 
