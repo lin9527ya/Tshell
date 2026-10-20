@@ -2,9 +2,9 @@ package main
 
 import (
 	"implant/core/app"
+	"implant/core/debuglog"
 	"implant/core/communication"
 	"implant/core/config"
-	"implant/core/debuglog"
 	"implant/core/reconnect"
 	"math/rand"
 	"time"
