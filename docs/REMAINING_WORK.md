@@ -226,14 +226,34 @@ cd ../Tshell-web; npm ci --legacy-peer-deps; npx vitest run; npm run type-check
 
 1. **裸流型**（tcp/kcp/ws 及 forward 变体）：没有 HTTP 头可用，必须加**固定首帧**
    `KX1 | pub(32)` / `KX2 | pub(32)`，两端都要改帧格式
-2. **服务端不是 Gin**：`http`/`https` 改动小，是因为复用了同一个 Gin handler。
-   其余传输的服务端是 **`Tshell-client/Reacon_*` 独立模块**（各自 `main.go`，
-   go 1.19，多数在 `_archived_reacon/` 下），编译产物以**二进制**形式入库在
-   `Tshell-server/pkg/api/server/<transport>/`（那一目录只有产物、没有源码）。
+2. **服务端分发点各不相同**（`pkg/api/listener.go` 的 start 分支）：
+   `tcp` 走 `connection/tcp.HandleTcpConnectionForWithKeys`、`kcp` 走 `AcceptKCP`、
+   `websocket` 走 Gin、`dns`/`oss` 各有轮询入口 —— 每条的接入点与帧格式都不同。
 
-所以 1c 的实际工作是：改 Reacon 模块帧格式 + 改客户端 + **重建入库的 178 个二进制/模板**。
-forward 类更特殊：客户端**监听**、服务端拨入后 hijack，连方向都是反的
+> **更正（2026-10-20 自查）**：我先前在本文件写过"其余传输的服务端是
+> `Tshell-client/Reacon_*` 独立模块、产物入库在 `pkg/api/server/<transport>/`"，
+> **那是错的**。查证结果：
+> - `pkg/api/server/<transport>/*` 由 `pkg/api/server.go` 的 `//go:embed server/*`
+>   嵌入，按 `protocol/os/arch/format` 匹配后**下发给客户端** —— 是**客户端载荷**，
+>   不是服务端（见 server.go 错误文案"未找到匹配的客户端二进制"）
+> - 各传输的**服务端就在主服务端代码里**（`pkg/api/listener.go` + `pkg/connection/*`）
+> - `Tshell-client/Reacon_*` 是另一些独立客户端实现（多数已归档到 `_archived_reacon/`）
+>
+> 所以 1c 的真实工作是：**改服务端分发点 + 改客户端 + 重建 178 个客户端载荷（1d）**。
+> 比"照抄 10 个文件"大，但**不涉及另一个服务端模块** —— 比原先判断更乐观。
+
+所以 1c 的实际工作是：改服务端分发点 + 改客户端 + **重建 178 个客户端载荷/模板**。
+forward 类仍是特例：客户端**监听**、服务端拨入后 hijack，连方向都是反的
 （参照 `HTTPForwardClient.Connect`）。
+
+**TCP 已勘察到的具体落点（可直接照做）**：帧格式是
+`len(4) | msgType(4) | payload`，firstBlood 为 `msgType=1`。
+接入方式不必新增裸流头，而是**加一个新的 msgType（KX）**：
+客户端先发 KX 帧（载荷 b64(clientPub)），服务端派生后回 KX 帧（b64(serverPub)），
+随后照旧发 firstBlood —— 两端的改动都局限在各自的消息分发 switch 里。
+需要注意：`processMessage` 每次调用都会重新从监听器配置取主密钥，
+所以派生结果必须挂在**连接级状态**上跨帧保留（该函数是私有的，只有一个调用方，
+改签名成本低）。
 
 建议顺序：先打通 `tcp` 一条（帧最简单、两端都在活跃代码里）验证 `KX1/KX2` 设计；
 再按同模式铺 kcp/ws；dns/oss 单独设计（编码通道不同）；forward 类最后做。

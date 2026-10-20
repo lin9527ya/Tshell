@@ -106,9 +106,82 @@ func HandleTcpConnectionFor(conn net.Conn, listenerType string) {
 	HandleTcpConnectionForWithKeys(conn, listenerType, nil, nil)
 }
 
+// MsgTypeKX 会话前 ECDH 密钥交换帧类型（沿用 len(4)|msgType(4)|payload 分帧，
+// payload = base64(公钥)）。取值 200 是确认过未被占用（1=firstBlood 2=otherMsg 3=heartBeat）。
+//
+// 为什么用新 msgType 而不是在流前面加一段裸头：分帧已经存在，加一个类型
+// 把改动限制在两端各自的分发 switch 里，不必动连接建立与读取循环。
+const MsgTypeKX = 200
+
+// connKXState 连接级 ECDH 状态。
+//
+// 必须是**连接级**而不是全局缓存：TCP 是一条长连接上的连续帧，
+// 派生结果只对这一条连接有意义。用 map 按连接记反而要多管生命周期与清理。
+type connKXState struct {
+	masterKey []byte
+}
+
+// resolveMetaKey 决定本次连接用哪把主密钥与哪份盐。
+//
+// 优先级（顺序即语义，改动会直接影响互通性）：
+//  1. **KX 派生密钥**最高：交换一旦完成，整条连接都必须用它，
+//     否则 MetaInfo 解密与会话密钥派生会各用一套密钥
+//  2. 然后是显式覆盖（正向连接由服务端拨号方传入）
+//  3. 最后是监听器配置
+//
+// 注意覆盖时**盐也要跟着覆盖** —— 这一点曾经写错：只覆盖主密钥、盐仍取监听器配置，
+// 结果两端用不同的盐派生，算出不同密钥，现场只看到"解密失败"，极难定位。
+func resolveMetaKey(listenerType string, masterKeyOverride, saltOverride []byte, kx *connKXState) ([]byte, []byte) {
+	if kx != nil && len(kx.masterKey) >= encrypt.ECDHSharedKeySize {
+		_, salt := encrypt.GetListenerKeyConfigForForward(listenerType)
+		if len(masterKeyOverride) > 0 && len(saltOverride) > 0 {
+			_, salt = encrypt.NormalizeListenerKeyConfig(masterKeyOverride, saltOverride)
+		}
+		return kx.masterKey, salt
+	}
+	mk, salt := encrypt.GetListenerKeyConfigForForward(listenerType)
+	if len(masterKeyOverride) > 0 && len(saltOverride) > 0 {
+		mk, salt = encrypt.NormalizeListenerKeyConfig(masterKeyOverride, saltOverride)
+	}
+	return mk, salt
+}
+
+// handleKXFrame 处理一个 KX 帧：解析客户端公钥 → 派生主密钥 → 回服务端公钥。
+//
+// 与 HTTP 家族同样的取舍：公钥是公开信息，无需加密传输；
+// 交换失败返回错误（调用方断开连接），**不**静默退回静态密钥。
+func handleKXFrame(conn net.Conn, payload []byte, salt []byte, st *connKXState) error {
+	peerPub, err := encrypt.ParsePeerPublicKey(strings.TrimSpace(string(payload)))
+	if err != nil {
+		return fmt.Errorf("KX 客户端公钥不可用: %w", err)
+	}
+	srv, err := encrypt.NewServerKeyExchange()
+	if err != nil {
+		return err
+	}
+	mk, err := srv.DeriveMasterKey(peerPub, salt)
+	if err != nil {
+		return fmt.Errorf("KX 派生失败: %w", err)
+	}
+	if st != nil {
+		st.masterKey = mk
+	}
+	// 回帧：len(4)|MsgTypeKX(4)|b64(serverPub)
+	body := []byte(srv.HeaderValue())
+	frame := make([]byte, 8+len(body))
+	binary.BigEndian.PutUint32(frame[0:4], uint32(4+len(body)))
+	binary.BigEndian.PutUint32(frame[4:8], MsgTypeKX)
+	copy(frame[8:], body)
+	if _, err := conn.Write(frame); err != nil {
+		return fmt.Errorf("KX 回帧失败: %w", err)
+	}
+	logx.Infof("🔑 [TCP-KX] 完成会话前密钥交换，后续帧使用派生主密钥\n")
+	return nil
+}
+
 // HandleTcpConnectionForWithKeys 支持显式会话密钥覆盖（正向连接自定义密钥时使用；nil 则用 GetListenerKeyConfig）
 func HandleTcpConnectionForWithKeys(conn net.Conn, listenerType string, masterKeyOverride, saltOverride []byte) {
-// 崩溃防护：任何 panic 都记录并关闭连接，不让异常扩散到整个进程
+	// 崩溃防护：任何 panic 都记录并关闭连接，不让异常扩散到整个进程
 	defer func() {
 		if r := recover(); r != nil {
 			logx.Infof("鉂?[TCP-RECOVER] 连接处理panic宸叉崟鑾? %v (listener=%s, remote=%s)\n", r, listenerType, conn.RemoteAddr().String())
@@ -127,7 +200,7 @@ func HandleTcpConnectionForWithKeys(conn net.Conn, listenerType string, masterKe
 	// 璁板綍瀹㈡埛绔疷ID锛岀敤浜庤繛鎺ユ柇寮€鏃舵竻鐞?
 	var currentUID string
 
-// 延迟清理连接 - 与TCP/WebSocket保持一致的完整清理机制
+	// 延迟清理连接 - 与TCP/WebSocket保持一致的完整清理机制
 	defer func() {
 		if currentUID != "" {
 			logx.Infof("🔌 [TCP鏂紑] 瀹㈡埛绔嬭繛鎺ユ柇寮€锛屾竻鐞嗙姸鎬? %s\n", currentUID)
@@ -157,7 +230,7 @@ func HandleTcpConnectionForWithKeys(conn net.Conn, listenerType string, masterKe
 			}
 			connection.MuClientListenerType.Unlock()
 
-// 在数据库中标记为离线
+			// 在数据库中标记为离线
 			// LogUpdate 统一记结果日志；不用 MarkOffline——其无条件删 ClientListenerType 会破坏上方振荡修复守卫的语义
 			affected, err := database.DB().Where("uid = ?", currentUID).Update(&database.Clients{Online: "2"})
 			database.LogUpdate(affected, err, "TCP断连置离线 uid="+currentUID)
@@ -177,7 +250,7 @@ func HandleTcpConnectionForWithKeys(conn net.Conn, listenerType string, masterKe
 		}
 	}()
 
-// 连接保活设置 - 专门为本地环境优化
+	// 连接保活设置 - 专门为本地环境优化
 	if tcpConn, ok := conn.(*net.TCPConn); ok {
 		tcpConn.SetKeepAlive(true)
 		tcpConn.SetKeepAlivePeriod(15 * time.Second) // 更频繁的保活检查
@@ -195,8 +268,10 @@ func HandleTcpConnectionForWithKeys(conn net.Conn, listenerType string, masterKe
 		logx.Infof("🌐 本地TCP连接优化完成: %s\n", clientIP)
 	}
 
-// 隧道友好的连接管理 - 更稳定的策略
+	// 隧道友好的连接管理 - 更稳定的策略
 	lastActivityTime := time.Now()
+	// 连接级 ECDH 状态：KX 帧派生出的主密钥对后续帧生效
+	kxState := &connKXState{}
 
 	for {
 		// 设置更长的读取超时，减少频繁断开
@@ -206,7 +281,7 @@ func HandleTcpConnectionForWithKeys(conn net.Conn, listenerType string, masterKe
 
 		// 直接处理消息
 		ctx := context.Background()
-		uid, err := processMessage(ctx, reader, conn, connectionID, clientIP, listenerType, masterKeyOverride, saltOverride)
+		uid, err := processMessage(ctx, reader, conn, connectionID, clientIP, listenerType, masterKeyOverride, saltOverride, kxState)
 		if err != nil {
 			// 检查是否是正常的连接关闭
 			if strings.Contains(err.Error(), "use of closed network connection") ||
@@ -277,12 +352,9 @@ func sendSessionNonce(conn net.Conn, uid string, salt, masterKey []byte) {
 	logx.Infof("🔑 [TCP] 会话密钥唯一化 nonce 已下发: %s\n", uid)
 }
 
-func processMessage(ctx context.Context, reader *bufio.Reader, conn net.Conn, connectionID, clientIP, listenerType string, masterKeyOverride, saltOverride []byte) (string, error) {
-	// 监听器主密钥（MetaInfo 传输的 AES-GCM 解密用；正向连接可显式覆盖）
-	metaMasterKey, _ := encrypt.GetListenerKeyConfigForForward(listenerType)
-	if len(masterKeyOverride) > 0 && len(saltOverride) > 0 {
-		metaMasterKey, _ = encrypt.NormalizeListenerKeyConfig(masterKeyOverride, saltOverride)
-	}
+func processMessage(ctx context.Context, reader *bufio.Reader, conn net.Conn, connectionID, clientIP, listenerType string, masterKeyOverride, saltOverride []byte, kx *connKXState) (string, error) {
+	// 监听器主密钥 + 盐（MetaInfo 解密与 KX 派生共用，优先级见 resolveMetaKey）
+	metaMasterKey, metaSalt := resolveMetaKey(listenerType, masterKeyOverride, saltOverride, kx)
 	// 妫€鏌ヤ笂涓嬫枃鏄惁鍙栨秷
 	select {
 	case <-ctx.Done():
@@ -324,13 +396,20 @@ func processMessage(ctx context.Context, reader *bufio.Reader, conn net.Conn, co
 		connection.GlobalConnectionManager.UpdateConnectionActivity(connectionID, int64(len(message)), 0)
 	}
 
-		// 至少需要 4 字节消息类型头，防止越界
+	// 至少需要 4 字节消息类型头，防止越界
 	if len(message) < 4 {
 		return "", fmt.Errorf("消息长度不足: %d", len(message))
 	}
 	msgTypeBytes := message[:4]
 	msgType := binary.BigEndian.Uint32(msgTypeBytes)
 	switch msgType {
+	case MsgTypeKX: // 会话前 ECDH 交换（见 handleKXFrame）
+		// 交换成功则不返回 uid，读取循环继续等 firstBlood。
+		// 失败返回错误 → 上层断开连接（不降级到静态密钥）。
+		if err := handleKXFrame(conn, message[4:], metaSalt, kx); err != nil {
+			return "", err
+		}
+		return "", nil
 	case 1: // firstBlood
 		msg := message[4:]
 		tmpMetainfo, err := encrypt.DecodeBase64(msg)
@@ -349,7 +428,7 @@ func processMessage(ctx context.Context, reader *bufio.Reader, conn net.Conn, co
 
 		// 绔嬪嵆涓哄鎴风鐢熸垚浼氳瘽瀵嗛挜锛堢‘淇濅笌瀹㈡埛绔悓姝ワ級
 		if encrypt.GlobalKeyManager != nil {
-		// 获取监听器特定的密钥配置（正向连接可显式覆盖）
+			// 获取监听器特定的密钥配置（正向连接可显式覆盖）
 			masterKey, encryptionSalt := encrypt.GetListenerKeyConfigForForward(listenerType)
 			if len(masterKeyOverride) > 0 && len(saltOverride) > 0 {
 				// 规范化为 32/16 字节，与客户端占位符切片规则一致
@@ -377,7 +456,7 @@ func processMessage(ctx context.Context, reader *bufio.Reader, conn net.Conn, co
 			}
 		}
 
-				// 保持向后兼容
+		// 保持向后兼容
 		Mutex.Lock()
 		TCPClientManger[uid] = conn
 		Mutex.Unlock()
