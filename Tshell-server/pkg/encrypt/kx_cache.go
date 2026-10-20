@@ -35,6 +35,14 @@ type KxEntry struct {
 	MasterKey []byte
 	// BeaconUID 首条有效消息解出后绑定；未绑定为空
 	BeaconUID string
+	// ServerPub 本次交换里服务端那一半的公钥。
+	//
+	// 为什么要存：客户端可能在第一次 GET 与携带 MetaInfo 的 GET 之间重试
+	// （退避最长 30s+），若其间条目过期、服务端重建了密钥对，
+	// 客户端手里的主密钥就与新的不匹配 → MetaInfo 解密失败。
+	// 所以服务端每次都把公钥回给客户端，客户端每次都用它**重新派生**（自愈）；
+	// 而要做到"每次都能回"，公钥就必须留在缓存里。
+	ServerPub []byte
 	// CreatedAt 入缓存时间
 	CreatedAt time.Time
 
@@ -114,6 +122,40 @@ func (c *KxCache) Put(clientPub, masterKey []byte) (*KxEntry, error) {
 	c.entries[key] = e
 	c.order = append(c.order, key)
 	return e, nil
+}
+
+// PutExchange 存入一次完整交换（含服务端公钥）。
+// 与 Put 的区别：Put 只存派生结果，适合"不需要再回公钥"的场景。
+func (c *KxCache) PutExchange(clientPub, serverPub, masterKey []byte) (*KxEntry, error) {
+	e, err := c.Put(clientPub, masterKey)
+	if err != nil {
+		return nil, err
+	}
+	c.mu.Lock()
+	e.ServerPub = append([]byte{}, serverPub...)
+	c.mu.Unlock()
+	return e, nil
+}
+
+// GetExchange 取派生结果与服务端公钥（都返回副本）。
+func (c *KxCache) GetExchange(clientPub []byte) (masterKey, serverPub []byte, ok bool) {
+	if c == nil {
+		return nil, nil, false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	key := kxKey(clientPub)
+	e, exists := c.entries[key]
+	if !exists {
+		return nil, nil, false
+	}
+	if !c.now().Before(e.expiresAt) {
+		wipe(e.MasterKey)
+		delete(c.entries, key)
+		c.removeFromOrderLocked(key)
+		return nil, nil, false
+	}
+	return append([]byte{}, e.MasterKey...), append([]byte{}, e.ServerPub...), true
 }
 
 // Get 按客户端公钥取握手结果（不删除，见文件头说明）。

