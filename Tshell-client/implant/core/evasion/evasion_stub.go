@@ -7,3 +7,6 @@ package evasion
 func Init(etwOn, amsiOn bool, syscallMode string) error {
 	return nil
 }
+
+// HideForSleep 非 Windows 平台不做模块摘链（PEB 结构是 Windows 专有）。
+func HideForSleep(enabled bool) func() { return func() {} }

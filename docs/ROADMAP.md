@@ -264,19 +264,90 @@ go test -race ./Tshell-server/...     # 见 §4 回归基线（注意用外层�
   主密钥改造需服务端配合（`pkg/encrypt/`、`pkg/delivery/payload.go`）
 - **验收**：睡眠期用自写内存扫描器看不到 beacon 镜像特征；主密钥不在二进制里可提取；
   现有 e2e（上线 + 命令往返）不回归
-- **现状核查（2026-10-19）**：三个子项都卡在"需要实机 / 超大改动"，不宜在无验证条件下动：
+- **已完成（2026-10-20，P0）**：注入与镂空的内存原语已 syscall 化，镂空去掉了 RWX
+  - 新增 `core/commands/remotemem_windows.go`：分配/写入/改保护/读/卸载/PEB 查询优先走
+    `NtXxx` trampoline，逐项失败回退宿主 API（详见 `docs/OPSEC.md` §2 A 层与 §3）
+  - 镂空先 RW 写入，写完把可执行节收紧为 RX（`hollow_windows.go` 的 `hardenImage`）；
+    非可执行节保持 RW 是 loader 写 IAT/全局的硬需求
+  - 14 项单测（含真实 kernel32 往返 + `VirtualQuery` 验证 RX）+ 1 项源码级棘轮；
+    **未实机验证**；APC 仍是 `QueueUserAPC`（见 `docs/OPSEC.md` §6）
+- **已完成（2026-10-20，P1）**：行动后清理现场 + 自更新残留
+  - 新增 `cleanup [all|persist|files|uac|wmi]`（cmdType 134，`core/commands/cleanup*.go`）：
+    卸载注册表 Run / 计划任务 / 启动文件夹 / crontab / shell rc / launchd plist，
+    清 `<exe>.old` 与 `%TEMP%` 更新残留，复用 `uacCleanupReport`/`wmiPersistRemove`
+  - 判据是"对象指向本程序路径"而非"名字等于某值"（名字来自编译期 masquerade，
+    运行期无法反推）；保守匹配，宁可漏删不误删，理由见 `docs/OPSEC.md` §3
+  - 自更新残留不再依赖操作员记得清理：新映像启动后 `go commands.PurgeUpdateResidue()`
+    后台重试删除
+  - 13 项判定逻辑单测 + 2 项接线棘轮 + 服务端命令表用例；**未在实机验证**
+    （`reg delete`/`schtasks /delete`/`crontab -`/`launchctl unload` 的真实副作用）
+- **已完成（2026-10-20，P2）**：调用栈伪造（direct syscall 路径）+ 睡眠期模块摘链
+  - `core/evasion/spoof.go` / `spoof_windows.go`：伪栈布局与桩生成（平台无关，可单测）；
+    `Syscall()` 在 direct 模式且参数 ≤8 时把 `mov rsp,<伪栈>` 插到 syscall 前，
+    栈顶放 `BaseThreadInitThunk+0x14`、链尾 `RtlUserThreadStart+0x21`，
+    第 5~8 参数复制到伪栈 `+0x28`。indirect 刻意不套（返回地址本就该落在 ntdll 内）
+  - `core/evasion/modhide_windows.go`：睡眠窗口内把本模块从 PEB 三条链表摘掉，
+    `SleepMask` 醒来挂回；挂回前校验邻居指针，被人动过就退化为挂表尾（绝不硬写）。
+    门控 `config.HostEvasionEnabled()`（ETW∥AMSI∥syscall），默认全关
+  - **修掉一个静默失效**：`ParseSyscallStub` 写死 syscall 偏移 8，Win11 24H2 的函数体
+    里它在 0x12（多了 `test [0x7ffe0308],1` + `jne` 的 CET 分支），导致所有 Nt\* 解析
+    失败、syscall 模式静默退回 kernel32 —— 即 P0 的注入链 syscall 化在 24H2 上没生效。
+    改为扫描 `0F 05`，实机对每个 Nt\* 断言 + 一次真进内核
+  - **Ekko 归档为不可做**：Go runtime 常驻线程会执行被加密的代码段；`SuspendThread`
+    方案会因 mheap/mspan 锁与 GC safepoint 死锁。理由与替代方案见 `docs/OPSEC.md` §3
+  - 7 项伪栈单测（含实机 6 参数 syscall 往返、与直连结果比对、16 并发）、
+    6 项摘链单测（含实机 Toolhelp 快照"摘链后看不到/挂回后看得到"）、
+    2 项接线棘轮、3 项实机 ntdll 解析回归；**未在真实 EDR 主机上验证**
+- **已完成（2026-10-20，P3）**：ETW/AMSI 扩面、unhook 重做、PPID 伪造、BlockDLLs
+  - `core/evasion/evasion.go`：ETW patch 5 个导出（`EtwEventWrite`/`Ex`/`Full`/`String`/
+    `Transfer`）、AMSI 2 个入口（`AmsiScanBuffer`/`AmsiScanString`），统一返回
+    `STATUS_SUCCESS`（旧实现裸 `ret`），`VerifyPatch` 读回校验
+  - `core/evasion/pe_image.go` + `unhook_windows.go`：解析 PE 节表、按 `PointerToRawData`
+    定位函数体、恢复 ntdll/kernel32/kernelbase **全部可执行节**且只写差异字节。
+    修掉两个真 bug：RVA 当文件偏移（会写坏代码段）、只恢复 16 字节
+  - `core/commands/procattr_windows.go`：`PROC_THREAD_ATTRIBUTE_PARENT_PROCESS`（同会话
+    explorer）+ `PROC_THREAD_ATTRIBUTE_MITIGATION_POLICY`（BlockDLLs），接入
+    `Run`/`Execute`/`ExecuteFile`/`hollow`；`conpty`/`hvnc`/`privesc` 刻意不接
+  - **两个"假生效"陷阱（都有测试兜底）**：PPID 属性在 x64 上吃 HANDLE 而非 PID
+    （传 PID 分别报 `ERROR_BAD_LENGTH` / `ERROR_INVALID_HANDLE`）；BlockDLLs 常量是
+    高 32 位第 12 位，写错位时 `Update` 成功、子进程照常创建、策略读回为 0
+  - 6 项 PE 解析单测、4 项 ETW/AMSI 单测、4 项 unhook 实机单测（种假 hook 后抹掉）、
+    6 项 PPID/BlockDLLs 实机单测（读回 EPROCESS 父字段与签名策略位）+ 1 项接线棘轮；
+    **未在真实 EDR 主机上验证**
+- **已完成（2026-10-20，P4）**：对抗能力逐项开关（生成期 + 运行期）+ 前端面板
+  - 生成期占位符 4 → 9（新增 `SLEEP_MASK_HIDE` / `STACK_SPOOF` / `PPID_SPOOF` /
+    `BLOCK_DLLS` / `UNHOOK_ON_START`），缺省全关；`pkg/api/opsec_params.go` 统一
+    归一化 + 校验（非法值、平台不可能组合直接 400 而不是静默关掉）
+  - 运行期 `EVASION=135`：`evasion [status|all on|all off|on <key>|off <key>|reset]`，
+    覆盖只在内存、三态语义；编译期关 = 硬关闭（`on` 被拒并说明原因）；
+    `syscallMode` 不提供运行期切换（trampoline 按模式生成，见 OPSEC §3）
+  - 细粒度门控：`SleepMaskHideEnabled`/`StackSpoofEnabled`/`PpidSpoofEnabled`/
+    `BlockDLLsEnabled`/`UnhookOnStartEnabled`，全部经 `EvasionEnabled()` 读运行期值；
+    摘链不再被 ETW patch 顺带打开
+  - 服务端 `config.opsec.*`（11 字段）团队级默认，回落链「请求 → 配置 → 内置默认」
+  - 前端：生成期「对抗能力」面板（9 项 + 3 预设 + 置灰原因）、会话内
+    「Evasion Switches」面板；`opsecPresets.test.ts` 13 项 + `payloadUtil.test.ts` 追加，
+    techdebt 棘轮禁止 `isZh ?` 与 `as any`
+  - 测试：客户端 8 项能力表/覆盖 + 9 项命令单测 + 2 项接线棘轮，服务端 8 项归一化 +
+    3 项占位符替换 + 4 项配置校验 + 4 项命令表；前端 30 files / 335 tests 全绿
+  - **注意**：新客户端源码含 5 个新占位符字面量，P4 之前的模板生成的载荷会
+    fail-closed 拒绝启动 —— **必须全量重建 178 个模板**后才能上线
+- **历史核查记录（2026-10-19，已被上面 P2 结论取代，留作对照）**：三个子项当时都卡在
+  "需要实机 / 超大改动"：
   - **(a)** 现有 mask 已遮蔽会话密钥 / 上一把密钥 / 主密钥 / 盐 / AEAD 缓存
     （`core/encrypt/encrypt.go` 的 `MaskForSleep`），缺的是"加密自身镜像 + ROP 定时器还原"。
     **为什么不能盲写**：加密进程自身镜像一旦范围或时机算错，症状就是进程直接崩
     —— 没有 Windows 实机验证就提交，等于交付一个可能自杀的 sleep mask。
+    → 2026-10-20 结论：不是"没验证"，而是**在 Go 上做不到**（见上条 Ekko 归档）。
   - **(b)** 调用栈伪造**完全未实现**（现有 `hide_linux.go` 只是 argv[0] 伪装，属另一件事）。
     需要在 Windows 下构造合法返回地址链，必须实机验证。
+    → 2026-10-20：direct syscall 路径已实现（`core/evasion/spoof*.go`），实机验证通过。
   - **(c)** 主密钥目前是**明文 ASCII 按固定偏移 patch 进二进制**
     （`pkg/delivery/payload.go` 的 `LISTENER_MASTER_KEY_*` 占位符等长替换）。
     改成"首连时派生"要在**两端 13 种传输的首包**里插入 X25519 临时交换，服务端还要为
     轮询型传输缓存每个 beacon 的临时密钥直到会话建立 —— 这是一次协议迁移（XL），
     且必须用真实载荷端到端跑通才算数。
-- **建议顺序**：先在授权 Windows VM 上做 (a)/(b)；(c) 单独作为一次协议迁移排期
+- **建议顺序**：先在授权 Windows VM 上做 (c) 与三平台实机验证；(a)/(b) 已按上面结论处理
 
 ### P1 —— 明显落后现代 C2
 

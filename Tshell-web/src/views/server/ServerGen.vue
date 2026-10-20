@@ -425,6 +425,21 @@
               </div>
             </el-form-item>
           </div>
+
+          <!-- OPSEC 对抗开关（生成期）：stageless / dll / listen / dlllisten 四个载荷类型共用 -->
+          <el-collapse v-if="opsecTabActive" v-model="opsecOpen" class="sg-opsec-collapse">
+            <el-collapse-item :title="i18nStore.tl('OPSEC 对抗开关（生成期编译进载荷）', 'OPSEC evasion switches (compiled into the payload)')" name="opsec">
+              <OpsecToggles v-model="opsecForm" :os-type="opsecClient.os" :arch-type="opsecClient.arch" />
+              <div class="hint-text" style="margin-top: 8px">
+                {{
+                  i18nStore.tl(
+                    '开关会被写进载荷占位符（等长替换）。运行期可用 evasion 命令临时覆盖——但编译期关掉的能力无法在运行期打开。',
+                    'Switches are written into payload placeholders (fixed-length replacement). The evasion command can override them at runtime, but capabilities disabled at build time cannot be enabled later.',
+                  )
+                }}
+              </div>
+            </el-collapse-item>
+          </el-collapse>
         </el-form>
 
         <!-- 投递（合并原 站点管理 / 站点克隆 / 文件托管 / 投递日志） -->
@@ -478,6 +493,8 @@ import HtaAttackDialog from '@/layout/Dialogs/Payloads/HtaAttackDialog.vue';
 import OfficeMacroDialog from '@/layout/Dialogs/Payloads/OfficeMacroDialog.vue';
 import WindowsExeDialog from '@/layout/Dialogs/Payloads/WindowsExeDialog.vue';
 import WindowsExeStagelessDialog from '@/layout/Dialogs/Payloads/WindowsExeStagelessDialog.vue';
+import OpsecToggles from '@/components/Opsec/OpsecToggles.vue';
+import { defaultOpsecForm, toGenServerBody, type OpsecForm } from '@/components/Opsec/opsecPresets';
 
 const i18nStore = useI18nStore();
 const isZh = computed(() => i18nStore.isZh);
@@ -576,6 +593,27 @@ const dllClientTypes = [
   { value: 'windows_amd64', label: 'windows_amd64', os: 'windows', arch: 'amd64' },
   { value: 'windows_i386', label: 'windows_i386', os: 'windows', arch: '386' },
 ];
+
+// ---- OPSEC 生成期开关（P4）----
+// 只在"直接生成完整客户端"的四个页签出现：stage/shellcode 走 stager 管线，
+// 不消费这些占位符（勾了也没用，所以干脆不显示）。
+const OPSEC_TABS = ['stageless', 'dll', 'listen', 'dlllisten'];
+const opsecTabActive = computed(() => OPSEC_TABS.includes(activeTab.value));
+const opsecOpen = ref('');
+const opsecForm = ref<OpsecForm>(defaultOpsecForm());
+// 当前页签实际可选的客户端类型（与 handleGenerate 里的取值口径一致）
+const opsecClient = computed(() => {
+  const list =
+    activeTab.value === 'dlllisten'
+      ? dllClientTypes
+      : activeTab.value === 'listen'
+        ? listenClientTypes
+        : activeTab.value === 'dll'
+          ? dllClientTypes
+          : clientTypes;
+  const hit = list.find((c) => c.value === formData.clientType);
+  return hit || { os: 'windows', arch: 'amd64' };
+});
 
 // 与后端 StageShellCodeGen / DynamicStageShellCodeGen 对齐：exe/bin/hex/c/raw
 const shellcodeFormats = [
@@ -904,6 +942,8 @@ const handleGenerate = async () => {
         pass: formData.pass,
         vkey: finalVkey,
         encryptSalt: finalEncryptSalt,
+        // OPSEC 生成期开关：面板里的值显式发送（空值=跟随服务端 opsec 默认）
+        ...toGenServerBody(opsecForm.value, selectedClient.os, selectedClient.arch),
       };
       if (isListen) {
         requestParams.listener = `${formData.listenProtocol || 'tcp_forward'}://${formData.listenAddress || '0.0.0.0'}:${formData.listenPort || '80'}`;
@@ -931,6 +971,8 @@ const handleGenerate = async () => {
         listener: formData.listener,
         pass: formData.pass,
         format: 'dll',
+        // OPSEC 生成期开关（dll 页签同样适用）
+        ...toGenServerBody(opsecForm.value, selectedClient.os, selectedClient.arch),
       });
       fileName = `dll_stageless_${selectedClient.label}.dll`;
     } else if (activeTab.value === 'stage') {
@@ -1145,6 +1187,24 @@ const refreshAddress = () => {
   gap: 8px;
   padding-top: 16px;
   border-top: 1px solid var(--cs-border);
+}
+
+/* OPSEC 开关折叠区（与载荷表单同宽，避免面板挤在右侧） */
+.sg-opsec-collapse {
+  margin-top: 8px;
+  border: 1px solid var(--cs-border);
+  border-radius: 8px;
+  background: var(--cs-hover);
+  overflow: hidden;
+}
+
+.sg-opsec-collapse :deep(.el-collapse-item__header) {
+  padding: 0 12px;
+  font-size: 13px;
+}
+
+.sg-opsec-collapse :deep(.el-collapse-item__content) {
+  padding: 8px 12px 12px;
 }
 
 .listener-select {

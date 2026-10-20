@@ -98,6 +98,33 @@ func TestParseSyscallStub(t *testing.T) {
 	}
 }
 
+// TestParseSyscallStubWin11_24H2 24H2 起 ntdll 函数体多了 SharedUserData 判断，
+// syscall 指令不在固定偏移 8。写死偏移会让所有系统调用静默解析失败（P2 实机发现）。
+func TestParseSyscallStubWin11_24H2(t *testing.T) {
+	const addr = uintptr(0x7FFE00001000)
+	// 实测 NtClose 函数体（Windows 11 24H2）
+	body := []byte{
+		0x4C, 0x8B, 0xD1, // mov r10, rcx
+		0xB8, 0x0F, 0x00, 0x00, 0x00, // mov eax, 0xf
+		0xF6, 0x04, 0x25, 0x08, 0x03, 0xFE, 0x7F, 0x01, // test byte ptr ds:0x7ffe0308, 1
+		0x75, 0x03, // jne +3
+		0x0F, 0x05, // syscall  ← 偏移 0x12
+		0xC3,       // ret
+		0xCD, 0x2E, // int 2eh（老式路径）
+		0xC3, // ret
+	}
+	ssn, syscallAddr, err := ParseSyscallStub(body, addr)
+	if err != nil {
+		t.Fatalf("24H2 布局应能解析: %v", err)
+	}
+	if ssn != 0x0F {
+		t.Fatalf("ssn = %#x，期望 0x0F", ssn)
+	}
+	if syscallAddr != addr+0x12 {
+		t.Fatalf("syscall 指令地址 = %#x，期望 %#x", syscallAddr, addr+0x12)
+	}
+}
+
 // TestParseSyscallStubRejectsHooked 被 hook 的函数体必须被识别（前缀被改成 jmp）
 func TestParseSyscallStubRejectsHooked(t *testing.T) {
 	const addr = uintptr(0x7FFE00001000)

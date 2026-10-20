@@ -311,6 +311,9 @@ export default {
       reconnectBaseDelay?: string, reconnectMaxRetries?: string, injectTech?: string,
       masqueradeName?: string, quietMode?: string, etwPatch?: string, amsiBypass?: string,
       syscallMode?: string, autoDelete?: string, userAgent?: string, profileName?: string,
+      // P0–P3 对抗能力的细分开关（见 docs/OPSEC.md §8 开关矩阵）
+      sleepMaskHide?: string, stackSpoof?: string, ppidSpoof?: string, blockDLLs?: string,
+      unhookOnStart?: string,
       // 多传输端点列表（scheme://addr,...）：非空时后端使用 multi 模板
       endpoints?: string,
     }){

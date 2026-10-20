@@ -3,7 +3,9 @@ package config
 import (
 	"BackendTemplate/pkg/errors"
 	"BackendTemplate/pkg/security"
+	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -313,5 +315,80 @@ func applyConfigUpdates(config *Config, updates map[string]interface{}) error {
 		}
 	}
 
+	// 载荷 OPSEC 默认值（生成期开关的团队级默认）。
+	// 只接受 "1"/"0"/合法枚举/空串，非法值直接拒绝——写进配置的非法值会在
+	// 每次生成载荷时被 resolveOpsec 二次校验并 400，但在这里挡掉能给出更早的提示。
+	if opsec, ok := updates["opsec"].(map[string]interface{}); ok {
+		if err := applyOpsecUpdates(&config.Opsec, opsec); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// applyOpsecUpdates 逐字段更新 opsec 段（字段名与 OpsecConfig 的 json tag 一致）。
+func applyOpsecUpdates(o *OpsecConfig, m map[string]interface{}) error {
+	onOff := map[string]*string{
+		"etw_patch":       &o.ETWPatch,
+		"amsi_bypass":     &o.AmsiBypass,
+		"auto_delete":     &o.AutoDelete,
+		"quiet_mode":      &o.QuietMode,
+		"sleep_mask_hide": &o.SleepMaskHide,
+		"stack_spoof":     &o.StackSpoof,
+		"ppid_spoof":      &o.PpidSpoof,
+		"block_dlls":      &o.BlockDLLs,
+		"unhook_on_start": &o.UnhookOnStart,
+	}
+	for field, dst := range onOff {
+		v, ok := m[field]
+		if !ok {
+			continue
+		}
+		s, ok := v.(string)
+		if !ok {
+			return fmt.Errorf("opsec.%s 必须是字符串 \"1\"/\"0\"", field)
+		}
+		s = strings.ToLower(strings.TrimSpace(s))
+		switch s {
+		case "", "1", "0":
+			*dst = s
+		default:
+			return fmt.Errorf("opsec.%s 取值非法: %q（仅接受 1/0，空表示未配置）", field, s)
+		}
+	}
+	enums := map[string]struct {
+		dst    *string
+		values []string
+	}{
+		"syscall_mode": {&o.SyscallMode, []string{"none", "direct", "indirect"}},
+		"inject_tech":  {&o.InjectTech, []string{"auto", "ntc", "apc", "crt"}},
+	}
+	for field, spec := range enums {
+		v, ok := m[field]
+		if !ok {
+			continue
+		}
+		s, ok := v.(string)
+		if !ok {
+			return fmt.Errorf("opsec.%s 必须是字符串", field)
+		}
+		s = strings.ToLower(strings.TrimSpace(s))
+		if s == "" {
+			*spec.dst = ""
+			continue
+		}
+		valid := false
+		for _, cand := range spec.values {
+			if s == cand {
+				valid = true
+				break
+			}
+		}
+		if !valid {
+			return fmt.Errorf("opsec.%s 取值非法: %q（仅接受 %s）", field, s, strings.Join(spec.values, "/"))
+		}
+		*spec.dst = s
+	}
 	return nil
 }

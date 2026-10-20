@@ -77,29 +77,6 @@
               </el-select>
             </div>
             <div class="cs-form-row">
-              <label class="cs-form-label">{{ i18nStore.tl('ETW 补丁', 'ETW patch') }}</label>
-              <el-switch v-model="form.etwPatch" size="small" />
-              <span class="cs-adv-unit" style="color: var(--cs-warning)">{{ i18nStore.tl('⚠️ 需虚拟机测试, 关键进程禁用', '⚠️ VM only, critical PIDs blocked') }}</span>
-            </div>
-            <div class="cs-form-row">
-              <label class="cs-form-label">{{ i18nStore.tl('AMSI 绕过', 'AMSI bypass') }}</label>
-              <el-switch v-model="form.amsiBypass" size="small" />
-              <span class="cs-adv-unit" style="color: var(--cs-warning)">{{ i18nStore.tl('⚠️ 需虚拟机测试', '⚠️ VM only') }}</span>
-            </div>
-            <div class="cs-form-row">
-              <label class="cs-form-label">{{ i18nStore.tl('Syscall 模式', 'Syscall mode') }}</label>
-              <el-select v-model="form.syscallMode" size="small" style="width: 150px">
-                <el-option :label="i18nStore.tl('常规 ntdll 调用', 'Normal (ntdll)')" value="none" />
-                <el-option :label="i18nStore.tl('直接 syscall (仅x64)', 'Direct syscall (x64)')" value="direct" />
-                <el-option :label="i18nStore.tl('间接 syscall (仅x64)', 'Indirect syscall (x64)')" value="indirect" />
-              </el-select>
-            </div>
-            <div class="cs-form-row">
-              <label class="cs-form-label">{{ i18nStore.tl('上线自动删自身文件', 'Auto-delete on start') }}</label>
-              <el-switch v-model="form.autoDelete" size="small" />
-              <span class="cs-adv-unit">{{ i18nStore.tl('改名后立即删除自身(进程保持在线)', 'unlink self after rename (stay online)') }}</span>
-            </div>
-            <div class="cs-form-row">
               <label class="cs-form-label">{{ i18nStore.tl('伪装修饰名', 'Masquerade') }}</label>
               <el-input v-model="form.masqueradeName" size="small" style="width: 130px" :placeholder="i18nStore.tl('留空自动生成', 'auto if empty')" />
               <span class="cs-adv-unit">{{ i18nStore.tl('持久化/管道/文件前缀', 'persist/pipe/file prefix') }}</span>
@@ -111,6 +88,14 @@
               </label>
             </div>
           </div>
+
+          <!-- P0–P3 对抗能力开关：统一面板，逐项标注生成期/运行期 -->
+          <OpsecToggles
+            v-model="opsec"
+            os-type="windows"
+            :arch-type="form.x64 ? 'amd64' : '386'"
+          />
+
           <div class="cs-adv-hint">
             {{ i18nStore.tl('OPSEC 提示：上线密码通过命令行参数传入（进程命令行可见）；不设密码则无参数启动更隐蔽。', 'OPSEC: the beacon password is passed via command-line (visible in process args); no password means parameter-less launch (more stealthy).') }}
           </div>
@@ -141,6 +126,8 @@ import { ElMessage } from 'element-plus'
 import { useI18nStore } from '@/stores/i18n'
 import ChoosePayloadDialog, { type ListenerOption } from '../ChoosePayloadDialog.vue'
 import { generateClientBinary, extractBlobError } from './payloadUtil'
+import OpsecToggles from '@/components/Opsec/OpsecToggles.vue'
+import { defaultOpsecForm, toGenServerBody, type OpsecForm } from '@/components/Opsec/opsecPresets'
 
 const i18nStore = useI18nStore()
 const isZh = computed(() => i18nStore.isZh)
@@ -173,15 +160,14 @@ const form = reactive({
   reconnectBaseDelay: 0,
   reconnectMaxRetries: 0,
   injectTech: '',
-  etwPatch: false,
-  amsiBypass: false,
-  syscallMode: 'none',
-  autoDelete: true,
   masqueradeName: '',
   quietMode: true,
   // 多传输端点（可选）：留空=单传输；填写后客户端按顺序在运行时切换传输
   endpoints: '',
 })
+
+// P0–P3 对抗能力开关（统一面板；生成期决定是否编进载荷）
+const opsec = ref<OpsecForm>(defaultOpsecForm())
 
 function onChooseListener(l: ListenerOption) {
   form.listener = l.name
@@ -197,10 +183,12 @@ async function handleGenerate() {
   }
   generating.value = true
   try {
+    const arch = form.x64 ? 'amd64' : '386'
+    const ops = toGenServerBody(opsec.value, 'windows', arch)
     const ok = await generateClientBinary({
       listener: form.listener,
       osType: 'windows',
-      archType: form.x64 ? 'amd64' : '386',
+      archType: arch,
       pass: form.pass,
       format: form.output as 'exe' | 'dll',
       vkey: form.vkey || undefined,
@@ -211,10 +199,16 @@ async function handleGenerate() {
       masqueradeName: form.masqueradeName.trim() || undefined,
       endpoints: form.endpoints.trim() || undefined,
       quietMode: form.quietMode ? '1' : '0',
-      etwPatch: form.etwPatch ? '1' : '0',
-      amsiBypass: form.amsiBypass ? '1' : '0',
-      syscallMode: form.syscallMode,
-      autoDelete: form.autoDelete ? '1' : '0',
+      // OPSEC 开关：逐项来自统一面板（曾经这里手写 4 个开关，blob 那层却丢字段）
+      etwPatch: ops.etwPatch,
+      amsiBypass: ops.amsiBypass,
+      syscallMode: ops.syscallMode,
+      autoDelete: ops.autoDelete,
+      sleepMaskHide: ops.sleepMaskHide,
+      stackSpoof: ops.stackSpoof,
+      ppidSpoof: ops.ppidSpoof,
+      blockDLLs: ops.blockDLLs,
+      unhookOnStart: ops.unhookOnStart,
     })
     if (ok) {
       ElMessage.success(isZh.value ? `${form.output.toUpperCase()} 无阶段载荷生成成功` : `Stageless ${form.output.toUpperCase()} payload generated`)

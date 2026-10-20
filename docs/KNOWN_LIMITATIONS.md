@@ -4,8 +4,24 @@
 
 ## 1. inject 隐蔽注入
 - 现状：✅ 已实现（阶段三-1）：最小权限句柄 + RW 写入→执行前 RX + 写后校验 + LastError 细节。
-- 遗留：间接 syscall（NtCreateThreadEx 直调）未做，CreateRemoteThread 仍可被检测。进一步隐蔽需替换为线程劫持/APC 注入。
-- 状态：✅（核心）/ ⏳（深度隐蔽）
+- 已实现（2026-10-20，OPSEC P0）：
+  - **direct/indirect syscall 可用**（`core/evasion/syscall.go`，`SYSCALL_MODE_PLACEHOLDER`
+    取 direct/indirect）。**默认仍是 none**（服务端默认替换为 none）—— 要用必须在生成
+    载荷时显式选择，不要按"已经开启"做假设。
+  - 注入链的分配/写入/改保护改走 `NtAllocateVirtualMemory` / `NtWriteVirtualMemory` /
+    `NtProtectVirtualMemory` / `NtOpenProcess`（`core/commands/remotemem_windows.go`），
+    逐项失败回退宿主 API；`NtCreateThreadEx` 已是默认首选，`CreateRemoteThread`
+    只在显式 `crt` 或整链回退时出现。
+  - 进程镂空的镜像内存不再申请 RWX：先 RW 写入，再把**可执行节**收紧为 RX
+    （`hollow_windows.go` 的 `hardenImage`）。非可执行节保持 RW 是 loader 的硬需求
+    （ResumeThread 之后它要写 IAT 与全局），理由写在函数注释里。
+- 遗留：
+  - APC 分发仍用 kernel32 `QueueUserAPC`（未接 `NtQueueApcThread`）；`CreateRemoteThread`
+    回退路径仍在。
+  - 镂空"需重定位"路径（拿不到 preferred base 且镜像带 `.reloc`）可执行节仍是 RWX，
+    回包诊断会显式标 `prot=[...RWX(重定位期)]`，不是静默降级。
+  - 以上改动**未在真实目标上验证**（本机只有单测 + 真实 kernel32 往返）。
+- 状态：✅（核心 + syscall 接线）/ ⏳（APC 与实机验证）
 
 ## 2. BOF token API
 - 现状：✅ 已实现（阶段三-2）：BeaconIsAdmin（TokenElevation）、BeaconUseToken（ImpersonateLoggedOnUser）、BeaconRevertToken（RevertToSelf）。
@@ -301,3 +317,121 @@
   （当前/上一/下一密钥）与轮换参数，密钥管理页保留"强制轮换"与轮换配置。
 - 若要恢复"让客户端确认自身密钥状态"：需客户端补常量+case、服务端改用原始命令发送方式、
   并补回包消费与前端展示 —— 属新功能而非修 bug。
+
+## 17. 清理现场（cleanup）与自更新残留
+- 现状：✅ 已实现（2026-10-20，P1）
+  - 客户端命令 `cleanup [all|persist|files|uac|wmi]`（cmdType 134），逐条回执
+    ✅/⚠️/⏭️ 并给汇总计数；全部 best-effort，只有范围串非法才返回错误。
+  - 覆盖：Windows 注册表 Run、计划任务、启动文件夹；Linux crontab 与 shell rc；
+    macOS launchd plist（LaunchAgents/LaunchDaemons）；`files` 清 `<exe>.old` 与
+    `%TEMP%\~*_update_*.exe|.dll`；`uac`/`wmi` 复用已有的
+    `uacCleanupReport`/`wmiPersistRemove`。
+  - 自更新残留：新映像启动后 `go commands.PurgeUpdateResidue()` 后台重试删除
+    （40×500ms），不需要操作员记得发 cleanup。
+- 判据与代价：**按"对象指向本程序路径"识别，不按名字**（名字是编译期 masquerade，
+  运行期无法反推）。保守取向是宁可漏删不误删：`Author` 字段里的同路径不认、
+  计划任务名在控制台转 GBK 时退化为"值以 `\` 开头且非运行命令行"、
+  启动文件夹只在同名或同大小同扩展名时删。
+- 遗留：
+  - **未实机验证**：注册表/计划任务/cron/launchd 的真实卸载只在单测里验过判定逻辑，
+    平台副作用（`reg delete`/`schtasks /delete`/`crontab -`/`launchctl unload`）
+    没在真机上跑过；`reg query`/`schtasks` 的中文输出格式是按已知样例写的，
+    系统语言/版本差异可能让匹配落空（落空只会少删，不会误删）。
+  - 只管本程序留下的东西：不删事件日志、不删 Prefetch、不还原 AMSI/ETW patch
+    （进程退出即恢复）。
+- 状态：✅（实现 + 单测）/ ⏳（三平台实机验证）
+
+## 18. 内存 OPSEC 的 P2（调用栈伪造 / 模块摘链）
+- 现状：✅ 已实现（2026-10-20，P2），全部只在 `windows/amd64` 生效
+  - **调用栈伪造**：`evasion.Syscall()` 在 direct 模式下把 `mov rsp,<伪栈>` 插到
+    syscall 前，伪栈顶放 `BaseThreadInitThunk+0x14`、链尾 `RtlUserThreadStart+0x21`，
+    第 5~8 个参数从真栈复制到伪栈 `+0x28`；醒来 `mov rsp,rbx` 复位。
+    桩按 SSN 惰性生成（RW→RX），带缓存与并发去重。
+  - **睡眠期模块摘链**：`SleepMask` 期间把本模块从 PEB 三条链表摘掉，醒来挂回；
+    门控是 `config.HostEvasionEnabled()`（ETW patch ∥ AMSI bypass ∥ syscall 非 none），
+    默认全关 ⇒ 默认不摘链。
+  - **Win11 24H2 ntdll 解析修复**：函数体里 syscall 指令在偏移 0x12（老布局 8），
+    24H2 上原实现会让**所有** Nt\* 解析失败、syscall 模式静默退化成 kernel32。
+- 为什么不是 Ekko：Ekko 要加密自身 `.text/.rdata`，前提是"能停住所有线程"。Go 的
+  常驻 sysmon/GC/信号线程会在加密窗口执行被加密的字节（必崩）；`SuspendThread`
+  方案会因 mheap/mspan 锁或 GC safepoint 死锁；`runtime.stopTheWorld` 不对外暴露。
+  **所以这不是"P2 没做完"，是这条路在 Go 上不成立**（详见 `docs/OPSEC.md` §3）。
+- 遗留（如实列出，不当已完成）：
+  - **只覆盖 `Syscall()` 一条路径**：`CreateProcessW`/`VirtualAllocEx`/`CreateRemoteThread`
+    等直接调用仍长在 Go 线程栈上，回溯会看到 `runtime.asmcgocall` 一类帧。
+  - **indirect 模式不套伪栈**：它的返回地址本就落在 ntdll 内，枢轴反而制造
+    "返回地址不在模块内"的破绽。
+  - **摘链只动 PEB 链表，不动 VAD**：`EnumProcessModules`/`Toolhelp` 看不到，
+    但按内存区域扫（pe-sieve 一类）仍能看到文件映射的镜像页。
+  - **没有 EDR 实机对抗**：以上全部只在开发机验证（含 Toolhelp 往返与真 syscall），
+    没有在开了 CrowdStrike/Defender ATP 的主机上跑过；伪栈能不能骗过具体产品的
+    回溯器，只有实测能回答。
+  - 摘链依赖固定偏移（`PEB+0x18`、`LDR+0x10/0x20/0x30`、entry `+0x30` DllBase），
+    这些在 Win10/11 x64 上稳定，但不是文档化契约，未来版本若变会**失败而非崩溃**
+    （`findSelfEntry` 找不到就返回错误，不摘）。
+- 状态：✅（实现 + 实机单测）/ ⏳（EDR 对抗验证）
+
+---
+
+## 19. 内存 OPSEC 的 P3（ETW/AMSI 覆盖面 / unhook / PPID / BlockDLLs）
+
+**现状**：四项都已实现并带实机单测（2026-10-20），但都只有"机制正确"级别的证据。
+
+- **已完成**
+  - ETW patch 扩到 5 个导出（`EtwEventWrite`/`Ex`/`Full`/`String`/`Transfer`），
+    统一返回 `STATUS_SUCCESS`（旧实现是裸 `ret`，返回值是垃圾）；patch 后 `VerifyPatch` 读回。
+  - AMSI patch 扩到 `AmsiScanBuffer` + `AmsiScanString`，两者都返回 `E_INVALIDARG`。
+  - unhook 改为解析 PE 节表（**仅 windows/amd64**，386/arm64 返回明确"不支持"）：按 `PointerToRawData` 找函数体，恢复 ntdll / kernel32 /
+    kernelbase 的**全部可执行节**，且只写差异字节。修掉了两个真 bug（RVA 当文件偏移、
+    只恢复 16 字节）。
+  - PPID 伪造：`PROC_THREAD_ATTRIBUTE_PARENT_PROCESS` 指同会话 explorer.exe。
+  - BlockDLLs：`PROC_THREAD_ATTRIBUTE_MITIGATION_POLICY` 只允许微软签名 DLL。
+  - 覆盖路径：`Run`（shell）、`Execute`、`ExecuteFile`、`hollow`。
+- **遗留**
+  - **ETW 仍有绕过不了的路径**：`NtTraceEvent` 直调、ETW TI（威胁情报）provider
+    走内核回调，用户态 patch 无效；`.NET` 的 `EventSource` 可能缓存函数指针，
+    patch 时机晚于缓存就失效。
+  - **影子 hook 清不掉**：unhook 对照的是磁盘文件字节。若 EDR 在 ntdll 里改成
+    "跳去自己的 trampoline 再跳回"，内存与磁盘字节确实会不同（能恢复）；但若它把
+    磁盘副本也改了、或在映射后才挂，这条路径就无效。内核态 hook 更无解。
+  - **PPID 只改创建时刻的父字段**：句柄继承、审计日志（4688 的 CreatorProcessName
+    来自真实调用者）、ETW provider 里的真实父进程都可能暴露。
+  - **BlockDLLs 有兼容性代价**：只约束 DLL 加载签名，不清理已加载模块；对输入法、
+    Shell 扩展、部分游戏反作弊有破坏性，因此 `conpty` / `hvnc` / `privesc` 三条
+    交互式路径**刻意不接**（`TestSpawnPathsUseChildAttrs` 里注明了原因）。
+  - **没有 EDR 实机对抗**：全部只在开发机（Win11 24H2）验证。
+- 状态：✅（实现 + 实机单测）/ ⏳（EDR 对抗验证）
+
+## 20. 对抗能力开关（P4，生成期 / 运行期两层）
+
+**现状**：9 项能力可以逐项开关，生成期 9 项（编译期占位符）、运行期 7 项（`evasion`
+命令）；前端有生成期面板与会话内面板（2026-10-20）。
+
+- **已完成**
+  - 生成期占位符：`ETW_PATCH` / `AMSI` / `SYSCALL_MODE` / `AUTO_DELETE`（原有）+
+    `SLEEP_MASK_HIDE` / `STACK_SPOOF` / `PPID_SPOOF` / `BLOCK_DLLS` /
+    `UNHOOK_ON_START`（新增），缺省全关。
+  - 运行期：`EVASION=135`，`evasion [status|all on|all off|on <key>|off <key>|reset]`，
+    覆盖存在 beacon 进程内存里，键不存在 = 用编译期值（三态，能区分"运行期关掉"与
+    "本来就没开"）。
+  - 团队级默认：服务端 `config.opsec.*` 11 个字段，回落链「请求 → 配置 → 内置默认」。
+  - 前端：生成期「对抗能力」面板（9 项 + 3 套预设 + 置灰原因）、会话内
+    「Evasion Switches」面板；`opsecPresets.test.ts` 13 个单测 + techdebt 棘轮
+    （禁止 `isZh ?` 与 `as any`）。
+- **遗留**
+  - **运行期覆盖不持久**：重连/重启回到生成期值。刻意如此（见 OPSEC §6），但意味着
+    "这台机器现在处于什么状态"只能现场 `evasion status` 问，服务端侧没有镜像。
+  - **编译期关就是硬关**：运行期 `on` 不生效，只回执原因。想开必须重新生成载荷 ——
+    否则载荷里得常驻全部代码路径，隐蔽性和体积都白给。
+  - **`syscallMode` 不提供运行期切换**：trampoline 按模式生成、SSN 建表时固化，
+    切换要全量重建且失败即静默退化成 userland hook（OPSEC §3 有完整论证）。
+  - **启动期能力关不掉**：`etw`/`amsi`/`unhook` 的运行期 `off` 只阻止后续动作，
+    不撤销已写入的补丁；撤销需要保留原始字节并处理并发调用。
+  - **旧模板会 fail-closed**：P4 之前构建的模板里没有 5 个新占位符，生成的载荷启动时
+    `placeholderChecks()` 命中残留并拒绝运行（报错要求重建模板）。全量重建 178 个
+    模板之前，只有当前重建过的那几个传输能用。
+  - **`autoDelete` 两侧默认值不同**：服务端内置默认 `1`、客户端未 patch 时读 `false`；
+    现在四个生成入口都显式发送以消除歧义，但"绕过前端直接调 GenServer 且不带该字段"
+    仍会拿到服务端默认 `1`。
+  - **没有实机回归**：三平台持久化卸载、真实 EDR 下的开关效果均未验证。
+- 状态：✅（实现 + 单测）/ ⏳（全量模板重建、实机回归）

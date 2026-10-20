@@ -60,9 +60,35 @@ ckm.mu.RLock(); cur := ckm.sessionKey; ckm.mu.RUnlock()   // 切片指向的还�
 
 | 项 | 说明 | 为什么现在不做 |
 |---|---|---|
-| Ekko / Foliage 式 mask | 用 ROP gadget 链 + `NtContinue`/定时器在睡眠期加密**自身内存镜像**（含 .text） | Go runtime 无法安全加密自己的代码段（GC/抢占/信号随时会踩到），且这套机制必须在真实 Windows 上调试才能确认稳定 |
-| 调用栈伪造 | 睡眠/敏感调用期间伪造调用栈，规避"返回地址不在 ntdll"一类检查 | 需要汇编级栈构造 + Windows 调试 |
-| 全 syscall 化 | 注入路径的 `VirtualAllocEx`/`WriteProcessMemory`/`CreateRemoteThread` 仍走 kernel32 | 见下节已做的部分 |
+| Ekko / Foliage 式 mask | 用 ROP gadget 链 + `NtContinue`/定时器在睡眠期加密**自身内存镜像**（含 .text） | **已归档为不可做**（2026-10-20）：Go runtime 的 sysmon/GC/信号线程常驻，加密代码段期间它们随时执行被加密字节 → 必崩；`SuspendThread` 方案会因 mheap/mspan 锁与 GC safepoint 死锁；`runtime.stopTheWorld` 不对外暴露 |
+| 全 syscall 化 | `CreateProcessW`/`VirtualAllocEx` 这类直调的调用栈仍长在 Go 线程栈上 | 需 `stdcall` 汇编桩 + 独立线程，属另一个量级；注入/镂空的内存原语已 syscall 化（P0） |
+
+**已做（P2，2026-10-20）**：这两项当时未做的，现在有了能安全落地的版本
+
+- **调用栈伪造（direct syscall 路径）**：`evasion.Syscall()` 在 syscall 前 `mov rsp,<伪栈>`，
+  伪栈顶 `BaseThreadInitThunk+0x14`、链尾 `RtlUserThreadStart+0x21`，第 5~8 参数复制到
+  伪栈 `+0x28`；桩按 SSN 惰性生成 RW→RX。indirect 刻意不套（返回地址本就该在 ntdll 内）。
+  边界：只管 `Syscall()` 这一条路，kernel32 直调的回溯仍能看到 Go 帧。
+- **睡眠期模块摘链**：`SleepMask` 期间把本模块从 PEB 三条链表摘掉，醒来挂回；
+  挂回前校验邻居指针，被改动过就挂表尾。门控 `config.HostEvasionEnabled()`，默认关。
+  边界：不动 VAD，按内存区域扫仍可见镜像页。
+- **Win11 24H2 解析修复**：函数体里 syscall 在偏移 0x12（老布局 8），原实现写死 8，
+  导致 24H2 上所有 Nt\* 解析失败 → syscall 模式静默退回 kernel32。
+
+**已做（P4，2026-10-20）：这些能力现在可以逐项开关**
+
+上面每一项（含 P3 的 ETW/AMSI/unhook/PPID/BlockDLLs）原来都绑在同一个门控
+`HostEvasionEnabled()`（ETW∥AMSI∥syscall≠none）上，勾一个带出一串。现在：
+
+- 生成期：9 个编译期占位符（`ETW_PATCH`/`AMSI`/`SYSCALL_MODE`/`AUTO_DELETE` +
+  `SLEEP_MASK_HIDE`/`STACK_SPOOF`/`PPID_SPOOF`/`BLOCK_DLLS`/`UNHOOK_ON_START`），
+  缺省全关；关掉就是那段代码路径不存在。
+- 运行期：`evasion [status|all on|all off|on <key>|off <key>|reset]`，覆盖只存内存，
+  重连即回到生成期值；编译期关的能力运行期打不开（回执说明原因）。
+- 门控改成细粒度：摘链读 `SleepMaskHideEnabled()`、伪栈读 `SpoofActive()`（还要
+  `syscallMode=direct`）、PPID/BlockDLLs 各自独立，不再被 ETW patch 顺带打开。
+- 完整论证与遗留见 `docs/OPSEC.md` §3 与 `docs/KNOWN_LIMITATIONS.md` §20。
+
 
 ## 6. 本项已完成的 syscall/trampoline 修复
 
@@ -91,4 +117,15 @@ go test ./core/encrypt/ ./core/app/ ./core/evasion/ -race -count=1
 - `TestMaskUnderConcurrency`：4 个 goroutine 并发加解密 + 20 轮遮蔽，`-race` 无竞态、
   解密结果始终正确（这条用例抓到过上面那个锁外使用切片的竞态）；
 - `TestSleepMaskYieldsToActiveKeyUser`：活跃会话的等待被限制在片长量级；
-- `TestBuildTrampoline*` / `TestParseSyscallStub*`：机器码逐字节校验。
+- `TestBuildTrampoline*` / `TestParseSyscallStub*`：机器码逐字节校验（含 24H2 布局）。
+- P2 新增（windows/amd64 实机）：
+  - `TestPrepareTrampolinesResolvesEveryName`：名单里每个 Nt\* 都必须解析到，
+    缺一个就会静默回退 kernel32 —— 这条是 24H2 那个 bug 的回归护栏；
+  - `TestSyscallReachesKernel`：真走 trampoline 进内核（`NtQueryInformationProcess`
+    读本进程 PEB，NTSTATUS=0）；
+  - `TestSpoofAllocatesWithStackArgs`：6 参数 `NtAllocateVirtualMemory` 走伪栈成功，
+    `VirtualQuery` 断分配结果确实是 `PAGE_READWRITE`；
+  - `TestSpoofMatchesUnspoofed`：伪栈与直连 trampoline 的返回一致；
+  - `TestHideModuleDisappearsFromModuleList`：摘链后 `CreateToolhelp32Snapshot`
+    (`TH32CS_SNAPMODULE`) 里**没有**本模块，挂回后又有（这是摘链有没有用的直接判据）；
+  - `TestAttachFallsBackToTailWhenNeighborsChanged`：邻居被改动时挂表尾，不硬写失效指针。

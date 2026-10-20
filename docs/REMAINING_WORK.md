@@ -81,8 +81,13 @@ cd ../Tshell-web; npm ci --legacy-peer-deps; npx vitest run; npm run type-check
 - **心跳默认值对齐**：画像 1000ms 与全局 5000ms 不一致，已统一并加防漂移测试
 
 仍属 OPSEC 未做项（均需实机/排期，详见 `docs/OPSEC.md` §6）：
-主密钥运行时派生（ECDH，XL）、内存镜像加密、调用栈伪造、注入全 syscall 化、
-流量体积整形、审计日志防篡改、`cleanup` 清理现场命令。
+主密钥运行时派生（ECDH，XL）、内存镜像加密、调用栈伪造、APC 分发 syscall 化、
+流量体积整形、审计日志防篡改。
+
+**P0/P1 已完成（2026-10-20）**：注入链分配/写入/改保护 sycall 化（逐项回退）、
+进程镂空 W^X（可执行节 RW→RX）、`cleanup` 清理现场命令（cmdType 134）、
+自更新 `.old` 残留由新映像启动后自动清理。三项都只有单测 + 源码级棘轮，
+**未在真实目标/实机验证**（见 `docs/KNOWN_LIMITATIONS.md` §1、§17）。
 ## 2. BloodHound 采集器（**L**，需域环境）
 
 **现状**：只有 `ad_enum`（命令级 `net` 调用），没有任何 LDAP 采集。
@@ -107,23 +112,84 @@ cd ../Tshell-web; npm ci --legacy-peer-deps; npx vitest run; npm run type-check
 
 ## 3. 内存 OPSEC 三项（**XL**）
 
-现状：sleep mask 只遮蔽**密钥材料**（会话/上一把/主密钥/盐 + AEAD 缓存，
-`implant/core/app/run.go`），不加密自身镜像；无调用栈伪造；主密钥仍是编译期 patch。
+现状：sleep mask 遮蔽密钥材料（会话/上一把/主密钥/盐 + AEAD 缓存，
+`implant/core/app/run.go`）+ 睡眠期模块摘链；direct syscall 路径已布伪栈；
+镜像不加密（Ekko 在 Go 上不可行，见 3.1）；主密钥仍是编译期 patch。
+
+**已完成（2026-10-20，P0）**：注入与镂空的内存原语已接 syscall
+- 新增 `implant/core/commands/remotemem_windows.go`：`NtOpenProcess` /
+  `NtAllocateVirtualMemory` / `NtWriteVirtualMemory` / `NtProtectVirtualMemory` /
+  `NtReadVirtualMemory` / `NtUnmapViewOfSection` / `NtQueryInformationProcess` 优先走
+  trampoline，**逐项**失败回退宿主 API（注入不能因为规避手段缺失而整条失效）
+- 镂空不再申请 `PAGE_EXECUTE_READWRITE`：镜像先 RW、写完把**可执行节**收紧为 RX
+  （`hardenImage`）。非可执行节保持 RW 是 loader 写 IAT/全局的硬需求，理由与唯一例外
+  （需重定位时保留可写）写在函数注释与 `docs/OPSEC.md` §3
+- 14 项单测：路径/顺序/保护参数用假后端钉死，另有一项真实 kernel32 往返 + `VirtualQuery`
+  确认 RX 生效；源码级棘轮防止有人再直接调 `VirtualAllocEx` 等
+- **未实机验证**；APC 分发仍是 `QueueUserAPC`（见 `docs/OPSEC.md` §6）
 
 ### 3.1 Ekko / Foliage 级 sleep mask（需 Windows 实机）
-- 目标：睡眠期加密**自身内存镜像**，用 ROP/定时器（`CreateTimerQueueTimer` +
-  `VirtualProtect`/`NtContinue`）还原
-- 为什么没做：加密范围/时机算错 = 进程自杀，必须在实机（建议授权 VM）反复验证
-- 入口：`implant/core/app/run.go`、新增 `core/sleepmask/`
-- 验收：睡眠期用自写内存扫描器（或 PE-sieve）扫不到 beacon 镜像特征；13 传输回归通过
+- **结论（2026-10-20，P2）：在 Go 上不可行，已归档**
+- 原因（不是排期问题，是机制冲突）：Ekko 要加密自身 `.text/.rdata`，前提是"能停住
+  所有线程"。Go 的 `sysmon`/GC worker/信号线程常驻，加密窗口内随时执行被加密字节
+  → 必崩；改 `SuspendThread` 会因被挂线程持有 `mheap/mspan` 锁或停在 GC safepoint
+  而死锁；`runtime.stopTheWorld` 不对外暴露。
+- 替代（已实现）：睡眠期 **PEB 模块摘链**（`core/evasion/modhide_windows.go`），
+  镜像不加密、只让加载器枚举看不到；门控 `config.HostEvasionEnabled()`，默认关。
+  边界：不动 VAD，按内存区域扫仍可见（见 `docs/KNOWN_LIMITATIONS.md` §18）。
+- 若仍要做真 Ekko：只能改为 C 植入体或 fork 出独立的最小 loader 进程承载 beacon，
+  两者都是换架构级别的决定。
 
-### 3.2 调用栈伪造（需 Windows 实机）
-- 目标：敏感调用（`VirtualAllocEx`/`CreateRemoteThread`）的返回地址指向合法模块
-- 入口：`core/evasion/syscall.go` 的 trampoline（当前已是 RW→RX）
-- 验收：ETW-TI / 栈回溯看不到非模块返回地址；注入链路不回归
+### 3.2 调用栈伪造（**已实现 direct syscall 路径**）
+- 现状（2026-10-20，P2）：`evasion.Syscall()` direct 模式下布伪栈
+  （`BaseThreadInitThunk+0x14` → `RtlUserThreadStart+0x21`，栈传参复制到伪栈 `+0x28`），
+  桩按 SSN 惰性生成 RW→RX。实机测试：6 参数 `NtAllocateVirtualMemory` 走伪栈成功、
+  与直连 trampoline 结果一致、16 goroutine 并发无竞态。
+- 顺带修掉一个真 bug：`ParseSyscallStub` 写死 syscall 偏移 8，在 Win11 24H2 上
+  （偏移 0x12）导致**所有** Nt\* 解析失败 → syscall 模式静默退化成 kernel32。
+  现在改为扫描 `0F 05`，实机逐个 Nt\* 断言 + 一次真进内核。
+- 遗留：kernel32/ntdll 直调（`CreateProcessW`/`VirtualAllocEx`）仍长在 Go 线程栈上；
+  indirect 模式刻意不套伪栈。要做全得引入 `stdcall` 汇编桩 + 独立线程。
+- 验收缺口：**没有在真实 EDR 主机上跑过**，伪栈能否骗过具体产品的回溯器需实测。
 
-### 3.3 主密钥运行时派生（**协议迁移**，服务端 + 客户端同时改）
-- 目标：主密钥不再明文 patch 进二进制（`pkg/delivery/payload.go` 的
+### 3.2b ETW/AMSI 覆盖面、unhook、PPID、BlockDLLs（**已实现，2026-10-20 的 P3**）
+- ETW：patch 从 1 个导出扩到 5 个（`EtwEventWrite`/`Ex`/`Full`/`String`/`Transfer`），
+  统一返回 `STATUS_SUCCESS`（旧实现裸 `ret`，返回 EAX 是垃圾）；patch 后读回校验。
+- AMSI：`AmsiScanBuffer` + `AmsiScanString` 两个入口。
+- unhook：新增 `core/evasion/pe_image.go` 解析 PE，按节表换算文件偏移，恢复
+  ntdll/kernel32/kernelbase 的**全部可执行节**且只写差异字节。修掉两个真 bug：
+  ① 旧实现把 RVA 当文件偏移（`diskData[rva:rva+16]`），会主动写坏代码段；
+  ② 只恢复固定名单里导出的前 16 字节，深 hook 与非导出函数全漏。
+- PPID 伪造：`PROC_THREAD_ATTRIBUTE_PARENT_PROCESS` 指同会话 explorer.exe；
+  实测 x64 上该属性吃 **HANDLE** 而非 PID（4 字节 PID 报 `ERROR_BAD_LENGTH`，
+  8 字节 PID 在 CreateProcess 时报 `ERROR_INVALID_HANDLE`）。
+- BlockDLLs：`PROC_THREAD_ATTRIBUTE_MITIGATION_POLICY` 只允许微软签名 DLL；
+  常量是高 32 位第 12 位（`0x0000100000000000`），写错位不会报错、只是不生效。
+- 已接路径：`Run`/`Execute`/`ExecuteFile`/`hollow`；`conpty`/`hvnc`/`privesc`
+  刻意不接（交互式 UI 与 Token 路径，BlockDLLs 会破坏输入法/Shell 扩展）。
+- 遗留：ETW 的 `NtTraceEvent` 直调与 ETW TI（内核回调）无法用用户态 patch 覆盖；
+  内核态 hook 与"改了磁盘副本的 hook"unhook 无效；PPID 只改创建时刻的父字段
+  （句柄继承、4688 审计日志仍可能暴露真实调用者）；**未在真实 EDR 主机验证**。
+  详见 `docs/KNOWN_LIMITATIONS.md` §19。
+
+### 3.2c 对抗能力逐项开关（**已实现，2026-10-20 的 P4**）
+- 问题：P0–P3 的能力都是"编译期写死 + 门控跟着 `HostEvasionEnabled()`
+  （ETW∥AMSI∥syscall≠none）走"，勾一个带出一串；想关某一项只能重新生成载荷。
+- 生成期：占位符从 4 个扩到 9 个（新增 `SLEEP_MASK_HIDE` / `STACK_SPOOF` /
+  `PPID_SPOOF` / `BLOCK_DLLS` / `UNHOOK_ON_START`），缺省全关；服务端
+  `pkg/api/opsec_params.go` 统一归一化与校验（非法值、平台不可能组合直接 400，
+  不静默关掉 —— 静默关掉正是"勾了不生效"的病根）。
+- 运行期：`EVASION=135`，`evasion [status|all on|all off|on <key>|off <key>|reset]`，
+  覆盖只在内存（重连即回到生成期值），三态语义可区分"运行期关掉"与"本来没开"。
+  编译期关 = 硬关闭，运行期 `on` 被拒并说明原因；`syscallMode` 不提供运行期切换。
+- 团队级默认：服务端 `config.opsec.*`（11 字段），回落链「请求 → 配置 → 内置默认」。
+- 前端：生成期「对抗能力」面板（9 项 + stealth/balanced/compatible 三预设 +
+  平台/架构置灰原因）+ 会话内「Evasion Switches」面板。
+- 遗留：运行期覆盖不持久、启动期能力"关不掉"（不撤销已打补丁）、旧模板
+  fail-closed（**必须全量重建 178 个模板**）、未做三平台实机回归。
+  详见 `docs/KNOWN_LIMITATIONS.md` §20。
+
+### 3.3 主密钥运行时派生（**协议迁移**，服务端 + 客户端同时改）- 目标：主密钥不再明文 patch 进二进制（`pkg/delivery/payload.go` 的
   `LISTENER_MASTER_KEY_*` 占位符），改为首连时 X25519 临时交换派生
 - 为什么没做：要在 **13 种传输的首包**插入交换；轮询型传输（HTTP/DNS/OSS）服务端
   要为每个 beacon 缓存临时密钥直到会话建立 —— 一次真正的协议迁移

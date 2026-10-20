@@ -164,6 +164,16 @@
     <!-- P3：页面内局部弹窗（替代原全局 workspace.dialogs 状态机） -->
     <ProcessMigrateDialog v-model="migrateDlg.visible" :uid="migrateDlg.uid" :pid="migrateDlg.pid" />
     <BinExecuteDialog v-model="binExecDlg.visible" :uid="binExecDlg.uid" :mode="binExecDlg.mode" />
+
+    <!-- P4：会话内对抗开关（运行期覆盖，见 components/Opsec/OpsecSwitches.vue） -->
+    <el-dialog
+      v-model="opsecDlg.visible"
+      :title="i18nStore.tl('会话内对抗开关', 'Runtime Evasion Switches')"
+      width="640px"
+      append-to-body
+    >
+      <OpsecSwitches :uid="opsecDlg.uid" />
+    </el-dialog>
   </div>
 </template>
 
@@ -179,6 +189,7 @@ import { useI18nStore } from '@/stores/i18n'
 // P3：工具箱内的对话框改为页面内局部弹窗
 import BinExecuteDialog from '@/layout/Dialogs/BinExecuteDialog.vue'
 import ProcessMigrateDialog from '@/layout/Dialogs/ProcessMigrateDialog.vue'
+import OpsecSwitches from '@/components/Opsec/OpsecSwitches.vue'
 
 const i18nStore = useI18nStore()
 const isZh = computed(() => i18nStore.isZh)
@@ -227,6 +238,7 @@ const hidePort = ref('4444')
 // ---- 页面内局部弹窗状态（P3：取代 workspace.dialogs 全局状态机）----
 const migrateDlg = ref({ visible: false, uid: '', pid: '' })
 const binExecDlg = ref({ visible: false, uid: '', mode: '' })
+const opsecDlg = ref({ visible: false, uid: '' })
 
 const toolList = ref<ToolItem[]>([
   { id: 'clipboard', name: 'Clipboard Dump', category: 'Gather', desc: 'Read target user active clipboard text content' },
@@ -242,6 +254,8 @@ const toolList = ref<ToolItem[]>([
   { id: 'unhook_ntdll', name: 'Unhook NTDLL', category: 'Evasion', desc: 'Restore ntdll.dll hooks/patches to bypass userland monitoring' },
   { id: 'sandbox_check', name: 'Sandbox Check', category: 'Evasion', desc: 'Probe for sandbox/VM artifacts; adjust behavior accordingly' },
   { id: 'antidebug', name: 'Anti-Debug', category: 'Evasion', desc: 'Enable anti-debugger protections (IsDebuggerPresent & friends)' },
+  // P4：会话内开关（ETW/AMSI/摘链/伪栈/PPID/BlockDLLs/unhook），免重新生成载荷
+  { id: 'opsec_switches', name: 'Evasion Switches', category: 'Evasion', desc: 'Turn host-evasion capabilities on/off at runtime (no re-payload needed)' },
   { id: 'service_stop', name: 'Service Stop', category: 'System', desc: 'Stop a Windows service by name' },
   // ---- 凭证/提权（移植自已移除的会话右键菜单）----
   { id: 'hashdump', name: 'Hash Dump', category: 'Access', desc: 'Dump local SAM/LSA password hashes (Windows)' },
@@ -348,6 +362,13 @@ function executeSelectedTool() {
     runTool('sandbox_check')
   } else if (tool === 'antidebug') {
     runTool('antidebug')
+  } else if (tool === 'opsec_switches') {
+    const uid = getUid()
+    if (!uid) {
+      ElMessage.warning('Client not ready')
+      return
+    }
+    opsecDlg.value = { visible: true, uid }
   } else if (tool === 'service_stop') {
     if (!serviceName.value.trim()) {
       ElMessage.warning('Please enter a service name')

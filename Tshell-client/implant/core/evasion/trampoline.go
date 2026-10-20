@@ -31,12 +31,27 @@ var NtdllStubPrefix = []byte{0x4C, 0x8B, 0xD1}
 // ParseSyscallStub 从 ntdll 导出函数体前 64 字节解析出 SSN 与 syscall 指令地址。
 // addr 为该导出函数的运行时地址；返回 (ssn, syscall 指令地址, 错误)。
 //
-// 函数体布局（x64）：
+// 两种函数体布局（都实测过）：
 //
-//	4c 8b d1            mov r10, rcx
-//	b8 <imm32>          mov eax, ssn
-//	0f 05               syscall
-//	c3                  ret
+//	Win10 / Win11 21H2~23H2：
+//	  4c 8b d1            mov r10, rcx
+//	  b8 <imm32>          mov eax, ssn
+//	  0f 05               syscall          ← 固定偏移 8
+//	  c3                  ret
+//
+//	Win11 24H2+（CET 兼容分支，多一条 SharedUserData 判断）：
+//	  4c 8b d1            mov r10, rcx
+//	  b8 <imm32>          mov eax, ssn
+//	  f6 04 25 08 03 fe 7f 01   test byte ptr ds:0x7ffe0308, 1
+//	  75 03               jne  +3
+//	  0f 05               syscall          ← 偏移 0x12
+//	  c3                  ret
+//	  cd 2e               int  2eh         ← 老式路径（WoW64/兼容）
+//	  c3                  ret
+//
+// 所以不能假设 syscall 在固定偏移：必须**扫描**第一个 0F 05。此前写死偏移 8，
+// 在 24H2 上所有系统调用都解析失败 —— 表现是 trampoline 一个都没建起来，
+// direct/indirect 模式静默退化成普通 ntdll 调用（P2 实机测试才发现）。
 func ParseSyscallStub(body []byte, addr uintptr) (uint32, uintptr, error) {
 	if len(body) < 10 {
 		return 0, 0, fmt.Errorf("函数体过短: %d 字节", len(body))
@@ -48,11 +63,13 @@ func ParseSyscallStub(body []byte, addr uintptr) (uint32, uintptr, error) {
 		return 0, 0, fmt.Errorf("未找到 mov eax,imm（可能已被 hook）")
 	}
 	ssn := binary.LittleEndian.Uint32(body[4:8])
-	// syscall 指令在 mov eax 之后（相对函数入口偏移 8）
-	if body[8] != 0x0F || body[9] != 0x05 {
-		return 0, 0, fmt.Errorf("未找到 syscall 指令")
+	// 从 mov eax,imm32 之后扫描 syscall 指令（0F 05）
+	for i := 8; i+1 < len(body); i++ {
+		if body[i] == 0x0F && body[i+1] == 0x05 {
+			return ssn, addr + uintptr(i), nil
+		}
 	}
-	return ssn, addr + 8, nil
+	return 0, 0, fmt.Errorf("未找到 syscall 指令")
 }
 
 // BuildTrampoline 生成 trampoline 机器码。

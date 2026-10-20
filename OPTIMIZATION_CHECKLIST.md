@@ -496,3 +496,103 @@ cd Tshell-web && npm run build:embed
 | 187 | C2Event 根字段类型化 | `grep -c "operator?: string" Tshell-web/src/stores/events.ts` | ≥1 |
 | 188 | 审计行类型 | `grep -c "interface AuditLogRow" Tshell-web/src/layout/EventLogPanel.vue` | ≥1 |
 | 189 | ClientInfo 补 snake_case | `grep -c "external_ip" Tshell-web/src/api/plugin/index.ts` | ≥1 |
+
+## V 组（注入链 syscall 化 + 镂空 W^X，2026-10-20 追加）
+
+| # | 优化 | 验证命令 | 期望 |
+|---|------|----------|------|
+| 190 | 远端内存原语层（Nt 优先 / 宿主回退） | `grep -c "type remoteMemory interface" Tshell-client/implant/core/commands/remotemem_windows.go` | 1 |
+| 191 | 注入链不再直接调 kernel32 分配/写入/改保护 | `grep -c "VirtualAllocEx.Call\|WriteProcessMemory.Call\|VirtualProtectEx.Call" Tshell-client/implant/core/commands/inject_windows.go` | 0 |
+| 192 | 镂空镜像按 RW 预留（不是 RWX） | `grep -c "rm.Alloc(h, info.imageBase, size, pageReadWrite)" Tshell-client/implant/core/commands/hollow_windows.go` | 1 |
+| 193 | 镂空写入后收紧可执行节 | `grep -c "func hardenImage" Tshell-client/implant/core/commands/hollow_windows.go` | 1 |
+| 194 | trampoline 覆盖读/卸载/PEB 查询 | `grep -c "NtReadVirtualMemory\|NtUnmapViewOfSection\|NtQueryInformationProcess" Tshell-client/implant/core/evasion/syscall.go` | ≥3 |
+| 195 | 单测 + 源码级棘轮 | `grep -c "^func Test" Tshell-client/implant/core/commands/remotemem_windows_test.go` | 15 |
+| 196 | OPSEC 权威文档同步 | `grep -c "进程镂空 W^X" docs/OPSEC.md` | 1 |
+| 197 | 生成载荷的 syscall 模式默认仍是 none | `grep -c "SYSCALL_MODE_PLACEHOLDER_12345\":[[:space:]]*\"none\"" Tshell-server/pkg/delivery/payload.go` | 1 |
+
+## W 组（清理现场 cleanup + 自更新残留，2026-10-20 追加）
+
+| # | 优化 | 验证命令 | 期望 |
+|---|------|----------|------|
+| 198 | 命令号两侧一致（CLEANUP=134） | `grep -c "CLEANUP = 134" Tshell-server/pkg/command/cmdType.go Tshell-client/implant/core/services/types.go` | ≥1 each |
+| 199 | 服务端命令表登记（带参 `cleanup ` + 无参 `cleanup`） | `grep -c "cleanup" Tshell-server/pkg/sendcommand/sendCommand.go` | ≥2 |
+| 200 | 客户端 dispatch 分支 | `grep -c "services.CLEANUP" Tshell-client/implant/core/app/dispatch.go` | ≥2 |
+| 201 | 清理判据是"对象指向本程序"（三类匹配器都在） | `grep -c "regRunValueNames\|taskNamesForExe\|startupFileMatches" Tshell-client/implant/core/commands/cleanup.go` | ≥3 |
+| 202 | Author 字段里的同路径不认（防误删别人的任务） | `grep -c "isAuthorKey" Tshell-client/implant/core/commands/cleanup.go` | ≥2 |
+| 203 | 逐条回执 + 汇总计数 | `grep -c "已清理 %d 项" Tshell-client/implant/core/commands/cleanup.go` | 1 |
+| 204 | 自更新残留由新映像启动后清理 | `grep -c "go commands.PurgeUpdateResidue()" Tshell-client/implant/core/app/init.go` | 1 |
+| 205 | 三平台清理实现齐全 | `grep -c "cleanupFileItems" Tshell-client/implant/core/commands/cleanup_windows.go Tshell-client/implant/core/commands/cleanup_linux.go Tshell-client/implant/core/commands/cleanup_darwin.go` | ≥1 each |
+| 206 | 判定逻辑单测 | `grep -c "^func Test" Tshell-client/implant/core/commands/cleanup_test.go` | 15 |
+| 207 | 接线棘轮（dispatch + 启动期清理） | `grep -c "TestCleanup" Tshell-client/implant/core/app/dispatch_wiring_test.go` | ≥2 |
+| 208 | TTP 报告映射 | `grep -c '"cleanup"' Tshell-server/pkg/api/report.go` | 1 |
+| 209 | OPSEC 权威文档同步 | `grep -c "清理现场" docs/OPSEC.md` | ≥2 |
+
+### X 组：P2 调用栈伪造 + 睡眠期模块摘链（2026-10-20）
+
+| # | 检查项 | 命令 | 期望 |
+|---|---|---|---|
+| 210 | 伪栈参数上限是单一事实来源 | `grep -c "SpoofMaxArgs" Tshell-client/implant/core/evasion/spoof.go` | 2 |
+| 211 | 伪栈只在 direct 模式装配（indirect 不套） | `grep -c "ModeDirect" Tshell-client/implant/core/evasion/syscall.go` | 2 |
+| 212 | `Syscall()` 走伪栈前必须判 `SpoofReady()` | `grep -c "SpoofReady()" Tshell-client/implant/core/evasion/syscall.go` | 1 |
+| 213 | 伪栈 syscall 实现存在且被调用 | `grep -c "syscallSpoofed" Tshell-client/implant/core/evasion/spoof_windows.go` | 2 |
+| 214 | ntdll 解析改为扫描 syscall 指令（不得写死偏移） | `grep -c "0x0F && body\[i+1\] == 0x05" Tshell-client/implant/core/evasion/trampoline.go` | 1 |
+| 215 | 摘链/挂回都只有一处实现入口 | `grep -c "detachLinks\|attachLinks" Tshell-client/implant/core/evasion/modhide_windows.go` | ≥4 |
+| 216 | 睡眠路径真的调了摘链且醒后挂回 | `grep -c "evasion.HideForSleep" Tshell-client/implant/core/app/run.go` | 1 |
+| 217 | 摘链默认关（跟随主机层对抗开关组） | `grep -c "HostEvasionEnabled" Tshell-client/implant/core/config/config.go` | 2 |
+| 218 | 伪栈单测（平台无关 7 项） | `grep -c "^func Test" Tshell-client/implant/core/evasion/spoof_test.go` | 7 |
+| 219 | 伪栈实机单测（含 6 参数往返） | `grep -c "^func Test" Tshell-client/implant/core/evasion/spoof_windows_test.go` | 4 |
+| 220 | 摘链单测（合成链表 + 真实 PEB 往返） | `grep -c "^func Test" Tshell-client/implant/core/evasion/modhide_windows_test.go` | 7 |
+| 221 | 实机 ntdll 解析回归（名单逐个断言） | `grep -c "^func Test" Tshell-client/implant/core/evasion/syscall_windows_test.go` | 3 |
+| 222 | 睡眠期摘链接线棘轮 | `grep -c "^func Test" Tshell-client/implant/core/app/sleepmask_wiring_test.go` | 2 |
+| 223 | Ekko 不可做的论证写进文档（不是"没做"） | `grep -c "Ekko" docs/OPSEC.md` | ≥4 |
+| 224 | 24H2 偏移变更写进文档 | `grep -c "24H2" docs/OPSEC.md` | ≥4 |
+| 225 | 内存侧文档同步伪栈边界 | `grep -c "伪栈" docs/MEMORY_OPSEC.md` | ≥3 |
+
+## Y 组（P3 ETW/AMSI 覆盖面 + unhook + PPID/BlockDLLs，2026-10-20 追加）
+
+| # | 断言 | 命令 | 期望 |
+|---|------|------|------|
+| 226 | ETW patch 目标从 1 个扩到 5 个导出 | `grep -c "etwPatchTargets" Tshell-client/implant/core/evasion/evasion.go` | 3 |
+| 227 | AMSI patch 覆盖两个入口 | `grep -c "amsiPatchTargets" Tshell-client/implant/core/evasion/evasion.go` | 3 |
+| 228 | patch 后必须读回校验（防写错地址） | `grep -c "func VerifyPatch" Tshell-client/implant/core/evasion/evasion.go` | 1 |
+| 229 | unhook 按 PE 节表换算，不拿 RVA 当文件偏移 | `grep -c "fileOffsetForRVA" Tshell-client/implant/core/evasion/pe_image.go` | ≥2 |
+| 230 | unhook 默认覆盖三模块 | `grep -c "DefaultUnhookModules" Tshell-client/implant/core/evasion/unhook_windows.go` | ≥2 |
+| 231 | 回写用 RWX（用 RW 会在 VirtualProtect 返回时自杀） | `grep -c "PAGE_EXECUTE_READWRITE" Tshell-client/implant/core/evasion/unhook_windows.go` | 1 |
+| 232 | PPID 属性传的是 HANDLE 且活到创建之后 | `grep -c "PROCESS_CREATE_PROCESS" Tshell-client/implant/core/commands/procattr_windows.go` | 1 |
+| 233 | BlockDLLs 常量是高 32 位第 12 位 | `grep -c "const mitigationBlockNonMS = 0x0000100000000000" Tshell-client/implant/core/commands/procattr_windows.go` | 1 |
+| 234 | 主 spawn 路径都走属性封装 | `grep -c "createProcessWithAttrs" Tshell-client/implant/core/commands/commands_windows.go` | 3 |
+| 235 | 镂空回执带上属性诊断 | `grep -c "ca.Describe()" Tshell-client/implant/core/commands/hollow_windows.go` | 1 |
+| 236 | PE 解析单测 | `grep -c "^func Test" Tshell-client/implant/core/evasion/pe_image_test.go` | 6 |
+| 237 | ETW/AMSI 实机单测 | `grep -c "^func Test" Tshell-client/implant/core/evasion/evasion_windows_test.go` | 4 |
+| 238 | unhook 实机单测（种假 hook 后抹掉） | `grep -c "^func Test" Tshell-client/implant/core/evasion/unhook_windows_test.go` | 4 |
+| 239 | PPID/BlockDLLs 实机单测（读回内核字段与策略位） | `grep -c "^func Test" Tshell-client/implant/core/commands/procattr_windows_test.go` | 6 |
+| 240 | spawn 路径接线棘轮存在 | `grep -c "TestSpawnPathsUseChildAttrs" Tshell-client/implant/core/commands/procattr_windows_test.go` | 2 |
+| 241 | 两个"假生效"陷阱写进文档 | `grep -c "ERROR_BAD_LENGTH\|ERROR_INVALID_HANDLE" docs/OPSEC.md` | 1 |
+| 242 | 运行期开关命令号两侧一致 | `grep -c "EVASION = 135" Tshell-client/implant/core/services/types.go Tshell-server/pkg/command/cmdType.go` | 2 |
+| 243 | 运行期开关在 dispatch 里真接上 | `grep -c "case services.EVASION:" Tshell-client/implant/core/app/dispatch.go` | 1 |
+| 244 | 门控统一入口是 EvasionEnabled（先看运行期覆盖） | `grep -c "func EvasionEnabled" Tshell-client/implant/core/config/opsec.go` | 1 |
+| 245 | 每项能力都有经 EvasionEnabled 的 wrapper | `grep -c "EvasionEnabled(Evasion" Tshell-client/implant/core/config/config.go` | 7 |
+| 246 | 摘链走细门控（不被 ETW patch 顺带打开） | `grep -c "config.SleepMaskHideEnabled()" Tshell-client/implant/core/app/run.go` | 1 |
+| 247 | PPID 与 BlockDLLs 各自独立门控 | `grep -c "PpidSpoofEnabled\|BlockDLLsEnabled" Tshell-client/implant/core/commands/procattr_windows.go` | 2 |
+| 248 | 伪栈有独立的"要不要用"判定 | `grep -c "func SpoofActive" Tshell-client/implant/core/evasion/spoof_windows.go` | 1 |
+| 249 | unhook 在 ETW/AMSI patch 之前跑 | `grep -c "UnhookOnStartEnabled" Tshell-client/implant/core/evasion/evasion.go` | 1 |
+| 250 | 新客户端会检查 5 个新占位符残留（fail-closed） | `grep -c "SleepMaskHidePlaceholder" Tshell-client/implant/core/config/config.go` | 1 |
+| 251 | 服务端占位符表含全部 9 项 OPSEC | `grep -c "PLACEHOLDER_12345" Tshell-server/pkg/delivery/payload.go` | 42 |
+| 252 | 服务端统一归一化/校验入口 | `grep -c "func resolveOpsec" Tshell-server/pkg/api/opsec_params.go` | 1 |
+| 253 | 团队级默认走配置并进白名单 | `grep -c "type OpsecConfig struct" Tshell-server/pkg/config/manager.go` | 1 |
+| 254 | 配置更新按 opsec 段路由 | `grep -c '"opsec"' Tshell-server/pkg/config/handlers.go` | 1 |
+| 255 | 命令表认得 evasion | `grep -c "evasion" Tshell-server/pkg/sendcommand/sendCommand.go` | 4 |
+| 256 | 命令有 MITRE 归属 | `grep -c "T1562" Tshell-server/pkg/api/report.go` | 3 |
+| 257 | 生成面板不写"勾了不生效"的组合（非 direct 强制关伪栈） | `grep -c "stackSpoof = false" Tshell-web/src/components/Opsec/opsecPresets.ts` | 2 |
+| 258 | 生成面板有依赖置灰原因 | `grep -c "capabilityDisabledReason" Tshell-web/src/components/Opsec/opsecPresets.ts` | 1 |
+| 259 | 生成期面板接进单包载荷对话框 | `grep -c "OpsecToggles" Tshell-web/src/layout/Dialogs/Payloads/WindowsExeStagelessDialog.vue` | 2 |
+| 260 | 生成期面板接进服务端生成页 | `grep -c "OpsecToggles" Tshell-web/src/views/server/ServerGen.vue` | 2 |
+| 261 | 会话内面板接进客户端工具页 | `grep -c "OpsecSwitches" Tshell-web/src/views/client/View/ClientTools.vue` | 3 |
+| 262 | 两个面板共享同一份能力表 | `grep -c "OPSEC_CAPABILITIES\|evasionCapabilities" Tshell-web/src/components/Opsec/opsecPresets.ts Tshell-client/implant/core/config/opsec.go` | 9 |
+| 263 | 客户端能力表单测 | `grep -c "^func Test" Tshell-client/implant/core/config/opsec_test.go` | 8 |
+| 264 | 运行期命令单测 | `grep -c "^func Test" Tshell-client/implant/core/commands/evasion_cmd_windows_test.go` | 9 |
+| 265 | 服务端归一化单测 | `grep -c "^func Test" Tshell-server/pkg/api/opsec_params_test.go` | 8 |
+| 266 | 占位符替换单测 | `grep -c "^func Test" Tshell-server/pkg/delivery/patch_opsec_switches_test.go` | 3 |
+| 267 | 配置校验单测 | `grep -c "^func Test" Tshell-server/pkg/config/opsec_apply_test.go` | 4 |
+| 268 | 前端预设/置灰单测 | `grep -c "^  it(" Tshell-web/src/components/Opsec/opsecPresets.test.ts` | 13 |
+| 269 | 前端仍禁 isZh 三元与 as any（techdebt 棘轮） | `grep -c "isZh\|as any" Tshell-web/src/techdebt.test.ts` | 2 |
