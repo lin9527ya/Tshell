@@ -49,6 +49,7 @@ declare module 'vue' {
     OsIcon: typeof import('./src/components/Common/OsIcon.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
+    TableTools: typeof import('./src/components/Common/TableTools.vue')['default']
   }
   export interface ComponentCustomProperties {
     vLoading: typeof import('element-plus/es')['ElLoadingDirective']

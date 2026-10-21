@@ -172,7 +172,24 @@ type listenerResponse struct {
 	Note              string `json:"Note"`
 	VKey              string `json:"VKey"`
 	EncryptionSalt    string `json:"EncryptionSalt"`
-	Profile           string `json:"Profile"` // 绑定的 C2 画像名（空=default）
+	Profile           string `json:"Profile"`      // 绑定的 C2 画像名（空=default）
+	SleepSeconds      int    `json:"SleepSeconds"` // 画像的默认 sleep（秒），即生成载荷的默认间隔
+}
+
+func listenerSleepSeconds(profileName string) int {
+	name := strings.TrimSpace(profileName)
+	if name == "" {
+		name = c2profile.DefaultProfileName
+	}
+	p := c2profile.Get(name)
+	if p == nil {
+		p = c2profile.GetDefault()
+	}
+	sleepMs := 5000 // 与全局 client.sleep 默认 5s 对齐
+	if p != nil && p.SleeptimeMs > 0 {
+		sleepMs = p.SleeptimeMs
+	}
+	return sleepMs / 1000
 }
 
 func maskListenerForResponse(l database.Listener) listenerResponse {
@@ -188,6 +205,7 @@ func maskListenerForResponse(l database.Listener) listenerResponse {
 		VKey:              maskSecretPreview(l.VKey),
 		EncryptionSalt:    maskSecretPreview(l.EncryptionSalt),
 		Profile:           l.Profile,
+		SleepSeconds:      listenerSleepSeconds(l.Profile),
 	}
 }
 
@@ -630,6 +648,39 @@ func isForwardListenerType(listenerType string) bool {
 	return false
 }
 
+// isUnspecifiedForwardTarget 判断正向拨号目标是否是"绑定用的通配地址"。
+//
+// 载荷生成时填的是客户端的 bind 地址（默认 0.0.0.0），它不是服务端可拨的目标：
+// 直接拨 0.0.0.0/:: 会连到服务端本机。空地址同样视为不可拨。
+func isUnspecifiedForwardTarget(addr string) bool {
+	addr = strings.TrimSpace(addr)
+	if addr == "" {
+		return true
+	}
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		host = addr
+	}
+	host = strings.Trim(strings.ToLower(host), "[]")
+	switch host {
+	case "", "0.0.0.0", "::":
+		return true
+	}
+	return false
+}
+
+// resolveForwardKeyConfig 正向拨号用哪套密钥：优先监听器记录自己的 VKey/盐。
+//
+// 同协议可以存在多条正向监听器（不同地址、不同密钥），按类型取库中第一条
+// 会让后面的记录用错密钥、连接建立后解密失败。记录没配密钥时才回落到
+// 按类型的正向占位符默认值（兼容历史记录）。
+func resolveForwardKeyConfig(listenerType, vkey, salt string) ([]byte, []byte) {
+	if strings.TrimSpace(vkey) != "" && strings.TrimSpace(salt) != "" {
+		return encrypt.NormalizeListenerKeyConfig([]byte(vkey), []byte(salt))
+	}
+	return encrypt.GetListenerKeyConfigForForward(listenerType)
+}
+
 // markListenerStartFailed 启动失败时把监听器状态回置为"已停止"。
 // 否则库里会留下 Status=1 却没有句柄的记录：前端显示"监听中"、dashboard 的监听器
 // 计数虚高，实际端口没有在听。
@@ -906,13 +957,19 @@ func handleOpenPort(listenerType string, listenerAddress string, vkey string, sa
 	case "tcp_forward", "kcp_forward", "ws_forward", "http_forward", "https_forward":
 		// 正向监听不 bind 本机端口：启用后主动拨 connect_address 上的正向客户端，
 		// 掉线按退避重连（server.go 自动创建记录处注释所称"启用后由 handleOpenPort 自动拨号"）。
-		// 密钥与手动连接、客户端生成同源：记录配了自定义密钥就用它，否则两端一致地使用正向
-		// 占位符默认值（见 encrypt.GetListenerKeyConfigForForward）。
+		// 密钥用该记录自己的 VKey/盐（同协议多实例时不能按类型取第一条），
+		// 记录没配才回落到正向占位符默认值（见 resolveForwardKeyConfig）。
 		target := listenerAddress
 		if flis, has, _ := database.Listeners().GetByAddress(listenerAddress); has && flis.ConnectAddress != "" {
 			target = flis.ConnectAddress
 		}
-		fmk, fsl := encrypt.GetListenerKeyConfigForForward(listenerType)
+		// 0.0.0.0/:: 是客户端 bind 地址，拨过去只会连到服务端本机；
+		// 直接判失败并回置状态，避免操作员看到"监听中"实际永远连不上。
+		if isUnspecifiedForwardTarget(target) {
+			markListenerStartFailed(listenerType, listenerAddress, "缺少可拨号的回连地址（0.0.0.0/:: 不能作为正向拨号目标）")
+			return
+		}
+		fmk, fsl := resolveForwardKeyConfig(listenerType, vkey, salt)
 		if encrypt.IsDefaultListenerKey(fmk, fsl) {
 			logx.Warnf("⚠️ [正向拨号] %s://%s 使用正向默认（占位符）密钥，流量可被解密；建议为该监听器配置自定义 VKey/加密盐并重新生成客户端\n", listenerType, listenerAddress)
 		}

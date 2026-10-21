@@ -186,11 +186,21 @@ func GenServer(c *gin.Context) {
 		// 正向监听器：若记录不存在则创建，保证服务端会话密钥派生与客户端一致
 		if listenerType == "tcp_forward" || listenerType == "kcp_forward" || listenerType == "ws_forward" || listenerType == "http_forward" || listenerType == "https_forward" {
 			if database.DB() != nil {
-				if has, _ := database.Listeners().ExistsByConnectAddress(connectAddress); !has {
+				// 只按同类型判定：反向监听器可能也绑了同一个 0.0.0.0:port，
+				// 不能因此跳过正向记录的创建。地址变体（0.0.0.0:port / :port）一并匹配。
+				exists, _ := database.Listeners().ExistsByTypeAndAddrVariants(listenerType, connectAddress)
+				if !exists {
+					// 载荷里填的是客户端 bind 地址（常为 0.0.0.0），不是服务端可拨目标。
+					// 这种情况下 connect_address 留空，由操作员在正向监听器页补真实 IP:端口；
+					// 否则启用自动拨号会拨到服务端本机。
+					recordConnect := connectAddress
+					if isUnspecifiedForwardTarget(recordConnect) {
+						recordConnect = ""
+					}
 					err := database.Listeners().Insert(&database.Listener{
 						Type:              listenerType,
 						ListenAddress:     connectAddress,
-						ConnectAddress:    connectAddress,
+						ConnectAddress:    recordConnect,
 						Status:            2, // 未启用；启用后由 handleOpenPort 自动拨号
 						HeartbeatTimeout:  "3",
 						HeartbeatInterval: "10",
@@ -199,6 +209,8 @@ func GenServer(c *gin.Context) {
 					})
 					if err != nil {
 						logx.Warnf("⚠️ [SERVER-GEN] 创建%s监听器记录失败: %v\n", listenerType, err)
+					} else if recordConnect == "" {
+						logx.Infof("🔄 [SERVER-GEN] 已创建%s监听器记录: %s（回连地址待填写：绑定地址不能作为拨号目标，请到正向监听器页补全后启用）\n", listenerType, connectAddress)
 					} else {
 						logx.Infof("🔄 [SERVER-GEN] 已自动创建%s监听器记录: %s（可到正向监听页启用自动拨号）\n", listenerType, connectAddress)
 					}
@@ -232,8 +244,8 @@ func GenServer(c *gin.Context) {
 			// 其他类型从数据库获取监听器密钥配置
 			// 【修复】按地址匹配失败时回退按类型匹配（与服务端 first blood 的密钥来源完全一致），
 			// 避免客户端 patch 的密钥与服务端派生会话密钥不一致导致命令解密失败
-			var dbListener database.Listener
-			if _, has, _ := database.Listeners().FindByConnectOrListen(connectAddress); has {
+			// （原实现把查到的记录丢进 `_`，dbListener 是零值，等于"匹配到了却用空密钥"）。
+			if dbListener, has, _ := database.Listeners().FindByConnectOrListen(connectAddress); has {
 				masterKey = make([]byte, 32)
 				copy(masterKey, []byte(dbListener.VKey))
 				encryptionSalt = make([]byte, 16)

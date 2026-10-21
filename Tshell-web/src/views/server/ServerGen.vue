@@ -1040,7 +1040,20 @@ const handleGenerate = async () => {
         }
       }
       if (downloadBlob(res, fileName)) {
-        ElMessage.success(isZh.value ? '生成成功' : 'Generated');
+        if (activeTab.value === 'listen' || activeTab.value === 'dlllisten') {
+          // 生成只会建一条"未启用"的正向记录，且自动拨号目标需要操作员补全：
+          // 载荷里填的是客户端 bind 地址（0.0.0.0），不是服务端可拨的地址。
+          ElMessage({
+            type: 'success',
+            duration: 9000,
+            showClose: true,
+            message: isZh.value
+              ? '生成成功；已创建/复用正向监听器记录。请到「监听管理 → 正向监听器」填写回连地址（客户端可达的 IP:端口），再开启自动拨号。'
+              : 'Generated. A forward-listener record was created/reused. Set its dial target (client IP:port) under Listeners → Forward Listeners, then start auto-dial.',
+          });
+        } else {
+          ElMessage.success(isZh.value ? '生成成功' : 'Generated');
+        }
       } else {
         ElMessage.error(isZh.value ? '生成失败：响应不是可下载文件' : 'Generation failed: response is not a downloadable file');
       }

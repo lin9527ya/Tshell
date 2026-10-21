@@ -48,52 +48,15 @@
       </template>
 
       <!-- vshell 表格工具：刷新 / 密度 / 列设置 -->
-      <div class="cs-table-tools">
-        <button
-          class="cs-icon-btn"
-          :class="{ 'is-spinning': manualRefreshing }"
-          :title="i18nStore.tl('刷新', 'Refresh')"
-          :disabled="manualRefreshing"
-          @click="refreshClients"
-        >
-          <VsIcon name="sync" :size="14" />
-        </button>
-
-        <el-dropdown trigger="click" @command="onDensityCmd">
-          <button class="cs-icon-btn" :title="i18nStore.tl('密度', 'Density')">
-            <VsIcon name="list-ul" :size="14" />
-          </button>
-          <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item command="default" :class="{ 'is-active': density === 'default' }">
-                {{ i18nStore.tl('默认', 'Default') }}
-              </el-dropdown-item>
-              <el-dropdown-item command="compact" :class="{ 'is-active': density === 'compact' }">
-                {{ i18nStore.tl('紧凑', 'Compact') }}
-              </el-dropdown-item>
-              <el-dropdown-item command="mini" :class="{ 'is-active': density === 'mini' }">
-                {{ i18nStore.tl('迷你', 'Mini') }}
-              </el-dropdown-item>
-            </el-dropdown-menu>
-          </template>
-        </el-dropdown>
-
-        <el-popover trigger="click" placement="bottom-end" :width="190">
-          <template #reference>
-            <button class="cs-icon-btn" :title="i18nStore.tl('列设置', 'Columns')">
-              <VsIcon name="columns" :size="14" />
-            </button>
-          </template>
-          <div class="cs-col-settings">
-            <el-checkbox
-              v-for="c in columnOptions"
-              :key="c.key"
-              v-model="colVisible[c.key]"
-              :label="c.label"
-            />
-          </div>
-        </el-popover>
-      </div>
+      <TableTools
+        :columns="columnOptions"
+        :visible="colVisible"
+        :density="density"
+        :loading="manualRefreshing"
+        @update:visible="colVisible = $event"
+        @update:density="onDensityCmd"
+        @refresh="refreshClients"
+      />
     </div>
 
     <!-- Session Table (1:1 CS Column Layout) -->
@@ -1066,60 +1029,6 @@ onBeforeUnmount(() => {
   font-size: 13px;
   color: var(--cs-text-dim);
   white-space: nowrap;
-}
-
-/* ===== 表格工具：刷新 / 密度 / 列设置（vshell 右上角图标组） ===== */
-.cs-table-tools {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  margin-left: 4px;
-  flex-shrink: 0;
-}
-
-.cs-icon-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  padding: 0;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--cs-text-dim);
-  cursor: pointer;
-  transition: background 120ms ease, color 120ms ease;
-}
-
-.cs-icon-btn:hover:not(:disabled) {
-  background: var(--cs-hover);
-  color: var(--cs-text-bright);
-}
-
-.cs-icon-btn:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-.cs-icon-btn.is-spinning :deep(svg) {
-  animation: cs-tool-spin 0.9s linear infinite;
-}
-
-@keyframes cs-tool-spin {
-  to { transform: rotate(360deg); }
-}
-
-.cs-col-settings {
-  display: flex;
-  flex-direction: column;
-  max-height: 320px;
-  overflow-y: auto;
-}
-
-.cs-col-settings :deep(.el-checkbox) {
-  height: 28px;
-  margin-right: 0;
 }
 
 /* ===== 单元格渲染 ===== */

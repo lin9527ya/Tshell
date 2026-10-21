@@ -33,6 +33,85 @@
   height: 32px;
 }
 
+/* ===== 表格工具（刷新 / 密度 / 列设置）：客户端列表、监听器列表共用 ===== */
+.cs-table-tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 4px;
+  flex-shrink: 0;
+}
+
+.cs-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--cs-text-dim);
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.cs-icon-btn:hover:not(:disabled) {
+  background: var(--cs-hover);
+  color: var(--cs-text-bright);
+}
+
+.cs-icon-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.cs-icon-btn.is-spinning svg {
+  animation: cs-tool-spin 0.9s linear infinite;
+}
+
+@keyframes cs-tool-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* 行内操作（vshell 范式：图标 + 文字链接），客户端/监听器列表共用 */
+.row-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.row-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--cs-active);
+  font-size: 14px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.row-link:hover {
+  text-decoration: underline;
+}
+
+.row-link.is-disabled {
+  color: var(--cs-text-dim);
+  opacity: 0.55;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.row-link-danger {
+  color: var(--cs-error, #f56c6c);
+}
+
+/* 监听器模式列：协议名用小一号字，弱化存在感 */
+.cs-mode-text {
+  font-size: 13px;
+}
+
 .cs-shell .el-table__inner-wrapper::before,
 .cs-shell .el-table--border::after,
 .cs-shell .el-table--border::before {

@@ -206,6 +206,22 @@ watch(
   { immediate: true },
 )
 
+// 正向监听器的"连接地址"是服务端要拨的目标；0.0.0.0/:: 只是客户端 bind 地址，
+// 拨过去会连到服务端本机，必须在保存前拦住。
+function isUnspecifiedForwardAddress(addr: string): boolean {
+  const a = addr.trim()
+  if (!a) return true
+  let host = a
+  if (a.startsWith('[')) {
+    const end = a.indexOf(']')
+    host = end > 0 ? a.slice(1, end) : a
+  } else if (a.includes(':')) {
+    host = a.slice(0, a.lastIndexOf(':'))
+  }
+  host = host.trim().toLowerCase()
+  return host === '' || host === '0.0.0.0' || host === '::'
+}
+
 function handleSave() {
   if (!form.type.trim()) {
     ElMessage.warning(isZh.value ? '请选择协议类型' : 'Type is required')
@@ -214,6 +230,17 @@ function handleSave() {
   if (!form.listenAddress.trim()) {
     ElMessage.warning(isZh.value ? '请填写监听地址' : 'Listen Address is required')
     return
+  }
+  if (props.scope === 'forward') {
+    const target = form.connectAddress.trim()
+    if (!target) {
+      ElMessage.warning(isZh.value ? '请填写连接地址（正向客户端可达的 IP:端口）' : 'Connect Address is required for forward listeners')
+      return
+    }
+    if (isUnspecifiedForwardAddress(target)) {
+      ElMessage.warning(isZh.value ? '连接地址不能用 0.0.0.0/::，那是客户端绑定地址' : 'Connect Address cannot be 0.0.0.0/:: (client bind address)')
+      return
+    }
   }
   emit('save', {
     type: form.type.trim(),

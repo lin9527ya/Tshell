@@ -79,6 +79,12 @@ async function handleConnect() {
     ElMessage.warning(isZh.value ? '请填写 IP 和端口' : 'IP and port are required')
     return
   }
+  // 0.0.0.0/:: 是客户端 bind 地址，拨过去只会连到服务端本机
+  const host = form.ipAddress.trim().toLowerCase().replace(/^\[|\]$/g, '')
+  if (host === '0.0.0.0' || host === '::') {
+    ElMessage.warning(isZh.value ? '回连地址不能用 0.0.0.0/::，请填客户端可达的 IP 或域名' : 'Use the client reachable IP/domain, not 0.0.0.0/::')
+    return
+  }
   try {
     const res = await ClientAPI.connect_forward_client({
       isEbpfClient: form.isEbpfClient,

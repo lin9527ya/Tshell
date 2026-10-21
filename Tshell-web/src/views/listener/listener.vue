@@ -30,7 +30,7 @@
 
       <el-input
         v-model="searchKey"
-        :placeholder="activeView === 'normal' ? (i18nStore.tl('过滤反向监听器 (名称/载荷/地址/备注)...', 'Filter reverse listeners...')) : (i18nStore.tl('过滤正向监听器 (名称/载荷/地址/备注)...', 'Filter forward listeners...'))"
+        :placeholder="activeView === 'normal' ? (i18nStore.tl('过滤反向监听器 (ID/模式/地址/备注)...', 'Filter reverse listeners...')) : (i18nStore.tl('过滤正向监听器 (ID/模式/地址/备注)...', 'Filter forward listeners...'))"
         clearable
         class="cs-search"
       >
@@ -41,11 +41,6 @@
           </svg>
         </template>
       </el-input>
-
-      <button class="cs-btn" :disabled="currentLoading" @click="handleRefresh">
-        <el-icon :class="{ 'is-loading': currentLoading }"><Refresh /></el-icon>
-        <span>{{ i18nStore.tl('刷新', 'Refresh') }}</span>
-      </button>
 
       <!-- 次要入口收进「更多」；单条启停/编辑/删除在表格行操作列 -->
       <el-dropdown trigger="click" @command="onMoreCmd">
@@ -63,6 +58,18 @@
         <span class="cs-toolbar-divider" />
         <button class="cs-btn cs-btn-primary" @click="openAddDialog">{{ i18nStore.tl('添加', 'Add') }}</button>
       </template>
+
+      <!-- vshell 表格工具：刷新 / 密度 / 列设置（反向监听器） -->
+      <TableTools
+        v-if="activeView === 'normal'"
+        :columns="columnOptions"
+        :visible="colVisible"
+        :density="density"
+        :loading="manualRefreshing"
+        @update:visible="colVisible = $event"
+        @update:density="setDensity"
+        @refresh="refreshReverse"
+      />
     </div>
 
     <!-- 主体区域 -->
@@ -77,50 +84,84 @@
             size="small"
             height="100%"
             highlight-current-row
-            class="cs-session-table"
+            :class="['cs-session-table', density === 'default' ? '' : 'cs-density-' + density]"
             @row-click="onRowClick"
             @row-dblclick="onRowDblClick"
           >
-            <el-table-column prop="name" :label="i18nStore.tl('名称', 'name')" min-width="110" sortable show-overflow-tooltip />
-            <el-table-column prop="payload" :label="i18nStore.tl('载荷', 'payload')" min-width="160" sortable show-overflow-tooltip />
-            <el-table-column prop="host" :label="i18nStore.tl('主机', 'host')" min-width="140" sortable show-overflow-tooltip />
-            <el-table-column prop="port" :label="i18nStore.tl('端口', 'port')" width="85" sortable align="left" />
-            <el-table-column prop="bindto" :label="i18nStore.tl('回连地址', 'bindto')" min-width="160" sortable show-overflow-tooltip />
-            <el-table-column :label="i18nStore.tl('状态', 'status')" width="115" sortable align="center">
+            <!-- vshell 监听器列：ID / 备注 / 模式 / 监听地址 / 外网连接地址 / 超时心跳 / 心跳间隔 / 间隔 / 状态 / 操作 -->
+            <el-table-column v-if="colVisible.id" prop="Id" label="ID" width="64" align="center" sortable :sort-orders="['ascending', 'descending', null]">
+              <template #default="{ row }">
+                <span class="cs-font-mono cs-cell-text">{{ row.Id ?? '-' }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column v-if="colVisible.note" prop="Note" :label="i18nStore.tl('备注', 'Note')" width="160" sortable show-overflow-tooltip>
+              <template #default="{ row }">
+                <span class="cs-cell-text">{{ row.Note || '' }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column v-if="colVisible.mode" prop="Type" :label="i18nStore.tl('模式', 'Mode')" width="100" sortable show-overflow-tooltip>
+              <template #default="{ row }">
+                <span class="cs-cell-text cs-mode-text">{{ row.Type || '-' }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column v-if="colVisible.listenAddr" prop="ListenAddress" :label="i18nStore.tl('监听地址', 'Listen Address')" width="180" sortable show-overflow-tooltip>
+              <template #default="{ row }">
+                <span class="cs-font-mono cs-cell-text">{{ row.ListenAddress || '-' }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column v-if="colVisible.connectAddr" prop="ConnectAddress" :label="i18nStore.tl('外网连接地址', 'Connect Address')" width="180" sortable show-overflow-tooltip>
+              <template #default="{ row }">
+                <span class="cs-font-mono cs-cell-text">{{ row.ConnectAddress || '-' }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column v-if="colVisible.timeout" prop="HeartbeatTimeout" width="120" sortable align="right" :sort-orders="['ascending', 'descending', null]">
+              <template #header>
+                <span :title="i18nStore.tl('单位：次', 'unit: times')">{{ i18nStore.tl('超时心跳次数', 'Timeout Beats') }}</span>
+              </template>
+              <template #default="{ row }">
+                <span class="cs-cell-text">{{ row.HeartbeatTimeout || '30' }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column v-if="colVisible.interval" prop="HeartbeatInterval" width="110" sortable align="right" :sort-orders="['ascending', 'descending', null]">
+              <template #header>
+                <span :title="i18nStore.tl('单位：秒', 'unit: seconds')">{{ i18nStore.tl('心跳间隔', 'Heartbeat Interval') }}</span>
+              </template>
+              <template #default="{ row }">
+                <span class="cs-cell-text">{{ row.HeartbeatInterval || '10' }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column v-if="colVisible.sleep" prop="SleepSeconds" width="90" sortable align="right" :sort-orders="['ascending', 'descending', null]">
+              <template #header>
+                <span :title="i18nStore.tl('默认设置 sleep（取自监听器绑定的 C2 画像）', 'Default sleep (from the listener C2 profile)')">{{ i18nStore.tl('间隔', 'Sleep') }}</span>
+              </template>
+              <template #default="{ row }">
+                <span class="cs-cell-text" :title="sleepTitle(row)">{{ sleepLabel(row) }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column v-if="colVisible.status" :label="i18nStore.tl('状态', 'Status')" width="100" sortable align="center">
               <template #default="{ row }">
                 <span class="vs-status-tag" :class="row.Status === 1 ? 'is-online' : 'is-offline'">
                   {{ row.Status === 1 ? (i18nStore.tl('监听中', 'Listening')) : (i18nStore.tl('已停止', 'Stopped')) }}
                 </span>
               </template>
             </el-table-column>
-            <el-table-column prop="note" :label="i18nStore.tl('备注', 'note')" min-width="140" sortable show-overflow-tooltip />
-            <el-table-column :label="i18nStore.tl('VKey', 'vkey')" min-width="115" show-overflow-tooltip>
-              <template #default="{ row }">
-                <span class="cs-font-mono">{{ maskSecret(row.VKey) }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column :label="i18nStore.tl('加密盐', 'encryption_salt')" min-width="115" show-overflow-tooltip>
-              <template #default="{ row }">
-                <span class="cs-font-mono">{{ maskSecret(row.EncryptionSalt) }}</span>
-              </template>
-            </el-table-column>
 
-            <el-table-column :label="i18nStore.tl('操作', 'Actions')" width="210" fixed="right">
+            <!-- vshell 操作列：图标 + 文字；启用/停用常显，不可用的一侧置灰 -->
+            <el-table-column :label="i18nStore.tl('操作', 'Actions')" min-width="240">
               <template #default="{ row }">
                 <div class="row-actions">
-                  <a
-                    v-if="row.Status === 1"
-                    class="row-link"
-                    @click.stop="handleStop(row)"
-                  >{{ i18nStore.tl('停用', 'Stop') }}</a>
-                  <a
-                    v-else
-                    class="row-link"
-                    @click.stop="handleStart(row)"
-                  >{{ i18nStore.tl('启用', 'Start') }}</a>
-                  <a class="row-link" @click.stop="handleRestart(row)">{{ i18nStore.tl('重启', 'Restart') }}</a>
-                  <a class="row-link" @click.stop="openEditDialog(row)">{{ i18nStore.tl('编辑', 'Edit') }}</a>
-                  <a class="row-link row-link-danger" @click.stop="handleRemove(row)">{{ i18nStore.tl('删除', 'Remove') }}</a>
+                  <a class="row-link" :class="{ 'is-disabled': row.Status === 1 }" @click.stop="handleStart(row)">
+                    <VsIcon name="play" :size="12" /><span>{{ i18nStore.tl('启用', 'Start') }}</span>
+                  </a>
+                  <a class="row-link" :class="{ 'is-disabled': row.Status !== 1 }" @click.stop="handleStop(row)">
+                    <VsIcon name="stop" :size="12" /><span>{{ i18nStore.tl('停用', 'Stop') }}</span>
+                  </a>
+                  <a class="row-link" @click.stop="openEditDialog(row)">
+                    <VsIcon name="pen" :size="12" /><span>{{ i18nStore.tl('编辑', 'Edit') }}</span>
+                  </a>
+                  <a class="row-link row-link-danger" @click.stop="handleRemove(row)">
+                    <VsIcon name="trash-alt" :size="12" /><span>{{ i18nStore.tl('删除', 'Remove') }}</span>
+                  </a>
                 </div>
               </template>
             </el-table-column>
@@ -160,10 +201,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Refresh } from '@element-plus/icons-vue'
 import EditListenerDialog from '@/layout/Dialogs/EditListenerDialog.vue'
+import VsIcon from '@/layout-vshell/VsIcon.vue'
 import SpearPhishDialog from '@/layout/Dialogs/Attacks/SpearPhishDialog.vue'
 import ForwardListeners from './ForwardListeners.vue'
 import RedirectorDialog from '@/layout/Dialogs/RedirectorDialog.vue'
@@ -184,13 +225,9 @@ interface ListenerItem {
   Note?: string
   VKey?: string
   EncryptionSalt?: string
+  Profile?: string
+  SleepSeconds?: number
   color?: string
-  name?: string
-  payload?: string
-  host?: string
-  port?: string
-  bindto?: string
-  note?: string
 }
 
 const i18nStore = useI18nStore()
@@ -210,13 +247,82 @@ const showEditDialog = ref(false)
 const showSpearPhish = ref(false)
 const showRedirector = ref(false)
 
-const currentLoading = computed(() => (activeView.value === 'normal' ? loading.value : (forwardRef.value?.loading ?? false)))
+// ---- vshell 表格工具：密度 / 列设置（反向监听器） ----
+const DENSITY_KEY = 'tshell-listener-density'
+type Density = 'default' | 'compact' | 'mini'
+const density = ref<Density>('default')
+try {
+  const saved = localStorage.getItem(DENSITY_KEY)
+  if (saved === 'default' || saved === 'compact' || saved === 'mini') density.value = saved
+} catch { /* 隐私模式不可用 */ }
+
+function setDensity(cmd: string) {
+  if (cmd !== 'default' && cmd !== 'compact' && cmd !== 'mini') return
+  density.value = cmd
+  try { localStorage.setItem(DENSITY_KEY, cmd) } catch { /* 忽略 */ }
+}
+
+type ColKey = 'id' | 'note' | 'mode' | 'listenAddr' | 'connectAddr' | 'timeout' | 'interval' | 'sleep' | 'status'
+const COLUMNS_KEY = 'tshell-listener-columns'
+const DEFAULT_COLS: Record<ColKey, boolean> = {
+  id: true, note: true, mode: true, listenAddr: true, connectAddr: true,
+  timeout: true, interval: true, sleep: true, status: true,
+}
+const colVisible = ref<Record<ColKey, boolean>>({ ...DEFAULT_COLS })
+try {
+  const raw = localStorage.getItem(COLUMNS_KEY)
+  if (raw) {
+    const saved = JSON.parse(raw) as Partial<Record<ColKey, boolean>>
+    for (const k of Object.keys(DEFAULT_COLS) as ColKey[]) {
+      if (typeof saved[k] === 'boolean') colVisible.value[k] = saved[k] as boolean
+    }
+  }
+} catch { /* 损坏的本地配置按默认列显示 */ }
+watch(colVisible, (v) => {
+  try { localStorage.setItem(COLUMNS_KEY, JSON.stringify(v)) } catch { /* 忽略 */ }
+}, { deep: true })
+
+const columnOptions = computed<{ key: ColKey; label: string }[]>(() => [
+  { key: 'id', label: 'ID' },
+  { key: 'note', label: i18nStore.tl('备注', 'Note') },
+  { key: 'mode', label: i18nStore.tl('模式', 'Mode') },
+  { key: 'listenAddr', label: i18nStore.tl('监听地址', 'Listen Address') },
+  { key: 'connectAddr', label: i18nStore.tl('外网连接地址', 'Connect Address') },
+  { key: 'timeout', label: i18nStore.tl('超时心跳次数', 'Timeout Beats') },
+  { key: 'interval', label: i18nStore.tl('心跳间隔', 'Heartbeat Interval') },
+  { key: 'sleep', label: i18nStore.tl('间隔', 'Sleep') },
+  { key: 'status', label: i18nStore.tl('状态', 'Status') },
+])
+
+const manualRefreshing = ref(false)
+async function refreshReverse() {
+  if (manualRefreshing.value) return
+  manualRefreshing.value = true
+  try { await fetchListeners() } finally { manualRefreshing.value = false }
+}
+
+function sleepSeconds(row: ListenerItem): number {
+  const sec = Number(row.SleepSeconds)
+  return Number.isFinite(sec) && sec > 0 ? sec : 5
+}
+
+function sleepLabel(row: ListenerItem): string {
+  return `${sleepSeconds(row)}s`
+}
+
+function sleepTitle(row: ListenerItem): string {
+  const sec = sleepSeconds(row)
+  const profile = row.Profile || 'default'
+  return isZh.value
+    ? `默认设置 sleep：${sec}s（C2 画像 ${profile}）`
+    : `Default sleep: ${sec}s (C2 profile ${profile})`
+}
 
 const filteredListeners = computed(() => {
   const q = searchKey.value.toLowerCase().trim()
   if (!q) return listenersList.value
   return listenersList.value.filter((l) =>
-    [l.Type, l.ListenAddress, l.ConnectAddress, l.Note || '']
+    [String(l.Id ?? ''), l.Type, l.ListenAddress, l.ConnectAddress, l.Note || '']
       .join(' ')
       .toLowerCase()
       .includes(q),
@@ -230,28 +336,8 @@ function switchView(view: 'normal' | 'forward') {
   }
 }
 
-function handleRefresh() {
-  fetchListeners()
-  forwardRef.value?.fetchListeners()
-}
-
 function onForwardCountChange(cnt: number) {
   forwardCount.value = cnt
-}
-
-function parseHostPort(addr: string): { host: string; port: string } {
-  if (!addr) return { host: '', port: '' }
-  let a = addr.trim()
-  if (a.startsWith(':')) a = '0.0.0.0' + a
-  if (!a.includes(':')) return { host: a, port: '' }
-  const idx = a.lastIndexOf(':')
-  return { host: a.slice(0, idx), port: a.slice(idx + 1) }
-}
-
-function maskSecret(secret?: string): string {
-  if (!secret) return isZh.value ? '默认' : 'DEFAULT'
-  if (secret.length <= 4) return '****'
-  return `${secret.slice(0, 4)}****${secret.slice(-2)}`
 }
 
 async function fetchListeners() {
@@ -270,28 +356,21 @@ async function fetchListeners() {
       })
       forwardCount.value = fList.length
 
-      listenersList.value = reverseList.map((item: any) => {
-        const addr = parseHostPort(item.ListenAddress || '')
-        return {
-          Id: item.Id ?? item.ID ?? item.id,
-          Type: item.Type || 'tcp',
-          ListenAddress: item.ListenAddress || '',
-          ConnectAddress: item.ConnectAddress || '',
-          Status: item.Status,
-          HeartbeatTimeout: item.HeartbeatTimeout,
-          HeartbeatInterval: item.HeartbeatInterval,
-          Note: item.Note,
-          VKey: item.VKey,
-          EncryptionSalt: item.EncryptionSalt,
-          name: (item.Type || 'tcp').toUpperCase(),
-          payload: `beacon_${(item.Type || 'tcp').toLowerCase()}`,
-          host: addr.host,
-          port: addr.port,
-          bindto: item.ConnectAddress || '',
-          note: item.Note || '',
-          color: item.color || '',
-        }
-      })
+      listenersList.value = reverseList.map((item: any) => ({
+        Id: item.Id ?? item.ID ?? item.id,
+        Type: item.Type || 'tcp',
+        ListenAddress: item.ListenAddress || '',
+        ConnectAddress: item.ConnectAddress || '',
+        Status: item.Status,
+        HeartbeatTimeout: item.HeartbeatTimeout,
+        HeartbeatInterval: item.HeartbeatInterval,
+        Note: item.Note,
+        VKey: item.VKey,
+        EncryptionSalt: item.EncryptionSalt,
+        Profile: item.Profile || '',
+        SleepSeconds: Number(item.SleepSeconds) || 0,
+        color: item.color || '',
+      }))
     } else {
       listenersList.value = []
     }
@@ -357,31 +436,6 @@ async function handleStop(item: ListenerItem | null) {
     }
   } catch (error: any) {
     ElMessage.error(error?.response?.data?.data || (isZh.value ? '关闭失败' : 'Failed to stop'))
-  }
-}
-
-async function handleRestart(item: ListenerItem | null) {
-  if (!item) return
-  // 重启会断开该监听器下全部客户端连接(客户端将自动重连),需确认
-  try {
-    await ElMessageBox.confirm(
-      isZh.value ? `重启监听器 ${item.ListenAddress} 将断开其下所有客户端连接(客户端会自动重连),确定继续?` : `Restarting ${item.ListenAddress} will disconnect all its clients (they will auto-reconnect). Continue?`,
-      isZh.value ? '确认重启' : 'Confirm Restart',
-      { confirmButtonText: isZh.value ? '重启' : 'Restart', cancelButtonText: isZh.value ? '取消' : 'Cancel', type: 'warning' },
-    )
-  } catch {
-    return
-  }
-  try {
-    const res = await ListenerAPI.restartListener({ listenAddress: item.ListenAddress })
-    if (res.data?.status === 200 || res.status === 200) {
-      ElMessage.success(isZh.value ? `监听器 ${item.ListenAddress} 已重启` : `Listener ${item.ListenAddress} restarted`)
-      await fetchListeners()
-    } else {
-      ElMessage.error(res.data?.data || (isZh.value ? '重启失败' : 'Failed to restart'))
-    }
-  } catch (error: any) {
-    ElMessage.error(error?.response?.data?.data || (isZh.value ? '重启失败' : 'Failed to restart'))
   }
 }
 
