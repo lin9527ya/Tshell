@@ -185,9 +185,9 @@ cd ../Tshell-web; npm ci --legacy-peer-deps; npx vitest run; npm run type-check
 - 团队级默认：服务端 `config.opsec.*`（11 字段），回落链「请求 → 配置 → 内置默认」。
 - 前端：生成期「对抗能力」面板（9 项 + stealth/balanced/compatible 三预设 +
   平台/架构置灰原因）+ 会话内「Evasion Switches」面板。
-- 遗留：运行期覆盖不持久、启动期能力"关不掉"（不撤销已打补丁）、旧模板
-  fail-closed（**必须全量重建 178 个模板**）、未做三平台实机回归。
-  详见 `docs/KNOWN_LIMITATIONS.md` §20。
+- 遗留：运行期覆盖不持久、`off etw|amsi` 的撤销只在进程内且不认外部改动
+  （`unhook` 无撤销概念）、旧模板 fail-closed（**必须全量重建 178 个模板**）、
+  未做三平台实机回归。详见 `docs/KNOWN_LIMITATIONS.md` §20。
 
 ### 3.3 主密钥运行时派生（**协议迁移**，服务端 + 客户端同时改）
 

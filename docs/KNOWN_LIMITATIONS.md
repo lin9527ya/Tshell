@@ -413,7 +413,8 @@
     `UNHOOK_ON_START`（新增），缺省全关。
   - 运行期：`EVASION=135`，`evasion [status|all on|all off|on <key>|off <key>|reset]`，
     覆盖存在 beacon 进程内存里，键不存在 = 用编译期值（三态，能区分"运行期关掉"与
-    "本来就没开"）。
+    "本来就没开"）；`off etw|amsi` 会按 patch 台账把原始字节写回去（阶段四，
+    `evasion/patch_registry_windows.go`）。
   - 团队级默认：服务端 `config.opsec.*` 11 个字段，回落链「请求 → 配置 → 内置默认」。
   - 前端：生成期「对抗能力」面板（9 项 + 3 套预设 + 置灰原因）、会话内
     「Evasion Switches」面板；`opsecPresets.test.ts` 13 个单测 + techdebt 棘轮
@@ -425,8 +426,10 @@
     否则载荷里得常驻全部代码路径，隐蔽性和体积都白给。
   - **`syscallMode` 不提供运行期切换**：trampoline 按模式生成、SSN 建表时固化，
     切换要全量重建且失败即静默退化成 userland hook（OPSEC §3 有完整论证）。
-  - **启动期能力关不掉**：`etw`/`amsi`/`unhook` 的运行期 `off` 只阻止后续动作，
-    不撤销已写入的补丁；撤销需要保留原始字节并处理并发调用。
+  - **启动期能力的撤销只覆盖 etw/amsi，且只在进程内**：`etw`/`amsi` 的
+    运行期 `off` 会把原始字节写回（patch 台账，逆序、按能力、被外部改过则跳过）；
+    `unhook` 没有撤销概念（撤销 = 主动重新 hook，刻意不做）。台账随进程消失，
+    也不认"别人打的补丁"，所以重启后想回滚只能重启载荷。
   - **旧模板会 fail-closed**：P4 之前构建的模板里没有 5 个新占位符，生成的载荷启动时
     `placeholderChecks()` 命中残留并拒绝运行（报错要求重建模板）。全量重建 178 个
     模板之前，只有当前重建过的那几个传输能用。

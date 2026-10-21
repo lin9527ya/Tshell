@@ -321,6 +321,8 @@ go test -race ./Tshell-server/...     # 见 §4 回归基线（注意用外层�
   - 运行期 `EVASION=135`：`evasion [status|all on|all off|on <key>|off <key>|reset]`，
     覆盖只在内存、三态语义；编译期关 = 硬关闭（`on` 被拒并说明原因）；
     `syscallMode` 不提供运行期切换（trampoline 按模式生成，见 OPSEC §3）
+  - 启动期能力撤销（阶段四，2026-10-20 补入）：`off etw|amsi` 按 patch 台账逆序还原
+    原始字节、按能力隔离、被外部改过则跳过；`unhook` 无撤销概念（撤销 = 重新 hook）
   - 细粒度门控：`SleepMaskHideEnabled`/`StackSpoofEnabled`/`PpidSpoofEnabled`/
     `BlockDLLsEnabled`/`UnhookOnStartEnabled`，全部经 `EvasionEnabled()` 读运行期值；
     摘链不再被 ETW patch 顺带打开

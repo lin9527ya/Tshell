@@ -85,6 +85,9 @@ ckm.mu.RLock(); cur := ckm.sessionKey; ckm.mu.RUnlock()   // 切片指向的还�
   缺省全关；关掉就是那段代码路径不存在。
 - 运行期：`evasion [status|all on|all off|on <key>|off <key>|reset]`，覆盖只存内存，
   重连即回到生成期值；编译期关的能力运行期打不开（回执说明原因）。
+- 启动期能力可撤销（阶段四）：`off etw|amsi` 会把写入前的原始字节按能力逆序写回
+  （patch 台账在被改动的字节与当前不一致时跳过并报告）；`unhook` 仍是一次性动作，
+  关掉不回挂。台账只在进程内，重启即空。
 - 门控改成细粒度：摘链读 `SleepMaskHideEnabled()`、伪栈读 `SpoofActive()`（还要
   `syscallMode=direct`）、PPID/BlockDLLs 各自独立，不再被 ETW patch 顺带打开。
 - 完整论证与遗留见 `docs/OPSEC.md` §3 与 `docs/KNOWN_LIMITATIONS.md` §20。

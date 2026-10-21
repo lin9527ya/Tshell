@@ -266,8 +266,17 @@ trampoline 是**按模式生成**的（direct 直接放 `syscall; ret`，indirec
 隐蔽性掉一档"的按钮不该存在。生成期固定，前端也把它标成不提供运行期切换。
 
 **启动期能力与运行期能力的区别**
-`etw`/`amsi`/`unhook` 是对**已加载模块**打补丁，只在启动期做一次：运行期 `on` =
-立即执行一次（有用），运行期 `off` = 不会撤销已写入的补丁（只在回执里说明）。
+`etw`/`amsi`/`unhook` 都是对**已加载模块**动手，正常时机是启动期一次做完。
+运行期 `on` = 立即执行一次；运行期 `off` 分两种，**不能一概而论**：
+
+- `etw`/`amsi`：写入前把原始字节记进 patch 台账（`evasion/patch_registry_windows.go`），
+  `off` 时按能力逆序写回原字节，回执逐目标报告"已还原 / 跳过 / 失败"。跳过是指
+  当前字节已不是我们写的那份（例如 EDR 期间重新 hook 过）—— 这种情况宁可不动，
+  也不盲目覆盖。
+- `unhook`：一次性恢复动作，**没有撤销概念**。撤销一次 unhook 等于主动把 hook 装回去，
+  那是另一件事，刻意不做。
+
+台账只在**本进程内**有效：重启即空，也只能撤销经本台账记录、且期间未被外部改动的补丁。
 `unhook` 必须在 ETW/AMSI patch **之前**跑，否则磁盘原始字节会把刚打的补丁盖回去，
 得到"报告成功、实际失效"的载荷 —— `evasion.Init()` 的顺序就是为此固定下来的。
 
@@ -384,7 +393,7 @@ TLS 通道上并固定指纹。两者都需要生成期注入密钥材料 ——
 | BlockDLLs 的副作用 | 已实现（2026-10-20）；只约束 DLL 加载签名，不阻止已加载的非微软模块；对 IME/Shell 扩展有兼容性风险，因此 `conpty`/`hvnc`/`privesc` 三条交互路径**刻意不接** | 无 |
 | 运行期开关**不跨会话** | 覆盖只存在 beacon 进程内存里，重连/重启即回到生成期值。刻意不做持久化：否则"临时开一次"会变成永久的隐蔽性下降，且服务端无法知道某台机器实际处于什么状态 | 需要持久化时用生成期开关 |
 | 运行期**不能切** `syscallMode` | trampoline 按模式生成、SSN 在表建立时固化，切换要全量重建且失败即静默退化成 userland hook（见 §3） | 无（设计决定） |
-| 启动期能力"关不掉" | `etw`/`amsi`/`unhook` 的运行期 `off` 只阻止后续动作，**不撤销**已写入的补丁 —— 撤销需要保留原始字节并处理并发调用 | 排期（需逐导出备份原始字节） |
+| 启动期能力的撤销边界 | `etw`/`amsi` 运行期 `off` **会**写回原始字节（2026-10-20，patch 台账 + 逆序还原，被外部改过则跳过并报告）；`unhook` 无撤销概念（撤销 = 重新 hook，不做）。台账**仅在进程内**：重启即空，只认本台账记录过的地址 | 需要跨进程/跨重启的回滚只能重启载荷；unhook 的回滚刻意不提供 |
 | 旧模板 + 新客户端 | 新客户端源码含 5 个新占位符字面量，P4 之前构建的模板里没有它们 → 生成出的载荷启动时 `placeholderChecks()` 命中残留并**拒绝运行**（fail-closed，报错文案要求重建模板） | 全量重建 178 个模板 |
 | 代码签名真实证书验证 | 无 EV/OV 证书 | 提供证书 |
 | `kerberos ptt` 运行时接受度 | 文件格式已验证（`pkg/cred/kirbi.go`），LSA 是否认可需域环境 | 提供 AD 环境 |
@@ -418,6 +427,8 @@ go test ./core/evasion/ -run 'TestParsePEImage|TestFileOffsetForRVA|TestSectionI
 go test ./core/commands/ -run 'TestPickSpoofParent|TestPPIDSpoof|TestBlockDLLs|TestCreateProcessWithoutAttrs|TestSpawnPaths' -count=1 -v
 # 对抗能力开关：能力表/覆盖三态/不可能组合的原因文案 + EVASION 命令与接线棘轮
 go test ./core/config/ ./core/commands/ -run 'TestEvasion' -count=1 -v
+# 启动期能力撤销（阶段四）：逆序还原 / 按能力隔离 / 被外部改过则跳过 / 空台账报错
+go test ./core/evasion/ ./core/commands/ -run 'TestRestore|TestRecordPatch|TestEvasionControl' -count=1 -v
 # 服务端：占位符归一化/校验、配置回落、命令表
 cd ../../Tshell-server && go test ./pkg/api/ ./pkg/delivery/ ./pkg/config/ ./pkg/sendcommand/ -run 'TestResolveOpsec|TestNormalizeOnOff|TestNormalizeEnums|TestPatchOPSEC|TestApplyOpsec|TestApplyConfigUpdatesRoutesOpsec|TestResolveCommandEquivalence' -count=1
 ```
@@ -447,7 +458,7 @@ cd ../../Tshell-server && go test ./pkg/api/ ./pkg/delivery/ ./pkg/config/ ./pkg
 | 开关"勾了不生效"不会发生 | 服务端 `TestResolveOpsecRejectsInvalidValues` / `TestResolveOpsecPlatformWindows386` / `TestResolveOpsecStackSpoofRequiresDirect`（非法或平台不可能的组合直接 400，不静默关掉）；客户端 `TestEvasionControlRefusesImpossible`（编译期关的能力运行期 `on` 被拒并说明原因） |
 | 生成期开关真的进了载荷 | `TestPatchOPSECSwitchesAllReplaced`（5 个占位符都被替换）。外部证据分两步：**模板**解压后 `strings \| grep SLEEP_MASK_HIDE_PLACEHOLDER` **应当命中**（模板就是未 patch 的构建，占位符必须还在）；**生成出来的载荷**同一个 grep **必须无命中**（有命中说明模板与服务端版本不匹配） |
 | 门控读的是运行期值而不是编译期常量 | `TestSleepMaskHidesModuleDuringSleep` / `TestHostEvasionGateDefaultsOff`（每个能力都经 `EvasionEnabled()`）+ `TestEvasionGatesAreRuntimeRead`（run.go / procattr / spoof 的调用点） |
-| 运行期关掉真的能关 | `TestEvasionOverrideTogglesActive`（覆盖优先、显式关与"本来没开"可区分）+ `TestEvasionStatusStartupNote`（启动期能力在状态里带说明） |
+| 运行期关掉真的能关（含撤销已打的补丁） | `TestEvasionOverrideTogglesActive`（覆盖优先、显式关与"本来没开"可区分）+ `TestEvasionStatusStartupNote`（启动期能力带说明）+ `TestRestorePatchesByTagIsScoped`（关 etw 不会顺手撤掉 amsi）+ `TestRestorePatchesSkipsWhenMemoryChangedExternally`（被外部改过不乱写）+ `TestRestorePatchesReverseOrder`（逆序还原） |
 | 配置白名单不会放坏值进载荷 | `TestApplyOpsecUpdatesRejectsInvalid`（6 组非法值，含非字符串类型）+ `TestApplyOpsecUpdatesIgnoresUnknown` |
 | 前端不会发"勾了但载荷里没有"的组合 | `opsecPresets.test.ts`（`normalizeForPlatform` 三平台 + `capabilityDisabledReason` 四种原因）+ `payloadUtil.test.ts`（9 个字段逐个转发） |
 

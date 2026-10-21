@@ -141,7 +141,7 @@ func TestEvasionImpossibleReasonSpoofNeedsDirect(t *testing.T) {
 	}
 }
 
-// TestEvasionStatusStartupNote 启动期能力要带"关掉不撤销"的说明，避免操作员误解。
+// TestEvasionStatusStartupNote 启动期能力要带"关掉会发生什么"的说明，避免操作员误解。
 func TestEvasionStatusStartupNote(t *testing.T) {
 	resetEvasion(t)
 	for _, r := range EvasionStatus() {

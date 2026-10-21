@@ -568,6 +568,9 @@ cd Tshell-web && npm run build:embed
 | 239 | PPID/BlockDLLs 实机单测（读回内核字段与策略位） | `grep -c "^func Test" Tshell-client/implant/core/commands/procattr_windows_test.go` | 6 |
 | 240 | spawn 路径接线棘轮存在 | `grep -c "TestSpawnPathsUseChildAttrs" Tshell-client/implant/core/commands/procattr_windows_test.go` | 2 |
 | 241 | 两个"假生效"陷阱写进文档 | `grep -c "ERROR_BAD_LENGTH\|ERROR_INVALID_HANDLE" docs/OPSEC.md` | 1 |
+
+## Z 组（对抗能力逐项开关 + 两个前端面板，2026-10-20 追加）
+
 | 242 | 运行期开关命令号两侧一致 | `grep -c "EVASION = 135" Tshell-client/implant/core/services/types.go Tshell-server/pkg/command/cmdType.go` | 2 |
 | 243 | 运行期开关在 dispatch 里真接上 | `grep -c "case services.EVASION:" Tshell-client/implant/core/app/dispatch.go` | 1 |
 | 244 | 门控统一入口是 EvasionEnabled（先看运行期覆盖） | `grep -c "func EvasionEnabled" Tshell-client/implant/core/config/opsec.go` | 1 |
@@ -596,3 +599,13 @@ cd Tshell-web && npm run build:embed
 | 267 | 配置校验单测 | `grep -c "^func Test" Tshell-server/pkg/config/opsec_apply_test.go` | 4 |
 | 268 | 前端预设/置灰单测 | `grep -c "^  it(" Tshell-web/src/components/Opsec/opsecPresets.test.ts` | 13 |
 | 269 | 前端仍禁 isZh 三元与 as any（techdebt 棘轮） | `grep -c "isZh\|as any" Tshell-web/src/techdebt.test.ts` | 2 |
+
+## AA 组（阶段四：启动期能力可撤销，2026-10-20 追加）
+
+| 270 | `evasion off` 走 patch 台账撤销（不是只翻开关） | `grep -c "RestorePatchesByTag" Tshell-client/implant/core/commands/evasion_cmd_windows.go` | 1 |
+| 271 | 写入前先记原始字节（否则永久不可撤销） | `grep -c "recordPatch(" Tshell-client/implant/core/evasion/evasion.go` | 1 |
+| 272 | 台账实现齐全（记账/还原/按能力/清空） | `grep -c "func recordPatch\|func [Rr]estorePatches" Tshell-client/implant/core/evasion/patch_registry_windows.go` | 4 |
+| 273 | 撤销行为有实机单测（逆序/隔离/外部改动跳过/空台账） | `grep -c "^func Test" Tshell-client/implant/core/evasion/patch_registry_windows_test.go` | 8 |
+| 274 | 文档说清"etw/amsi 能还原、unhook 不回挂" | `grep -c "写回原始字节" docs/OPSEC.md` | 1 |
+| 275 | 状态表文案同步（不谎称"不会撤销"） | `grep -c "unhook 关掉不回挂" Tshell-client/implant/core/config/opsec.go` | 1 |
+| 276 | 前端面板文案同步 | `grep -c "不会重新挂上" Tshell-web/src/components/Opsec/OpsecSwitches.vue` | 1 |

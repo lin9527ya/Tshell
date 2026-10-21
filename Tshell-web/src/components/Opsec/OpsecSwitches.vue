@@ -18,8 +18,8 @@
     <p class="osw-hint">
       {{
         i18nStore.tl(
-          '覆盖只保存在客户端内存里：重连/重启后回到生成期值。ETW / AMSI / unhook 是启动期能力——“开”会立即执行一次，“关”不会撤销已经打上去的补丁。',
-          'Overrides live in the beacon process only and reset on reconnect. ETW / AMSI / unhook are startup-time: "on" applies immediately, "off" does not undo a patch already written.',
+          '覆盖只保存在客户端内存里：重连/重启后回到生成期值。ETW / AMSI / unhook 是启动期能力——“开”会立即执行一次；etw/amsi“关”会把原始字节写回去，unhook“关”不会重新挂上。',
+          'Overrides live in the beacon process only and reset on reconnect. ETW / AMSI / unhook are startup-time: "on" applies immediately; "off" restores the original bytes for etw/amsi, and does not re-hook for unhook.',
         )
       }}
     </p>

@@ -34,9 +34,10 @@ func TestEvasionControlStatusListsAll(t *testing.T) {
 				t.Fatalf("状态表缺 %s (%q): %s", want, arg, s)
 			}
 		}
-		// 启动期能力必须带"关掉不撤销"的说明，否则操作员会以为能回滚。
-		if !strings.Contains(s, "不会撤销") {
-			t.Fatalf("状态表缺回滚说明: %s", s)
+		// 启动期能力在状态/提示里必须说清"关掉会发生什么"：etw/amsi 还原字节，
+		// unhook 不回挂 —— 否则操作员会以为两者都能随意回滚。
+		if !strings.Contains(s, "还原原始字节") {
+			t.Fatalf("状态表缺还原说明: %s", s)
 		}
 	}
 }
@@ -151,7 +152,8 @@ func TestEvasionControlRefusesImpossible(t *testing.T) {
 	}
 }
 
-// TestEvasionControlAllOff 批量关闭不动任何启动期补丁，只改标记。
+// TestEvasionControlAllOff 批量关闭逐项回执；本测试进程内没打过补丁，
+// 所以 etw/amsi 走"无需撤销"分支，同样计入"运行期已关闭"。
 func TestEvasionControlAllOff(t *testing.T) {
 	evasionCleanup(t)
 	out, err := EvasionControl([]byte("all off"))
