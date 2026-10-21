@@ -166,25 +166,23 @@ func effectiveDeliveryDefaults() config.DeliveryConfig {
 		OmitDefaultPort:   true,
 		TrustProxyHeaders: true,
 	}
-	if g := config.GetGlobalConfig(); g != nil {
-		d := g.Delivery
-		if d.DefaultScheme != "" {
-			cfg.DefaultScheme = d.DefaultScheme
-		}
-		cfg.DefaultHost = d.DefaultHost
-		cfg.BasePath = d.BasePath
-		cfg.ForceHTTPS = d.ForceHTTPS
-		cfg.OmitDefaultPort = d.OmitDefaultPort
-		cfg.CacheMaxAge = d.CacheMaxAge
-		cfg.CORSAllowOrigin = d.CORSAllowOrigin
-		cfg.TrustProxyHeaders = d.TrustProxyHeaders
-		// server.external_ip 可作为 host 回退
-		if cfg.DefaultHost == "" && g.Server.ExternalIP != "" {
-			if g.Server.Port > 0 && g.Server.Port != 80 && g.Server.Port != 443 {
-				cfg.DefaultHost = fmt.Sprintf("%s:%d", g.Server.ExternalIP, g.Server.Port)
-			} else {
-				cfg.DefaultHost = g.Server.ExternalIP
-			}
+	d, externalIP, serverPort := config.DeliverySettings()
+	if d.DefaultScheme != "" {
+		cfg.DefaultScheme = d.DefaultScheme
+	}
+	cfg.DefaultHost = d.DefaultHost
+	cfg.BasePath = d.BasePath
+	cfg.ForceHTTPS = d.ForceHTTPS
+	cfg.OmitDefaultPort = d.OmitDefaultPort
+	cfg.CacheMaxAge = d.CacheMaxAge
+	cfg.CORSAllowOrigin = d.CORSAllowOrigin
+	cfg.TrustProxyHeaders = d.TrustProxyHeaders
+	// server.external_ip 可作为 host 回退
+	if cfg.DefaultHost == "" && externalIP != "" {
+		if serverPort > 0 && serverPort != 80 && serverPort != 443 {
+			cfg.DefaultHost = fmt.Sprintf("%s:%d", externalIP, serverPort)
+		} else {
+			cfg.DefaultHost = externalIP
 		}
 	}
 	return cfg

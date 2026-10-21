@@ -394,10 +394,10 @@ func (l *Listener) registerClient(metainfo []byte, clientIP string) string {
 
 	// 注册到统一离线检测器
 	if connection.GlobalOfflineDetector != nil {
-		_, hbInterval := database.GetListenerHeartbeatConfigByAddr(l.key, "dns")
+		beaconCfg := database.GetListenerBeaconConfigByAddr(l.key, "dns")
 		// 统一心跳：优先采用客户端上报的真实 sleep（MetaInfo 第5字段），回退监听器配置
 		dnsMeta := strings.Split(string(metainfo[9:]), "\t")
-		sleepSec := connection.ResolveSleepSeconds(dnsMeta, hbInterval)
+		sleepSec := connection.ResolveListenerSleep(dnsMeta, beaconCfg)
 		// 【优化】注册到统一连接池（DNS 无持久连接，conn 传 nil 仅占配额与统计）
 		// 【幂等修复】重复 mi 注册只增 ActiveConnections 计数、误报"连接池已满"，
 		// 已存在条目时仅刷新活动时间
@@ -409,7 +409,7 @@ func (l *Listener) registerClient(metainfo []byte, clientIP string) string {
 				logx.Warnf("⚠️ [DNS] 连接池注册失败: %v\n", err)
 			}
 		}
-		connection.GlobalOfflineDetector.Register(uid, "dns", sleepSec, func() {
+		connection.GlobalOfflineDetector.Register(uid, "dns", sleepSec, beaconCfg.JitterPercent, func() {
 			l.dnsClientsLock.Lock()
 			delete(l.dnsClients, uid)
 			l.dnsClientsLock.Unlock()
@@ -460,13 +460,14 @@ func (l *Listener) registerClient(metainfo []byte, clientIP string) string {
 			arch = "x64"
 		}
 
-		heartbeatTimeout, heartbeatInterval := database.GetListenerHeartbeatConfigByAddr(l.key, "dns")
+		beaconCfg := database.GetListenerBeaconConfigByAddr(l.key, "dns")
+		heartbeatTimeout, heartbeatInterval := beaconCfg.HeartbeatTimeout, beaconCfg.HeartbeatInterval
 		_, insertErr := database.DB().Insert(&database.Clients{
 			Uid: uid, FirstStart: time.Now().Format("2006-01-02 15:04:05"),
 			ExternalIP: clientIP, InternalIP: localIP,
 			Username: username, Computer: hostname, Process: procName,
 			Pid: strconv.Itoa(int(processID)), Address: address, Arch: arch,
-			Note: "", Sleep: strconv.Itoa(connection.ResolveSleepSeconds(osArray, heartbeatInterval)), Online: "1", Color: "", Listener: "dns",
+			Note: "", Sleep: strconv.Itoa(connection.ResolveListenerSleep(osArray, beaconCfg)), Online: "1", Color: "", Listener: "dns",
 			HeartbeatTimeout: heartbeatTimeout, HeartbeatInterval: heartbeatInterval,
 		})
 		if insertErr != nil {
@@ -717,7 +718,7 @@ func (l *Listener) handlePull(w dns.ResponseWriter, r *dns.Msg, m *dns.Msg, uid,
 	// 检查命令队列(B5: 开关开启且客户端上报 b1 能力时批量打包,否则单条)
 	var cmdBytes []byte
 	var ok bool
-	if cfg := config.GetGlobalConfig(); cfg != nil && cfg.HTTP.BatchCommands && command.IsBatchCapable(uid) {
+	if config.BatchCommandsEnabled() && command.IsBatchCapable(uid) {
 		cmds := command.CommandQueues.GetCommands(uid, command.BatchMaxCount())
 		if len(cmds) > 1 {
 			cmdBytes = command.BuildBatchFrame(cmds)

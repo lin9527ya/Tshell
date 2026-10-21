@@ -833,6 +833,53 @@ func GetGlobalConfig() *Config {
 	return GlobalConfig.GetConfig()
 }
 
+// ClientTiming 返回全局默认 beacon 节奏（client.sleep / client.jitter）。
+//
+// 热路径专用：GetGlobalConfig() 为了调用方隔离会做一次 JSON 深拷贝，放在
+// "每条消息/每次轮询"上太贵。这里在 RLock 下只读两个 int，与配置热重载互斥。
+func ClientTiming() (sleepSeconds, jitterPercent int) {
+	if GlobalConfig == nil {
+		cfg := createDefaultConfig()
+		return cfg.Client.Sleep, cfg.Client.Jitter
+	}
+	GlobalConfig.mu.RLock()
+	defer GlobalConfig.mu.RUnlock()
+	return GlobalConfig.config.Client.Sleep, GlobalConfig.config.Client.Jitter
+}
+
+// DeliverySettings 返回 delivery 配置与 server 对外地址（值拷贝）。
+//
+// 热路径专用：投递 Hub 的每个请求都要读这些字段取 CDN/对外 URL。
+func DeliverySettings() (delivery DeliveryConfig, externalIP string, serverPort int) {
+	if GlobalConfig == nil {
+		cfg := createDefaultConfig()
+		return cfg.Delivery, cfg.Server.ExternalIP, cfg.Server.Port
+	}
+	GlobalConfig.mu.RLock()
+	defer GlobalConfig.mu.RUnlock()
+	return GlobalConfig.config.Delivery, GlobalConfig.config.Server.ExternalIP, GlobalConfig.config.Server.Port
+}
+
+// StorageDownloadsDir 返回下载制品根目录（值拷贝，下载热路径专用）。
+func StorageDownloadsDir() string {
+	if GlobalConfig == nil {
+		return createDefaultConfig().Storage.DownloadsDir
+	}
+	GlobalConfig.mu.RLock()
+	defer GlobalConfig.mu.RUnlock()
+	return GlobalConfig.config.Storage.DownloadsDir
+}
+
+// BatchCommandsEnabled 是否开启批量命令（轮询/命令热路径专用，避免深拷贝）。
+func BatchCommandsEnabled() bool {
+	if GlobalConfig == nil {
+		return createDefaultConfig().HTTP.BatchCommands
+	}
+	GlobalConfig.mu.RLock()
+	defer GlobalConfig.mu.RUnlock()
+	return GlobalConfig.config.HTTP.BatchCommands
+}
+
 // GetLogLevel 实现security.ConfigGetter接口
 func (cm *ConfigManager) GetLogLevel() string {
 	cm.mu.RLock()

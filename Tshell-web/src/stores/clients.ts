@@ -136,11 +136,12 @@ export const useClientsStore = defineStore('clients', () => {
     return clientsList.value.find(client => client.Uid === uid)
   }
 
-  // 根据UID更新客户端信息
+  // 根据UID更新客户端信息（就地合并，保持对象引用稳定：
+  // fetchClients 特意复用旧对象避免表格整行重挂载，单行更新也不应替换引用）
   const updateClient = (uid: string, updates: Partial<ClientData>) => {
     const index = clientsList.value.findIndex(client => client.Uid === uid)
     if (index >= 0) {
-      clientsList.value[index] = { ...clientsList.value[index], ...updates }
+      Object.assign(clientsList.value[index], updates)
     }
   }
 

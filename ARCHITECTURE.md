@@ -57,6 +57,10 @@ Tshell/
   - 接口:`GET /api/tasks`(过滤+分页)、`GET /api/tasks/:id`、`POST /api/tasks/:id/cancel`。
   - 前端任务中心(`/tasks`)按真实状态展示与取消;插件页与文件下载对话框按 `task_id` 轮询终态,
     不再靠"输出稳定 N 次"或"百分比到 100"猜完成。
+- **实时离线判定**:统一离线检测器由固定 5s ticker 改为**截止时间驱动**(睡到最早一个客户端的 `LastActive + 4.5×最坏拍` 再检查),阈值一到即判离线;`Touch` 只更新活动时间不唤醒调度器,注册/调小 sleep 时唤醒重算。断连路径(TCP/KCP/WS defer)仍在连接关闭时立即置离线,轮询协议(HTTP/HTTPS/DNS/OSS)与半开连接由该调度器在阈值点精确判定。热路径用 `sync.Map + atomic`(lastActive 存 UnixNano),`Touch` 不再走全局写锁——8 并发基准约 30ns/op(旧实现 ~112ns/op),多客户端活动不再互相串行化。
+- **监听器级 beacon 配置**:新建/编辑监听器可设置 sleep(1-300s) 与 jitter(0-50%),优先级 **监听器 > C2 画像 sleeptime_ms > 全局 client.sleep/jitter**;生成载荷时由 `delivery.ResolveBeacon*` 统一解析并 patch `HEARTBEAT_INTERVAL`/`JITTER_PERCENT` 占位符,离线检测阈值也用监听器 jitter。未配置=NULL=继承,老监听器行为不变;改动只影响之后新生成的客户端(`sleep N` 仍可在线调整 sleep,jitter 不可运行期修改)。WebDelivery/内存注入/会话迁移同样继承该配置,并顺带修掉 jitter 占位符残留导致客户端 fail-closed 的问题。
+- **遗留字段退役**:监听器的 `heartbeat_timeout`/`heartbeat_interval` 不再参与任何判定(UI 已隐藏;列与 API 字段保留以兼容老库/老前端)。离线阈值只由 `sleep+jitter` 决定,旧客户端的 sleep 兜底链为 监听器显式 sleep > 画像 `sleeptime_ms` > 全局 `client.sleep` > 5s。
+- **客户端升级**:`POST /api/client/upgrade`(admin/operator,需 `confirm`)按客户端当前监听器/架构重新生成独立 EXE 载荷,注册 30 分钟有效的临时投递 URL,再下发 `self_update <url>`;客户端下载后校验内置标记、替换自身并重启。服务端拒绝非 Windows、监听器未运行、以及 rundll32/regsvr32/svchost 等宿主进程(DLL/注入/迁移形态下 `os.Executable()` 指向宿主程序,替换会毁掉宿主文件);旧客户端没有客户端侧标记校验,UI 有二次风险确认。升级载荷不上线口令(`self_update` 重启不带参数),`AutoDelete=0` 以便后续再次升级。
 - **单二进制多传输**(阶段三):`-tags transport_multi` 构建含全部 12 种传输的二进制,运行时按端点 `scheme://addr` 选择实现并顺序回退(tcp→https→dns...),并对端点做**主动健康探测**(60s TCP 探测、优先健康端点、活动端点连续失败主动断开);服务端 `GenServer.endpoints` patch 512 字节定长占位符,并校验各端点监听器密钥一致;生成入口见载荷生成对话框"多传输端点"。
 - **Schema 迁移**:`schema_migrations` 版本表 + 有序迁移清单(幂等、失败不记录、可重试),`/api/version` 暴露 `schema_version`;必须单副本部署(见 DEPLOYMENT.md 的单实例约束)。
 - **端口扫描**(阶段三):控制台命令 `scan <目标> <端口> [超时ms]`,TCP connect 跨平台扫描,支持 CIDR/主机名/端口范围/`top`,总量与并发有上限,结果按主机聚合回显。

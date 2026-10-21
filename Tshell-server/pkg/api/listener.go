@@ -14,12 +14,14 @@ import (
 	"BackendTemplate/pkg/connection/tcp"
 	"BackendTemplate/pkg/connection/websocket"
 	"BackendTemplate/pkg/database"
+	"BackendTemplate/pkg/delivery"
 	"BackendTemplate/pkg/encrypt"
 	"BackendTemplate/pkg/sendcommand"
 	"fmt"
 	"log"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -40,6 +42,9 @@ func AddListener(c *gin.Context) {
 		VKey           string `json:"vkey"`           // VKey
 		EncryptionSalt string `json:"encryptionSalt"` // 流量加密盐
 		Profile        string `json:"profile"`        // 绑定的 C2 画像名，空=default
+		// 监听器级 beacon 配置（可选）：nil/-1 = 继承（sleep 继承画像→全局，jitter 继承全局）
+		BeaconSleepSeconds  *int `json:"beaconSleepSeconds"`
+		BeaconJitterPercent *int `json:"beaconJitterPercent"`
 	}
 	if err := c.BindJSON(&listener); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -93,6 +98,19 @@ func AddListener(c *gin.Context) {
 		return
 	}
 
+	// 监听器级 beacon 配置：nil/-1 = 继承。校验范围与客户端占位符钳制一致
+	// （sleep 1-300s、jitter 0-50%），否则生成出的载荷与 UI 显示会与实际节奏分裂。
+	beaconSleep, beaconMsg := normalizeBeaconSleep(listener.BeaconSleepSeconds)
+	if beaconMsg != "" {
+		c.JSON(http.StatusOK, gin.H{"status": 400, "data": beaconMsg})
+		return
+	}
+	beaconJitter, jitterMsg := normalizeBeaconJitter(listener.BeaconJitterPercent)
+	if jitterMsg != "" {
+		c.JSON(http.StatusOK, gin.H{"status": 400, "data": jitterMsg})
+		return
+	}
+
 	// J4 前置 + 长度：默认/空密钥的监听器 handleOpenPort 必然拒绝启动，过短的密钥则会让派生
 	// 密钥尾部零填充。原实现先 Insert(Status:1) 再 go handleOpenPort，被拒绝后库里会留下
 	// Status=1 却没有句柄的记录（前端显示"监听中"）。留空会走到上面的随机生成，故此处校验
@@ -113,6 +131,9 @@ func AddListener(c *gin.Context) {
 		VKey:              listener.VKey,
 		EncryptionSalt:    listener.EncryptionSalt,
 		Profile:           profileName,
+
+		BeaconSleepSeconds:  beaconSleep,
+		BeaconJitterPercent: beaconJitter,
 	}); err != nil {
 		c.JSON(http.StatusOK, gin.H{"status": 500, "data": "保存监听器失败: " + err.Error()})
 		return
@@ -121,7 +142,7 @@ func AddListener(c *gin.Context) {
 	// D18: 业务审计
 	auditLogEvent("LISTENER_ADD", "SUCCESS", "新增监听器 "+listener.Type+"://"+listener.ListenAddress, map[string]interface{}{"type": listener.Type, "address": listener.ListenAddress})
 	c.JSON(http.StatusOK, gin.H{"status": 200, "data": "Listener added"})
-	go handleOpenPort(listener.Type, listener.ListenAddress, listener.VKey, listener.EncryptionSalt, listener.Profile)
+	go handleOpenPort(listener.Type, listener.ListenAddress, listener.VKey, listener.EncryptionSalt, profileName)
 }
 
 // maskedMarker 脱敏预览的占位符。凡含此标记的值都视为"不是真实值，而是对库中现有值的引用"：
@@ -173,7 +194,73 @@ type listenerResponse struct {
 	VKey              string `json:"VKey"`
 	EncryptionSalt    string `json:"EncryptionSalt"`
 	Profile           string `json:"Profile"`      // 绑定的 C2 画像名（空=default）
-	SleepSeconds      int    `json:"SleepSeconds"` // 画像的默认 sleep（秒），即生成载荷的默认间隔
+	SleepSeconds      int    `json:"SleepSeconds"` // 画像的默认 sleep（秒）；旧前端兼容字段
+	// 监听器级 beacon 配置（编辑表单回填）：-1 = 继承
+	BeaconSleepSeconds  int `json:"BeaconSleepSeconds"`
+	BeaconJitterPercent int `json:"BeaconJitterPercent"`
+	// 最终生效值（列表展示）：与载荷生成共用 delivery.ResolveBeacon*，不会与真正
+	// 编译进客户端的值漂移。
+	EffectiveSleepSeconds  int `json:"EffectiveSleepSeconds"`
+	EffectiveJitterPercent int `json:"EffectiveJitterPercent"`
+}
+
+// beaconOverrideValues 取出监听器上显式配置的 beacon 值，未配置返回 -1。
+func beaconOverrideValues(l database.Listener) (sleepSeconds, jitterPercent int) {
+	sleepSeconds, jitterPercent = delivery.BeaconUnset, delivery.BeaconUnset
+	if l.BeaconSleepSeconds != nil {
+		sleepSeconds = *l.BeaconSleepSeconds
+	}
+	if l.BeaconJitterPercent != nil {
+		jitterPercent = *l.BeaconJitterPercent
+	}
+	return sleepSeconds, jitterPercent
+}
+
+// listenerBeaconOverrides 把监听器级 beacon 配置转成 PatchOptions 的字符串覆盖值
+// （"" = 未配置，交给 payload 层继续回落）。用于"派生连接地址与库中记录不完全一致"
+// 的生成路径（内存注入/会话迁移），保证仍能取到该监听器的显式值。
+func listenerBeaconOverrides(l database.Listener) (sleepSeconds, jitterPercent string) {
+	if l.BeaconSleepSeconds != nil {
+		sleepSeconds = strconv.Itoa(*l.BeaconSleepSeconds)
+	}
+	if l.BeaconJitterPercent != nil {
+		jitterPercent = strconv.Itoa(*l.BeaconJitterPercent)
+	}
+	return sleepSeconds, jitterPercent
+}
+
+// listenerEffectiveBeacon 计算该监听器最终生效的 sleep/jitter（监听器 > 画像 > 全局）。
+// 与 delivery.PatchClientBinary 使用同一套解析，保证列表显示 = 载荷实际值。
+func listenerEffectiveBeacon(l database.Listener) (sleepSeconds, jitterPercent int) {
+	rawSleep, rawJitter := beaconOverrideValues(l)
+	profileMs := 0
+	if _, p := resolveListenerProfile(l.Profile); p != nil && p.SleeptimeMs > 0 {
+		profileMs = p.SleeptimeMs
+	}
+	return delivery.ResolveBeaconSleep("", rawSleep, profileMs),
+		delivery.ResolveBeaconJitter("", rawJitter)
+}
+
+// normalizeBeaconSleep 校验监听器级 sleep 覆盖值：nil/-1 = 继承；1-300 合法。
+func normalizeBeaconSleep(v *int) (*int, string) {
+	if v == nil || *v == delivery.BeaconUnset {
+		return nil, ""
+	}
+	if *v < delivery.BeaconSleepMin || *v > delivery.BeaconSleepMax {
+		return nil, "beacon sleep 必须在 1-300 秒之间（留空 = 继承画像/全局配置）"
+	}
+	return v, ""
+}
+
+// normalizeBeaconJitter 校验监听器级 jitter 覆盖值：nil/-1 = 继承；0-50 合法（0 是合法值）。
+func normalizeBeaconJitter(v *int) (*int, string) {
+	if v == nil || *v == delivery.BeaconUnset {
+		return nil, ""
+	}
+	if *v < delivery.BeaconJitterMin || *v > delivery.BeaconJitterMax {
+		return nil, "beacon jitter 必须在 0-50 之间（留空 = 继承全局配置；0 表示不抖动）"
+	}
+	return v, ""
 }
 
 func listenerSleepSeconds(profileName string) int {
@@ -193,7 +280,7 @@ func listenerSleepSeconds(profileName string) int {
 }
 
 func maskListenerForResponse(l database.Listener) listenerResponse {
-	return listenerResponse{
+	resp := listenerResponse{
 		Id:                l.Id,
 		Type:              l.Type,
 		ListenAddress:     maskListenerAddress(l.Type, l.ListenAddress),
@@ -207,6 +294,9 @@ func maskListenerForResponse(l database.Listener) listenerResponse {
 		Profile:           l.Profile,
 		SleepSeconds:      listenerSleepSeconds(l.Profile),
 	}
+	resp.BeaconSleepSeconds, resp.BeaconJitterPercent = beaconOverrideValues(l)
+	resp.EffectiveSleepSeconds, resp.EffectiveJitterPercent = listenerEffectiveBeacon(l)
+	return resp
 }
 
 // listenerForClient 取客户端实际所属的监听器记录。
@@ -344,6 +434,10 @@ func UpdateListener(c *gin.Context) {
 		Note              string `json:"note"`           // 监听器备注
 		VKey              string `json:"vkey"`           // VKey
 		EncryptionSalt    string `json:"encryptionSalt"` // 流量加密盐
+		Profile           string `json:"profile"`        // 绑定的 C2 画像名（空=保留原值）
+		// 监听器级 beacon 配置：nil = 保留原值；-1 = 清空为继承；其余按范围校验
+		BeaconSleepSeconds  *int `json:"beaconSleepSeconds"`
+		BeaconJitterPercent *int `json:"beaconJitterPercent"`
 	}
 
 	// 检查请求上下文
@@ -414,6 +508,38 @@ func UpdateListener(c *gin.Context) {
 	// 记录更新前的状态
 	log.Printf("🔍 [监听器更新] 更新前状态 - ID: %d, 地址: %s -> %s, 状态: %d", listener.Id, currentListener.ListenAddress, listener.ListenAddress, currentListener.Status)
 
+	// 画像：请求为空 = 保留原值（修掉"编辑一次就把 profile 写成空"的缺陷），
+	// 非空则必须存在，否则监听器起来后会静态回落 default，与库里记录不一致。
+	currentProfileName, _ := resolveListenerProfile(currentListener.Profile)
+	profileName := strings.TrimSpace(listener.Profile)
+	if profileName == "" {
+		profileName = currentProfileName
+	}
+	if _, p := resolveListenerProfile(profileName); p == nil {
+		c.JSON(http.StatusOK, gin.H{"status": 400, "data": "C2 画像不存在: " + profileName})
+		return
+	}
+
+	// beacon 覆盖值：nil = 保留原值；显式 -1 = 清空（继承）；其余范围校验
+	beaconSleepPtr := currentListener.BeaconSleepSeconds
+	if listener.BeaconSleepSeconds != nil {
+		v, msg := normalizeBeaconSleep(listener.BeaconSleepSeconds)
+		if msg != "" {
+			c.JSON(http.StatusOK, gin.H{"status": 400, "data": msg})
+			return
+		}
+		beaconSleepPtr = v
+	}
+	beaconJitterPtr := currentListener.BeaconJitterPercent
+	if listener.BeaconJitterPercent != nil {
+		v, msg := normalizeBeaconJitter(listener.BeaconJitterPercent)
+		if msg != "" {
+			c.JSON(http.StatusOK, gin.H{"status": 400, "data": msg})
+			return
+		}
+		beaconJitterPtr = v
+	}
+
 	resolvedListenAddr := resolveListenerAddress(listener.ListenAddress, "listen")
 	// 类型留空视为不修改（与密钥/地址的"留空即保留"语义一致），避免把类型写成空串
 	newType := listener.Type
@@ -430,6 +556,11 @@ func UpdateListener(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": 400, "data": "监听器运行中，请先停止后再修改监听地址或协议类型"})
 		return
 	}
+	// 画像同理：运行中改画像只会改库，句柄仍按旧画像注册路由（前端也已禁用选择）
+	if currentListener.Status == 1 && profileName != currentProfileName {
+		c.JSON(http.StatusOK, gin.H{"status": 400, "data": "监听器运行中，请先停止后再修改 C2 画像"})
+		return
+	}
 
 	// 更新数据库中的监听器记录，保持原有状态
 	// 地址同样先还原脱敏值：否则 oss 监听器一编辑就会把 AK/SK 写成占位符
@@ -441,6 +572,10 @@ func UpdateListener(c *gin.Context) {
 		HeartbeatInterval: heartbeatInterval,
 		Note:              listener.Note,
 		Status:            currentListener.Status, // 保持原有状态
+		Profile:           profileName,
+
+		BeaconSleepSeconds:  beaconSleepPtr,
+		BeaconJitterPercent: beaconJitterPtr,
 	}
 	// 密钥字段仅在显式提供时更新：编辑保存时留空视为不修改，
 	// 避免前端表单未填写密钥就把监听器密钥清空（清空后监听器无法启动）
@@ -470,6 +605,14 @@ func UpdateListener(c *gin.Context) {
 	// 使用ID更新记录，而不是listenAddress
 	// 【零值修复】AllCols 显式写入全部字段：请求即完整配置，空字符串也须落库
 	// （默认零值跳过会导致清空 Note/密钥等字段静默失效）
+	// beacon 覆盖值单独用 map 更新：nil 必须能写回 NULL（"清空为继承"），
+	// 而 AllCols().Update 会跳过 nil 指针字段。
+	if err := database.Listeners().UpdateBeaconOverrides(listener.Id, beaconSleepPtr, beaconJitterPtr); err != nil {
+		log.Printf("❌ [监听器更新] 更新 beacon 配置失败: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"status": 500, "data": "更新监听器失败: " + err.Error()})
+		return
+	}
+
 	affected, err := database.Listeners().UpdateAllCols(listener.Id, updateData)
 	if err != nil {
 		log.Printf("❌ [监听器更新] 更新监听器失败: %v", err)
@@ -938,9 +1081,11 @@ func handleOpenPort(listenerType string, listenerAddress string, vkey string, sa
 		if len(tmp) > 2 {
 			domain = tmp[2] + "."
 		}
-		// OPSEC: DNS 标签前缀随 Profile（客户端生成时同步 patch 同一值）
+		// OPSEC: DNS 标签前缀随**该监听器绑定的** Profile（客户端生成时同步 patch 同一值）。
+		// 原先固定取 default 画像：监听器绑非 default 画像时，服务端收 upd 前缀、
+		// 客户端按画像发另一个前缀，域名对不上直接收不到查询。
 		prefix := ""
-		if p := c2profile.GetDefault(); p != nil {
+		if _, p := resolveListenerProfile(profileName); p != nil {
 			prefix = sanitizeMasquerade(p.DNS.BeaconPrefix)
 		}
 		// 同步启动：绑定失败要落回状态（原实现把 ListenAndServe 放在 goroutine 里，

@@ -114,25 +114,9 @@
                 <span class="cs-font-mono cs-cell-text">{{ row.ConnectAddress || '-' }}</span>
               </template>
             </el-table-column>
-            <el-table-column v-if="colVisible.timeout" prop="HeartbeatTimeout" width="120" sortable align="right" :sort-orders="['ascending', 'descending', null]">
-              <template #header>
-                <span :title="i18nStore.tl('单位：次', 'unit: times')">{{ i18nStore.tl('超时心跳次数', 'Timeout Beats') }}</span>
-              </template>
-              <template #default="{ row }">
-                <span class="cs-cell-text">{{ row.HeartbeatTimeout || '30' }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column v-if="colVisible.interval" prop="HeartbeatInterval" width="110" sortable align="right" :sort-orders="['ascending', 'descending', null]">
-              <template #header>
-                <span :title="i18nStore.tl('单位：秒', 'unit: seconds')">{{ i18nStore.tl('心跳间隔', 'Heartbeat Interval') }}</span>
-              </template>
-              <template #default="{ row }">
-                <span class="cs-cell-text">{{ row.HeartbeatInterval || '10' }}</span>
-              </template>
-            </el-table-column>
             <el-table-column v-if="colVisible.sleep" prop="SleepSeconds" width="90" sortable align="right" :sort-orders="['ascending', 'descending', null]">
               <template #header>
-                <span :title="i18nStore.tl('默认设置 sleep（取自监听器绑定的 C2 画像）', 'Default sleep (from the listener C2 profile)')">{{ i18nStore.tl('间隔', 'Sleep') }}</span>
+                <span :title="i18nStore.tl('生效 beacon 节奏（监听器配置 > C2 画像 > 全局默认）', 'Effective beacon rhythm (listener > C2 profile > global)')">{{ i18nStore.tl('间隔', 'Sleep') }}</span>
               </template>
               <template #default="{ row }">
                 <span class="cs-cell-text" :title="sleepTitle(row)">{{ sleepLabel(row) }}</span>
@@ -227,6 +211,10 @@ interface ListenerItem {
   EncryptionSalt?: string
   Profile?: string
   SleepSeconds?: number
+  BeaconSleepSeconds?: number
+  BeaconJitterPercent?: number
+  EffectiveSleepSeconds?: number
+  EffectiveJitterPercent?: number
   color?: string
 }
 
@@ -262,11 +250,11 @@ function setDensity(cmd: string) {
   try { localStorage.setItem(DENSITY_KEY, cmd) } catch { /* 忽略 */ }
 }
 
-type ColKey = 'id' | 'note' | 'mode' | 'listenAddr' | 'connectAddr' | 'timeout' | 'interval' | 'sleep' | 'status'
+type ColKey = 'id' | 'note' | 'mode' | 'listenAddr' | 'connectAddr' | 'sleep' | 'status'
 const COLUMNS_KEY = 'tshell-listener-columns'
 const DEFAULT_COLS: Record<ColKey, boolean> = {
   id: true, note: true, mode: true, listenAddr: true, connectAddr: true,
-  timeout: true, interval: true, sleep: true, status: true,
+  sleep: true, status: true,
 }
 const colVisible = ref<Record<ColKey, boolean>>({ ...DEFAULT_COLS })
 try {
@@ -288,8 +276,6 @@ const columnOptions = computed<{ key: ColKey; label: string }[]>(() => [
   { key: 'mode', label: i18nStore.tl('模式', 'Mode') },
   { key: 'listenAddr', label: i18nStore.tl('监听地址', 'Listen Address') },
   { key: 'connectAddr', label: i18nStore.tl('外网连接地址', 'Connect Address') },
-  { key: 'timeout', label: i18nStore.tl('超时心跳次数', 'Timeout Beats') },
-  { key: 'interval', label: i18nStore.tl('心跳间隔', 'Heartbeat Interval') },
   { key: 'sleep', label: i18nStore.tl('间隔', 'Sleep') },
   { key: 'status', label: i18nStore.tl('状态', 'Status') },
 ])
@@ -302,20 +288,30 @@ async function refreshReverse() {
 }
 
 function sleepSeconds(row: ListenerItem): number {
+  // 生效值优先（监听器 > 画像 > 全局）；旧服务端没有 Effective* 时回退画像值
+  const eff = Number(row.EffectiveSleepSeconds)
+  if (Number.isFinite(eff) && eff > 0) return eff
   const sec = Number(row.SleepSeconds)
   return Number.isFinite(sec) && sec > 0 ? sec : 5
 }
 
+function sleepJitter(row: ListenerItem): number {
+  const eff = Number(row.EffectiveJitterPercent)
+  return Number.isFinite(eff) && eff >= 0 ? eff : 0
+}
+
 function sleepLabel(row: ListenerItem): string {
-  return `${sleepSeconds(row)}s`
+  return `${sleepSeconds(row)}s +${sleepJitter(row)}%`
 }
 
 function sleepTitle(row: ListenerItem): string {
   const sec = sleepSeconds(row)
+  const jit = sleepJitter(row)
   const profile = row.Profile || 'default'
+  const source = Number(row.BeaconSleepSeconds) > 0 ? (isZh.value ? '监听器配置' : 'listener') : (isZh.value ? `C2 画像 ${profile}` : `C2 profile ${profile}`)
   return isZh.value
-    ? `默认设置 sleep：${sec}s（C2 画像 ${profile}）`
-    : `Default sleep: ${sec}s (C2 profile ${profile})`
+    ? `beacon sleep ${sec}s、抖动 ${jit}%（来源：${source}；优先级 监听器 > 画像 > 全局）`
+    : `beacon sleep ${sec}s, jitter ${jit}% (source: ${source}; listener > profile > global)`
 }
 
 const filteredListeners = computed(() => {
@@ -369,6 +365,10 @@ async function fetchListeners() {
         EncryptionSalt: item.EncryptionSalt,
         Profile: item.Profile || '',
         SleepSeconds: Number(item.SleepSeconds) || 0,
+        BeaconSleepSeconds: Number(item.BeaconSleepSeconds ?? -1),
+        BeaconJitterPercent: Number(item.BeaconJitterPercent ?? -1),
+        EffectiveSleepSeconds: Number(item.EffectiveSleepSeconds) || 0,
+        EffectiveJitterPercent: Number(item.EffectiveJitterPercent) || 0,
         color: item.color || '',
       }))
     } else {
@@ -483,11 +483,11 @@ async function onListenerSaved(formData: any) {
         listenAddress: formData.listenAddress,
         connectAddress: formData.connectAddress,
         note: formData.note,
-        retries: formData.retries,
-        interval: formData.interval,
         vkey: formData.vkey,
         encryptionSalt: formData.encryptionSalt,
         profile: formData.profile || "default",
+        beaconSleepSeconds: formData.beaconSleepSeconds,
+        beaconJitterPercent: formData.beaconJitterPercent,
       })
     } else {
       res = await ListenerAPI.addListener({
@@ -495,11 +495,11 @@ async function onListenerSaved(formData: any) {
         listenAddress: formData.listenAddress,
         connectAddress: formData.connectAddress,
         note: formData.note,
-        retries: formData.retries,
-        interval: formData.interval,
         vkey: formData.vkey,
         encryptionSalt: formData.encryptionSalt,
         profile: formData.profile || "default",
+        beaconSleepSeconds: formData.beaconSleepSeconds,
+        beaconJitterPercent: formData.beaconJitterPercent,
       })
     }
 

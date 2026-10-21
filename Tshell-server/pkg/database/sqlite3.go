@@ -294,6 +294,14 @@ type Listener struct {
 	// 已上线并连着的载荷不受影响（它们连自己的路径）；改这一列只影响之后新生成的
 	// 载荷与新连接。
 	Profile string `xorm:"'profile' default('')"`
+	// BeaconSleepSeconds 监听器级 beacon sleep（秒，1-300）；nil = 未配置（继承画像/全局）。
+	//
+	// 用指针而非哨兵值：jitter 的 0 是合法配置，Go 的 int 零值会让任何漏填的
+	// Listener 字面量静默变成"显式 0% 抖动"；nil(NUL) 让"未配置"与 0 不可能混淆，
+	// 且老库加列后天然是 NULL = 继承，无需回填。
+	BeaconSleepSeconds *int `xorm:"'beacon_sleep_seconds'"`
+	// BeaconJitterPercent 监听器级 beacon 抖动百分比（0-50）；nil = 未配置（继承全局 client.jitter）。
+	BeaconJitterPercent *int `xorm:"'beacon_jitter_percent'"`
 }
 
 // WebDelivery 载荷投递配置（Delivery Hub）
@@ -761,6 +769,37 @@ func migrateListenerProfileColumn() error {
 	return nil
 }
 
+// migrateListenerBeaconColumns 为 listener 表添加监听器级 beacon 配置（sleep/jitter）。
+//
+// 两列都可空：NULL = 未配置（继承画像/全局），所以老库升级后既有监听器的行为与
+// 升级前完全一致，不需要回填。注意 Sync2 在 MigrateDatabase 之前执行，多数情况下
+// 列已由 Sync2 建好，这里只做幂等兜底；不写 UPDATE 回填 —— NULL 本身就是正确语义，
+// 回填反而会覆盖合法的显式 0% 抖动。
+func migrateListenerBeaconColumns() error {
+	const tableName = "listener"
+	cols := tableColumns(tableName)
+	columns := []struct {
+		name string
+		ddl  string
+		desc string
+	}{
+		{"beacon_sleep_seconds", "INTEGER", "监听器级 beacon sleep（秒），NULL=继承"},
+		{"beacon_jitter_percent", "INTEGER", "监听器级 beacon jitter（%），NULL=继承；0 合法"},
+	}
+	for _, c := range columns {
+		if cols[c.name] {
+			log.Printf("✅ Listener表已存在%s字段，跳过迁移", c.name)
+			continue
+		}
+		log.Printf("正在为Listener表添加%s字段（%s）...", c.name, c.desc)
+		if err := ExecuteSQL(Engine, fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", tableName, c.name, c.ddl)); err != nil {
+			return fmt.Errorf("添加Listener表%s字段失败: %v", c.name, err)
+		}
+		log.Printf("✅ Listener表%s字段添加成功", c.name)
+	}
+	return nil
+}
+
 // migrateClientsTableWithId 重建Clients表以添加ID主键
 func migrateClientsTableWithId() error {
 	// 1. 创建新表
@@ -915,20 +954,11 @@ func GetListenerHeartbeatConfig(listenAddress string) (heartbeatTimeout string, 
 // （监听地址常绑通配地址，而连接的 LocalAddr 是具体 IP，只能按端口对）。
 // 定位不到或 addr 为空时回退按类型，保持既有行为。
 func GetListenerHeartbeatConfigByAddr(addr, listenerType string) (heartbeatTimeout string, heartbeatInterval string) {
-	if addr == "" || Engine == nil {
-		return GetListenerHeartbeatConfigByType(listenerType)
-	}
-	var listener Listener
-	has, err := Engine.Where("connect_address = ? OR listen_address = ?", addr, addr).Get(&listener)
-	if err == nil && !has {
-		// 端口兜底：取最后一个 ':' 之后的部分（IPv6 字面量也适用）
-		if i := strings.LastIndex(addr, ":"); i >= 0 && i < len(addr)-1 {
-			port := addr[i+1:]
-			has, _ = Engine.Where("type = ? AND listen_address LIKE ?", listenerType, "%:"+port).Get(&listener)
-		}
-	}
-	if err != nil || !has {
-		return GetListenerHeartbeatConfigByType(listenerType)
+	// 定位逻辑集中在 findListenerByAddr（listener_beacon.go），与监听器级 beacon
+	// 配置查询共用同一套地址匹配规则，避免两处漂移。
+	listener, has := findListenerByAddr(addr, listenerType)
+	if !has {
+		return "30", defaultHeartbeatInterval()
 	}
 	heartbeatTimeout = listener.HeartbeatTimeout
 	heartbeatInterval = listener.HeartbeatInterval
@@ -943,9 +973,8 @@ func GetListenerHeartbeatConfigByAddr(addr, listenerType string) (heartbeatTimeo
 
 // GetListenerHeartbeatConfigByType 根据监听器类型获取活跃监听器的心跳配置
 func GetListenerHeartbeatConfigByType(listenerType string) (heartbeatTimeout string, heartbeatInterval string) {
-	var listener Listener
-	has, err := Engine.Where("type = ? AND status = 1", listenerType).Get(&listener)
-	if err != nil || !has {
+	listener, has := listenerByType(listenerType)
+	if !has {
 		// 如果查找失败或未找到：回退配置文件默认值（client.sleep）
 		return "30", defaultHeartbeatInterval()
 	}

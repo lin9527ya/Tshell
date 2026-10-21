@@ -2,7 +2,8 @@ package communication
 
 import (
 	"crypto/rand"
-	"encoding/base64"
+	mrand "math/rand"
+	"sync"
 )
 
 // ===== 流量体积整形（OPSEC 阶段二）=====
@@ -68,32 +69,62 @@ func PaddingValueFor(payloadLen int) int {
 	return MinPadLen
 }
 
+const (
+	// paddingBlobSize 预生成随机串大小（远大于单次最大填充 MaxPadLen）
+	paddingBlobSize = 64 * 1024
+
+	// base64Alphabet 标准 base64 字符集（A-Za-z0-9+/）。
+	// 用标准集而不是 URL 安全集：Chrome 的 X-Client-Data 是标准 base64，形态要一致。
+	base64Alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+)
+
+var (
+	paddingBlobOnce sync.Once
+	paddingBlob     string
+)
+
+// paddingBlobString 进程内一次性生成 64KB crypto/rand 随机串（初始化后只读）。
+//
+// 内容不可预测性仍由 crypto/rand 保证；每次填充只是从中取一个随机窗口，
+// 不再逐请求生成 n 字节随机数 + base64 编码（原来按 4KB 填充时约 10µs、多次分配）。
+func paddingBlobString() string {
+	paddingBlobOnce.Do(func() {
+		raw := make([]byte, paddingBlobSize)
+		if _, err := rand.Read(raw); err != nil {
+			// 随机源失败：退化为固定字符，仍然保证长度正确
+			// （长度整形是主要目的；绝不返回短于 n 的值）
+			for i := range raw {
+				raw[i] = 'A'
+			}
+		}
+		for i := range raw {
+			raw[i] = base64Alphabet[raw[i]&63]
+		}
+		paddingBlob = string(raw)
+	})
+	return paddingBlob
+}
+
 // BuildPadding 生成指定长度的 base64 风格填充值。
 //
-// 用标准 base64 字符集（A-Za-z0-9+/=）而不是 URL 安全集：
-// Chrome 的 X-Client-Data 是标准 base64，形态要一致。
+// 从进程内 crypto/rand 随机串里取窗口：长度精确、内容不可预测、零分配。
+// 窗口起点用 math/rand 选择 —— 起点只用于避免不同请求重复同一片段，
+// 不参与内容随机性（内容来自上面的 crypto/rand 串），故无需每次走 syscall。
 //
 // n<=0 时返回空串（调用方据此跳过设置头部）。
 func BuildPadding(n int) string {
 	if n <= 0 {
 		return ""
 	}
-	// 用 crypto/rand：填充值不该有可预测性（可预测的填充等于没有填充）
-	raw := make([]byte, n)
-	if _, err := rand.Read(raw); err != nil {
-		// 随机源失败：退化为用固定字符填满，仍然保证长度正确
-		// （长度整形是主要目的，随机性只是附带；但绝不返回短于 n 的值）
-		for i := range raw {
-			raw[i] = 'A'
-		}
-		return base64.StdEncoding.EncodeToString(raw)[:n]
+	if n > MaxPadLen {
+		n = MaxPadLen
 	}
-	out := base64.StdEncoding.EncodeToString(raw)
-	if len(out) >= n {
-		return out[:n]
+	blob := paddingBlobString()
+	if len(blob) <= n {
+		return blob
 	}
-	// base64 编码后长度必然 >= n*4/3 > n，这里只是防御
-	return out + base64.StdEncoding.EncodeToString(make([]byte, n-len(out)))[:n-len(out)]
+	off := mrand.Intn(len(blob) - n + 1)
+	return blob[off : off+n]
 }
 
 // PaddingForRequest 便捷封装：按载荷长度算长度并生成值。

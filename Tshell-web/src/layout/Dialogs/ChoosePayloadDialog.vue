@@ -27,6 +27,13 @@
           <el-table-column prop="payload" :label="i18nStore.tl('监听地址', 'Listen Address')" min-width="150" sortable show-overflow-tooltip />
           <el-table-column prop="host" :label="i18nStore.tl('主机', 'Host')" min-width="110" sortable show-overflow-tooltip />
           <el-table-column prop="port" :label="i18nStore.tl('端口', 'Port')" width="80" sortable align="right" />
+          <el-table-column :label="i18nStore.tl('间隔', 'Beacon')" width="110" align="right">
+            <template #default="{ row }">
+              <span class="cs-cell-text" :title="i18nStore.tl('该监听器生成载荷时实际使用的 sleep/抖动（监听器 > 画像 > 全局）', 'Beacon sleep/jitter baked into generated payloads (listener > profile > global)')">
+                {{ row.sleepSeconds ? `${row.sleepSeconds}s +${row.jitterPercent}%` : '-' }}
+              </span>
+            </template>
+          </el-table-column>
           <el-table-column :label="i18nStore.tl('状态', 'State')" width="90" align="center">
             <template #default="{ row }">
               <span :class="row.status === 1 ? 'st-online' : 'st-offline'">{{ row.status === 1 ? (i18nStore.tl('运行中', 'Active')) : (i18nStore.tl('未运行', 'Stopped')) }}</span>

@@ -1,5 +1,12 @@
 package c2profile
 
+// defaultSleeptimeMs 画像缺省心跳（毫秒）。
+//
+// 必须与内嵌默认画像（下面 defaultProfileYAML 里的 sleeptime_ms）以及全局
+// client.sleep 的默认值（5 秒）保持一致：三处任一漂移，新建监听器最终拿到
+// 哪一档就取决于走哪条路径，运维看不出来。default_sleep_test.go 守着这一点。
+const defaultSleeptimeMs = 5000
+
 // defaultProfileYAML 默认 C2 Profile（含中文注释，可直接编辑；保存后 3 秒内自动生效）
 const defaultProfileYAML = `# ============================================================
 # Tshell Malleable C2 Profile（仿 CS profile 概念，YAML 格式）

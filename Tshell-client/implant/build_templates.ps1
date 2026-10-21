@@ -1,4 +1,4 @@
-# build_templates.ps1
+﻿# build_templates.ps1
 # 编译统一 implant 模块（单二进制 cmd/single，build tag 选择传输协议）。
 # 12 个协议（http/https/kcp/oss/tcp/websocket/tcp_forward/kcp_forward/ws_forward/
 # http_forward/https_forward/dns），交叉编译各 OS/架构，直接放置到服务端模板目录
@@ -147,7 +147,11 @@ Write-Host ""
 Write-Host "===== Building DLL templates (c-shared, needs gcc) ====="
 
 $CCx86_64 = $null; $CC386 = $null
-if ($null -ne (Get-Command x86_64-w64-mingw32-gcc -ErrorAction SilentlyContinue)) {
+# 注意：必须分别确认 64/32 位工具链都存在。TDM-GCC-64 只带
+# x86_64-w64-mingw32-gcc、没有 i686-w64-mingw32-gcc —— 之前只检查前者就
+# 假定后者存在，导致所有 windows/386 DLL 静默保留旧产物。
+if ((Get-Command x86_64-w64-mingw32-gcc -ErrorAction SilentlyContinue) -and
+    (Get-Command i686-w64-mingw32-gcc -ErrorAction SilentlyContinue)) {
     $CCx86_64 = "x86_64-w64-mingw32-gcc"; $CC386 = "i686-w64-mingw32-gcc"
 } elseif ($null -ne (Get-Command gcc -ErrorAction SilentlyContinue)) {
     # 回退到单套 gcc 时必须显式加 -m32：否则 GOARCH=386 仍用 64 位工具链，

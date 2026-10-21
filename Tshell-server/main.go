@@ -928,6 +928,8 @@ func main() {
 	// 同级挂 operatorOnly；密钥管理/改写入口在 adminOnly 的 /key-management/*。
 	// （GenServer 拒绝默认/空密钥见 J4。）
 	operatorOnly.POST("/client/GenServer", api.GenServer)
+	// 客户端升级：重新生成载荷 + self_update（仅独立 EXE payload；破坏性操作需 confirm）
+	operatorOnly.POST("/client/upgrade", api.UpgradeClients)
 	// Graph 关系图数据（CS Graph 页面）
 	operatorOnly.GET("/graph/data", api.GetGraphData)
 	operatorOnly.POST("/client/screenshot1", api.TakeScreenshot)

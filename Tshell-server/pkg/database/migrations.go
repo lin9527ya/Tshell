@@ -34,6 +34,7 @@ func migrations() []Migration {
 		{2, "listener 表补齐字段", migrateListenerTable},
 		{3, "users 表补齐 MFA/TOTP 字段", migrateUsersMFATable},
 		{4, "listener 表补齐 profile 字段", migrateListenerProfileColumn},
+		{5, "listener 表补齐 beacon sleep/jitter 字段", migrateListenerBeaconColumns},
 	}
 }
 

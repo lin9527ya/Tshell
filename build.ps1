@@ -83,7 +83,11 @@ function Build-Server {
 function Build-Templates {
     Write-Step "3/3" "重建 implant 客户端模板(166 EXE + 24 DLL -> Tshell-server/pkg/api/server/)"
     Set-Location (Join-Path $Root "Tshell-client\implant")
-    powershell -ExecutionPolicy Bypass -File build_templates.ps1
+    # 优先 PowerShell 7（默认 UTF-8，避免无 BOM 中文脚本被 5.1 当 ANSI 解析）；
+    # 没有 pwsh 的机器回退到 Windows PowerShell。
+    $psExe = if (Get-Command pwsh -ErrorAction SilentlyContinue) { "pwsh" } else { "powershell" }
+    & $psExe -NoProfile -ExecutionPolicy Bypass -File build_templates.ps1
+    if ($LASTEXITCODE -ne 0) { throw "模板重建失败（build_templates.ps1 退出码 $LASTEXITCODE）" }
     Write-Ok "模板重建完成"
 }
 

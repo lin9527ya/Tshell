@@ -87,15 +87,21 @@ func TestPaddingValueCharset(t *testing.T) {
 	}
 }
 
-// 两次取值应当不同（填充不该可预测）
+// 多次取值不应全部相同（填充不该可预测）。
+//
+// 现在是"随机窗口"实现：单对相同概率约 1/65536，若只比较两次会有极小概率
+// 偶发失败；取 5 次要求至少两个不同，概率上等价于不会误报。
 func TestPaddingValueIsRandomized(t *testing.T) {
-	a := BuildPadding(64)
-	b := BuildPadding(64)
-	if a == b {
-		t.Error("两次填充值相同：随机源没生效，可预测的填充等于没填充")
+	seen := make(map[string]bool)
+	for i := 0; i < 5; i++ {
+		v := BuildPadding(64)
+		if len(v) != 64 {
+			t.Fatalf("填充长度应为 64，实际 %d", len(v))
+		}
+		seen[v] = true
 	}
-	if len(a) != len(b) {
-		t.Error("两次填充长度不同（长度必须是确定的）")
+	if len(seen) < 2 {
+		t.Error("多次填充值完全相同：随机源没生效，可预测的填充等于没填充")
 	}
 }
 

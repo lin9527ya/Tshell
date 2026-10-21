@@ -1,6 +1,8 @@
 package c2profile
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"BackendTemplate/pkg/config"
@@ -51,5 +53,28 @@ func TestDefaultProfileSleepIsNotTooAggressive(t *testing.T) {
 		t.Errorf("默认心跳 %d ms 过于激进（全天约 %d 次请求）。"+
 			"默认值应偏向隐蔽；需要快响应应在画像里显式配置并写清理由",
 			p.SleeptimeMs, perDay)
+	}
+}
+// 画像文件没写 sleeptime_ms 时，管理器兜底值也必须与默认画像一致。
+// 原先兜底写死 1000 —— 运维只删一行配置就会把节奏悄悄降到 1 秒。
+func TestManagerSleepFallbackMatchesDefault(t *testing.T) {
+	dir := t.TempDir()
+	body := `name: nosleep
+http:
+  get:
+    uri: /x
+`
+	if err := os.WriteFile(filepath.Join(dir, "nosleep.yaml"), []byte(body), 0o644); err != nil {
+		t.Fatalf("写测试画像失败: %v", err)
+	}
+	if err := InitNoWatch(dir); err != nil {
+		t.Fatalf("加载画像失败: %v", err)
+	}
+	p := Get("nosleep")
+	if p == nil {
+		t.Fatal("画像未加载")
+	}
+	if p.SleeptimeMs != defaultSleeptimeMs {
+		t.Fatalf("缺省 sleeptime_ms 兜底 = %d，期望 %d", p.SleeptimeMs, defaultSleeptimeMs)
 	}
 }

@@ -21,7 +21,7 @@ useragent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,
 
 # 心跳基准（毫秒）：客户端空闲轮询/心跳间隔基准，1-60000 钳制。
 # 调大更隐蔽（连接频率低）但命令响应变慢
-sleeptime_ms: 1000
+sleeptime_ms: 5000
 
 # ------------------------------------------------------------
 # HTTP 传输伪装（http-get / http-post）

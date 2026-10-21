@@ -47,19 +47,24 @@ func TestThresholds_SmallSleepCriticalFloor(t *testing.T) {
 
 func TestResolveSleepSeconds(t *testing.T) {
 	cases := []struct {
-		osArray  []string
-		fallback string
-		want     int
+		osArray       []string
+		listenerSleep int
+		profileSleep  int
+		globalSleep   int
+		want          int
 	}{
-		{[]string{"a", "b", "c", "linux", "5"}, "10", 5},     // 客户端上报 5
-		{[]string{"a", "b", "c", "linux", "600"}, "10", 300}, // 上报超 300 钳制
-		{[]string{"a", "b", "c", "linux", "0"}, "10", 10},    // 上报 0 → 回退监听器
-		{[]string{"a", "b", "c", "linux"}, "10", 10},         // 旧客户端无第5字段 → 监听器 10
-		{[]string{"a", "b", "c"}, "", 5},                     // 无字段且 fallback 空 → 默认 5
+		{[]string{"a", "b", "c", "linux", "5"}, -1, 10, 5, 5},     // 客户端上报 5
+		{[]string{"a", "b", "c", "linux", "600"}, -1, 10, 5, 300}, // 上报超 300 钳制
+		{[]string{"a", "b", "c", "linux", "0"}, 30, 10, 5, 30},    // 上报 0 → 监听器显式
+		{[]string{"a", "b", "c", "linux"}, 30, 10, 5, 30},         // 旧客户端 → 监听器显式
+		{[]string{"a", "b", "c", "linux"}, -1, 10, 5, 10},         // 监听器未配置 → 画像
+		{[]string{"a", "b", "c", "linux"}, -1, 0, 7, 7},           // 画像未配置 → 全局
+		{[]string{"a", "b", "c"}, -1, 0, 0, 5},                    // 全空 → 5s
 	}
 	for _, c := range cases {
-		if got := ResolveSleepSeconds(c.osArray, c.fallback); got != c.want {
-			t.Errorf("osArray=%v fallback=%q: got %d want %d", c.osArray, c.fallback, got, c.want)
+		if got := ResolveSleepSeconds(c.osArray, c.listenerSleep, c.profileSleep, c.globalSleep); got != c.want {
+			t.Errorf("osArray=%v listener=%d profile=%d global=%d: got %d want %d",
+				c.osArray, c.listenerSleep, c.profileSleep, c.globalSleep, got, c.want)
 		}
 	}
 }

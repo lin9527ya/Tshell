@@ -48,13 +48,16 @@
       </div>
 
       <div class="cs-form-row">
-        <label class="cs-form-label">{{ i18nStore.tl('心跳超时', 'Heartbeat Timeout') }}:</label>
-        <el-input v-model="form.retries" size="small" placeholder="30" class="cs-form-input" />
+        <label class="cs-form-label">{{ i18nStore.tl('Beacon 睡眠（秒）', 'Beacon Sleep (s)') }}:</label>
+        <el-input v-model="form.beaconSleepSeconds" size="small" :placeholder="i18nStore.tl('留空 = 跟随画像/全局', 'blank = follow profile/global')" class="cs-form-input" />
       </div>
 
       <div class="cs-form-row">
-        <label class="cs-form-label">{{ i18nStore.tl('心跳间隔', 'Heartbeat Interval') }}:</label>
-        <el-input v-model="form.interval" size="small" placeholder="10" class="cs-form-input" />
+        <label class="cs-form-label">{{ i18nStore.tl('抖动 Jitter（%）', 'Beacon Jitter (%)') }}:</label>
+        <el-input v-model="form.beaconJitterPercent" size="small" :placeholder="i18nStore.tl('留空 = 跟随全局；0 合法', 'blank = follow global; 0 is valid')" class="cs-form-input" />
+      </div>
+      <div class="cs-dialog-desc">
+        {{ i18nStore.tl('仅影响之后新生成的客户端；在线客户端请用 sleep 命令调整节奏。', 'Applies to newly generated clients only; use the sleep command to adjust online clients.') }}
       </div>
 
       <div class="cs-form-row">
@@ -138,8 +141,9 @@ const form = reactive({
   listenAddress: '',
   connectAddress: '',
   note: '',
-  retries: '30',
-  interval: '10',
+  // 监听器级 beacon 配置（空串 = 继承）：sleep 继承画像→全局，jitter 继承全局
+  beaconSleepSeconds: '',
+  beaconJitterPercent: '',
   vkey: '',
   encryptionSalt: '',
   // 该监听器绑定的 C2 画像（空/未选 = default）
@@ -188,8 +192,9 @@ watch(
       form.listenAddress = val.ListenAddress || val.listenAddress || ''
       form.connectAddress = val.ConnectAddress || val.connectAddress || ''
       form.note = val.Note || val.note || ''
-      form.retries = String(val.HeartbeatTimeout ?? val.Retries ?? val.retries ?? '30')
-      form.interval = String(val.HeartbeatInterval ?? val.Interval ?? val.interval ?? '10')
+      form.profile = val.Profile || val.profile || 'default'
+      form.beaconSleepSeconds = Number(val.BeaconSleepSeconds ?? -1) > 0 ? String(val.BeaconSleepSeconds) : ''
+      form.beaconJitterPercent = Number(val.BeaconJitterPercent ?? -1) >= 0 ? String(val.BeaconJitterPercent) : ''
       form.vkey = val.VKey || val.vkey || ''
       form.encryptionSalt = val.EncryptionSalt || val.encryptionSalt || ''
     } else {
@@ -197,8 +202,9 @@ watch(
       form.listenAddress = ''
       form.connectAddress = ''
       form.note = ''
-      form.retries = '30'
-      form.interval = '10'
+      form.profile = 'default'
+      form.beaconSleepSeconds = ''
+      form.beaconJitterPercent = ''
       form.vkey = ''
       form.encryptionSalt = ''
     }
@@ -242,15 +248,28 @@ function handleSave() {
       return
     }
   }
+  const sleepRaw = form.beaconSleepSeconds.trim()
+  const jitterRaw = form.beaconJitterPercent.trim()
+  const sleepVal = sleepRaw === '' ? -1 : Number(sleepRaw)
+  const jitterVal = jitterRaw === '' ? -1 : Number(jitterRaw)
+  if (sleepRaw !== '' && (!Number.isInteger(sleepVal) || sleepVal < 1 || sleepVal > 300)) {
+    ElMessage.warning(isZh.value ? 'Beacon 睡眠必须是 1-300 之间的整数（留空=继承）' : 'Beacon sleep must be an integer between 1 and 300 (blank = inherit)')
+    return
+  }
+  if (jitterRaw !== '' && (!Number.isInteger(jitterVal) || jitterVal < 0 || jitterVal > 50)) {
+    ElMessage.warning(isZh.value ? '抖动必须在 0-50 之间（留空=继承；0 合法）' : 'Jitter must be between 0 and 50 (blank = inherit; 0 is valid)')
+    return
+  }
   emit('save', {
     type: form.type.trim(),
     listenAddress: form.listenAddress.trim(),
     connectAddress: form.connectAddress.trim(),
     note: form.note.trim(),
-    retries: form.retries.trim() || '30',
-    interval: form.interval.trim() || '10',
     vkey: form.vkey.trim(),
     encryptionSalt: form.encryptionSalt.trim(),
+    profile: form.profile || 'default',
+    beaconSleepSeconds: sleepVal,
+    beaconJitterPercent: jitterVal,
   })
 }
 

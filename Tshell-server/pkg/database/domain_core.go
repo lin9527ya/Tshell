@@ -98,6 +98,29 @@ func (ListenerStore) UpdateAllCols(id int64, l *Listener) (int64, error) {
 	return s.ID(id).AllCols().Update(l)
 }
 
+// UpdateBeaconOverrides 单独更新监听器级 beacon 覆盖值（nil = 未配置/NULL）。
+//
+// 不能只依赖 UpdateAllCols：xorm 对 nil 指针字段会跳过，无法把已有值写回 NULL，
+// 于是"清空为继承"会静默失效。这里用参数化 UPDATE，nil 参数明确落成 SQL NULL。
+func (ListenerStore) UpdateBeaconOverrides(id int64, sleepSeconds, jitterPercent *int) error {
+	s := DB()
+	if s == nil {
+		return ErrStoreUnavailable
+	}
+	// 直接用 Exec 而不是 xorm 的 map Update：nil 参数在这里就是 SQL NULL，
+	// 行为在 SQLite/PostgreSQL 上一致（map Update 会把 nil 当成"跳过该列"）。
+	var sleepVal, jitterVal interface{}
+	if sleepSeconds != nil {
+		sleepVal = *sleepSeconds
+	}
+	if jitterPercent != nil {
+		jitterVal = *jitterPercent
+	}
+	_, err := s.Exec("UPDATE listener SET beacon_sleep_seconds = ?, beacon_jitter_percent = ? WHERE id = ?",
+		sleepVal, jitterVal, id)
+	return err
+}
+
 // UpdateStatus 只改状态列（避免全列更新把密钥等字段写成零值）
 func (ListenerStore) UpdateStatus(addr string, status int) error {
 	s := DB()

@@ -867,6 +867,25 @@ func (skm *SecureKeyManager) GetKeyStatus(clientID string) map[string]interface{
 	return status
 }
 
+// TimeToExpiry 返回该客户端当前会话密钥的剩余有效期。
+//
+// 心跳热路径专用：GetKeyStatus 会分配多个 map 并把 Duration 格式化成字符串
+// （调用方再 strings.Contains + ParseDuration 解析回来），每条心跳都做一次
+// 很浪费。这里只读一个时间字段，无分配。
+func (skm *SecureKeyManager) TimeToExpiry(clientID string) (time.Duration, bool) {
+	value, ok := skm.sessionKeys.Load(clientID)
+	if !ok {
+		return 0, false
+	}
+	keySet := value.(*SessionKeySet)
+	keySet.mu.RLock()
+	defer keySet.mu.RUnlock()
+	if keySet.CurrentKey == nil || keySet.CurrentKey.ExpiresAt.IsZero() {
+		return 0, false
+	}
+	return time.Until(keySet.CurrentKey.ExpiresAt), true
+}
+
 // GetOverlapDuration 获取密钥重叠期时长
 func (skm *SecureKeyManager) GetOverlapDuration() time.Duration {
 	return skm.overlapDuration

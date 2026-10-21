@@ -68,7 +68,7 @@ description: "默认画像：保留腾讯系接口伪装路径"
 useragent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
 # 心跳基准（毫秒，1-60000）
-sleeptime_ms: 1000
+sleeptime_ms: 5000
 
 # HTTP 传输伪装
 http:

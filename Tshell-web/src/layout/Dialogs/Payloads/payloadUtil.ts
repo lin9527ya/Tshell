@@ -14,6 +14,9 @@ export interface ListenerOption {
   vkey?: string // /listener/list 返回完整密钥，选择器直接携带
   encryptSalt?: string
   status?: number // 1=运行中 2=未运行
+  // 该监听器生成载荷时实际使用的 beacon 节奏（监听器 > 画像 > 全局）
+  sleepSeconds?: number
+  jitterPercent?: number
 }
 
 export interface WebDeliveryRow {
@@ -70,6 +73,8 @@ export async function fetchListenerOptions(onlyRunning = true): Promise<Listener
         vkey: l.VKey || undefined,
         encryptSalt: l.EncryptionSalt || undefined,
         status: l.Status,
+        sleepSeconds: Number(l.EffectiveSleepSeconds) || Number(l.SleepSeconds) || 0,
+        jitterPercent: Number(l.EffectiveJitterPercent) || 0,
       }))
     }
   } catch {

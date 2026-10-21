@@ -60,11 +60,15 @@ func Jittered(d time.Duration) time.Duration {
 }
 
 // RecvDeadline 客户端单次 Recv 的读超时：2×最坏拍间隔 + 5s 余量。
-// 服务端对每个心跳包回复 ack，健康连接读侧持续有数据，不会触发超时；
-// 服务端静默死亡（黑洞网络，无 FIN/RST）时超时立即触发，重连而非永久卡死。
+// 服务端对每个心跳包回复 ack（TCP/KCP/WS/forward 均已回），健康连接读侧持续
+// 有数据，不会触发超时；服务端静默死亡（黑洞网络，无 FIN/RST）时超时立即触发，
+// 重连而非永久卡死。
+//
+// 【单位修复】baseSleep() 已是 time.Duration（纳秒），2×worst 也是纳秒；
+// 原实现又乘了一次 time.Second，读超时变成约 380 年，"半开连接快速重连"形同虚设。
 func RecvDeadline() time.Duration {
 	worst := float64(baseSleep()) * (1 + jitterFraction())
-	return time.Duration(2*worst)*time.Second + 5*time.Second
+	return time.Duration(2*worst) + 5*time.Second
 }
 
 // HeartbeatLoop 心跳循环：每拍按 NextInterval() 重算间隔（jitter 参与心跳节奏），

@@ -41,13 +41,29 @@ export const useEventsStore = defineStore('events', () => {
   let refreshTimer: ReturnType<typeof setTimeout> | null = null
   let refCount = 0
 
-  // 客户端状态类事件到达后联动刷新客户端列表（节流 5s）
+  // 客户端状态类事件到达后联动刷新客户端列表（节流 1s，合并同一波事件）。
+  //
+  // 服务端离线检测已改为"截止时间一到立即判定"；前端若还等 5s 节流或 5s 轮询，
+  // 实时性会在 UI 这一层被打回去。这里先就地改 Online 字段（立即变灰），
+  // 再用 1s 防抖拉一次权威数据（补 LastActive/主机信息等）。
   const scheduleClientRefresh = () => {
     if (refreshTimer) return
     refreshTimer = setTimeout(() => {
       refreshTimer = null
       useClientsStore().refreshClients()
-    }, 5000)
+    }, 1000)
+  }
+
+  // applyClientStateEvent 立即把上线/离线反映到列表行（不等待网络往返）。
+  // client_new 只触发刷新：新客户端还不在列表里，没有行可改。
+  const applyClientStateEvent = (msg: C2Event) => {
+    if (!msg.uid) return
+    const store = useClientsStore()
+    if (msg.type === 'client_online') {
+      store.updateClient(msg.uid, { Online: '1' })
+    } else if (msg.type === 'client_offline') {
+      store.updateClient(msg.uid, { Online: '2' })
+    }
   }
 
   // 建连核心（不计数）。幂等：已有存活连接时直接复用
@@ -80,6 +96,7 @@ export const useEventsStore = defineStore('events', () => {
               try { if (usePreferencesStore().audioNotify) playOnlineChime() } catch { /* ignore */ }
             }
             if (CLIENT_STATE_EVENTS.includes(msg.type)) {
+              applyClientStateEvent(msg)
               scheduleClientRefresh()
             }
           }
