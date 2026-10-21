@@ -474,7 +474,9 @@ func GetHttpWithKeys(w http.ResponseWriter, r *http.Request, vkey, salt []byte) 
 				cmdBytes, ok = cmds[0], true
 			}
 		} else {
-			cmdBytes, ok = command.CommandQueues.GetCommand(uid)
+			// 合并队首连续的交互式终端输入：轮询传输下一轮 GET 只取一条命令，
+			// 而 Web 终端每敲一个字符就入队一条，不合并会让打字按轮询间隔逐字到达。
+			cmdBytes, ok = command.CommandQueues.GetCommandCoalescingInput(uid, command.INTERACTIVE_SHELL_INPUT)
 		}
 
 		if ok && len(cmdBytes) > 0 {

@@ -20,6 +20,7 @@ import (
 
 	"net/http"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -550,29 +551,55 @@ func DisconnectClient(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": http.StatusOK})
 }
 
-// ResetClientId 重置客户端ID自增序列（sqlite_sequence），避免ID无限递增
-
+// ResetClientId 重置客户端 ID：把现有会话按当前顺序重排为 1..N，并复位自增序列。
+//
+// 语义边界（前端会照此提示操作员）：
+//   - 只动 clients 表的自增主键，**不动 Uid**——Uid 才是会话的真身，
+//     命令下发/审计/回连全按 Uid 走，重排 ID 不会影响任何在线的载荷;
+//   - 历史日志里如果按 ID 记过"第几个会话"，重排后会与当时的编号不一致;
+//   - 两阶段写（先写负值再写正值）是必须的：正序直接改会把 2 改成 1 时撞上还没挪走的 1。
 func ResetClientId(c *gin.Context) {
-	if database.DB() == nil {
+	if database.DB() == nil || database.Engine == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"status": 500, "data": "数据库引擎未初始化"})
 		return
 	}
 
-	// 当前最大ID（若无客户端则为0）
-	var maxID int64
-	maxID, _ = database.Clients_().MaxID()
-
-	// 自增序列重置：SQLite 走 sqlite_sequence，PostgreSQL 走 setval（见 database.ResetAutoIncrement）
-	if err := database.ResetAutoIncrement("clients", maxID); err != nil {
-		log.Printf("[CLIENT-API] ❌ 重置ID失败(写入序列): %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"status": 500, "data": "重置ID失败"})
+	clients, err := database.Clients_().All()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"status": 500, "data": "读取客户端列表失败"})
 		return
 	}
 
-	log.Printf("[CLIENT-API] ♻️ 客户端ID序列已重置，当前最大值: %d", maxID)
+	// 按现有 ID 升序 = 会话第一次上线的顺序；重排后这个顺序保持不变
+	sort.SliceStable(clients, func(i, j int) bool { return clients[i].ID < clients[j].ID })
+
+	total := len(clients)
+	for i, cl := range clients {
+		if _, err := database.Engine.Exec("UPDATE clients SET id = ? WHERE uid = ?", -(i + 1), cl.Uid); err != nil {
+			log.Printf("[CLIENT-API] ❌ 重置ID失败(阶段1 %s): %v", cl.Uid, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"status": 500, "data": "重置ID失败（已部分写入，建议重跑一次）"})
+			return
+		}
+	}
+	for i, cl := range clients {
+		if _, err := database.Engine.Exec("UPDATE clients SET id = ? WHERE uid = ?", i+1, cl.Uid); err != nil {
+			log.Printf("[CLIENT-API] ❌ 重置ID失败(阶段2 %s): %v", cl.Uid, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"status": 500, "data": "重置ID失败（已部分写入，建议重跑一次）"})
+			return
+		}
+	}
+
+	// 自增序列复位到 N：下一个新会话从 N+1 开始，且不会回填空洞
+	if err := database.ResetAutoIncrement("clients", int64(total)); err != nil {
+		log.Printf("[CLIENT-API] ❌ 重置ID失败(写入序列): %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"status": 500, "data": "重置ID失败（序列未复位）"})
+		return
+	}
+
+	log.Printf("[CLIENT-API] ♻️ 客户端ID序列已重置：%d 个会话重排为 1..%d", total, total)
 	c.JSON(http.StatusOK, gin.H{"status": http.StatusOK, "data": map[string]interface{}{
-		"current_max_id": maxID,
-		"next_id":        maxID + 1,
+		"renumbered": total,
+		"next_id":    total + 1,
 	}})
 }
 

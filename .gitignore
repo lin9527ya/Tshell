@@ -64,3 +64,6 @@ dist/
 
 # JWT 运行时状态（黑名单/刷新令牌）
 **/jwt_state.json
+
+# 首次启动生成的管理员初始口令（运行时机密，首次登录后应删除）
+**/initial-admin-password.txt

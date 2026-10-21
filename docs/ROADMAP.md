@@ -334,6 +334,20 @@ go test -race ./Tshell-server/...     # 见 §4 回归基线（注意用外层�
     3 项占位符替换 + 4 项配置校验 + 4 项命令表；前端 30 files / 335 tests 全绿
   - **注意**：新客户端源码含 5 个新占位符字面量，P4 之前的模板生成的载荷会
     fail-closed 拒绝启动 —— **必须全量重建 178 个模板**后才能上线
+- **已完成（2026-10-21，P5）**：命令延迟三症状（节流 / 轮询 / 终端回显）
+  - 阈值拆分：`config.WaitTime` 只描述信标节奏（心跳/`PollInterval()`/Recv 超时），
+    命令防抖改用 `config.CommandDebounce = 200ms`；旧实现 `sleep 60` 会让每条命令等 60s
+  - 交互终端快轮询：轮询传输下 `InteractiveShellActive()` 期间降到 150ms，结束回落；
+    `conpty_windows.go` 与 `commands_pty_unix.go` 各实现一份（缺一个会永久快轮询）
+  - 输入合并：`ClientCommandQueue.GetCommandCoalescingInput()` 合并**队首连续**的
+    `INTERACTIVE_SHELL_INPUT`（保序、不跨类型），`get.go` 单条分支已改走它
+  - `sleep N` 同步「间隔」列（`parseSleepCommand`/`syncClientSleepColumn`），
+    旧实现只有 UI 睡眠对话框会写该列
+  - `SleepMask` 的摘链加 `d >= time.Second` 门槛：150ms 窗口摘了再挂没有掩护价值
+  - 测试：服务端 6 项合并 + 2 项 sleep 解析、客户端 2 项防抖 + 2 项快轮询；
+    重建 http/tcp 两个 windows 模板验证（全量 206 个等发话）
+  - 遗留：快轮询只对轮询传输有效且有指纹代价、终端输出仍走命令回包、
+    载荷重启后「间隔」列回到生成期值 —— 见 `docs/KNOWN_LIMITATIONS.md` §21
 - **历史核查记录（2026-10-19，已被上面 P2 结论取代，留作对照）**：三个子项当时都卡在
   "需要实机 / 超大改动"：
   - **(a)** 现有 mask 已遮蔽会话密钥 / 上一把密钥 / 主密钥 / 盐 / AEAD 缓存

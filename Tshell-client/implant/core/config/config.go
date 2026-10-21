@@ -18,6 +18,15 @@ var (
 	// （原 HeartbeatBase/Profile SleeptimeMs 双基准已废弃，profile 只作生成时默认值）
 	WaitTime = time.Duration(SleepSeconds()) * time.Second
 
+	// CommandDebounce 操作防抖：两条命令执行之间的最小间隔。
+	//
+	// 与 WaitTime 分开的理由：WaitTime 描述的是"信标多久出现一次"（心跳/轮询/Recv
+	// 超时），而命令节流要挡的是"操作员一秒内连点十次"。用同一个值管两件事，
+	// 会让正常交互（执行一条命令、翻一页目录、切一个进程列表）都被压成
+	// 每个 WaitTime 一条——sleep 5 的载荷甚至每次点击要等 5 秒。
+	// 200ms 足够挡住连点风暴，又不至于让人感觉到等待。
+	CommandDebounce = 200 * time.Millisecond
+
 	// 重连配置（JitterPercent 由服务端生成时 patch 替换为配置文件 client.jitter）
 	ReconnectConfig = ReconnectConfiguration{
 		JitterPercent:    JitterPercent(),       // 抖动百分比（占位符 patch）

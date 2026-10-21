@@ -64,6 +64,24 @@ func makeCoord(cols, rows uint16) uintptr {
 	return uintptr(uint32(cols) | (uint32(rows) << 16))
 }
 
+// InteractiveShellActive 报告本机是否有一个活跃的交互式终端会话。
+//
+// 轮询传输（http/https/dns/oss）一轮 GET 只取一条命令，空闲轮询间隙就是操作员
+// 能感觉到的输入延迟。runloop 据此在"确实有人在用终端"时缩短轮询，会话结束立刻
+// 回落到正常信标节奏，不为闲置终端付流量与特征代价。
+func InteractiveShellActive() bool {
+	conPTYMutex.Lock()
+	s := globalConPTY
+	conPTYMutex.Unlock()
+	if s == nil {
+		return false
+	}
+	// isActive 由会话自己的锁保护（cleanup/monitor 在锁内写），这里不能直接读裸字段
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
+	return s.isActive
+}
+
 // StartInteractiveShell 启动基于 ConPTY 的真交互式 Windows 终端（cmd.exe）。
 // 【调试期】此前因 cmd 秒退（"session ended"）按部署方要求短暂禁用，
 // 现恢复完整实现并在当前控制台输出详细诊断（exit code/管道错误），用于定位根因。

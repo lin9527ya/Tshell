@@ -189,6 +189,18 @@ cd ../Tshell-web; npm ci --legacy-peer-deps; npx vitest run; npm run type-check
   （`unhook` 无撤销概念）、旧模板 fail-closed（**必须全量重建 178 个模板**）、
   未做三平台实机回归。详见 `docs/KNOWN_LIMITATIONS.md` §20。
 
+### 3.2d 命令延迟三症状（**已实现，2026-10-21 的 P5**）
+- 症状（实机反馈）：命令"每一条都很慢"、交互终端输入不实时、客户端列表「间隔」列
+  显示的秒数与真实 sleep 不符。
+- 三个根因互不相同：① 命令节流直接复用 `config.WaitTime`（`sleep 60` → 每条命令等 60s）；
+  ② 轮询传输一轮 GET 只取一条命令，终端每击键一个往返；③ 「间隔」列取的是编译期占位符，
+  `sleep N` 只改内存 `WaitTime`、没有回写。
+- 修法：`CommandDebounce=200ms` 与 `WaitTime` 拆开；服务端合并队首连续的
+  `INTERACTIVE_SHELL_INPUT`；客户端在 `InteractiveShellActive()` 期间把轮询降到 150ms；
+  `sleep N` 发送时同步写 `sleep` 列；`SleepMask` 仅对 `d >= 1s` 的睡眠做摘链。
+- 遗留：快轮询只对轮询传输有效且有指纹代价、终端输出仍走命令回包、载荷重启后
+  「间隔」列回到生成期值。详见 `docs/KNOWN_LIMITATIONS.md` §21。
+
 ### 3.3 主密钥运行时派生（**协议迁移**，服务端 + 客户端同时改）
 
 **进度（2026-10-20）**

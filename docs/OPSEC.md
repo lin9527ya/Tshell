@@ -69,6 +69,10 @@
 | 生成期关 = **硬关闭**：编译期占位符为 0 时运行期 `on` 不生效并回执原因（不静默假装打开） | 已实现·有测试 | `core/config/opsec.go` `EvasionImpossibleReason` |
 | 团队级默认值：服务端配置 `config.opsec.*`（11 个字段），回落链「请求 → 配置 → 内置默认」 | 已实现·有测试（白名单校验、非法值报字段名） | `pkg/config/manager.go`、`handlers.go` `applyOpsecUpdates` |
 | 前端：生成期「对抗能力」面板（9 项 + 3 套预设 + 平台/架构置灰原因）+ 会话内「Evasion Switches」面板 | 已实现·有测试（13 个前端单测 + techdebt 棘轮） | `Tshell-web/src/components/Opsec/` |
+| 命令防抖与信标节奏**分离**：`WaitTime` 只管心跳/轮询/Recv 超时，命令节流用 `CommandDebounce = 200ms` | 已实现·有测试（棘轮断言不再拿 `WaitTime` 当节流阈值） | `core/config/config.go`、`core/app/dispatch.go` |
+| 交互终端快轮询：轮询传输下会话活跃时降到 150ms，会话结束自动回落 | 已实现·有测试（棘轮 + 平台实现覆盖断言） | `cmd/single/runloop.go`、`core/commands/conpty_windows.go`、`commands_pty_unix.go` |
+| 交互终端输入合并：队首连续 `INTERACTIVE_SHELL_INPUT` 合成一帧下发（保序、不跨其他命令） | 已实现·有测试（6 个队列单测：只并队首连续、其他类型直通、无残留） | `pkg/command/commandQueue.go`、`pkg/api/communication/get.go` |
+| 「间隔」列随 `sleep N` 同步（含 1–300s 同客户端钳制 + 离线检测器） | 已实现·有测试（解析 11 组 + 钳制 6 组） | `pkg/sendcommand/sendCommand.go` |
 
 ### B. 通信（C2 信道）
 
@@ -285,6 +289,32 @@ trampoline 是**按模式生成**的（direct 直接放 `syscall; ret`，indirec
 两边不一致时以"服务端显式发送"为准：四个生成入口（EXE 单包、EXE 分阶段、DLL、
 监听器 DLL）现在都显式发送，做到所见即所得；前端把该项标成"默认开"。
 
+**命令节流为什么必须与信标节奏拆开（2026-10-21）**
+
+早先 `dispatch.go` 拿 `config.WaitTime` 当命令节流阈值，而 `WaitTime` 同时
+描述心跳间隔、轮询传输的 `PollInterval()`、Recv 超时 —— 一个值管四件事。
+后果是 `sleep 60` 的载荷每敲一条命令都要等 60 秒，操作员会直接判成"坏了"。
+
+现在拆成两个旋钮：`WaitTime` 只描述**信标节奏**（隐蔽性），
+`CommandDebounce = 200ms` 只负责**操作防抖**（挡住连点造成的短时爆发）。
+节流本身不能删：它是唯一阻止"操作员连点 → 客户端短时间内创建大量进程/打开大量文件"的东西，
+去掉它等于把 EDR 告警亲手喂到嘴边。
+
+**交互终端为什么需要快轮询，以及它的指纹代价**
+
+轮询型传输（http/https/dns/oss）空闲时按 `PollInterval()` 睡，命令最多要等一个整周期；
+tcp/kcp/ws 是推送，没有这一层。交互终端每击键一条 `interactive_shell_input`，
+在轮询传输下就变成"每字符等一个周期"，观感完全不可用。
+
+处理分两层：① 服务端把**队首连续**的输入合成一帧（减少往返次数，不改顺序）；
+② 客户端在会话活跃期间把轮询降到 150ms，会话结束立刻回落（`runloop.go` 的
+`fastPollInterval` + `InteractiveShellActive()`）。
+
+代价是明确的：会话期间请求频率上升 6～30 倍，流量特征更显眼。
+所以它**只**在交互会话活跃时生效，且**只**对轮询传输生效；
+`SleepMask` 的模块摘链同时加了 `d >= time.Second` 的门槛 —— 150ms 一次的睡眠窗口
+只有几毫秒，摘了再挂没有掩护价值，只是多留痕迹。
+
 ---
 
 ## 4. 部署 checklist
@@ -360,6 +390,9 @@ AEAD 缓存里还另有一份。现在改为 `MaskForSleep` **就地遮蔽真身
 | 模块摘链的 VAD 层可见性 | 已实现 PEB 链表摘除（2026-10-20）；页表/VAD 不动，按内存区域扫仍可见镜像页 | 需要改映射方式（`SEC_IMAGE`+回填）或 unbacked 执行内存，代价高于收益 |
 | APC 分发 syscall 化（`NtQueueApcThread`） | 未接：APC 路径还要同时改线程恢复（`NtResumeThread`）与句柄管理，改一半没有意义 | 有实机可验证注入成功/失败的时机 |
 | 主密钥运行时派生（ECDH） | **已完成（2026-10-20）**：12/12 传输接线 + 206 个载荷产物全量重建；**残留风险**：静态主密钥仍作为占位符编译进载荷（生成期被 patch 覆盖），所以 `strings` 仍可提取到它 —— 见 §4 第 1 条 | 需要改为"载荷内不含密钥"的注入模型 |
+| 交互终端快轮询的指纹代价 | 已实现 150ms 快轮询（2026-10-21），只对轮询传输、只在会话活跃期生效；会话期间请求频率是常态的 6～30 倍，流量特征更显眼 | 需要低特征的双向信道（长轮询/WS）才能既实时又不加频次 |
+| 终端输入合并的边界 | 只合并**队首连续**的 `INTERACTIVE_SHELL_INPUT`，遇到其他命令即停：混在中间会打乱"输入→输出"的因果顺序 | 需要给命令加序号并在客户端重排，代价大于收益 |
+| 「间隔」列与真实 sleep | 已修：`sleep N` 发命令时服务端同步写 `sleep` 列（2026-10-21）；但客户端仍只上报生成期值，所以**重启/重连后**该列会回到占位符值 | 客户端上报运行期 `WaitTime` 需要改心跳格式与数据库语义，另排期 |
 
 ### ECDH 之后的两个**未解决**安全性质（别把它当成"已经安全了"）
 
@@ -431,6 +464,10 @@ go test ./core/config/ ./core/commands/ -run 'TestEvasion' -count=1 -v
 go test ./core/evasion/ ./core/commands/ -run 'TestRestore|TestRecordPatch|TestEvasionControl' -count=1 -v
 # 服务端：占位符归一化/校验、配置回落、命令表
 cd ../../Tshell-server && go test ./pkg/api/ ./pkg/delivery/ ./pkg/config/ ./pkg/sendcommand/ -run 'TestResolveOpsec|TestNormalizeOnOff|TestNormalizeEnums|TestPatchOPSEC|TestApplyOpsec|TestApplyConfigUpdatesRoutesOpsec|TestResolveCommandEquivalence' -count=1
+# 命令防抖（节流阈值不再等于 WaitTime）与交互终端快轮询（含两平台实现覆盖）
+cd ../Tshell-client/implant && go test ./core/app/ ./cmd/single/ -run 'TestDispatchUsesCommandDebounce|TestCommandDebounce|TestRunloopFastPolls|TestInteractiveShellActive' -count=1 -v
+# 终端输入合并（只并队首连续、其他类型直通、无残留）与 sleep 列同步的解析/钳制
+cd ../../Tshell-server && go test ./pkg/command/ ./pkg/sendcommand/ -run 'TestGetCommandCoalescingInput|TestParseSleepCommand' -count=1 -v
 ```
 
 **关键断言不是"测试通过"，而是外部证据**：
@@ -461,10 +498,20 @@ cd ../../Tshell-server && go test ./pkg/api/ ./pkg/delivery/ ./pkg/config/ ./pkg
 | 运行期关掉真的能关（含撤销已打的补丁） | `TestEvasionOverrideTogglesActive`（覆盖优先、显式关与"本来没开"可区分）+ `TestEvasionStatusStartupNote`（启动期能力带说明）+ `TestRestorePatchesByTagIsScoped`（关 etw 不会顺手撤掉 amsi）+ `TestRestorePatchesSkipsWhenMemoryChangedExternally`（被外部改过不乱写）+ `TestRestorePatchesReverseOrder`（逆序还原） |
 | 配置白名单不会放坏值进载荷 | `TestApplyOpsecUpdatesRejectsInvalid`（6 组非法值，含非字符串类型）+ `TestApplyOpsecUpdatesIgnoresUnknown` |
 | 前端不会发"勾了但载荷里没有"的组合 | `opsecPresets.test.ts`（`normalizeForPlatform` 三平台 + `capabilityDisabledReason` 四种原因）+ `payloadUtil.test.ts`（9 个字段逐个转发） |
+| 节流阈值不再跟着 `sleep` 走 | `TestDispatchUsesCommandDebounceNotSleep`（源码里必须没有 `elapsedTime < config.WaitTime`，且含 `config.WaitTime < debounce` 的下限保护）+ `TestCommandDebounceIsShortAndDefined`（200ms 量级，不是秒级） |
+| 快轮询只在会话活跃期、结束会回落 | `TestRunloopFastPollsWhileTerminalActive`（含 `fastPollActive = false` 回落分支）+ `TestInteractiveShellActiveImplementedPerPlatform`（windows 与 linux/darwin 两个实现文件都得有该函数，缺一个就会让那个平台永久快轮询） |
+| 输入合并不会打乱因果顺序 | `TestGetCommandCoalescingInputMergesConsecutive`（按字节拼接保序）+ `...StopsAtOtherCommand`（遇到其他命令立即停）+ `...LeavesNoResidue`；外部证据：交互终端连打 10 个字符，抓包应只见少数几次请求而不是 10 次 |
+| 改 `sleep` 之后「间隔」列立刻对齐 | `TestParseSleepCommandRecognisesOnlySleepPrefix`（11 组，`sleepx 5`/`sleep` 不算）+ `TestParseSleepCommandClamps`（6 组，1–300s）；外部证据：控制台敲 `sleep 30` 后客户端列表「间隔」列变 30（旧行为停在生成期占位符值） |
 
 > 注意：`fsperm_test.go` 里依赖真实权限位的用例在 Windows 会 skip。
 > 为了不让"本机跳过"变成"没人验证"，判定逻辑（`needsTighten`）抽成了纯函数并在
 > 所有平台真跑；实际 `chmod` 生效由 CI 的 ubuntu job 覆盖。
+>
+> 另一条容易踩空的证据方向：**别用 `strings` 查日志文案来证明改动进了载荷**。
+> `core/debuglog` 在非 `debug` 构建里是空 `Printf`（`debuglog_stub.go`），内联后
+> 格式串被优化掉、二进制里根本不存在。能命中的只有**进回包/进数据流的字符串**
+> （如 `清理现场`、`调用序列=`）和 pclntab 里的**函数名**（如 `InteractiveShellActive`）。
+> 用中文日志串验证重建结果，会得到"改了但没生效"的假结论。
 
 ---
 

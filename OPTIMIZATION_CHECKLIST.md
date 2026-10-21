@@ -609,3 +609,19 @@ cd Tshell-web && npm run build:embed
 | 274 | 文档说清"etw/amsi 能还原、unhook 不回挂" | `grep -c "写回原始字节" docs/OPSEC.md` | 1 |
 | 275 | 状态表文案同步（不谎称"不会撤销"） | `grep -c "unhook 关掉不回挂" Tshell-client/implant/core/config/opsec.go` | 1 |
 | 276 | 前端面板文案同步 | `grep -c "不会重新挂上" Tshell-web/src/components/Opsec/OpsecSwitches.vue` | 1 |
+
+## AB 组（P5：命令延迟三症状，2026-10-21 追加）
+
+| # | 断言 | 命令 | 期望 |
+|---|---|---|---|
+| 277 | 命令节流阈值与睡眠间隔分离（不再拿 WaitTime 当节流） | `grep -c "CommandDebounce = 200 \* time.Millisecond" Tshell-client/implant/core/config/config.go` | 1 |
+| 278 | dispatch 用的是防抖变量而不是 WaitTime | `grep -c "debounce := config.CommandDebounce" Tshell-client/implant/core/app/dispatch.go` | 1 |
+| 279 | 旧的"拿 WaitTime 节流"必须彻底消失 | `grep -c "elapsedTime < config.WaitTime" Tshell-client/implant/core/app/dispatch.go` | 0 |
+| 280 | 交互会话活跃判定有两个平台实现（缺一个就会永久快轮询） | `grep -c "func InteractiveShellActive() bool" Tshell-client/implant/core/commands/conpty_windows.go Tshell-client/implant/core/commands/commands_pty_unix.go` | 2 |
+| 281 | 快轮询间隔是 150ms 量级并有回落分支 | `grep -c "const fastPollInterval = 150 \* time.Millisecond" Tshell-client/implant/cmd/single/runloop.go` | 1 |
+| 282 | 会话结束会回落（否则永久高频） | `grep -c "fastPollActive = false" Tshell-client/implant/cmd/single/runloop.go` | 1 |
+| 283 | 队首连续终端输入合并（保序、不跨类型） | `grep -c "func (c \*ClientCommandQueue) GetCommandCoalescingInput" Tshell-server/pkg/command/commandQueue.go` | 1 |
+| 284 | GET 单条分支真的用了合并入口 | `grep -c "GetCommandCoalescingInput(uid, command.INTERACTIVE_SHELL_INPUT)" Tshell-server/pkg/api/communication/get.go` | 1 |
+| 285 | sleep 前缀解析 + 「间隔」列同步（旧实现只有 UI 对话框会写这列） | `grep -c "func parseSleepCommand\|func syncClientSleepColumn" Tshell-server/pkg/sendcommand/sendCommand.go` | 2 |
+| 286 | 快轮询下不再做毫秒级摘链（睡眠窗口太短无意义） | `grep -c "d >= time.Second" Tshell-client/implant/core/app/run.go` | 1 |
+| 287 | 延迟相关单测总数（合并 6 + sleep 同步 2 + 防抖 2 + 快轮询 2） | `grep -ch "^func Test" Tshell-server/pkg/command/commandQueue_coalesce_test.go Tshell-server/pkg/sendcommand/sleep_sync_test.go Tshell-client/implant/core/app/dispatch_debounce_test.go Tshell-client/implant/cmd/single/runloop_fastpoll_test.go` | 6+2+2+2=12 |

