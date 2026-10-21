@@ -1,27 +1,22 @@
 <template>
   <div class="pg-root">
-    <PageHeader
-      :title="i18nStore.tl('拓扑网络图', 'Pivot Graph')"
-      :subtitle="i18nStore.tl('服务端 → 监听器 → 客户端 → 隧道 → 目标', 'Server → Listener → Client → Tunnel → Target')"
-    >
-      <div class="pg-actions">
-        <span class="pg-stat">
-          {{ i18nStore.tl('节点', 'Nodes') }} {{ layout.nodes.length }} ·
-          {{ i18nStore.tl('在线', 'Online') }} {{ onlineCount }} / {{ clientCount }}
-        </span>
-        <button
-          class="cs-btn cs-btn-xs pg-auto"
-          :class="{ 'is-on': autoRefresh }"
-          :title="i18nStore.tl('每 15 秒自动刷新（切到后台时暂停）', 'Auto refresh every 15s (pauses when hidden)')"
-          @click="autoRefresh = !autoRefresh"
-        >
-          {{ i18nStore.tl('自动刷新', 'Auto refresh') }}{{ autoRefresh ? ' · 15s' : '' }}
-        </button>
-        <button class="cs-btn cs-btn-xs" :disabled="loading" @click="load">
-          {{ loading ? (i18nStore.tl('刷新中…', 'Loading…')) : (i18nStore.tl('刷新', 'Refresh')) }}
-        </button>
-      </div>
-    </PageHeader>
+    <div class="pg-actions">
+      <span class="pg-stat">
+        {{ i18nStore.tl('节点', 'Nodes') }} {{ layout.nodes.length }} ·
+        {{ i18nStore.tl('在线', 'Online') }} {{ onlineCount }} / {{ clientCount }}
+      </span>
+      <button
+        class="cs-btn cs-btn-xs pg-auto"
+        :class="{ 'is-on': autoRefresh }"
+        :title="i18nStore.tl('每 15 秒自动刷新（切到后台时暂停）', 'Auto refresh every 15s (pauses when hidden)')"
+        @click="autoRefresh = !autoRefresh"
+      >
+        {{ i18nStore.tl('自动刷新', 'Auto refresh') }}{{ autoRefresh ? ' · 15s' : '' }}
+      </button>
+      <button class="cs-btn cs-btn-xs" :disabled="loading" @click="load">
+        {{ loading ? (i18nStore.tl('刷新中…', 'Loading…')) : (i18nStore.tl('刷新', 'Refresh')) }}
+      </button>
+    </div>
 
     <!-- 图例：颜色/实心空心/图标/线型的含义必须在图上说明，否则用户只能猜 -->
     <div class="pg-legend">
@@ -287,7 +282,6 @@
 import { computed, nextTick, onActivated, onBeforeUnmount, onDeactivated, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import PageHeader from '@/components/Common/PageHeader.vue'
 import ClientApi from '@/api/clients'
 import { useI18nStore } from '@/stores/i18n'
 import {
@@ -957,7 +951,7 @@ onMounted(load)
   opacity: 0.6;
 }
 .pg-actions {
-  margin-left: auto;
+  align-self: flex-end;
   display: flex;
   align-items: center;
   gap: 10px;

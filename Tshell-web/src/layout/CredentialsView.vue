@@ -1,10 +1,5 @@
 <template>
   <div class="credentials-view cs-font-ui">
-    <PageHeader
-      :title="i18nStore.tl('密码凭证', 'Credentials')"
-      :subtitle="i18nStore.tl('凭据保险箱', 'Credentials Vault')"
-    />
-
     <!-- Toolbar -->
     <div class="cv-toolbar">
       <div class="cv-title-group">
@@ -239,7 +234,6 @@ import { Refresh, CopyDocument } from '@element-plus/icons-vue'
 import { useCredentialsStore, type CredentialItem } from '@/stores/credentials'
 import { useI18nStore } from '@/stores/i18n'
 import { useSessionSelectionStore } from '@/stores/sessionSelection'
-import PageHeader from '@/components/Common/PageHeader.vue'
 import EmptyState from '@/components/Common/EmptyState.vue'
 
 const credsStore = useCredentialsStore()

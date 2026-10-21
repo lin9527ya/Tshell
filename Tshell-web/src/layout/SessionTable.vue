@@ -1,10 +1,5 @@
 <template>
   <div class="session-table-container cs-font-ui">
-    <PageHeader
-      :title="i18nStore.tl('客户端管理', 'Clients')"
-      :subtitle="i18nStore.tl('会话列表', 'Sessions')"
-    />
-
     <!-- Search / Count Toolbar(常驻;接原 searchKey 死代码,Ctrl+F 聚焦) -->
     <div class="cs-session-toolbar">
       <div class="cs-session-search-wrap">
@@ -24,6 +19,12 @@
       <!-- 凭据/战利品库入口：/loot 在路由表里是 menu:false，此前全仓没有任何跳转入口，
            只能手输 URL 打开（命令产出自动入库的 WiFi 密码也在这里查看） -->
       <button class="cs-btn cs-btn-xs" @click="openLoot">{{ i18nStore.tl('凭据库', 'Credentials') }}</button>
+
+      <!-- 正向连接（vshell：客户端列表右上角主按钮；原入口在监听管理-更多里） -->
+      <button class="cs-btn cs-btn-xs cs-btn-primary" @click="forwardDlg = true">
+        <VsIcon name="plus" :size="11" />
+        {{ i18nStore.tl('正向连接', 'Forward Connect') }}
+      </button>
 
       <!-- 批量态（vshell：勾选后操作出现在页头工具条，不再用浮动条） -->
       <template v-if="batchUids.length">
@@ -45,6 +46,54 @@
         <button class="cs-btn cs-btn-xs" :disabled="!hasOfflineSelected" @click="cleanupOfflineBatch">{{ i18nStore.tl('清理离线', 'Clean Offline') }}</button>
         <button class="cs-btn cs-btn-xs" @click="clearTableSelection">{{ i18nStore.tl('取消选择', 'Clear') }}</button>
       </template>
+
+      <!-- vshell 表格工具：刷新 / 密度 / 列设置 -->
+      <div class="cs-table-tools">
+        <button
+          class="cs-icon-btn"
+          :class="{ 'is-spinning': manualRefreshing }"
+          :title="i18nStore.tl('刷新', 'Refresh')"
+          :disabled="manualRefreshing"
+          @click="refreshClients"
+        >
+          <VsIcon name="sync" :size="14" />
+        </button>
+
+        <el-dropdown trigger="click" @command="onDensityCmd">
+          <button class="cs-icon-btn" :title="i18nStore.tl('密度', 'Density')">
+            <VsIcon name="list-ul" :size="14" />
+          </button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="default" :class="{ 'is-active': density === 'default' }">
+                {{ i18nStore.tl('默认', 'Default') }}
+              </el-dropdown-item>
+              <el-dropdown-item command="compact" :class="{ 'is-active': density === 'compact' }">
+                {{ i18nStore.tl('紧凑', 'Compact') }}
+              </el-dropdown-item>
+              <el-dropdown-item command="mini" :class="{ 'is-active': density === 'mini' }">
+                {{ i18nStore.tl('迷你', 'Mini') }}
+              </el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+
+        <el-popover trigger="click" placement="bottom-end" :width="190">
+          <template #reference>
+            <button class="cs-icon-btn" :title="i18nStore.tl('列设置', 'Columns')">
+              <VsIcon name="columns" :size="14" />
+            </button>
+          </template>
+          <div class="cs-col-settings">
+            <el-checkbox
+              v-for="c in columnOptions"
+              :key="c.key"
+              v-model="colVisible[c.key]"
+              :label="c.label"
+            />
+          </div>
+        </el-popover>
+      </div>
     </div>
 
     <!-- Session Table (1:1 CS Column Layout) -->
@@ -62,80 +111,59 @@
         @row-click="onRowClick"
         @row-dblclick="onRowDblClick"
         @selection-change="onSelectionChange"
-        class="cs-session-table"
+        :class="['cs-session-table', density === 'default' ? '' : 'cs-density-' + density]"
       >
         <!-- Multi-select Column -->
         <el-table-column type="selection" width="32" :reserve-selection="true" />
 
-        <!-- Icon / Status Column (CS OS Icon with Online/Offline Indicator) -->
-        <el-table-column width="42" align="center" fixed="left">
+        <!-- ID（数据库自增 ID；缺失时退化为 Uid 前 8 位，保证列永远不空） -->
+        <el-table-column
+          v-if="colVisible.id"
+          prop="ID"
+          :label="t('table.id')"
+          width="64"
+          align="center"
+          sortable
+          :sort-orders="['ascending', 'descending', null]"
+        >
           <template #default="{ row }">
-            <div class="beacon-os-icon-wrap" :class="{ online: isClientOnline(row), offline: !isClientOnline(row) }" :title="getOsTooltip(row)">
-              <!-- Status dot -->
-              <span class="beacon-os-dot" :class="{ online: isClientOnline(row) }"></span>
+            <span class="cs-font-mono cs-cell-text">{{ clientId(row) }}</span>
+            <!-- 协作占用提示：原来挂在最左侧图标列的锁徽标挪到这里，省掉整列 -->
+            <VsIcon
+              v-if="collabStore.lockedByOther(row.Uid)"
+              name="lock"
+              :size="11"
+              class="beacon-lock-badge"
+              :title="i18nStore.tl(`${collabStore.lockedByOther(row.Uid)?.owner} 正在操作该会话`, `${collabStore.lockedByOther(row.Uid)?.owner} is controlling this session`)"
+            />
+          </template>
+        </el-table-column>
 
-              <!-- OS Icon(单一来源组件;在线状态用于兜底显示器图标) -->
-              <OsIcon :os="getClientOsType(row)" :size="16" fallback="screen" :online="isClientOnline(row)" class="beacon-os-svg" />
-
-              <!-- 多操作员协作：会话被其他操作员占用时给出可见提示 -->
-              <VsIcon
-                v-if="collabStore.lockedByOther(row.Uid)"
-                name="lock"
-                :size="11"
-                class="beacon-lock-badge"
-                :title="`${collabStore.lockedByOther(row.Uid)?.owner} 正在操作该会话`"
-              />
+        <!-- note (1:1 CS)：单元格内点铅笔即可编辑，不用走右键菜单 -->
+        <el-table-column
+          v-if="colVisible.note"
+          prop="Note"
+          :label="t('table.note')"
+          width="144"
+          sortable
+          :sort-orders="['ascending', 'descending', null]"
+          show-overflow-tooltip
+        >
+          <template #default="{ row }">
+            <div class="cs-note-cell" @click.stop="openNote(row)">
+              <span class="cs-cell-note" :title="row.Note || ''">{{ row.Note || '' }}</span>
+              <span v-if="row.Group" class="cs-group-tag" :title="`Group: ${row.Group}`">[{{ row.Group }}]</span>
+              <VsIcon name="pen" :size="11" class="cs-note-edit" :title="i18nStore.tl('编辑备注', 'Edit note')" />
             </div>
           </template>
         </el-table-column>
 
-        <!-- external (1:1 CS) -->
+        <!-- listener（连接方式：tcp/https/dns…） -->
         <el-table-column
-          prop="ExternalIP"
-          :label="t('table.external')"
-          min-width="105"
-          sortable
-          :sort-orders="['ascending', 'descending', null]"
-          show-overflow-tooltip
-        >
-          <template #default="{ row }">
-            <span class="cs-font-mono cs-cell-text">{{ row.ExternalIP || '127.0.0.1' }}</span>
-          </template>
-        </el-table-column>
-
-        <!-- internal (1:1 CS) -->
-        <el-table-column
-          prop="InternalIP"
-          :label="t('table.internal')"
-          min-width="110"
-          sortable
-          :sort-orders="['ascending', 'descending', null]"
-          show-overflow-tooltip
-        >
-          <template #default="{ row }">
-            <span class="cs-font-mono cs-cell-text">{{ row.InternalIP || row.ExternalIP || '-' }}</span>
-          </template>
-        </el-table-column>
-
-        <!-- address (1:1 CS - e.g. 本机地址) -->
-        <el-table-column
-          prop="Address"
-          :label="t('table.address')"
-          min-width="85"
-          sortable
-          :sort-orders="['ascending', 'descending', null]"
-          show-overflow-tooltip
-        >
-          <template #default="{ row }">
-            <span class="cs-cell-text">{{ row.Address || (row.InternalIP === '127.0.0.1' ? (i18nStore.tl('本机地址', 'Local')) : row.InternalIP) }}</span>
-          </template>
-        </el-table-column>
-
-        <!-- listener (1:1 CS) -->
-        <el-table-column
+          v-if="colVisible.listener"
           prop="Listener"
           :label="t('table.listener')"
-          min-width="80"
+          width="104"
           sortable
           :sort-orders="['ascending', 'descending', null]"
           show-overflow-tooltip
@@ -145,11 +173,57 @@
           </template>
         </el-table-column>
 
+        <!-- external (1:1 CS) -->
+        <el-table-column
+          v-if="colVisible.external"
+          prop="ExternalIP"
+          :label="t('table.external')"
+          min-width="136"
+          sortable
+          :sort-orders="['ascending', 'descending', null]"
+          show-overflow-tooltip
+        >
+          <template #default="{ row }">
+            <span class="cs-font-mono cs-cell-text">{{ row.ExternalIP || '127.0.0.1' }}</span>
+          </template>
+        </el-table-column>
+
+        <!-- address（归属地）：与两侧 IP 列同宽，保证表头落在外网IP/内网IP 正中间 -->
+        <el-table-column
+          v-if="colVisible.address"
+          prop="Address"
+          :label="t('table.address')"
+          min-width="136"
+          sortable
+          :sort-orders="['ascending', 'descending', null]"
+          show-overflow-tooltip
+        >
+          <template #default="{ row }">
+            <span class="cs-cell-text">{{ row.Address || (row.InternalIP === '127.0.0.1' ? (i18nStore.tl('本机地址', 'Local')) : row.InternalIP) }}</span>
+          </template>
+        </el-table-column>
+
+        <!-- internal (1:1 CS) -->
+        <el-table-column
+          v-if="colVisible.internal"
+          prop="InternalIP"
+          :label="t('table.internal')"
+          min-width="136"
+          sortable
+          :sort-orders="['ascending', 'descending', null]"
+          show-overflow-tooltip
+        >
+          <template #default="{ row }">
+            <span class="cs-font-mono cs-cell-text">{{ row.InternalIP || row.ExternalIP || '-' }}</span>
+          </template>
+        </el-table-column>
+
         <!-- user (1:1 CS - SYSTEM *) -->
         <el-table-column
+          v-if="colVisible.user"
           prop="Username"
           :label="t('table.user')"
-          min-width="100"
+          min-width="112"
           sortable
           :sort-orders="['ascending', 'descending', null]"
           show-overflow-tooltip
@@ -163,9 +237,10 @@
 
         <!-- computer (1:1 CS) -->
         <el-table-column
+          v-if="colVisible.computer"
           prop="Computer"
           :label="t('table.computer')"
-          min-width="100"
+          min-width="110"
           sortable
           :sort-orders="['ascending', 'descending', null]"
           show-overflow-tooltip
@@ -175,26 +250,27 @@
           </template>
         </el-table-column>
 
-        <!-- note (1:1 CS) -->
+        <!-- 系统类型（windows_amd64 / linux_amd64 / darwin_arm64，一个字段说清系统与架构） -->
         <el-table-column
-          prop="Note"
-          :label="t('table.note')"
-          min-width="90"
+          v-if="colVisible.osarch"
+          prop="Os"
+          :label="t('table.osarch')"
+          width="140"
           sortable
           :sort-orders="['ascending', 'descending', null]"
           show-overflow-tooltip
         >
           <template #default="{ row }">
-            <span class="cs-cell-note">{{ row.Note || '' }}</span>
-            <span v-if="row.Group" class="cs-group-tag" :title="`Group: ${row.Group}`">[{{ row.Group }}]</span>
+            <span class="cs-font-mono cs-cell-text">{{ osArchLabel(row) }}</span>
           </template>
         </el-table-column>
 
         <!-- process (1:1 CS) -->
         <el-table-column
+          v-if="colVisible.process"
           prop="Process"
           :label="t('table.process')"
-          min-width="115"
+          min-width="104"
           sortable
           :sort-orders="['ascending', 'descending', null]"
           show-overflow-tooltip
@@ -206,9 +282,10 @@
 
         <!-- pid (1:1 CS) -->
         <el-table-column
+          v-if="colVisible.pid"
           prop="Pid"
           :label="t('table.pid')"
-          width="90"
+          width="64"
           sortable
           :sort-orders="['ascending', 'descending', null]"
           align="right"
@@ -218,43 +295,40 @@
           </template>
         </el-table-column>
 
-        <!-- arch (1:1 CS) -->
+        <!-- 状态（在线 / 离线）：在线只给标签，离线直接给出掉线的时间点 -->
         <el-table-column
-          prop="Arch"
-          :label="t('table.arch')"
-          width="70"
+          v-if="colVisible.status"
+          prop="last_active"
+          :label="t('table.status')"
+          width="178"
+          sortable
+          :sort-orders="['ascending', 'descending', null]"
           align="center"
         >
           <template #default="{ row }">
-            <span class="cs-font-mono cs-cell-text">{{ row.Arch || 'x64' }}</span>
-          </template>
-        </el-table-column>
-
-        <!-- last (1:1 CS - 给足 95px 宽度，左对齐展示，确保中文“最后心跳”绝不换行) -->
-        <el-table-column
-          prop="last_active"
-          :label="t('table.last')"
-          min-width="160"
-          sortable
-          :sort-orders="['ascending', 'descending', null]"
-          align="left"
-        >
-          <template #default="{ row }">
-            <!-- 用 isClientOnline 判断：Online 是字符串，"2"（离线）也是真值 -->
-            <span class="vs-online-tag" :class="isClientOnline(row) ? 'is-online' : 'is-offline'">
-              {{ isClientOnline(row) ? (i18nStore.tl('在线', 'ON')) : (i18nStore.tl('离线', 'OFF')) }}
-            </span>
-            <span class="cs-cell-last cs-font-mono" :class="{ stale: !isClientOnline(row) }">
-              {{ formatLastActive(row) }}
+            <span class="cs-status-cell">
+              <!-- 用 isClientOnline 判断：Online 是字符串，"2"（离线）也是真值 -->
+              <span class="vs-online-tag" :class="isClientOnline(row) ? 'is-online' : 'is-offline'">
+                {{ isClientOnline(row) ? (i18nStore.tl('在线', 'ON')) : (i18nStore.tl('离线', 'OFF')) }}
+              </span>
+              <!-- 在线不再显示"心跳中/下次心跳 Ns"；离线时间才有信息量 -->
+              <span
+                v-if="!isClientOnline(row)"
+                class="cs-cell-last cs-font-mono stale"
+                :title="lastActiveTitle(row)"
+              >
+                {{ offlineSince(row) }}
+              </span>
             </span>
           </template>
         </el-table-column>
 
-        <!-- sleep (1:1 CS - e.g. 35 seconds (15% jitter)) -->
+        <!-- 间隔（回连 sleep，如 "5s +20%"） -->
         <el-table-column
+          v-if="colVisible.sleep"
           prop="Sleep"
           :label="t('table.sleep')"
-          min-width="120"
+          width="96"
           show-overflow-tooltip
         >
           <template #default="{ row }">
@@ -263,7 +337,7 @@
         </el-table-column>
 
         <!-- 操作（vshell：行内链接 + 更多下拉，替代 CS 右键菜单） -->
-        <el-table-column :label="i18nStore.tl('操作', 'Actions')" width="220" fixed="right">
+        <el-table-column :label="i18nStore.tl('操作', 'Actions')" width="172" fixed="right">
           <template #default="{ row }">
             <div class="row-actions">
               <a class="row-link" @click="gotoClient(row.Uid, 'console')">{{ i18nStore.tl('主机管理', 'Manage') }}</a>
@@ -328,6 +402,7 @@
     <ProcessMigrateDialog v-model="migrateDlg.visible" :uid="migrateDlg.uid" :pid="migrateDlg.pid" />
     <ClientReportDialog v-model="reportDlg.visible" :uid="reportDlg.uid" />
     <CredentialDumpDialog v-model="credDlg.visible" :uid="credDlg.uid" />
+    <ForwardConnectDialog v-model="forwardDlg" />
 
   </div>
 </template>
@@ -345,15 +420,14 @@ import VsIcon from '@/layout-vshell/VsIcon.vue'
 import { useVisibilityInterval } from '@/utils/useVisibilityInterval'
 import { detectClientOs } from '@/utils/clientUtils'
 import ClientAPI from '@/api/clients'
-import PageHeader from '@/components/Common/PageHeader.vue'
 import EmptyState from '@/components/Common/EmptyState.vue'
-import OsIcon from '@/components/Common/OsIcon.vue'
 // P3：会话操作对话框（页面内局部弹窗）
 import NoteDialog from './Dialogs/NoteDialog.vue'
 import SleepDialog from './Dialogs/SleepDialog.vue'
 import ProcessMigrateDialog from './Dialogs/ProcessMigrateDialog.vue'
 import ClientReportDialog from './Dialogs/ClientReportDialog.vue'
 import CredentialDumpDialog from './Dialogs/CredentialDumpDialog.vue'
+import ForwardConnectDialog from './Dialogs/Attacks/ForwardConnectDialog.vue'
 
 interface RowData extends ClientData {
   last_active?: string
@@ -371,6 +445,69 @@ const t = (key: string, def?: string) => i18nStore.t(key, def)
 const loading = computed(() => clientsStore.loading)
 const searchKey = ref('')
 const searchInputRef = ref<HTMLInputElement | null>(null)
+
+// ---- 表格工具：刷新 / 密度 / 列设置（vshell 客户端列表右上角） ----
+const DENSITY_KEY = 'tshell-client-density'
+type Density = 'default' | 'compact' | 'mini'
+const density = ref<Density>('default')
+try {
+  const saved = localStorage.getItem(DENSITY_KEY)
+  if (saved === 'default' || saved === 'compact' || saved === 'mini') density.value = saved
+} catch { /* 隐私模式不可用 */ }
+
+function onDensityCmd(cmd: string) {
+  if (cmd !== 'default' && cmd !== 'compact' && cmd !== 'mini') return
+  density.value = cmd
+  try { localStorage.setItem(DENSITY_KEY, cmd) } catch { /* 忽略 */ }
+}
+
+type ColKey =
+  | 'id' | 'note' | 'listener' | 'external' | 'address' | 'internal' | 'user'
+  | 'computer' | 'osarch' | 'process' | 'pid' | 'status' | 'sleep'
+const COLUMNS_KEY = 'tshell-client-columns'
+const DEFAULT_COLS: Record<ColKey, boolean> = {
+  id: true, note: true, listener: true, external: true, address: true, internal: true,
+  user: true, computer: true, osarch: true, process: true, pid: true, status: true, sleep: true,
+}
+const colVisible = ref<Record<ColKey, boolean>>({ ...DEFAULT_COLS })
+try {
+  const raw = localStorage.getItem(COLUMNS_KEY)
+  if (raw) {
+    const saved = JSON.parse(raw) as Partial<Record<ColKey, boolean>>
+    for (const k of Object.keys(DEFAULT_COLS) as ColKey[]) {
+      if (typeof saved[k] === 'boolean') colVisible.value[k] = saved[k] as boolean
+    }
+  }
+} catch { /* 损坏的本地配置按默认列显示 */ }
+watch(colVisible, (v) => {
+  try { localStorage.setItem(COLUMNS_KEY, JSON.stringify(v)) } catch { /* 忽略 */ }
+}, { deep: true })
+
+const columnOptions = computed<{ key: ColKey; label: string }[]>(() => [
+  { key: 'id', label: i18nStore.tl('ID', 'ID') },
+  { key: 'note', label: i18nStore.tl('备注', 'Note') },
+  { key: 'listener', label: i18nStore.tl('连接方式', 'Connection') },
+  { key: 'external', label: i18nStore.tl('外网IP', 'External IP') },
+  { key: 'address', label: i18nStore.tl('归属地', 'Location') },
+  { key: 'internal', label: i18nStore.tl('内网IP', 'Internal IP') },
+  { key: 'user', label: i18nStore.tl('用户', 'User') },
+  { key: 'computer', label: i18nStore.tl('主机名', 'Hostname') },
+  { key: 'osarch', label: i18nStore.tl('系统类型', 'OS Type') },
+  { key: 'process', label: i18nStore.tl('进程', 'Process') },
+  { key: 'pid', label: i18nStore.tl('PID', 'PID') },
+  { key: 'status', label: i18nStore.tl('状态', 'Status') },
+  { key: 'sleep', label: i18nStore.tl('间隔', 'Sleep') },
+])
+
+const manualRefreshing = ref(false)
+function refreshClients() {
+  if (manualRefreshing.value) return
+  manualRefreshing.value = true
+  clientsStore.fetchClients().catch(() => {}).finally(() => { manualRefreshing.value = false })
+}
+
+// 正向连接（入口从监听管理-更多移到本页工具条）
+const forwardDlg = ref(false)
 
 // 全局快捷键(CsShell Ctrl+F)通过 window 事件聚焦搜索框
 function onFocusSearchEvent() {
@@ -408,17 +545,6 @@ function onPageChange(p: number) { page.value = p }
 function onSizeChange(s: number) { pageSize.value = s; page.value = 1 }
 watch(searchKey, () => { page.value = 1 })
 
-function getClientOsType(row: RowData): string {
-  return detectClientOs(row)
-}
-
-function getOsTooltip(row: RowData): string {
-  const type = detectClientOs(row)
-  const status = isClientOnline(row) ? (isZh.value ? '在线' : 'Online') : (isZh.value ? '离线' : 'Offline')
-  const osName = type === 'windows' ? 'Windows' : (type === 'linux' ? 'Linux' : (type === 'darwin' ? 'macOS' : 'Unknown'))
-  return `${osName} (${status})`
-}
-
 function isAdminUser(row: RowData): boolean {
   if (!row.Username) return false
   const u = row.Username.toLowerCase()
@@ -439,13 +565,6 @@ function formatSleep(row: RowData): string {
   return `${s}s`
 }
 
-// 相对时间格式化（秒 → "Ns"/"Nm"/"Nh"）
-function relTime(sec: number): string {
-  if (sec < 60) return `${Math.max(0, Math.floor(sec))}s`
-  if (sec < 3600) return `${Math.floor(sec / 60)}m`
-  return `${Math.floor(sec / 3600)}h`
-}
-
 // 解析后端时间戳（"2006-01-02 15:04:05"）为相对当前的时间差
 function parseTs(ts: string | undefined | null): number | null {
   if (!ts) return null
@@ -454,38 +573,55 @@ function parseTs(ts: string | undefined | null): number | null {
   return (Date.now() - t.getTime()) / 1000
 }
 
-function formatLastActive(row: RowData): string {
-  const online = isClientOnline(row)
+// 离线时间：直接给掉线的那一刻（"已离线 5m"看不出具体是几点掉的）
+function offlineSince(row: RowData): string {
   // 读取 ticker 建立响应式依赖(每秒刷新)
   void nowTick.value
   const ts = row.last_active || row.FirstStart
-  const diff = parseTs(ts)
-  if (diff !== null && diff >= 0) {
-    if (online) {
-      // CS 风格倒计时:距下次心跳的秒数(心跳间隔 - 距最后心跳)
-      const interval = heartbeatIntervalSeconds(row)
-      const next = Math.max(0, interval - diff)
-      if (next <= 0) return isZh.value ? '心跳中' : 'checking in'
-      return isZh.value ? `下次心跳 ${next}s` : `next ${next}s`
-    }
-    return (isZh.value ? '已离线 ' : 'off ') + relTime(diff)
-  }
-  // 无时间戳回退：按上线时长或离线占位
-  if (row.FirstStart) {
-    const d = parseTs(row.FirstStart)
-    if (d !== null) return online ? relTime(d) : (isZh.value ? '已离线' : 'offline')
-  }
-  return online ? '0s' : (isZh.value ? '已离线' : '1908h')
+  if (parseTs(ts) === null) return '-'
+  return stampOf(ts)
 }
 
-// 心跳间隔(秒):优先 Sleep 字段(客户端 sleep 设置),兜底监听器配置/5
-function heartbeatIntervalSeconds(row: RowData): number {
-  const raw = String(row.Sleep || '').trim()
-  const n = parseInt(raw, 10)
-  if (n > 0 && n <= 3600) return n
-  const hb = parseInt(String(row.HeartbeatInterval || ''), 10)
-  if (hb > 0 && hb <= 3600) return hb
-  return 5
+// 掉线时间戳：列表里显示到分钟（悬停给秒级全量）
+function stampOf(ts: string | undefined | null, withSeconds = false): string {
+  if (!ts) return '-'
+  const t = new Date(ts.replace(' ', 'T'))
+  if (isNaN(t.getTime())) return ts
+  const p = (n: number) => String(n).padStart(2, '0')
+  const date = `${t.getFullYear()}-${p(t.getMonth() + 1)}-${p(t.getDate())}`
+  const time = `${p(t.getHours())}:${p(t.getMinutes())}${withSeconds ? ':' + p(t.getSeconds()) : ''}`
+  return `${date} ${time}`
+}
+
+function lastActiveTitle(row: RowData): string {
+  const online = isClientOnline(row)
+  const ts = row.last_active || row.FirstStart
+  const when = stampOf(ts, true)
+  if (online) return isZh.value ? `在线，最后心跳 ${when}` : `online, last heartbeat ${when}`
+  return isZh.value ? `离线于 ${when}` : `offline since ${when}`
+}
+
+// 列表 ID：优先数据库自增 ID，缺失时用 Uid 前 8 位（不显示完整 UUID，避免把列撑爆）
+function clientId(row: RowData): string {
+  const id = row.ID ?? row.id
+  if (id !== undefined && id !== null && String(id) !== '') return String(id)
+  return row.Uid ? row.Uid.slice(0, 8) : '-'
+}
+
+// 系统类型（系统/架构合并一列）：windows_amd64 / linux_amd64 / darwin_arm64
+// OS 取自 detectClientOs（与注入/会话判定同一来源），架构做归一化（x64→amd64、x86→386）
+function normalizeArch(raw: string | undefined): string {
+  const a = String(raw || '').trim().toLowerCase()
+  if (!a) return 'amd64'
+  if (a === 'x64' || a === 'x86_64' || a === 'amd64') return 'amd64'
+  if (a === 'x86' || a === 'i386' || a === 'i686' || a === '386') return '386'
+  if (a === 'aarch64') return 'arm64'
+  return a
+}
+
+function osArchLabel(row: RowData): string {
+  const os = detectClientOs(row) || 'unknown'
+  return `${os}_${normalizeArch(row.Arch)}`
 }
 
 function isClientOnline(row: RowData): boolean {
@@ -510,7 +646,6 @@ const tableHeaderStyle = {
   fontWeight: '600',
   fontSize: '14px',
   borderBottom: '1px solid var(--cs-card-border)',
-  height: '48px',
   padding: '0',
 }
 
@@ -543,11 +678,18 @@ const migrateDlg = ref({ visible: false, uid: '', pid: '' })
 const reportDlg = ref({ visible: false, uid: '' })
 const credDlg = ref({ visible: false, uid: '' })
 
+// 备注单元格里的铅笔 / 右键菜单「备注」共用同一个弹窗
+function openNote(row: RowData) {
+  selectedRow.value = row
+  workspace.setSelectedUids([row.Uid])
+  noteDlg.value = { visible: true, uid: row.Uid, note: row.Note || '' }
+}
+
 function onRowCmd(cmd: string, row: RowData) {
   selectedRow.value = row
   workspace.setSelectedUids([row.Uid])
   if (cmd === 'note') {
-    noteDlg.value = { visible: true, uid: row.Uid, note: row.Note || '' }
+    openNote(row)
   } else if (cmd === 'sleep') {
     sleepDlg.value = { visible: true, uid: row.Uid, sleep: row.Sleep }
   } else if (cmd === 'group') {
@@ -818,10 +960,10 @@ onBeforeUnmount(() => {
 <style scoped>
 /* 会话锁标记（多操作员协作） */
 .beacon-lock-badge {
-  position: absolute;
-  right: -2px;
-  bottom: -2px;
+  display: inline-block;
+  margin-left: 4px;
   color: #f0883e;
+  vertical-align: -1px;
 }
 
 /* 行操作列（vshell：文字链接 + 下拉） */
@@ -926,35 +1068,61 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
-/* ===== 单元格渲染 ===== */
-.beacon-os-icon-wrap {
-  position: relative;
+/* ===== 表格工具：刷新 / 密度 / 列设置（vshell 右上角图标组） ===== */
+.cs-table-tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 4px;
+  flex-shrink: 0;
+}
+
+.cs-icon-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--cs-text-dim);
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
 }
-.beacon-os-icon-wrap.offline {
-  opacity: 0.55;
-  filter: grayscale(0.8);
+
+.cs-icon-btn:hover:not(:disabled) {
+  background: var(--cs-hover);
+  color: var(--cs-text-bright);
 }
-.beacon-os-dot {
-  position: absolute;
-  top: -1px;
-  right: -2px;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--cs-offline);
-  border: 1px solid var(--cs-panel);
+
+.cs-icon-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
-.beacon-os-dot.online {
-  background: var(--cs-online);
+
+.cs-icon-btn.is-spinning :deep(svg) {
+  animation: cs-tool-spin 0.9s linear infinite;
 }
-.beacon-os-svg {
-  display: block;
+
+@keyframes cs-tool-spin {
+  to { transform: rotate(360deg); }
 }
+
+.cs-col-settings {
+  display: flex;
+  flex-direction: column;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.cs-col-settings :deep(.el-checkbox) {
+  height: 28px;
+  margin-right: 0;
+}
+
+/* ===== 单元格渲染 ===== */
 
 .cs-cell-text {
   color: var(--cs-text);
@@ -966,10 +1134,20 @@ onBeforeUnmount(() => {
 }
 
 .cs-cell-last {
+  font-size: 12px;
   font-weight: 500;
   font-style: italic;
   color: var(--cs-text);
   /* "已离线 101 h" 中间的空格会把 h 挤到下一行，行高被撑高 */
+  white-space: nowrap;
+}
+
+/* 状态列：标签与离线时间同排，时间用小一号等宽字，避免把 48px 行撑成两行 */
+.cs-status-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
   white-space: nowrap;
 }
 
@@ -985,12 +1163,12 @@ onBeforeUnmount(() => {
   align-items: center;
   height: 20px;
   padding: 0 7px;
-  margin-right: 6px;
   border-radius: 4px;
   font-size: 12px;
   font-style: normal;
   line-height: 1;
   vertical-align: middle;
+  flex-shrink: 0;
 }
 
 .vs-online-tag.is-online {
@@ -1017,12 +1195,48 @@ onBeforeUnmount(() => {
   color: var(--cs-text-dim);
 }
 
+/* 备注单元格：整格可点，铅笔只在悬停时显眼，避免每行都挂个按钮抢视线 */
+.cs-note-cell {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  cursor: text;
+}
+
+/* 备注文字按内容占宽：短备注不会把分组标签/铅笔推到单元格最右侧，形成空洞 */
+.cs-note-cell .cs-cell-note {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 备注铅笔常显（弱化），悬停整格时提到全亮，避免"要猜哪里能点" */
+.cs-note-edit {
+  flex-shrink: 0;
+  opacity: 0.65;
+  transition: opacity 0.15s;
+  color: var(--cs-text-dim);
+}
+
+.cs-note-cell:hover .cs-note-edit {
+  opacity: 1;
+}
+
+.cs-note-edit:hover {
+  opacity: 1;
+  color: var(--cs-active);
+}
+
 .cs-group-tag {
-  margin-left: 6px;
+  flex-shrink: 0;
   font-family: var(--cs-font-mono);
-  font-size: 13px;
+  font-size: 12px;
   font-style: normal;
   color: var(--cs-active);
+  white-space: nowrap;
 }
 
 /* ===== C14 批量操作条（浮层，覆盖在表格上方） ===== */

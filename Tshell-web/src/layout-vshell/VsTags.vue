@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import VsIcon from './VsIcon.vue'
 import { useI18nStore } from '@/stores/i18n'
@@ -150,8 +150,12 @@ function closeCtxTab() {
       <button class="vs-tags-btn" :title="i18nStore.tl('刷新当前页', 'Refresh')" @click="onRefresh">
         <VsIcon name="redo" :size="14" />
       </button>
-      <button class="vs-tags-btn" :title="i18nStore.tl('折叠页头', 'Collapse header')" @click="toggleFold">
-        <VsIcon :name="folded ? 'window-restore' : 'expand'" :size="14" />
+      <button
+        class="vs-tags-btn"
+        :title="folded ? i18nStore.tl('展开页头', 'Expand header') : i18nStore.tl('折叠页头', 'Collapse header')"
+        @click="toggleFold"
+      >
+        <VsIcon :name="folded ? 'expand' : 'compress'" :size="14" />
       </button>
     </div>
 

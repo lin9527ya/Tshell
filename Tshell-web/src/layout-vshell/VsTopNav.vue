@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import VsIcon from './VsIcon.vue'
 import ThemeDrawer from '@/layout-vshell/ThemeDrawer.vue'
@@ -55,10 +55,67 @@ const activeTitle = computed(() => {
   return hit ? label(hit) : ''
 })
 
+// 顶栏菜单自适应折叠：
+//   宽度够 → 全部平铺（整体居中）；
+//   宽度不够 → 末尾收成「…」，点开是没显示出来的项；窗口变宽再逐项展开。
+// 宽度用隐藏的度量行取（不随折叠状态变化），否则量到的是被折叠后的宽度，会来回抖动。
+const menuRef = ref<HTMLElement | null>(null)
+const measureRef = ref<HTMLElement | null>(null)
+const menuWidth = ref(0)
+const itemWidths = ref<number[]>([])
+const moreOpen = ref(false)
+const MORE_BTN_WIDTH = 48
+
+const visibleCount = computed(() => {
+  const total = navItems.value.length
+  if (!total) return 0
+  if (!menuWidth.value || itemWidths.value.length !== total) return total
+  let used = 0
+  let count = 0
+  for (let i = 0; i < total; i++) {
+    const w = itemWidths.value[i] || 0
+    // 只要还有项被折叠，就必须给「…」留位
+    const reserve = i === total - 1 ? 0 : MORE_BTN_WIDTH
+    if (used + w + reserve > menuWidth.value) break
+    used += w
+    count++
+  }
+  // 极端窄屏也至少留第一项，否则导航区就空了
+  return Math.max(count, Math.min(1, total))
+})
+
+const visibleNavItems = computed(() => navItems.value.slice(0, visibleCount.value))
+const hiddenNavItems = computed(() => navItems.value.slice(visibleCount.value))
+const hiddenCount = computed(() => hiddenNavItems.value.length)
+
+function measureMenu() {
+  const host = menuRef.value
+  const probe = measureRef.value
+  if (!host || !probe) return
+  menuWidth.value = host.clientWidth
+  const kids = Array.from(probe.children) as HTMLElement[]
+  itemWidths.value = kids.map((k) => k.getBoundingClientRect().width)
+}
+
+let menuObserver: ResizeObserver | null = null
+
+function scheduleMeasure() {
+  nextTick(() => {
+    measureMenu()
+    // 字体晚到（首次加载图标字体/中文字体回退）会让宽度变一次，补量一拍
+    window.setTimeout(measureMenu, 120)
+  })
+}
+
+watch([() => navItems.value.length, isZh], () => {
+  moreOpen.value = false
+  scheduleMeasure()
+})
+
 function onNavClick(path: string) {
   router.push(path)
-  userMenuOpen.value = false
-}
+  moreOpen.value = false
+  userMenuOpen.value = false}
 
 function toggleFullscreen() {
   if (document.fullscreenElement) {
@@ -96,11 +153,18 @@ onMounted(() => {
   document.addEventListener('click', onDocClick)
   document.addEventListener('fullscreenchange', onFsChange)
   collabStore.start()
+  scheduleMeasure()
+  if (typeof ResizeObserver !== 'undefined' && menuRef.value) {
+    menuObserver = new ResizeObserver(() => measureMenu())
+    menuObserver.observe(menuRef.value)
+  }
 })
 onBeforeUnmount(() => {
   document.removeEventListener('click', onDocClick)
   document.removeEventListener('fullscreenchange', onFsChange)
   collabStore.stop()
+  menuObserver?.disconnect()
+  menuObserver = null
 })
 
 // 会话锁到期时间（本地时区 HH:MM），用于提示"占用到几点"
@@ -132,9 +196,9 @@ function lockUntil(iso: string): string {
       <span class="vs-topnav-title vs-breadcrumb">{{ activeTitle }}</span>
     </template>
 
-    <nav v-if="props.showMenu" class="vs-topnav-menu">
+    <nav v-if="props.showMenu" ref="menuRef" class="vs-topnav-menu">
       <div
-        v-for="item in navItems"
+        v-for="item in visibleNavItems"
         :key="item.name"
         class="vs-nav-item"
         :class="{ active: props.activeKey === item.name }"
@@ -144,7 +208,42 @@ function lockUntil(iso: string): string {
         <VsIcon v-if="item.icon" :name="item.icon" :size="20" class="vs-nav-icon" />
         <span class="vs-nav-text">{{ label(item) }}</span>
       </div>
+
+      <!-- 放不下的项收进「…」，点开列出；窗口变宽会自动逐项展开 -->
+      <div
+        v-if="hiddenCount > 0"
+        class="vs-nav-item vs-nav-more"
+        :class="{ open: moreOpen }"
+        :title="i18nStore.tl('更多', 'More')"
+        @click.stop="moreOpen = !moreOpen"
+      >
+        <VsIcon name="ellipsis-h" :size="18" class="vs-nav-icon" />
+      </div>
+
+      <transition name="vs-pop">
+        <div v-if="hiddenCount > 0 && moreOpen" class="vs-nav-popup vs-nav-more-popup" @click.stop>
+          <div
+            v-for="item in hiddenNavItems"
+            :key="item.name"
+            class="vs-popup-item"
+            :class="{ active: props.activeKey === item.name }"
+            :title="label(item)"
+            @click="onNavClick(item.path)"
+          >
+            <VsIcon v-if="item.icon" :name="item.icon" :size="16" />
+            <span>{{ label(item) }}</span>
+          </div>
+        </div>
+      </transition>
     </nav>
+
+    <!-- 度量行：只用来量每项宽度，不可见、不占位 -->
+    <div ref="measureRef" class="vs-nav-measure" aria-hidden="true">
+      <div v-for="item in navItems" :key="`m-${item.name}`" class="vs-nav-item">
+        <VsIcon v-if="item.icon" :name="item.icon" :size="20" class="vs-nav-icon" />
+        <span class="vs-nav-text">{{ label(item) }}</span>
+      </div>
+    </div>
 
     <div class="vs-topnav-actions">
       <button class="vs-action-btn" :title="i18nStore.tl('全屏', 'Fullscreen')" @click.stop="toggleFullscreen">

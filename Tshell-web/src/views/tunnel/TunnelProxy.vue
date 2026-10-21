@@ -1,7 +1,5 @@
 <template>
   <div class="tunnel-proxy-container cs-font-ui">
-    <PageHeader :title="i18nStore.tl('隧道代理', 'Tunnels')" />
-
     <!-- 页签：隧道 / SOCKS5（vshell：同域功能并页） -->
     <div class="tp-tabs">
       <div class="tp-tab" :class="{ active: view === 'tunnel' }" @click="view = 'tunnel'">
@@ -316,7 +314,6 @@ import { useI18nStore } from '@/stores/i18n'
 import { Plus, Edit, Refresh, Select, Delete } from '@element-plus/icons-vue'
 import ClientAPI from '@/api/clients'
 import TunnelAPI, { type TunnelProxyRequest, type TunnelProxyResponse } from '@/api/tunnel'
-import PageHeader from '@/components/Common/PageHeader.vue'
 import EmptyState from '@/components/Common/EmptyState.vue'
 
 // 类型定义

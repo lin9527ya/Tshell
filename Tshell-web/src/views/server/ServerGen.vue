@@ -1,9 +1,16 @@
 <template>
   <div class="servergen-page cs-font-ui">
-    <PageHeader
-      :title="i18nStore.tl('客户端生成', 'Payloads')"
-      :subtitle="i18nStore.tl('载荷生成器', 'Payload Generator')"
-    >
+    <!-- 页面级页签（vshell 骨架：页签在页面、内容卡片在下方）；右侧保留页头原有的提示与高级格式入口 -->
+    <div class="sg-tabs">
+      <div
+        v-for="t in TABS"
+        :key="t.name"
+        class="sg-tab"
+        :class="{ active: activeTab === t.name }"
+        @click="switchTab(t.name)"
+      >
+        {{ t.label }}
+      </div>
       <span class="sg-tip">{{ i18nStore.tl('根据监听器自动注入 VKey 与加密盐', 'Automatic VKey & Salt injection based on Listener') }}</span>
       <!-- 高级格式：HTA / Office 宏 / Windows EXE（原全局对话框收编到页内，下拉右对齐） -->
       <el-dropdown trigger="click" placement="bottom-end" class="sg-dropdown" @command="openAdvDialog">
@@ -20,19 +27,6 @@
           </el-dropdown-menu>
         </template>
       </el-dropdown>
-    </PageHeader>
-
-    <!-- 页面级页签（vshell 骨架：页签在页面、内容卡片在下方） -->
-    <div class="sg-tabs">
-      <div
-        v-for="t in TABS"
-        :key="t.name"
-        class="sg-tab"
-        :class="{ active: activeTab === t.name }"
-        @click="switchTab(t.name)"
-      >
-        {{ t.label }}
-      </div>
     </div>
 
     <div class="gen-card">
@@ -488,7 +482,6 @@ import {
 import { defineAsyncComponent } from 'vue';
 const WebDelivery = defineAsyncComponent(() => import('@/views/server/WebDelivery.vue'));
 import ClientAPI from '@/api/clients';
-import PageHeader from '@/components/Common/PageHeader.vue';
 import HtaAttackDialog from '@/layout/Dialogs/Payloads/HtaAttackDialog.vue';
 import OfficeMacroDialog from '@/layout/Dialogs/Payloads/OfficeMacroDialog.vue';
 import WindowsExeDialog from '@/layout/Dialogs/Payloads/WindowsExeDialog.vue';
@@ -1150,8 +1143,11 @@ const refreshAddress = () => {
 .sg-spacer { flex: 1; }
 
 .sg-tip {
+  margin-left: auto;
+  padding-left: 12px;
   font-size: 14px;
   color: var(--cs-text-dim);
+  white-space: nowrap;
 }
 
 /* 「高级格式 ▾」下拉：与工具条按钮同高同圆角 */

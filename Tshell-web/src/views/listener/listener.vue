@@ -1,7 +1,5 @@
 <template>
   <div class="cs-listeners-panel cs-font-ui">
-    <PageHeader :title="i18nStore.tl('监听管理', 'Listeners')" />
-
     <!-- vshell 工具条：内容上方一行（左：标题 / 下划线页签，右：搜索 + 操作） -->
     <div class="cs-listener-toolbar">
       <!-- 正/反向监听器：下划线页签（激活 = 主色字 + 2px 主色下划线） -->
@@ -54,7 +52,6 @@
         <button class="cs-btn">{{ i18nStore.tl('更多', 'More') }} ▾</button>
         <template #dropdown>
           <el-dropdown-menu>
-            <el-dropdown-item command="forward">{{ i18nStore.tl('正向连接', 'Forward Connect') }}</el-dropdown-item>
             <el-dropdown-item command="phish">{{ i18nStore.tl('钓鱼邮件', 'Spear Phish') }}</el-dropdown-item>
             <el-dropdown-item command="redirector">{{ i18nStore.tl('重定向器配置', 'Redirector Config') }}</el-dropdown-item>
             <el-dropdown-item command="help">{{ i18nStore.tl('帮助', 'Help') }}</el-dropdown-item>
@@ -156,7 +153,6 @@
     />
 
     <!-- 页面内局部弹窗（入口在本页工具条） -->
-    <ForwardConnectDialog v-model="showForwardConnect" />
     <SpearPhishDialog v-model="showSpearPhish" />
     <!-- 重定向器配置：按当前画像生成，避免手写配置与画像漂移 -->
     <RedirectorDialog v-model:visible="showRedirector" />
@@ -168,13 +164,11 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 import EditListenerDialog from '@/layout/Dialogs/EditListenerDialog.vue'
-import ForwardConnectDialog from '@/layout/Dialogs/Attacks/ForwardConnectDialog.vue'
 import SpearPhishDialog from '@/layout/Dialogs/Attacks/SpearPhishDialog.vue'
 import ForwardListeners from './ForwardListeners.vue'
 import RedirectorDialog from '@/layout/Dialogs/RedirectorDialog.vue'
 import ListenerAPI from '@/api/listener'
 import { useI18nStore } from '@/stores/i18n'
-import PageHeader from '@/components/Common/PageHeader.vue'
 import EmptyState from '@/components/Common/EmptyState.vue'
 
 interface ListenerItem {
@@ -213,7 +207,6 @@ const selectedRow = ref<ListenerItem | null>(null)
 const editingListener = ref<ListenerItem | null>(null)
 const showEditDialog = ref(false)
 // 攻击工具弹窗（页面内局部状态）
-const showForwardConnect = ref(false)
 const showSpearPhish = ref(false)
 const showRedirector = ref(false)
 
@@ -320,8 +313,7 @@ function onRowDblClick(row: ListenerItem) {
 }
 
 function onMoreCmd(cmd: string) {
-  if (cmd === 'forward') showForwardConnect.value = true
-  else if (cmd === 'phish') showSpearPhish.value = true
+  if (cmd === 'phish') showSpearPhish.value = true
   else if (cmd === 'redirector') showRedirector.value = true
   else if (cmd === 'help') handleHelp()
 }

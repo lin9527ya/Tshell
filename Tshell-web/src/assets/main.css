@@ -255,11 +255,6 @@ a {
     .responsive-table {
         margin: 0 -16px;
     }
-    
-    .page-header {
-        flex-direction: column;
-        gap: 16px;
-    }
 }
 
 /* 提升层级的组件样式 */
@@ -322,7 +317,6 @@ html.dark .client-view-container {
 }
 
 /* 卡片、面板、头部、列表区域深色适配 */
-html.dark .page-header,
 html.dark .tunnel-table,
 html.dark .plugin-form,
 html.dark .output-header,

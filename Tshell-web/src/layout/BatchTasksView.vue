@@ -1,7 +1,5 @@
 <template>
   <div class="batch-tasks-view cs-font-ui">
-    <PageHeader :title="i18nStore.tl('任务中心', 'Task Center')" />
-
     <!-- CS Toolbar -->
     <div class="bt-toolbar">
       <div class="bt-title-group">
@@ -154,7 +152,6 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useI18nStore } from '@/stores/i18n'
-import PageHeader from '@/components/Common/PageHeader.vue'
 import EmptyState from '@/components/Common/EmptyState.vue'
 import TaskAPI, { type TaskRow } from '@/api/tasks'
 

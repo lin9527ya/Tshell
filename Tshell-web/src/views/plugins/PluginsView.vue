@@ -1,7 +1,5 @@
 <template>
 <div class="plugin-container cs-font-ui">
-  <PageHeader :title="i18nStore.tl('插件运行', 'Plugins')" />
-
   <!-- 页签：插件 / 脚本（vshell：同域功能并页） -->
   <div class="plug-tabs">
     <div class="plug-tab" :class="{ active: view === 'plugins' }" @click="view = 'plugins'">
@@ -219,7 +217,6 @@ import ClientAPI from '@/api/clients'
 import TaskAPI from '@/api/tasks';
 import type { ClientData } from '@/stores/clients';
 import { smartDecodeContent } from '@/utils/encoding';
-import PageHeader from '@/components/Common/PageHeader.vue';
 
 // 用户状态
 

@@ -1,7 +1,5 @@
 <template>
   <div class="ab-page">
-    <PageHeader :title="i18nStore.tl('关于', 'About')" />
-
     <div class="ab-card">
       <div class="ab-header">
         <div class="ab-logo">⚡</div>
@@ -43,7 +41,6 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import PageHeader from '@/components/Common/PageHeader.vue'
 import { useUserStore } from '@/stores/user'
 import { useI18nStore } from '@/stores/i18n'
 

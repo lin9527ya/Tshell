@@ -23,6 +23,7 @@
       <div class="vs-shell-main">
         <VsTopNav
           v-if="sideBySide"
+          v-show="!folded"
           :active-key="activeMenuName"
           variant="slim"
           :show-menu="false"
@@ -42,9 +43,10 @@
       </div>
     </div>
 
-    <!-- 顶部菜单模式：无侧栏 -->
+    <!-- 顶部菜单模式：无侧栏。折叠只收起顶栏；标签条保留（vshell 同款：
+         折叠按钮在标签条上，否则收起后没有任何入口能恢复页头） -->
     <template v-else>
-      <VsTags v-show="!folded" @refresh="onRefresh" @fold="onFold" />
+      <VsTags @refresh="onRefresh" @fold="onFold" />
       <div class="vs-content">
         <div class="vs-panel-host">
           <router-view v-slot="{ Component }">

@@ -1,7 +1,5 @@
 <template>
   <div class="st-page">
-    <PageHeader :title="i18nStore.tl('系统设置', 'Settings')" />
-
     <div class="st-tabs">
       <div
         v-for="t in visibleTabs"
@@ -30,7 +28,6 @@
 import { computed, markRaw, shallowReactive, ref, watch, type Component } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { SETTING_TABS, type SettingTab } from '@/router/routes'
-import PageHeader from '@/components/Common/PageHeader.vue'
 import C2ProfileDialog from '@/layout/Dialogs/C2ProfileDialog.vue'
 import { useI18nStore } from '@/stores/i18n'
 import { usePermissStore } from '@/stores/userpermiss'

@@ -78,7 +78,7 @@ function mountView() {
   return mount(PluginsView, {
     global: {
       plugins: [ElementPlus],
-      stubs: { ScriptManagerPanel: true, PageHeader: true },
+      stubs: { ScriptManagerPanel: true },
     },
   })
 }

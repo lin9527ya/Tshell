@@ -19,6 +19,8 @@
   --cs-active: var(--theme-primary, #0960bd);
   /* 选中行底色: 主色加深(保持白字高对比,同 CS 视觉) */
   --cs-selected: color-mix(in srgb, var(--cs-active) 78%, #04121f);
+  /* 选中行底色(轻): 只做"点到哪一行"的定位提示，不抢内容配色；随主题面板色自适应 */
+  --cs-selected-soft: color-mix(in srgb, var(--cs-active) 8%, var(--cs-panel));
   /* 主色悬停(略亮) */
   --cs-active-hover: color-mix(in srgb, var(--cs-active) 88%, #ffffff);
 
@@ -460,22 +462,32 @@
   background-color: var(--cs-hover) !important;
 }
 
-/* 选中行：主色加深底 + 纯白字,高对比(随 --theme-primary 联动) */
+/* 选中行：淡灰底 + 主色左边线——整行铺主色会把在线/离线标签、监听器徽标全盖掉 */
 .cs-session-table .el-table__row.current-row > td.el-table__cell,
 .cs-session-table .el-table__row.is-selected > td.el-table__cell {
-  background-color: var(--cs-selected) !important;
-  color: #ffffff !important;
+  background-color: var(--cs-selected-soft) !important;
+  color: inherit !important;
 }
 
-.cs-session-table .el-table__row.current-row .cs-cell-text,
-.cs-session-table .el-table__row.current-row .cs-cell-last,
-.cs-session-table .el-table__row.current-row .cs-cell-note,
-.cs-session-table .el-table__row.current-row span,
-.cs-session-table .el-table__row.is-selected .cs-cell-text,
-.cs-session-table .el-table__row.is-selected .cs-cell-last,
-.cs-session-table .el-table__row.is-selected .cs-cell-note,
-.cs-session-table .el-table__row.is-selected span {
-  color: #ffffff !important;
+.cs-session-table .el-table__row.current-row > td.el-table__cell:first-child,
+.cs-session-table .el-table__row.is-selected > td.el-table__cell:first-child {
+  box-shadow: inset 2px 0 0 var(--cs-active);
+}
+
+/* 固定操作列：行单元格统一透明，横向滚动时下层列（如"间隔"）的文字会从
+   固定列底下透出来叠字。固定列必须自己铺底，并跟随 hover / 选中态。 */
+.cs-session-table .el-table__row td.el-table-fixed-column--right {
+  background-color: var(--el-table-tr-bg-color, var(--cs-panel)) !important;
+}
+
+.cs-session-table .el-table__row:hover td.el-table-fixed-column--right {
+  background-color: var(--cs-hover) !important;
+}
+
+.cs-session-table .el-table__row.current-row > td.el-table-fixed-column--right,
+.cs-session-table .el-table__row.is-selected > td.el-table-fixed-column--right {
+  background-color: var(--cs-selected-soft) !important;
+  color: inherit !important;
 }
 
 

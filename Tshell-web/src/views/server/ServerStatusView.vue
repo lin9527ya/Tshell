@@ -66,16 +66,16 @@
         </div>
       </div>
 
-      <!-- 维护操作（后端 /client/reset-id：重排 sessions 自增 ID 序列） -->
+      <!-- 维护操作（后端 /client/reset-id：把 clients 表主键重排为 1..N 并复位自增） -->
       <div class="sv-config-panel">
         <div class="sv-panel-header">{{ i18nStore.tl('维护操作', 'Maintenance') }}</div>
         <div class="sv-panel-body">
           <div class="sv-maintain-row">
             <span class="sv-maintain-desc">
-              {{ i18nStore.tl('将 sessions 表自增 ID 序列重置为当前最大 ID，下一次上线从 max+1 继续编号。', 'Reset the sessions AUTOINCREMENT sequence to the current max ID; the next beacon continues from max+1.') }}
+              {{ i18nStore.tl('把客户端编号按上线顺序重排为 1、2、3……，下一个新会话从 N+1 开始。只动编号，会话本身（Uid、命令、审计）不受影响；但历史记录里按旧编号写的对应关系会对不上，且无法自动还原。', 'Renumber clients to 1, 2, 3… in connect order; the next new session starts at N+1. Only the numbers change — sessions (Uid, commands, audit) are untouched, but historical references to old numbers will no longer match, and this cannot be undone automatically.') }}
             </span>
             <button class="cs-btn cs-btn-danger" :disabled="resettingId" @click="handleResetClientId">
-              {{ resettingId ? (i18nStore.tl('重置中...', 'Resetting...')) : (i18nStore.tl('重置会话 ID 序列', 'Reset Session ID Sequence')) }}
+              {{ resettingId ? (i18nStore.tl('重置中...', 'Resetting...')) : (i18nStore.tl('重置会话编号', 'Renumber Sessions')) }}
             </button>
           </div>
         </div>
@@ -101,11 +101,11 @@ const stats = reactive<Partial<DashboardStats>>({})
 async function handleResetClientId() {
   ElMessageBox.confirm(
     isZh.value
-      ? '重置 sessions 表自增 ID 序列？该操作不会删除任何会话记录，仅让下一次上线从当前 max+1 开始编号。'
-      : 'Reset the sessions AUTOINCREMENT sequence? No session records are deleted; the next beacon starts numbering from current max+1.',
-    isZh.value ? '重置会话 ID 序列' : 'Reset Session ID Sequence',
+      ? '把客户端编号按上线顺序重排为 1..N？只改编号，不删会话；历史记录里按旧编号的对应关系会对不上，且无法自动还原。'
+      : 'Renumber clients 1..N in connect order? Sessions are not deleted; historical references to old numbers will no longer match, and this cannot be undone automatically.',
+    isZh.value ? '重置会话编号' : 'Renumber Sessions',
     {
-      confirmButtonText: isZh.value ? '重置' : 'Reset',
+      confirmButtonText: isZh.value ? '重排' : 'Renumber',
       cancelButtonText: isZh.value ? '取消' : 'Cancel',
       type: 'warning',
     },
@@ -116,11 +116,11 @@ async function handleResetClientId() {
       const data = res.data?.data || {}
       ElMessage.success(
         isZh.value
-          ? `ID 序列已重置：当前最大 ${data.current_max_id ?? '-'}，下一个 ID ${data.next_id ?? '-'}`
-          : `ID sequence reset: current max ${data.current_max_id ?? '-'}, next ID ${data.next_id ?? '-'}`,
+          ? `已重排 ${data.renumbered ?? 0} 个会话，下一个编号 ${data.next_id ?? '-'}`
+          : `Renumbered ${data.renumbered ?? 0} sessions; next number ${data.next_id ?? '-'}`,
       )
     } catch (e: any) {
-      ElMessage.error(e?.message || (isZh.value ? '重置 ID 序列失败' : 'Failed to reset ID sequence'))
+      ElMessage.error(e?.message || (isZh.value ? '重置会话编号失败' : 'Failed to renumber sessions'))
     } finally {
       resettingId.value = false
     }

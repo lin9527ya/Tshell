@@ -22,6 +22,17 @@
   line-height: 1.5;
 }
 
+/* 密度切换（vshell 表格右上角）：只改行高，字号与配色不变 */
+.cs-shell .el-table.cs-density-compact th.el-table__cell,
+.cs-shell .el-table.cs-density-compact td.el-table__cell {
+  height: 40px;
+}
+
+.cs-shell .el-table.cs-density-mini th.el-table__cell,
+.cs-shell .el-table.cs-density-mini td.el-table__cell {
+  height: 32px;
+}
+
 .cs-shell .el-table__inner-wrapper::before,
 .cs-shell .el-table--border::after,
 .cs-shell .el-table--border::before {
@@ -197,6 +208,11 @@
   font-size: 14px;
   border-radius: 6px;
   margin: 0 4px;
+}
+
+.el-dropdown-menu__item.is-active {
+  color: var(--cs-active);
+  font-weight: 600;
 }
 
 .el-message,

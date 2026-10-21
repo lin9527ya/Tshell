@@ -102,9 +102,45 @@
   height: 100%;
   display: flex;
   align-items: stretch;
+  /* 菜单整体居中；折叠后的「…」也在同一条线上 */
+  justify-content: center;
+  position: relative;
   /* 不能用 overflow(会把 overflow-y 计算成 auto 裁掉下拉弹层)；
-     窄屏用媒体查询收缩 */
+     窄屏用"按宽度折叠成 …"处理（见 VsTopNav.vue 的 visibleCount） */
   overflow: visible;
+}
+
+/* 右侧动作区（全屏/语言/协作/用户）永不收缩：之前窗口变窄时它会和菜单重叠 */
+.vs-topnav-actions {
+  flex-shrink: 0;
+}
+
+/* 隐藏的度量行：只用于量每项宽度，不参与布局、不可见 */
+.vs-nav-measure {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 0;
+  display: flex;
+  visibility: hidden;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.vs-nav-measure .vs-nav-item {
+  flex-shrink: 0;
+}
+
+/* 折叠按钮 + 它的弹层（靠右对齐，避免超出视口） */
+.vs-nav-more {
+  padding: 0 12px;
+}
+
+.vs-nav-more-popup {
+  left: auto;
+  right: 0;
+  min-width: 172px;
+  z-index: 120;
 }
 
 /* 自适应分级：
