@@ -31,10 +31,13 @@
         <span class="cs-toolbar-divider" />
       </template>
 
+      <!-- 与反向监听器一致：添加/帮助 → 数量 → 表格工具（嵌入模式下整组右对齐） -->
+      <span v-if="embedded" class="cs-fl-hint">
+        {{ i18nStore.tl('正向监听器：服务端主动拨号，掉线自动重连', 'Forward listeners: server dials out, auto-reconnect') }}
+      </span>
+      <div class="cs-spacer" v-if="embedded" />
       <button class="cs-btn cs-btn-primary" @click="openAddDialog">{{ i18nStore.tl('添加', 'Add') }}</button>
       <button class="cs-btn" @click="handleHelp">{{ i18nStore.tl('帮助', 'Help') }}</button>
-
-      <div class="cs-spacer" v-if="embedded" />
       <span class="cs-status-hint" v-if="embedded">
         {{ i18nStore.tl(`共 ${filteredListeners.length} 个正向监听器`, `${filteredListeners.length} forward listener(s)`) }}
       </span>
@@ -71,28 +74,34 @@
             <span class="cs-font-mono cs-cell-text">{{ row.Id ?? '-' }}</span>
           </template>
         </el-table-column>
-        <el-table-column v-if="colVisible.note" prop="Note" :label="i18nStore.tl('备注', 'Note')" width="160" sortable show-overflow-tooltip>
+        <el-table-column v-if="colVisible.note" prop="Note" min-width="180" sortable>
+          <template #header>
+            <span class="cs-note-header">
+              {{ i18nStore.tl('备注', 'Note') }}
+              <VsIcon name="pen" :size="11" />
+            </span>
+          </template>
           <template #default="{ row }">
-            <span class="cs-cell-text">{{ row.Note || '' }}</span>
+            <InlineNoteCell :value="row.Note || ''" @save="(v: string) => saveNote(row, v)" />
           </template>
         </el-table-column>
-        <el-table-column v-if="colVisible.mode" prop="Type" :label="i18nStore.tl('模式', 'Mode')" width="120" sortable show-overflow-tooltip>
+        <el-table-column v-if="colVisible.mode" prop="Type" :label="i18nStore.tl('模式', 'Mode')" min-width="130" sortable show-overflow-tooltip>
           <template #default="{ row }">
             <span class="cs-cell-text cs-mode-text">{{ row.Type || '-' }}</span>
           </template>
         </el-table-column>
-        <el-table-column v-if="colVisible.listenAddr" prop="ListenAddress" :label="i18nStore.tl('监听地址', 'Listen Address')" width="180" sortable show-overflow-tooltip>
+        <el-table-column v-if="colVisible.listenAddr" prop="ListenAddress" :label="i18nStore.tl('监听地址', 'Listen Address')" min-width="200" sortable show-overflow-tooltip>
           <template #default="{ row }">
             <span class="cs-font-mono cs-cell-text">{{ row.ListenAddress || '-' }}</span>
           </template>
         </el-table-column>
-        <el-table-column v-if="colVisible.connectAddr" prop="ConnectAddress" :label="i18nStore.tl('外网连接地址', 'Connect Address')" width="180" sortable show-overflow-tooltip>
+        <el-table-column v-if="colVisible.connectAddr" prop="ConnectAddress" :label="i18nStore.tl('外网连接地址', 'Connect Address')" min-width="150" sortable show-overflow-tooltip>
           <template #default="{ row }">
             <span v-if="row.ConnectAddress" class="cs-font-mono cs-cell-text">{{ row.ConnectAddress }}</span>
             <span v-else class="fl-target-missing">{{ i18nStore.tl('未设置', 'Not set') }}</span>
           </template>
         </el-table-column>
-        <el-table-column v-if="colVisible.sleep" prop="SleepSeconds" width="90" sortable align="right" :sort-orders="['ascending', 'descending', null]">
+        <el-table-column v-if="colVisible.sleep" prop="SleepSeconds" min-width="90" sortable align="right" :sort-orders="['ascending', 'descending', null]">
           <template #header>
             <span :title="i18nStore.tl('生效 beacon 节奏（监听器配置 > C2 画像 > 全局默认）', 'Effective beacon rhythm (listener > C2 profile > global)')">{{ i18nStore.tl('间隔', 'Sleep') }}</span>
           </template>
@@ -100,7 +109,7 @@
             <span class="cs-cell-text" :title="sleepTitle(row)">{{ sleepLabel(row) }}</span>
           </template>
         </el-table-column>
-        <el-table-column v-if="colVisible.status" :label="i18nStore.tl('状态', 'Status')" width="100" sortable align="center">
+        <el-table-column v-if="colVisible.status" :label="i18nStore.tl('状态', 'Status')" min-width="110" sortable align="center">
           <template #default="{ row }">
             <span class="vs-status-tag" :class="row.Status === 1 ? 'is-online' : 'is-offline'">
               {{ row.Status === 1 ? (i18nStore.tl('监听中', 'Listening')) : (i18nStore.tl('已停止', 'Stopped')) }}
@@ -109,7 +118,7 @@
         </el-table-column>
 
         <!-- vshell 操作列：图标 + 文字；启用/停用常显，不可用的一侧置灰 -->
-        <el-table-column :label="i18nStore.tl('操作', 'Actions')" min-width="260">
+        <el-table-column :label="i18nStore.tl('操作', 'Actions')" width="360">
           <template #default="{ row }">
             <div class="row-actions">
               <a class="row-link" @click.stop="handleConnect(row)">
@@ -206,6 +215,7 @@ import ClientAPI from '@/api/clients'
 import { useI18nStore } from '@/stores/i18n'
 import VsIcon from '@/layout-vshell/VsIcon.vue'
 import EmptyState from '@/components/Common/EmptyState.vue'
+import InlineNoteCell from '@/components/Common/InlineNoteCell.vue'
 
 const props = withDefaults(
   defineProps<{
@@ -530,6 +540,25 @@ async function handleConnect(item: ForwardItem | null) {
   }
 }
 
+// 内联备注保存：只写 note 列，避免全量保存覆盖地址/心跳等配置
+async function saveNote(row: ForwardItem, note: string) {
+  try {
+    const res = await ListenerAPI.updateListenerNote({
+      id: row.Id ?? 0,
+      listenAddress: row.ListenAddress,
+      note,
+    })
+    if (res.data?.status === 200) {
+      row.Note = note
+      ElMessage.success(isZh.value ? '备注已更新' : 'Note updated')
+    } else {
+      ElMessage.error(res.data?.data || (isZh.value ? '备注保存失败' : 'Failed to save note'))
+    }
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.data || e?.message || (isZh.value ? '备注保存失败' : 'Failed to save note'))
+  }
+}
+
 async function handleStart(item: ForwardItem | null) {
   if (!item) return
   closeContextMenu()
@@ -713,6 +742,14 @@ onBeforeUnmount(() => {
 
 .cs-spacer {
   flex: 1;
+}
+
+.cs-fl-hint {
+  font-size: 13px;
+  color: var(--cs-text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .cs-search {

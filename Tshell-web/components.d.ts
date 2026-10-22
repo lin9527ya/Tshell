@@ -44,6 +44,7 @@ declare module 'vue' {
     ElTree: typeof import('element-plus/es')['ElTree']
     ElUpload: typeof import('element-plus/es')['ElUpload']
     EmptyState: typeof import('./src/components/Common/EmptyState.vue')['default']
+    InlineNoteCell: typeof import('./src/components/Common/InlineNoteCell.vue')['default']
     OpsecSwitches: typeof import('./src/components/Opsec/OpsecSwitches.vue')['default']
     OpsecToggles: typeof import('./src/components/Opsec/OpsecToggles.vue')['default']
     OsIcon: typeof import('./src/components/Common/OsIcon.vue')['default']

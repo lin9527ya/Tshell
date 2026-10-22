@@ -22,10 +22,6 @@
         </button>
       </div>
 
-      <span v-if="activeView === 'normal'" class="cs-toolbar-hint">
-        {{ i18nStore.tl(`共 ${filteredListeners.length} 个反向监听器`, `${filteredListeners.length} reverse listener(s)`) }}
-      </span>
-
       <div class="cs-spacer" />
 
       <el-input
@@ -49,19 +45,25 @@
           <el-dropdown-menu>
             <el-dropdown-item command="phish">{{ i18nStore.tl('钓鱼邮件', 'Spear Phish') }}</el-dropdown-item>
             <el-dropdown-item command="redirector">{{ i18nStore.tl('重定向器配置', 'Redirector Config') }}</el-dropdown-item>
-            <el-dropdown-item command="help">{{ i18nStore.tl('帮助', 'Help') }}</el-dropdown-item>
           </el-dropdown-menu>
         </template>
       </el-dropdown>
+    </div>
 
-      <template v-if="activeView === 'normal'">
-        <span class="cs-toolbar-divider" />
-        <button class="cs-btn cs-btn-primary" @click="openAddDialog">{{ i18nStore.tl('添加', 'Add') }}</button>
-      </template>
+    <!-- 第二行：与正向监听器面板工具条同构（说明在左，添加/帮助/计数/工具在右） -->
+    <div v-if="activeView === 'normal'" class="cs-listener-toolbar">
+      <span class="cs-listener-hint">
+        {{ i18nStore.tl('反向监听器：服务端监听端口，等待客户端回连', 'Reverse listeners: server listens, clients call back') }}
+      </span>
+      <div class="cs-spacer" />
+      <button class="cs-btn cs-btn-primary" @click="openAddDialog">{{ i18nStore.tl('添加', 'Add') }}</button>
+      <button class="cs-btn" @click="handleHelp">{{ i18nStore.tl('帮助', 'Help') }}</button>
+      <span class="cs-toolbar-hint">
+        {{ i18nStore.tl(`共 ${filteredListeners.length} 个反向监听器`, `${filteredListeners.length} reverse listener(s)`) }}
+      </span>
 
       <!-- vshell 表格工具：刷新 / 密度 / 列设置（反向监听器） -->
       <TableTools
-        v-if="activeView === 'normal'"
         :columns="columnOptions"
         :visible="colVisible"
         :density="density"
@@ -94,27 +96,33 @@
                 <span class="cs-font-mono cs-cell-text">{{ row.Id ?? '-' }}</span>
               </template>
             </el-table-column>
-            <el-table-column v-if="colVisible.note" prop="Note" :label="i18nStore.tl('备注', 'Note')" width="160" sortable show-overflow-tooltip>
+            <el-table-column v-if="colVisible.note" prop="Note" min-width="180" sortable>
+              <template #header>
+                <span class="cs-note-header">
+                  {{ i18nStore.tl('备注', 'Note') }}
+                  <VsIcon name="pen" :size="11" />
+                </span>
+              </template>
               <template #default="{ row }">
-                <span class="cs-cell-text">{{ row.Note || '' }}</span>
+                <InlineNoteCell :value="row.Note || ''" @save="(v: string) => saveNote(row, v)" />
               </template>
             </el-table-column>
-            <el-table-column v-if="colVisible.mode" prop="Type" :label="i18nStore.tl('模式', 'Mode')" width="100" sortable show-overflow-tooltip>
+            <el-table-column v-if="colVisible.mode" prop="Type" :label="i18nStore.tl('模式', 'Mode')" min-width="120" sortable show-overflow-tooltip>
               <template #default="{ row }">
                 <span class="cs-cell-text cs-mode-text">{{ row.Type || '-' }}</span>
               </template>
             </el-table-column>
-            <el-table-column v-if="colVisible.listenAddr" prop="ListenAddress" :label="i18nStore.tl('监听地址', 'Listen Address')" width="180" sortable show-overflow-tooltip>
+            <el-table-column v-if="colVisible.listenAddr" prop="ListenAddress" :label="i18nStore.tl('监听地址', 'Listen Address')" min-width="200" sortable show-overflow-tooltip>
               <template #default="{ row }">
                 <span class="cs-font-mono cs-cell-text">{{ row.ListenAddress || '-' }}</span>
               </template>
             </el-table-column>
-            <el-table-column v-if="colVisible.connectAddr" prop="ConnectAddress" :label="i18nStore.tl('外网连接地址', 'Connect Address')" width="180" sortable show-overflow-tooltip>
+            <el-table-column v-if="colVisible.connectAddr" prop="ConnectAddress" :label="i18nStore.tl('外网连接地址', 'Connect Address')" min-width="150" sortable show-overflow-tooltip>
               <template #default="{ row }">
                 <span class="cs-font-mono cs-cell-text">{{ row.ConnectAddress || '-' }}</span>
               </template>
             </el-table-column>
-            <el-table-column v-if="colVisible.sleep" prop="SleepSeconds" width="90" sortable align="right" :sort-orders="['ascending', 'descending', null]">
+            <el-table-column v-if="colVisible.sleep" prop="SleepSeconds" min-width="90" sortable align="right" :sort-orders="['ascending', 'descending', null]">
               <template #header>
                 <span :title="i18nStore.tl('生效 beacon 节奏（监听器配置 > C2 画像 > 全局默认）', 'Effective beacon rhythm (listener > C2 profile > global)')">{{ i18nStore.tl('间隔', 'Sleep') }}</span>
               </template>
@@ -122,7 +130,7 @@
                 <span class="cs-cell-text" :title="sleepTitle(row)">{{ sleepLabel(row) }}</span>
               </template>
             </el-table-column>
-            <el-table-column v-if="colVisible.status" :label="i18nStore.tl('状态', 'Status')" width="100" sortable align="center">
+            <el-table-column v-if="colVisible.status" :label="i18nStore.tl('状态', 'Status')" min-width="110" sortable align="center">
               <template #default="{ row }">
                 <span class="vs-status-tag" :class="row.Status === 1 ? 'is-online' : 'is-offline'">
                   {{ row.Status === 1 ? (i18nStore.tl('监听中', 'Listening')) : (i18nStore.tl('已停止', 'Stopped')) }}
@@ -131,7 +139,7 @@
             </el-table-column>
 
             <!-- vshell 操作列：图标 + 文字；启用/停用常显，不可用的一侧置灰 -->
-            <el-table-column :label="i18nStore.tl('操作', 'Actions')" min-width="240">
+            <el-table-column :label="i18nStore.tl('操作', 'Actions')" width="360">
               <template #default="{ row }">
                 <div class="row-actions">
                   <a class="row-link" :class="{ 'is-disabled': row.Status === 1 }" @click.stop="handleStart(row)">
@@ -142,6 +150,9 @@
                   </a>
                   <a class="row-link" @click.stop="openEditDialog(row)">
                     <VsIcon name="pen" :size="12" /><span>{{ i18nStore.tl('编辑', 'Edit') }}</span>
+                  </a>
+                  <a class="row-link" @click.stop="showLaunchCommands(row)">
+                    <VsIcon name="terminal" :size="12" /><span>{{ i18nStore.tl('上线命令', 'Commands') }}</span>
                   </a>
                   <a class="row-link row-link-danger" @click.stop="handleRemove(row)">
                     <VsIcon name="trash-alt" :size="12" /><span>{{ i18nStore.tl('删除', 'Remove') }}</span>
@@ -181,20 +192,29 @@
     <SpearPhishDialog v-model="showSpearPhish" />
     <!-- 重定向器配置：按当前画像生成，避免手写配置与画像漂移 -->
     <RedirectorDialog v-model:visible="showRedirector" />
+    <!-- 上线命令：复用监听器关联 WebDelivery 的命令矩阵 -->
+    <DeliveryCommandsDialog
+      v-model="launchDlg.visible"
+      :deliveries="launchDlg.deliveries"
+      :listener-label="launchDlg.listenerLabel"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import EditListenerDialog from '@/layout/Dialogs/EditListenerDialog.vue'
+import DeliveryCommandsDialog from '@/layout/Dialogs/DeliveryCommandsDialog.vue'
 import VsIcon from '@/layout-vshell/VsIcon.vue'
 import SpearPhishDialog from '@/layout/Dialogs/Attacks/SpearPhishDialog.vue'
 import ForwardListeners from './ForwardListeners.vue'
 import RedirectorDialog from '@/layout/Dialogs/RedirectorDialog.vue'
 import ListenerAPI from '@/api/listener'
+import ClientAPI from '@/api/clients'
 import { useI18nStore } from '@/stores/i18n'
 import EmptyState from '@/components/Common/EmptyState.vue'
+import InlineNoteCell from '@/components/Common/InlineNoteCell.vue'
 
 interface ListenerItem {
   Id?: number
@@ -234,6 +254,12 @@ const showEditDialog = ref(false)
 // 攻击工具弹窗（页面内局部状态）
 const showSpearPhish = ref(false)
 const showRedirector = ref(false)
+// 上线命令弹窗：复用该监听器关联的 WebDelivery 命令矩阵
+const launchDlg = reactive<{ visible: boolean; deliveries: any[]; listenerLabel: string }>({
+  visible: false,
+  deliveries: [],
+  listenerLabel: '',
+})
 
 // ---- vshell 表格工具：密度 / 列设置（反向监听器） ----
 const DENSITY_KEY = 'tshell-listener-density'
@@ -394,7 +420,6 @@ function onRowDblClick(row: ListenerItem) {
 function onMoreCmd(cmd: string) {
   if (cmd === 'phish') showSpearPhish.value = true
   else if (cmd === 'redirector') showRedirector.value = true
-  else if (cmd === 'help') handleHelp()
 }
 
 function openAddDialog() {
@@ -436,6 +461,46 @@ async function handleStop(item: ListenerItem | null) {
     }
   } catch (error: any) {
     ElMessage.error(error?.response?.data?.data || (isZh.value ? '关闭失败' : 'Failed to stop'))
+  }
+}
+
+// 上线命令：找该监听器（protocol://connectAddress）关联的 WebDelivery，
+// 复用已有的 /webdelivery/commands 命令矩阵；没有投递时由弹窗给出创建指引。
+async function showLaunchCommands(row: ListenerItem) {
+  const label = `${(row.Type || '').toLowerCase()}://${row.ConnectAddress || row.ListenAddress}`
+  const norm = (s: string) => String(s || '').trim().toLowerCase()
+  try {
+    const res = await ClientAPI.GetWebDeliveryList()
+    if (res.status === 200 && res.data?.status === 200) {
+      const all = res.data.data || []
+      const matched = all.filter((d: any) => norm(d.ListenerConfig ?? d.listener_config) === norm(label))
+      launchDlg.deliveries = matched
+      launchDlg.listenerLabel = label
+      launchDlg.visible = true
+    } else {
+      ElMessage.error(res.data?.data || (isZh.value ? '获取投递列表失败' : 'Failed to load deliveries'))
+    }
+  } catch (e: any) {
+    ElMessage.error(e?.message || (isZh.value ? '获取投递列表失败' : 'Failed to load deliveries'))
+  }
+}
+
+// 内联备注保存：只写 note 列，避免全量保存覆盖地址/心跳等配置
+async function saveNote(row: ListenerItem, note: string) {
+  try {
+    const res = await ListenerAPI.updateListenerNote({
+      id: row.Id ?? 0,
+      listenAddress: row.ListenAddress,
+      note,
+    })
+    if (res.data?.status === 200) {
+      row.Note = note
+      ElMessage.success(isZh.value ? '备注已更新' : 'Note updated')
+    } else {
+      ElMessage.error(res.data?.data || (isZh.value ? '备注保存失败' : 'Failed to save note'))
+    }
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.data || e?.message || (isZh.value ? '备注保存失败' : 'Failed to save note'))
   }
 }
 
@@ -548,6 +613,14 @@ onBeforeUnmount(() => {
   gap: 8px;
   padding: 8px 12px;
   flex-shrink: 0;
+}
+
+.cs-listener-hint {
+  font-size: 13px;
+  color: var(--cs-text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .cs-title-group {

@@ -91,36 +91,6 @@ func (DeliveryStore) GetByPort(port string) (WebDelivery, bool, error) {
 	return d, has, err
 }
 
-// GetByIDOnly 仅按 id 取（三点式查找里的单步版本，供分段查找的调用方复用）
-func (DeliveryStore) GetByIDOnly(id int64) (bool, error) {
-	var d WebDelivery
-	s := DB()
-	if s == nil {
-		return false, ErrStoreUnavailable
-	}
-	return s.ID(id).Get(&d)
-}
-
-// GetByPublicKeyOnly 仅按公开标识取
-func (DeliveryStore) GetByPublicKeyOnly(key string) (bool, error) {
-	var d WebDelivery
-	s := DB()
-	if s == nil {
-		return false, ErrStoreUnavailable
-	}
-	return s.Where("public_key = ?", key).Get(&d)
-}
-
-// GetByPortOnly 仅按端口取
-func (DeliveryStore) GetByPortOnly(port string) (bool, error) {
-	var d WebDelivery
-	s := DB()
-	if s == nil {
-		return false, ErrStoreUnavailable
-	}
-	return s.Where("listening_port = ?", port).Get(&d)
-}
-
 // SetStatusByKey 按公开标识置状态
 func (DeliveryStore) SetStatusByKey(key string, status int) (int64, error) {
 	s := DB()

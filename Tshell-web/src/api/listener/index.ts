@@ -15,6 +15,14 @@ export default {
             data:data
         })
     },
+    // 列表内联编辑备注：只写 note 列，不会覆盖地址/心跳等其它配置
+    updateListenerNote(data:{id?:number,listenAddress?:string,note:string}){
+        return request({
+            url:"/listener/note",
+            method:"POST",
+            data:data
+        })
+    },
     getListenerList(){
         return request({
             url:"/listener/list",

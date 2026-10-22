@@ -112,6 +112,61 @@
   font-size: 13px;
 }
 
+/* 备注单元格：整格可点开编辑，铅笔常显（与客户端列表同一套观感） */
+.cs-note-cell {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  cursor: text;
+}
+
+.cs-note-cell .cs-cell-note {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-style: italic;
+  color: var(--cs-text-dim);
+}
+
+.cs-note-edit {
+  flex-shrink: 0;
+  opacity: 0.65;
+  color: var(--cs-text-dim);
+  transition: color 120ms ease, opacity 120ms ease;
+}
+
+.cs-note-cell:hover .cs-note-edit {
+  opacity: 1;
+  color: var(--cs-active);
+}
+
+.cs-note-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.cs-note-header .vs-icon {
+  opacity: 0.45;
+}
+
+/* 内联备注编辑输入（点击备注格/铅笔后原地变成输入框） */
+.cs-note-input {
+  width: 100%;
+  height: 26px;
+  padding: 0 6px;
+  font-family: var(--cs-font-ui);
+  font-size: 13px;
+  color: var(--cs-text);
+  background: var(--cs-panel);
+  border: 1px solid var(--cs-active);
+  border-radius: 4px;
+  outline: none;
+}
+
 .cs-shell .el-table__inner-wrapper::before,
 .cs-shell .el-table--border::after,
 .cs-shell .el-table--border::before {

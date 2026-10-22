@@ -636,6 +636,46 @@ func UpdateListener(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": 200, "data": msg})
 }
 
+// UpdateListenerNote 列表内联编辑备注：只写 note 列。
+//
+// 不复用 /listener/update（全量保存）——后者会把请求里没带的 ConnectAddress、
+// 心跳次数/间隔按空值/默认值落库，内联改一条备注会顺手清掉别的配置。
+func UpdateListenerNote(c *gin.Context) {
+	var req struct {
+		ID            int64  `json:"id"`
+		ListenAddress string `json:"listenAddress"`
+		Note          string `json:"note"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"status": 400, "data": "参数绑定失败: " + err.Error()})
+		return
+	}
+	if database.DB() == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"status": 500, "data": "数据库引擎未初始化"})
+		return
+	}
+
+	var lis database.Listener
+	has := false
+	if req.ID > 0 {
+		lis, has, _ = database.Listeners().GetByID(req.ID)
+	}
+	if !has && strings.TrimSpace(req.ListenAddress) != "" {
+		lis, has, _ = database.Listeners().GetByAddress(resolveListenerAddress(req.ListenAddress, "listen"))
+	}
+	if !has {
+		c.JSON(http.StatusNotFound, gin.H{"status": 404, "data": "监听器不存在"})
+		return
+	}
+
+	if _, err := database.Listeners().UpdateColumnsByAddress(lis.ListenAddress, []string{"note"}, &database.Listener{Note: req.Note}); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"status": 500, "data": "更新备注失败: " + err.Error()})
+		return
+	}
+	auditLogEvent("LISTENER_NOTE", "SUCCESS", "更新监听器备注 "+lis.ListenAddress, nil)
+	c.JSON(http.StatusOK, gin.H{"status": 200, "data": "备注已更新"})
+}
+
 // BatchDeleteListeners 批量删除监听器
 func BatchDeleteListeners(c *gin.Context) {
 	log.Printf("[LISTENER-API] 🗑️ 收到批量删除监听器请求")

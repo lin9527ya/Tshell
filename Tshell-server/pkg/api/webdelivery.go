@@ -581,20 +581,11 @@ func GetDeliveryCommands(c *gin.Context) {
 	port := c.Query("port")
 	key := c.Query("publicKey")
 
-	var meta database.WebDelivery
-	found := false
-	if idStr != "" {
-		id, _ := strconv.ParseInt(idStr, 10, 64)
-		if id > 0 {
-			found, _ = database.Deliveries().GetByIDOnly(id)
-		}
-	}
-	if !found && key != "" {
-		found, _ = database.Deliveries().GetByPublicKeyOnly(key)
-	}
-	if !found && port != "" {
-		found, _ = database.Deliveries().GetByPortOnly(port)
-	}
+	// 三段式查找必须拿回记录本身：原实现调用只返回 (bool,error) 的分步查找，
+	// 查到的记录留在函数局部变量里，meta 永远是零值 —— OS 为空 → 生成器走
+	// Linux 分支，Windows 投递也看不到 Windows 命令，URL 也全是空串。
+	id, _ := strconv.ParseInt(idStr, 10, 64)
+	meta, found, _ := database.Deliveries().FindAny(id, key, port)
 	if !found {
 		c.JSON(http.StatusOK, gin.H{"status": 400, "data": "WebDelivery不存在"})
 		return

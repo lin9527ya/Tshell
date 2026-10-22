@@ -279,7 +279,7 @@
     </el-dialog>
 
     <!-- 上线命令矩阵 -->
-    <el-dialog v-model="commandDialogVisible" :title="i18nStore.tl('上线命令矩阵', 'Payload Command Matrix')" width="860px">
+    <el-dialog v-model="commandDialogVisible" :title="i18nStore.tl('上线命令矩阵', 'Payload Command Matrix')" width="1100px">
       <div v-if="commandUrls" class="url-box mb-12">
         <div>
           <b>{{ i18nStore.tl('完整', 'Full') }}:</b> <code>{{ commandUrls.full }}</code>
@@ -294,11 +294,11 @@
           <el-button link type="primary" @click="copyText(commandUrls.shellcode)">{{ i18nStore.tl('复制', 'Copy') }}</el-button>
         </div>
       </div>
-      <el-table :data="commandList" max-height="480">
+      <el-table :data="commandList" max-height="560">
         <el-table-column prop="name" :label="i18nStore.tl('名称', 'Name')" width="180" />
         <el-table-column prop="os" label="OS" width="90" />
         <el-table-column prop="description" :label="i18nStore.tl('说明', 'Description')" width="180" show-overflow-tooltip />
-        <el-table-column prop="code" :label="i18nStore.tl('命令', 'Command')" min-width="320">
+        <el-table-column prop="code" :label="i18nStore.tl('命令', 'Command')" min-width="480">
           <template #default="{ row }">
             <code class="cmd">{{ row.code }}</code>
           </template>
