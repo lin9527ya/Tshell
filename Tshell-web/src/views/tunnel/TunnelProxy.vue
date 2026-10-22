@@ -1,16 +1,5 @@
 <template>
   <div class="tunnel-proxy-container cs-font-ui">
-    <!-- 页签：隧道 / SOCKS5（vshell：同域功能并页） -->
-    <div class="tp-tabs">
-      <div class="tp-tab" :class="{ active: view === 'tunnel' }" @click="view = 'tunnel'">
-        {{ i18nStore.tl('隧道代理', 'Tunnels') }}
-      </div>
-      <div class="tp-tab" :class="{ active: view === 'socks5' }" @click="view = 'socks5'">
-        {{ i18nStore.tl('SOCKS5 代理', 'SOCKS5') }}
-      </div>
-    </div>
-
-    <template v-if="view === 'tunnel'">
     <!-- vshell 工具条：左（标题 + 计数），右（筛选 + 操作） -->
     <div class="tp-toolbar">
       <div class="tp-title-group">
@@ -300,16 +289,12 @@
         </div>
       </div>
     </div>
-    </template>
-    <Socks5View v-else />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { defineAsyncComponent } from 'vue'
-const Socks5View = defineAsyncComponent(() => import('./Socks5View.vue'))
 import { useI18nStore } from '@/stores/i18n'
 import { Plus, Edit, Refresh, Select, Delete } from '@element-plus/icons-vue'
 import ClientAPI from '@/api/clients'
@@ -361,7 +346,6 @@ interface TunnelForm {
 }
 
 const i18nStore = useI18nStore()
-const view = ref<'tunnel' | 'socks5'>('tunnel')
 const isZh = computed(() => i18nStore.isZh)
 
 // 数据状态
@@ -1059,30 +1043,6 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.tp-tabs {
-  height: 40px;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 0 16px;
-  background: var(--cs-panel);
-  border-bottom: 1px solid var(--cs-card-border);
-}
-.tp-tab {
-  height: 40px;
-  display: inline-flex;
-  align-items: center;
-  padding: 0 12px;
-  font-size: 14px;
-  color: var(--cs-text);
-  cursor: pointer;
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
-}
-.tp-tab:hover { color: var(--cs-active); }
-.tp-tab.active { color: var(--cs-active); border-bottom-color: var(--cs-active); }
-
 .tunnel-proxy-container {
   height: 100%;
   display: flex;

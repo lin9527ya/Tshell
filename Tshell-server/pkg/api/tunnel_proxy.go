@@ -28,11 +28,10 @@ func maskTunnelPassword(p string) string {
 }
 
 // checkTunnelPortAvailable 校验业务端口及其 Agent 端口（= 端口 + 1000）在服务端范围内可用。
-// 两张表都要查：新表 TunnelProxy 与旧版 Socks5 各管一套隧道，不交叉校验的话同一端口可以在
-// 两张表里各建一条，直到 bind 时才撞车；同时 Agent 端口也参与占用判定 —— 端口 5000 的隧道
-// 与端口 6000 的隧道会抢 6000（原实现只校验 server_port 唯一）。
-// excludeTunnelID / excludeSocks5ID：更新时排除自身记录（传 0 表示不排除）。
-func checkTunnelPortAvailable(port int, excludeTunnelID, excludeSocks5ID int64) error {
+// Agent 端口也参与占用判定 —— 端口 5000 的隧道与端口 6000 的隧道会抢 6000
+// （原实现只校验 server_port 唯一）。
+// excludeTunnelID：更新时排除自身记录（传 0 表示不排除）。
+func checkTunnelPortAvailable(port int, excludeTunnelID int64) error {
 	if port < 1 || port > 65535-1000 {
 		return fmt.Errorf("端口需在 1-%d 之间（Agent 端口 = 端口+1000 也须合法）", 65535-1000)
 	}
@@ -41,13 +40,6 @@ func checkTunnelPortAvailable(port int, excludeTunnelID, excludeSocks5ID int64) 
 	if port > 1000 {
 		conflict = append(conflict, port-1000)
 	}
-	// 用 xorm 的 In(column, args...)：Where("col IN (?)", slice) 在本版本不会展开切片，
-	// 会把整个切片当成单个参数交给驱动而报 "unsupported type"（错误若被忽略就会静默放行）。
-	// 这里同时显式返回查询错误：校验失败即视为占用（fail-closed）。
-	strPorts := make([]string, len(conflict))
-	for i, p := range conflict {
-		strPorts[i] = strconv.Itoa(p)
-	}
 
 	tun, has, err := database.Tunnels().PortConflict(conflict, excludeTunnelID)
 	if err != nil {
@@ -55,14 +47,6 @@ func checkTunnelPortAvailable(port int, excludeTunnelID, excludeSocks5ID int64) 
 	}
 	if has {
 		return fmt.Errorf("端口 %d 与已有隧道冲突（Agent 端口 = 端口+1000）：隧道 %d 占用 %d", port, tun.ID, tun.ServerPort)
-	}
-
-	s5, has, err := database.Socks5s().PortConflict(strPorts, excludeSocks5ID)
-	if err != nil {
-		return fmt.Errorf("检查端口占用失败: %w", err)
-	}
-	if has {
-		return fmt.Errorf("端口 %d 与已有 SOCKS5 代理冲突（Agent 端口 = 端口+1000）：记录 %d 占用 %s", port, s5.ID, s5.Socks5port)
 	}
 	return nil
 }
@@ -157,25 +141,8 @@ func CreateTunnelProxy(c *gin.Context) {
 		return
 	}
 
-	// 检查端口是否已被占用
-	exists, err = database.Tunnels().PortInUse(req.ServerPort, 0)
-	if err != nil {
-		if audit.GlobalAuditLogger != nil {
-			audit.GlobalAuditLogger.LogWithContext(c, audit.LogLevelError, audit.CategoryAPI, "TUNNEL_PROXY_CREATE", "FAILURE", "检查端口占用失败: "+err.Error(), nil)
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "检查端口占用失败"})
-		return
-	}
-	if exists {
-		if audit.GlobalAuditLogger != nil {
-			audit.GlobalAuditLogger.LogWithContext(c, audit.LogLevelError, audit.CategoryAPI, "TUNNEL_PROXY_CREATE", "FAILURE", "端口已被占用", nil)
-		}
-		c.JSON(http.StatusBadRequest, gin.H{"error": "端口已被占用"})
-		return
-	}
-
-	// Agent 端口（端口+1000）与旧版 Socks5 表也参与占用判定
-	if err := checkTunnelPortAvailable(req.ServerPort, 0, 0); err != nil {
+	// 端口占用（含 Agent 端口 = 端口+1000）
+	if err := checkTunnelPortAvailable(req.ServerPort, 0); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -399,23 +366,7 @@ func UpdateTunnelProxy(c *gin.Context) {
 	}
 
 	if req.ServerPort != tunnel.ServerPort {
-		exists, err = database.Tunnels().PortInUse(req.ServerPort, id)
-		if err != nil {
-			if audit.GlobalAuditLogger != nil {
-				audit.GlobalAuditLogger.LogWithContext(c, audit.LogLevelError, audit.CategoryAPI, "TUNNEL_PROXY_UPDATE", "FAILURE", "检查端口占用失败: "+err.Error(), nil)
-			}
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "检查端口占用失败"})
-			return
-		}
-		if exists {
-			if audit.GlobalAuditLogger != nil {
-				audit.GlobalAuditLogger.LogWithContext(c, audit.LogLevelError, audit.CategoryAPI, "TUNNEL_PROXY_UPDATE", "FAILURE", "端口已被占用", nil)
-			}
-			c.JSON(http.StatusBadRequest, gin.H{"error": "端口已被占用"})
-			return
-		}
-
-		if err := checkTunnelPortAvailable(req.ServerPort, id, 0); err != nil {
+		if err := checkTunnelPortAvailable(req.ServerPort, id); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
@@ -699,4 +650,70 @@ func StopTunnelProxy(c *gin.Context) {
 		audit.GlobalAuditLogger.LogWithContext(c, audit.LogLevelInfo, audit.CategoryAPI, "TUNNEL_PROXY_STOP", "SUCCESS", "隧道代理停止成功", nil)
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "隧道代理停止成功"})
+}
+
+// RestoreTunnelsOnStartup 服务重启后恢复 status=1 的隧道代理。
+//
+// 旧版 SOCKS5 实现有这套恢复逻辑；统一到 TunnelProxy 后必须一并搬过来，
+// 否则重启后所有运行中的隧道都变成"数据库里是运行中、实际没有监听"。
+//
+// 服务重启会断开全部客户端会话，而 StartTunnel 要求客户端在线，因此先给客户端
+// 一个重连窗口（共 60 秒，每 2 秒探测一次，全部在线即提前结束），再逐个拉起；
+// 超时仍离线或启动失败的记录置为停止，避免界面继续显示"运行中"。
+func RestoreTunnelsOnStartup() {
+	if database.DB() == nil || proxy.GlobalTunnelManager == nil {
+		return
+	}
+	tunnels, err := database.Tunnels().ListByStatus(1)
+	if err != nil {
+		logx.Warnf("[TUNNEL] 读取待恢复隧道失败: %v\n", err)
+		return
+	}
+	if len(tunnels) == 0 {
+		return
+	}
+
+	go func() {
+		const (
+			reconnectWindow = 60 * time.Second
+			pollInterval    = 2 * time.Second
+		)
+		pending := make(map[string]bool, len(tunnels))
+		for _, t := range tunnels {
+			pending[t.ClientUID] = true
+		}
+		deadline := time.Now().Add(reconnectWindow)
+		for time.Now().Before(deadline) {
+			for uid := range pending {
+				if _, online, _ := database.Clients_().OnlineByUID(uid); online {
+					delete(pending, uid)
+				}
+			}
+			if len(pending) == 0 {
+				break
+			}
+			time.Sleep(pollInterval)
+		}
+
+		restored, stopped := 0, 0
+		for _, t := range tunnels {
+			_, online, _ := database.Clients_().OnlineByUID(t.ClientUID)
+			if !online {
+				_, _ = database.Tunnels().SetStatus(t.ID, 0)
+				stopped++
+				continue
+			}
+			if err := proxy.GlobalTunnelManager.StartTunnel(t.ID); err != nil {
+				_, _ = database.Tunnels().SetStatus(t.ID, 0)
+				stopped++
+				logx.Warnf("[TUNNEL] 恢复隧道 %d (%s:%d) 失败，已置停: %v\n", t.ID, t.Protocol, t.ServerPort, err)
+				continue
+			}
+			restored++
+			logx.Infof("[TUNNEL] 已恢复隧道 %d (%s:%d) → 客户端 %s\n", t.ID, t.Protocol, t.ServerPort, t.ClientUID)
+		}
+		if restored > 0 || stopped > 0 {
+			logx.Infof("[TUNNEL] 启动恢复完成：成功 %d，失败/离线置停 %d\n", restored, stopped)
+		}
+	}()
 }

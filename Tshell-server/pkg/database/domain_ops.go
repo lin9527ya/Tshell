@@ -387,17 +387,24 @@ func (TunnelStore) GetByID(id int64) (TunnelProxy, bool, error) {
 	return t, has, err
 }
 
-// PortInUse 服务端端口是否已被其它隧道占用（excludeID>0 时排除自身）
-func (TunnelStore) PortInUse(port int, excludeID int64) (bool, error) {
+// ListByStatus 按状态取（启动恢复用）
+func (TunnelStore) ListByStatus(status int) ([]TunnelProxy, error) {
+	var out []TunnelProxy
 	s := DB()
 	if s == nil {
-		return false, ErrStoreUnavailable
+		return nil, ErrStoreUnavailable
 	}
-	sess := s.Where("server_port = ?", port)
-	if excludeID > 0 {
-		sess = sess.And("id != ?", excludeID)
+	return out, s.Where("status = ?", status).Asc("id").Find(&out)
+}
+
+// SetStatus 改状态并刷新 UpdatedAt。
+// Status=0 是零值，必须用 Cols 显式指定列，否则 xorm 会跳过该列。
+func (TunnelStore) SetStatus(id int64, status int) (int64, error) {
+	s := DB()
+	if s == nil {
+		return 0, ErrStoreUnavailable
 	}
-	return sess.Exist(&TunnelProxy{})
+	return s.ID(id).Cols("status", "updated_at").Update(&TunnelProxy{Status: status, UpdatedAt: time.Now()})
 }
 
 // ===== 仪表盘聚合 =====
@@ -449,102 +456,12 @@ func (DashboardStore) OpenListenerCount() (int64, error) {
 	return s.Where("status = ?", 1).Count(&Listener{})
 }
 
-// ===== SOCKS5 代理 =====
+// ===== 隧道代理 =====
 
-// Socks5Store SOCKS5 代理领域访问
-type Socks5Store struct{}
-
-// Socks5s SOCKS5 领域方法入口
-func Socks5s() Socks5Store { return Socks5Store{} }
-
-// List 全部 SOCKS5 记录（按 id 升序）
-func (Socks5Store) List() ([]Socks5, error) {
-	var out []Socks5
-	s := DB()
-	if s == nil {
-		return nil, ErrStoreUnavailable
-	}
-	return out, s.Asc("id").Find(&out)
-}
-
-// Insert 新建
-func (Socks5Store) Insert(r *Socks5) (int64, error) {
-	s := DB()
-	if s == nil {
-		return 0, ErrStoreUnavailable
-	}
-	return s.Insert(r)
-}
-
-// GetByID 按主键取
-func (Socks5Store) GetByID(id int64) (Socks5, bool, error) {
-	var r Socks5
-	s := DB()
-	if s == nil {
-		return r, false, ErrStoreUnavailable
-	}
-	has, err := s.ID(id).Get(&r)
-	return r, has, err
-}
-
-// UpdateAllCols 全列更新（编辑保存用；id 显式传入，理由同 ListenerStore.UpdateAllCols）
-func (Socks5Store) UpdateAllCols(id int64, r *Socks5) (int64, error) {
-	s := DB()
-	if s == nil {
-		return 0, ErrStoreUnavailable
-	}
-	return s.ID(id).AllCols().Update(r)
-}
-
-// ListByStatus 按状态取
-func (Socks5Store) ListByStatus(status int) ([]Socks5, error) {
-	var out []Socks5
-	s := DB()
-	if s == nil {
-		return nil, ErrStoreUnavailable
-	}
-	return out, s.Where("status = ?", status).Find(&out)
-}
-
-// SetStatus 改状态并刷新 UpdatedAt
+// PortsInUse 端口占用检查：返回给定 server_port 集合里已存在的隧道。
 //
-// 收口的意义：状态列必须与 UpdatedAt 一起改，原来 6 处调用各自决定要不要带
-// UpdatedAt，漏一处就会让"最后更新时间"永久停在上一次。
-func (Socks5Store) SetStatus(id int64, status int) (int64, error) {
-	s := DB()
-	if s == nil {
-		return 0, ErrStoreUnavailable
-	}
-	return s.ID(id).Update(&Socks5{Status: status, UpdatedAt: time.Now()})
-}
-
-// DeleteByID 删除
-func (Socks5Store) DeleteByID(id int64) (int64, error) {
-	s := DB()
-	if s == nil {
-		return 0, ErrStoreUnavailable
-	}
-	return s.ID(id).Delete(&Socks5{})
-}
-
-// PortInUse 服务端端口是否已被其它记录占用（excludeID>0 时排除自身）
-func (Socks5Store) PortInUse(port string, excludeID int64) (bool, error) {
-	s := DB()
-	if s == nil {
-		return false, ErrStoreUnavailable
-	}
-	sess := s.Where("socks5port = ?", port)
-	if excludeID > 0 {
-		sess = sess.And("id != ?", excludeID)
-	}
-	return sess.Exist(&Socks5{})
-}
-
-// PortsInUse 端口占用检查：返回给定 server_port 集合里已存在的隧道（含 socks5 端口集合）。
-//
-// 建隧道时要同时避开"已有隧道的 server_port"和"Agent 端口 = server_port+1000"
-// 以及 socks5 端口，三组查询原来散在调用方；收成一个方法后调用方只需给出
-// 要检查的端口集合。
+// 建隧道时要同时避开"已有隧道的 server_port"和"Agent 端口 = server_port+1000"，
+// 两组查询原来散在调用方；收成一个方法后调用方只需给出要检查的端口集合。
 func (TunnelStore) PortsInUse(ports []int) ([]TunnelProxy, error) {
 	var out []TunnelProxy
 	s := DB()
@@ -585,28 +502,6 @@ func (TunnelStore) PortConflict(ports []int, excludeID int64) (TunnelProxy, bool
 	}
 	has, err := sess.Get(&t)
 	return t, has, err
-}
-
-// PortConflict 端口冲突检查（SOCKS5 侧；ports 为字符串形式的端口）
-func (Socks5Store) PortConflict(ports []string, excludeID int64) (Socks5, bool, error) {
-	var r Socks5
-	s := DB()
-	if s == nil {
-		return r, false, ErrStoreUnavailable
-	}
-	if len(ports) == 0 {
-		return r, false, nil
-	}
-	args := make([]interface{}, 0, len(ports))
-	for _, p := range ports {
-		args = append(args, p)
-	}
-	sess := s.In("socks5port", args...)
-	if excludeID > 0 {
-		sess = sess.And("id != ?", excludeID)
-	}
-	has, err := sess.Get(&r)
-	return r, has, err
 }
 
 // Insert 新建隧道
@@ -680,6 +575,33 @@ func (ClientStore) OnlineByUID(uid string) (Clients, bool, error) {
 	}
 	has, err := s.Where("uid = ? AND online = ?", uid, "1").Get(&c)
 	return c, has, err
+}
+
+// ResetIDs 按现有 ID 顺序重排 clients 自增主键，返回重排的条数。
+//
+// 两阶段写（先写负值再写正值）是必须的：正序直接改会把 2 改成 1 时撞上还没挪走的 1。
+// 只动自增主键，不改 Uid —— 命令下发/审计/回连都按 Uid 走。
+// 返回错误时可能已部分写入，调用方应提示重跑。
+func (ClientStore) ResetIDs() (int, error) {
+	s := DB()
+	if s == nil {
+		return 0, ErrStoreUnavailable
+	}
+	var clients []Clients
+	if err := s.Asc("id").Find(&clients); err != nil {
+		return 0, err
+	}
+	for i, cl := range clients {
+		if _, err := s.Exec("UPDATE clients SET id = ? WHERE uid = ?", -(i + 1), cl.Uid); err != nil {
+			return 0, err
+		}
+	}
+	for i, cl := range clients {
+		if _, err := s.Exec("UPDATE clients SET id = ? WHERE uid = ?", i+1, cl.Uid); err != nil {
+			return 0, err
+		}
+	}
+	return len(clients), nil
 }
 
 // ===== 任务（命令下发记录）=====

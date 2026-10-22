@@ -47,6 +47,17 @@ const pluginApi = {
     });
   },
 
+  // 按插件 ID 直接执行：服务端从插件目录读取载荷并下发，
+  // 不再走"下载到浏览器 → multipart 整包重传"。
+  execute_plugin(pluginName: string, uid: string, args: string, mode: string) {
+    return request({
+      url: '/plugin/execute',
+      method: 'post',
+      data: { name: pluginName, uid, args, mode },
+      timeout: 120 * 1000
+    });
+  },
+
   // 删除插件文件（F4: 原文件被 `\n 污染导致 delete_plugin 丢失 → 插件删除运行时 TypeError）
   delete_plugin(pluginName: string) {
     return request({

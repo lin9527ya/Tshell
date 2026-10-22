@@ -82,7 +82,7 @@ export const BUSINESS_ROUTES: RouteRecordRaw[] = [
     meta: { title: '插件运行', titleEn: 'Plugins', icon: 'action', permiss: Perm.PayloadGen } satisfies AppRouteMeta,
   },
 
-  // ---- 隧道代理（含 SOCKS5 页签）----
+  // ---- 隧道代理（tcp/udp/http/socks5 统一入口）----
   {
     path: 'tunnel',
     name: 'Tunnel',

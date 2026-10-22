@@ -398,20 +398,6 @@ type DeliveryAccessLog struct {
 }
 
 // SOCKS5代理数据库模型
-type Socks5 struct {
-	ID             int64     `xorm:"'id' pk autoincr" json:"id"`
-	UID            string    `xorm:"varchar(64) notnull index" json:"uid"`
-	Type           string    `xorm:"varchar(20) notnull" json:"type"`
-	ConnectAddress string    `xorm:"varchar(255) notnull" json:"connect_address"`
-	Socks5port     string    `xorm:"varchar(10) notnull" json:"socks5port"`
-	UserName       string    `xorm:"varchar(100)" json:"username"`
-	Password       string    `xorm:"varchar(100)" json:"password"`
-	Note           string    `xorm:"varchar(500)" json:"note"`
-	Status         int       `xorm:"int default(0) index" json:"status"`
-	CreatedAt      time.Time `xorm:"datetime notnull" json:"created_at"`
-	UpdatedAt      time.Time `xorm:"updated datetime notnull" json:"updated_at"`
-}
-
 // TunnelProxy 隧道代理数据库模型
 type TunnelProxy struct {
 	ID            int64     `json:"id" xorm:"'id' pk autoincr"`
@@ -1336,7 +1322,7 @@ func ConnectDateBase() {
 	// 新库不再创建; 复合索引价值有限(online/listener 各有单列索引)。
 	_, _ = Engine.Exec("DROP INDEX IF EXISTS idx_clients_online_listener")
 
-	err = Engine.Sync2(new(Users), new(Clients), new(Notes), new(Shell), new(Downloads), new(Listener), new(WebDelivery), new(DeliveryAccessLog), new(Socks5), new(TunnelProxy), new(AuditLogDB), new(Plugin), new(StagerToken), new(Loot), new(Task))
+	err = Engine.Sync2(new(Users), new(Clients), new(Notes), new(Shell), new(Downloads), new(Listener), new(WebDelivery), new(DeliveryAccessLog), new(TunnelProxy), new(AuditLogDB), new(Plugin), new(StagerToken), new(Loot), new(Task))
 	_, _ = Engine.Exec("CREATE INDEX IF NOT EXISTS idx_clients_uid ON clients(uid)")
 	_, _ = Engine.Exec("CREATE INDEX IF NOT EXISTS idx_clients_online ON clients(online)")
 	_, _ = Engine.Exec("CREATE INDEX IF NOT EXISTS idx_clients_listener ON clients(listener)")

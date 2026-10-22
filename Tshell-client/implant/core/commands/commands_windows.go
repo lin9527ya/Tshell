@@ -911,8 +911,17 @@ func ExecuteFile(fileBytes []byte, args string) ([]byte, error) {
 		return nil, err
 	}
 	defer os.Remove(tmpFile)
-	// 用 CreateProcess 执行(隐藏窗口, 管道捕获输出)
-	command := fmt.Sprintf("cmd.exe /c \"%s %s\" 2>&1", tmpFile, args)
+	// 直接 CreateProcess 执行临时文件，不再经过 cmd.exe：
+	//   - 原实现 `cmd.exe /c "%s %s" 2>&1` 里路径与参数只是字符串拼接，
+	//     临时目录/参数含空格或引号时会被 cmd 拆错，`& | > ^` 还会被当成
+	//     shell 元字符执行；
+	//   - stderr 已经通过 sI.StdErr 指向同一管道，不需要 2>&1。
+	// 可执行文件路径用 syscall.EscapeArg 引起来；参数保留用户原始写法
+	// （用户自己负责引号），不做二次拆分。
+	cmdLine := syscall.EscapeArg(tmpFile)
+	if trimmed := strings.TrimSpace(args); trimmed != "" {
+		cmdLine += " " + trimmed
+	}
 	var sI windows.StartupInfo
 	var pI windows.ProcessInformation
 	status := uint32(windows.CREATE_NO_WINDOW)
@@ -926,7 +935,7 @@ func ExecuteFile(fileBytes []byte, args string) ([]byte, error) {
 	defer windows.CloseHandle(hRPipe)
 	sI.StdOutput = hWPipe
 	sI.StdErr = hWPipe
-	program, _ := windows.UTF16PtrFromString(command)
+	program, _ := windows.UTF16PtrFromString(cmdLine)
 	ca := newChildAttrs()
 	defer ca.Close()
 	err := createProcessWithAttrs(program, true, status, &sI, &pI, ca)
@@ -937,27 +946,46 @@ func ExecuteFile(fileBytes []byte, args string) ([]byte, error) {
 	defer windows.CloseHandle(pI.Process)
 	defer windows.CloseHandle(pI.Thread)
 	windows.CloseHandle(hWPipe) // 关闭写端让 ReadFile 收到 EOF
-	var buf [1024 * 50]byte
+
+	// 读管道放到 goroutine：原实现先 ReadFile 再检查 deadline，
+	// 子进程不输出时 ReadFile 会一直阻塞，10 分钟超时永远不触发。
+	type pipeReadResult struct {
+		data []byte
+		err  error
+	}
+	readDone := make(chan pipeReadResult, 1)
+	go func() {
+		var total []byte
+		buf := make([]byte, 32*1024)
+		for {
+			var n uint32
+			readErr := windows.ReadFile(hRPipe, buf, &n, nil)
+			if n > 0 {
+				total = append(total, buf[:n]...)
+			}
+			if readErr != nil {
+				readDone <- pipeReadResult{data: total, err: readErr}
+				return
+			}
+		}
+	}()
+
 	var total []byte
-	// 兜底超时：子进程不退出时不能永久阻塞命令循环（10 分钟）。
-	deadline := time.Now().Add(10 * time.Minute)
 	timedOut := false
-	for {
-		if time.Now().After(deadline) {
-			timedOut = true
-			_ = windows.TerminateProcess(pI.Process, 1)
-			total = append(total, []byte("\n[!] execution timeout (10m), process terminated")...)
-			break
+	select {
+	case res := <-readDone:
+		total = res.data
+	case <-time.After(10 * time.Minute):
+		timedOut = true
+		_ = windows.TerminateProcess(pI.Process, 1)
+		// 取消挂起的 ReadFile，避免子进程留下继承管道的孙进程时永远读不到 EOF
+		_ = windows.CancelIoEx(hRPipe, nil)
+		select {
+		case res := <-readDone:
+			total = res.data
+		case <-time.After(3 * time.Second):
 		}
-		var n uint32
-		err := windows.ReadFile(hRPipe, buf[:], &n, nil)
-		if n > 0 {
-			total = append(total, buf[:n]...)
-		}
-		if err != nil {
-			break
-		}
-		time.Sleep(50 * time.Millisecond)
+		total = append(total, []byte("\n[!] execution timeout (10m), process terminated")...)
 	}
 	if len(total) > 0 {
 		communication.ExecOutput(total)

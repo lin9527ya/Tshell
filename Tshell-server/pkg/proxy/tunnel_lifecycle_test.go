@@ -23,28 +23,6 @@ func setupProxyTestDB(t *testing.T) {
 	})
 }
 
-// TestResetTunnelStatusOnStartup 重启后必须把"运行中"的隧道置停并返回这些记录——
-// 否则界面一直显示运行中而实际没有监听（点停止还会报"不存在或未运行"）。
-func TestResetTunnelStatusOnStartup(t *testing.T) {
-	setupProxyTestDB(t)
-
-	database.Engine.Insert(&database.TunnelProxy{ClientUID: "u1", Protocol: "tcp", ServerPort: 19101, Status: 1})
-	database.Engine.Insert(&database.TunnelProxy{ClientUID: "u2", Protocol: "tcp", ServerPort: 19102, Status: 0})
-
-	stopped := ResetTunnelStatusOnStartup()
-	if len(stopped) != 1 || stopped[0].ServerPort != 19101 {
-		t.Fatalf("应只返回重启前运行中的记录，实际 %+v", stopped)
-	}
-	running, _ := database.Engine.Where("status = ?", 1).Count(&database.TunnelProxy{})
-	if running != 0 {
-		t.Errorf("所有隧道都应被置停，实际仍有 %d 条运行中", running)
-	}
-	// 幂等：再次调用不应再返回记录
-	if again := ResetTunnelStatusOnStartup(); len(again) != 0 {
-		t.Errorf("再次调用不应有记录，实际 %d 条", len(again))
-	}
-}
-
 // TestReverseSocksServerBindFailure 绑定改为同步后，端口被占用必须返回错误且不注册监听器
 // （原实现在 goroutine 内绑定，失败只打日志，启动接口仍报成功）。
 func TestReverseSocksServerBindFailure(t *testing.T) {
@@ -74,7 +52,9 @@ func TestStartTunnelFailsWhenAgentPortBusy(t *testing.T) {
 	setupProxyTestDB(t)
 
 	const port = 19111
-	blocker, err := net.Listen("tcp", fmt.Sprintf(":%d", port+1000))
+	// 与 StartTunnel 实际绑定的地址一致（serverIP:port+1000），
+	// 否则 Windows 上通配绑定与具体地址绑定可以共存，测试会假通过/假失败。
+	blocker, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port+1000))
 	if err != nil {
 		t.Fatalf("占位 agent 端口失败: %v", err)
 	}

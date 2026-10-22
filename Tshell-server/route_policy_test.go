@@ -27,6 +27,7 @@ func TestPluginRoutePolicy(t *testing.T) {
 		"/plugin/details/:pluginName":  "protected",
 		"/plugin/download/:pluginName": "operatorOnly",
 		"/plugin/upload":               "operatorOnly",
+		"/plugin/execute":              "operatorOnly",
 		"/plugin/delete/:pluginName":   "operatorOnly",
 	}
 

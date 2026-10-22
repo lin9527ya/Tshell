@@ -572,16 +572,6 @@ func main() {
 	proxy.InitTunnelManager()
 	fmt.Println("✅ 隧道管理器初始化成功")
 
-	// 隧道不随重启自动恢复（需要客户端在线并重新回连 Agent 端口），但必须把库里的
-	// 状态置停：否则界面显示"运行中"而实际没有监听，点停止还会报"不存在或未运行"。
-	// 置停前把原记录列出来，避免操作员不知道重启前有哪些在跑。
-	if stopped := proxy.ResetTunnelStatusOnStartup(); len(stopped) > 0 {
-		fmt.Printf("⚠️ 已置停 %d 个隧道代理（不自动恢复，需手动启动）：\n", len(stopped))
-		for _, t := range stopped {
-			fmt.Printf("   [%s] :%d -> %s\n", t.Protocol, t.ServerPort, t.TargetAddress)
-		}
-	}
-
 	// P3-1: 注入密钥轮换下发回调（encrypt 包不依赖 sendcommand，避免循环依赖；
 	// 轮换消息 type=5|nonce 经命令链路按客户端协议加密下发）
 	encrypt.KeyRotationSender = func(clientID string, payload []byte) {
@@ -1075,24 +1065,9 @@ func main() {
 		keyManagement.PUT("/rotation-config", api.ConfigureKeyRotation)
 	}
 
-	// SOCKS5代理相关功能
-	// 【权限对齐 J8】读列表留 protected(全角色),写操作收紧 operator+
-	// (原全部挂 protected——auditor 可启停代理,与"auditor 只读"口径不符)
-	socks5 := protected.Group("/socks5")
-	{
-		socks5.GET("/list", api.Socks5List)
-	}
-	socks5Write := operatorOnly.Group("/socks5")
-	{
-		socks5Write.POST("/start", api.Socks5Start)
-		socks5Write.POST("/open", api.Socks5Open)
-		socks5Write.POST("/close", api.Socks5Close)
-		socks5Write.POST("/delete", api.Socks5Delete)
-		socks5Write.POST("/batch-delete", api.Socks5BatchDelete)
-		socks5Write.PUT("/update", api.Socks5Update)
-	}
-
-	// 隧道代理管理API(权限口径同 socks5: 读 protected,写 operator+)
+	// 隧道代理管理API（读 protected，写 operator+）。
+	// 原有一套并行的 /socks5/* 旧实现（Socks5 表 + Socks5View.vue），协议上只是
+	// 隧道的 socks5 模式，已并入此处；历史数据由数据库迁移 v6 搬入 tunnel_proxy。
 	tunnelAPI := protected.Group("/tunnel-proxy")
 	{
 		tunnelAPI.GET("/", api.GetTunnelProxyList)
@@ -1243,6 +1218,7 @@ func main() {
 	protected.GET("/plugin/details/:pluginName", api.GetPluginDetails)
 	operatorOnly.GET("/plugin/download/:pluginName", api.DownloadPlugin)
 	operatorOnly.POST("/plugin/upload", api.UploadPlugin)
+	operatorOnly.POST("/plugin/execute", api.ExecutePlugin)
 	operatorOnly.DELETE("/plugin/delete/:pluginName", api.DeletePlugin)
 	protected.GET("/client/online-clients", api.GetOnlineClients)
 
@@ -1297,8 +1273,8 @@ func main() {
 		// 稍等主端口已写入 Hub
 		time.Sleep(200 * time.Millisecond)
 		api.RestoreWebDeliveriesOnStartup()
-		// 恢复运行中的 SOCKS5 代理监听（在线客户端会重新收到连接命令）
-		api.RestoreSocks5OnStartup()
+		// 恢复运行中的隧道代理（等客户端重连后拉起，见 RestoreTunnelsOnStartup）
+		api.RestoreTunnelsOnStartup()
 	}()
 
 	// 异步启动 HTTP 服务器

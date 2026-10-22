@@ -91,7 +91,6 @@ func TestDomainMethodsCoverCoreEntities(t *testing.T) {
 		_ = DeliveryLogs()
 		_ = Tunnels()
 		_ = Dashboard()
-		_ = Socks5s()
 		_ = Tasks()
 		_ = Users_()
 		_ = Plugins()

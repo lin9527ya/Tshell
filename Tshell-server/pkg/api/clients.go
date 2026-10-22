@@ -20,7 +20,6 @@ import (
 
 	"net/http"
 	"runtime"
-	"sort"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -559,34 +558,17 @@ func DisconnectClient(c *gin.Context) {
 //   - 历史日志里如果按 ID 记过"第几个会话"，重排后会与当时的编号不一致;
 //   - 两阶段写（先写负值再写正值）是必须的：正序直接改会把 2 改成 1 时撞上还没挪走的 1。
 func ResetClientId(c *gin.Context) {
-	if database.DB() == nil || database.Engine == nil {
+	if database.DB() == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"status": 500, "data": "数据库引擎未初始化"})
 		return
 	}
 
-	clients, err := database.Clients_().All()
+	// 重排逻辑收口在领域层（两阶段写 + 按现有 ID 顺序），这里只管响应
+	total, err := database.Clients_().ResetIDs()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"status": 500, "data": "读取客户端列表失败"})
+		log.Printf("[CLIENT-API] ❌ 重置ID失败: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"status": 500, "data": "重置ID失败（已部分写入，建议重跑一次）"})
 		return
-	}
-
-	// 按现有 ID 升序 = 会话第一次上线的顺序；重排后这个顺序保持不变
-	sort.SliceStable(clients, func(i, j int) bool { return clients[i].ID < clients[j].ID })
-
-	total := len(clients)
-	for i, cl := range clients {
-		if _, err := database.Engine.Exec("UPDATE clients SET id = ? WHERE uid = ?", -(i + 1), cl.Uid); err != nil {
-			log.Printf("[CLIENT-API] ❌ 重置ID失败(阶段1 %s): %v", cl.Uid, err)
-			c.JSON(http.StatusInternalServerError, gin.H{"status": 500, "data": "重置ID失败（已部分写入，建议重跑一次）"})
-			return
-		}
-	}
-	for i, cl := range clients {
-		if _, err := database.Engine.Exec("UPDATE clients SET id = ? WHERE uid = ?", i+1, cl.Uid); err != nil {
-			log.Printf("[CLIENT-API] ❌ 重置ID失败(阶段2 %s): %v", cl.Uid, err)
-			c.JSON(http.StatusInternalServerError, gin.H{"status": 500, "data": "重置ID失败（已部分写入，建议重跑一次）"})
-			return
-		}
 	}
 
 	// 自增序列复位到 N：下一个新会话从 N+1 开始，且不会回填空洞

@@ -509,6 +509,72 @@ func GetOnlineClients(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": 200, "message": "success", "data": clientInfos})
 }
 
+// ExecutePlugin 按插件 ID（仓库文件名）直接下发执行。
+//
+// 原流程是前端先 GET /plugin/download 拿到整包，再 multipart POST /bin/execute
+// 原样传回服务端——载荷在浏览器里绕一圈，50MB 的插件会经历两次完整传输。
+// 现在服务端直接从插件目录读取，并复用 executeBinPayload 的校验/建任务/组帧，
+// 两个入口只差"字节从哪来"。
+type ExecutePluginRequest struct {
+	Name string `json:"name"`
+	Uid  string `json:"uid"`
+	Mode string `json:"mode"`
+	Args string `json:"args"`
+}
+
+func ExecutePlugin(c *gin.Context) {
+	var req ExecutePluginRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"status": 400, "data": "请求参数错误: " + err.Error()})
+		return
+	}
+	req.Name = strings.TrimSpace(req.Name)
+	req.Uid = strings.TrimSpace(req.Uid)
+	if req.Uid == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"status": 400, "data": "缺少 uid"})
+		return
+	}
+	if err := errors.ValidatePluginName(req.Name); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"status": 400, "data": "插件名非法: " + err.Error()})
+		return
+	}
+	defer func() { auditPluginOp(c, "PLUGIN_EXECUTE", req.Name) }()
+
+	pluginPath := filepath.Join(config.GetPluginDir(), req.Name)
+	fileInfo, err := os.Stat(pluginPath)
+	if err != nil || fileInfo.IsDir() {
+		c.JSON(http.StatusNotFound, gin.H{"status": 404, "data": "插件不存在: " + req.Name})
+		return
+	}
+	if fileInfo.Size() <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"status": 400, "data": "插件文件为空"})
+		return
+	}
+	if fileInfo.Size() > MaxExecuteBinBytes {
+		c.JSON(http.StatusBadRequest, gin.H{"status": 400, "data": fmt.Sprintf(
+			"文件过大: %d bytes（上限 %d bytes）", fileInfo.Size(), MaxExecuteBinBytes)})
+		return
+	}
+	fileBytes, err := os.ReadFile(pluginPath)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"status": 500, "data": "读取插件文件失败: " + err.Error()})
+		return
+	}
+
+	// 完整性口径与 /plugin/download 一致：DB 有基准哈希就必须匹配。
+	// 执行入口比下载更需要在服务端校验——载荷不再经过浏览器，没有别处兜底。
+	if dbPlugin, has, _ := database.Plugins().GetByName(req.Name); has && dbPlugin.FileHash != "" {
+		sum := sha256.Sum256(fileBytes)
+		if hex.EncodeToString(sum[:]) != dbPlugin.FileHash {
+			logx.Warnf("[PLUGIN-EXECUTE] ⚠️ 完整性校验失败（疑似被篡改）: %s\n", req.Name)
+			c.JSON(http.StatusForbidden, gin.H{"status": 403, "data": "插件文件完整性校验失败(可能被篡改)，拒绝执行"})
+			return
+		}
+	}
+
+	executeBinPayload(c, req.Uid, req.Args, req.Mode, req.Name, fileBytes)
+}
+
 // EnableClientExecOutput 通知能力客户端把执行过程输出切到 EXEC_OUTPUT(98)。
 // 未收到该命令的客户端仍用 type=0（旧服务端兼容）。
 func EnableClientExecOutput(uid string) {

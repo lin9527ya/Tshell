@@ -759,7 +759,7 @@ const executePlugin = async () => {
 显示模式: 仅显示最新一次 ${executionMode.value} 执行结果
 ===================
 
-正在下载插件文件...`
+正在请求服务端执行...`
       : `[🔄] Plugin Execution Started
 ===================
 Mode: ${getExecutionModeText()}
@@ -770,23 +770,14 @@ Started at: ${new Date().toLocaleTimeString()}
 Display mode: latest ${executionMode.value} run only
 ===================
 
-Downloading plugin file...`;
+Dispatching via server...`;
 
-    pluginOutput.value += isZh.value ? '\n正在准备执行文件...' : '\nPreparing execution file...';
+    pluginOutput.value += isZh.value ? '\n服务端正在读取插件并下发...' : '\nServer is loading the plugin...';
 
-    // 走统一封装：内部对文件名做 encodeURIComponent（原裸 fetch 直接拼路径，
-    // 文件名含空格/括号时会拼出非法 URL），并复用统一的错误处理
-    const pluginDownloadRes = await pluginApi.download_plugin(pluginName);
-    const pluginBlob = pluginDownloadRes.data instanceof Blob
-      ? pluginDownloadRes.data
-      : new Blob([pluginDownloadRes.data], { type: 'application/octet-stream' });
-    const pluginFile = new File([pluginBlob], pluginName);
-    
-    pluginOutput.value += isZh.value ? '\n正在发送命令到客户端...' : '\nSending command to client...';
-    
-    // 走统一封装（api/clients::execute_bin），不再手拼 fetch 与 Authorization2。
-    // 差异：非 200 会被请求层 reject（带后端文案），由下方 catch 统一展示。
-    const response = await ClientAPI.execute_bin(clientUid, pluginFile, args, executionMode.value);
+    // 按插件 ID 直接执行：服务端从插件仓库读取文件并组帧下发。
+    // 原流程先 GET /plugin/download 把整包拉到浏览器，再 multipart 回传——
+    // 大插件要经历两次完整传输，且浏览器侧多一份内存副本。
+    const response = await pluginApi.execute_plugin(pluginName, clientUid, args, executionMode.value);
     const result = response?.data;
     
     if (result.status === 200) {

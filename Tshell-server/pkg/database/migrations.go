@@ -35,6 +35,7 @@ func migrations() []Migration {
 		{3, "users 表补齐 MFA/TOTP 字段", migrateUsersMFATable},
 		{4, "listener 表补齐 profile 字段", migrateListenerProfileColumn},
 		{5, "listener 表补齐 beacon sleep/jitter 字段", migrateListenerBeaconColumns},
+		{6, "旧版 SOCKS5 代理并入统一隧道表", migrateLegacySocks5ToTunnels},
 	}
 }
 
