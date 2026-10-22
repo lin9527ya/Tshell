@@ -61,14 +61,18 @@
     </div>
 
     <div class="tp-content">
-      <!-- 内联配置面板（vshell 卡片：新建/编辑隧道，展开在表格上方） -->
-      <div v-if="createDialogVisible" class="cs-inline-panel">
-        <div class="cs-inline-header">
-          <span class="cs-inline-title">{{ isEditMode ? (i18nStore.tl('编辑隧道代理', 'Edit Proxy Pivot')) : (i18nStore.tl('新建隧道代理', 'New Proxy Pivot')) }}</span>
-          <button class="cs-btn cs-btn-xs" @click="handleCloseDialog">{{ i18nStore.tl('关闭', 'Close') }}</button>
-        </div>
-
-        <div class="cs-inline-body">
+      <!-- 新建/编辑：居中弹框（原内联面板改为 modal） -->
+      <el-dialog
+        v-model="createDialogVisible"
+        :title="isEditMode ? i18nStore.tl('编辑隧道代理', 'Edit Proxy Pivot') : i18nStore.tl('新建隧道代理', 'New Proxy Pivot')"
+        width="560px"
+        align-center
+        class="cs-dialog"
+        :close-on-click-modal="false"
+        append-to-body
+        @closed="resetForm"
+      >
+        <div class="cs-dialog-body">
           <div class="cs-form-row">
             <label class="cs-form-label"><span class="req">*</span> {{ i18nStore.tl('选择客户端', 'Beacon') }}</label>
             <div class="cs-form-input-wrap">
@@ -137,16 +141,17 @@
             </div>
           </div>
 
-          <div class="cs-inline-footer">
-            <button class="cs-btn cs-btn-primary" :disabled="createLoading" @click="isEditMode ? updateTunnel() : createTunnel()">
-              {{ isEditMode ? (i18nStore.tl('保存更新', 'Save')) : (i18nStore.tl('创建隧道', 'Create')) }}
-            </button>
-            <button class="cs-btn" @click="resetForm">{{ i18nStore.tl('重置', 'Reset') }}</button>
-            <button class="cs-btn" @click="handleCloseDialog">{{ i18nStore.tl('取消', 'Cancel') }}</button>
-            <button class="cs-btn" @click="handleHelp">{{ i18nStore.tl('帮助', 'Help') }}</button>
-          </div>
         </div>
-      </div>
+
+        <template #footer>
+          <el-button @click="handleHelp">{{ i18nStore.tl('帮助', 'Help') }}</el-button>
+          <el-button @click="handleCloseDialog">{{ i18nStore.tl('取消', 'Cancel') }}</el-button>
+          <el-button @click="resetForm">{{ i18nStore.tl('重置', 'Reset') }}</el-button>
+          <el-button type="primary" :loading="createLoading" @click="isEditMode ? updateTunnel() : createTunnel()">
+            {{ isEditMode ? i18nStore.tl('保存更新', 'Save') : i18nStore.tl('创建隧道', 'Create') }}
+          </el-button>
+        </template>
+      </el-dialog>
 
       <!-- 隧道列表（卡片：表格铺满 + 分页右下） -->
       <div class="tp-table-card">
@@ -1261,44 +1266,8 @@ onMounted(() => {
   background: var(--cs-hover);
 }
 
-/* ===== 内联配置面板（vshell 卡片；表单行样式由全局 .cs-form-row 提供） ===== */
-.cs-inline-panel {
-  flex-shrink: 0;
-  background: var(--cs-panel);
-  border: 1px solid var(--cs-card-border);
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-.cs-inline-header {
-  height: 38px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 12px;
-  border-bottom: 1px solid var(--cs-card-border);
-}
-
-.cs-inline-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--cs-text-bright);
-}
-
-.cs-inline-body {
-  padding: 12px 16px;
-}
-
+/* ===== 新建/编辑弹框（表单行样式由全局 .cs-form-row 提供） ===== */
 .cs-form-label .req {
   color: var(--cs-error);
-}
-
-.cs-inline-footer {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid var(--cs-card-border);
 }
 </style>
