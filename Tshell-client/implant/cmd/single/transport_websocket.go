@@ -89,8 +89,9 @@ func (c *WSClient) Connect(url string) error {
 		c.fail()
 		return err
 	}
-	// 读消息大小上限（与服务端 SetReadLimit(64MB) 对齐）
-	conn.SetReadLimit(64 * 1024 * 1024)
+	// 读消息大小上限：服务端 /bin/execute 允许 100MB 载荷，命令帧还要经 base64
+	// 膨胀 ~4/3，160MB 才能覆盖最大合法载荷（旧 64MB 会让大插件在 WS 上静默读失败）。
+	conn.SetReadLimit(160 * 1024 * 1024)
 	c.Client = conn
 	c.connected = true
 

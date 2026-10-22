@@ -939,7 +939,16 @@ func ExecuteFile(fileBytes []byte, args string) ([]byte, error) {
 	windows.CloseHandle(hWPipe) // 关闭写端让 ReadFile 收到 EOF
 	var buf [1024 * 50]byte
 	var total []byte
+	// 兜底超时：子进程不退出时不能永久阻塞命令循环（10 分钟）。
+	deadline := time.Now().Add(10 * time.Minute)
+	timedOut := false
 	for {
+		if time.Now().After(deadline) {
+			timedOut = true
+			_ = windows.TerminateProcess(pI.Process, 1)
+			total = append(total, []byte("\n[!] execution timeout (10m), process terminated")...)
+			break
+		}
 		var n uint32
 		err := windows.ReadFile(hRPipe, buf[:], &n, nil)
 		if n > 0 {
@@ -951,7 +960,10 @@ func ExecuteFile(fileBytes []byte, args string) ([]byte, error) {
 		time.Sleep(50 * time.Millisecond)
 	}
 	if len(total) > 0 {
-		communication.DataProcess(0, total)
+		communication.ExecOutput(total)
+	}
+	if timedOut {
+		return []byte("file execution timed out (10m)"), fmt.Errorf("file execution timeout (10m)")
 	}
 	return []byte("file executed"), nil
 }

@@ -42,6 +42,11 @@ axiosRetry(service, {
       console.log('检测到截图API超时，根据策略，不进行重试。');
       return false;
     }
+    // 执行/上传是"非幂等 + 服务端已建任务/已落文件"的请求，自动重试会造成
+    // 重复 exec 任务或重复上传，只让用户手动重试。
+    if (error.config?.url?.includes('/bin/execute') || error.config?.url?.includes('/plugin/upload')) {
+      return false;
+    }
     // 只在特定错误时重试
     return ['ECONNABORTED', 'ERR_NETWORK', 'ENOTFOUND', 'ECONNRESET'].includes(error.code!) ||
            (error.response && [408, 502, 503, 504].includes(error.response.status)) ||

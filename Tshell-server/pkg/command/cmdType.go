@@ -99,6 +99,17 @@ const (
 	// 心跳命令
 	HEARTBEAT = 95 // 心跳包
 
+	// 插件/内存执行完成回执（客户端→服务端，须与客户端 core/services/types.go 一致）：
+	// [4B taskID][1B ok][utf8 error]。kind=exec 的任务只由它收敛，普通输出不再提前完成。
+	EXEC_DONE = 96
+	// 客户端能力上报（客户端→服务端）：[1B version]；标记该客户端支持 EXEC_DONE / EXD1 头
+	EXEC_CAP = 97
+	// 执行过程输出（客户端→服务端）：写 shell 历史但**不**触发任务完成；
+	// 执行任务的终态只由 EXEC_DONE 决定。
+	EXEC_OUTPUT = 98
+	// 服务端通知客户端启用 EXEC_OUTPUT（服务端→客户端命令，无载荷）
+	EXEC_OUTPUT_ENABLE = 99
+
 	// 持久化命令（B8）：cmdBuf = "方法 [名称]"，须与客户端 core/services/types.go PERSIST 一致
 	PERSIST = 100 // 持久化（registry|schtasks|startup / cron|bashrc）
 

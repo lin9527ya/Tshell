@@ -55,11 +55,14 @@
             :title="modeTitle(m)"
           >{{ m.label }}</el-radio-button>
         </el-radio-group>
-        <el-alert v-if="!isWindowsClient && pluginForm.clientUid" type="info" :closable="false" show-icon style="margin-top: 8px;">
+        <el-alert v-if="isLinuxClient && pluginForm.clientUid" type="info" :closable="false" show-icon style="margin-top: 8px;">
           {{ i18nStore.tl('Linux 客户端：使用 Script 或 Binary 模式执行插件', 'Linux client: use Script or Binary mode') }}
         </el-alert>
         <el-alert v-if="isWindowsClient && pluginForm.clientUid" type="warning" :closable="false" show-icon style="margin-top: 8px;">
           {{ i18nStore.tl('Windows 客户端：使用 Execute Assembly / Inline Bin / Shellcode / BOF 模式', 'Windows client: use Execute Assembly / Inline Bin / Shellcode / BOF') }}
+        </el-alert>
+        <el-alert v-if="isDarwinClient && pluginForm.clientUid" type="warning" :closable="false" show-icon style="margin-top: 8px;">
+          {{ i18nStore.tl('macOS 客户端暂不支持插件执行', 'Plugin execution is not supported on macOS clients') }}
         </el-alert>
         <el-alert v-if="!pluginForm.clientUid" type="info" :closable="false" show-icon style="margin-top: 8px;">
           {{ i18nStore.tl('请先选择客户端', 'Select a client first') }}
@@ -203,6 +206,7 @@ import {
   type FilterOptions,
 } from '@/views/plugins/output-filter'
 import { usePanelResize } from '@/views/plugins/usePanelResize'
+import { normalizeClientOs, isModeAllowed, execModePlatforms, type ExecOS } from '@/views/plugins/exec-platform'
 import PluginUploadDialog from '@/views/plugins/PluginUploadDialog.vue'
 // 详情条与上传对话框共用同一个格式化实现（原先是父组件里的一份被两处用）
 import { formatPluginFileSize as formatFileSize } from '@/views/plugins/formatSize'
@@ -247,16 +251,17 @@ const pluginOutput = ref('');
 // 在线客户端
 const onlineClients = ref<ClientData[]>([]);
 
-// 跨平台防护：检查选中客户端是否为Windows（execute-assembly/inline-bin/shellcode-inject 仅支持Windows）
-const isWindowsClient = computed(() => {
-  if (!pluginForm.value.clientUid) return true; // 未选客户端时不禁用
-  const client = onlineClients.value.find((c: ClientData) => c.Uid === pluginForm.value.clientUid);
-  if (!client) return true;
-  const arch = (client.Arch || '').toLowerCase();
-  const computer = (client.Computer || '').toLowerCase();
-  // 明确是 Linux/Darwin 时返回 false，否则默认 Windows
-  return !arch.includes('linux') && !arch.includes('darwin') && !computer.includes('linux');
-});
+// 跨平台防护：优先使用客户端上报的 Os（/client/online-clients 已返回），
+// 缺失时才退回 Arch/主机名启发式。未知系统放行，由服务端 /bin/execute 精确校验。
+const clientOs = computed<ExecOS>(() => {
+  if (!pluginForm.value.clientUid) return ''
+  const client = onlineClients.value.find((c: ClientData) => c.Uid === pluginForm.value.clientUid)
+  if (!client) return ''
+  return normalizeClientOs(client.Os, client.Arch, client.Computer)
+})
+const isWindowsClient = computed(() => clientOs.value === 'windows')
+const isLinuxClient = computed(() => clientOs.value === 'linux')
+const isDarwinClient = computed(() => clientOs.value === 'darwin')
 
 // 输出框尺寸控制
 // 拖拽缩放规则已抽到 usePanelResize.ts（19 项测试）：最小尺寸钳制、
@@ -354,26 +359,34 @@ const filterOpts = (kind: 'mode' | 'mimikatz'): FilterOptions => ({
 
 // 执行模式：platform = windows / linux / any（any 不随客户端平台禁用）
 const EXEC_MODES = computed(() => [
-  { value: 'execute-assembly', label: i18nStore.tl('Execute Assembly (.NET)', 'Execute Assembly (.NET)'), platform: 'windows' },
-  { value: 'inline-bin', label: i18nStore.tl('Inline Bin (exe)', 'Inline Bin (exe)'), platform: 'windows' },
-  { value: 'shellcode-inject', label: i18nStore.tl('Shellcode', 'Shellcode'), platform: 'windows' },
-  { value: 'script', label: i18nStore.tl('Script (Linux)', 'Script (Linux)'), platform: 'linux' },
-  { value: 'binary', label: i18nStore.tl('Binary (Linux)', 'Binary (Linux)'), platform: 'linux' },
-  { value: 'bof', label: 'BOF (COFF)', platform: 'windows' },
-  { value: 'exec-file', label: i18nStore.tl('Exec File (临时文件)', 'Exec File (temp)'), platform: 'any' },
+  { value: 'execute-assembly', label: i18nStore.tl('Execute Assembly (.NET)', 'Execute Assembly (.NET)') },
+  { value: 'inline-bin', label: i18nStore.tl('Inline Bin (exe)', 'Inline Bin (exe)') },
+  { value: 'shellcode-inject', label: i18nStore.tl('Shellcode', 'Shellcode') },
+  { value: 'script', label: i18nStore.tl('Script (Linux)', 'Script (Linux)') },
+  { value: 'binary', label: i18nStore.tl('Binary (Linux)', 'Binary (Linux)') },
+  { value: 'bof', label: 'BOF (COFF)' },
+  { value: 'exec-file', label: i18nStore.tl('Exec File (临时文件)', 'Exec File (temp)') },
 ])
 
-type ExecMode = { value: string; label: string; platform: string }
+type ExecMode = { value: string; label: string }
 
 function modeDisabled(m: ExecMode): boolean {
-  if (m.platform === 'windows') return !isWindowsClient.value
-  if (m.platform === 'linux') return isWindowsClient.value
-  return false
+  // 未选客户端或系统未知时不激进禁用，服务端 /bin/execute 会做最终校验
+  if (!pluginForm.value.clientUid || clientOs.value === '') return false
+  return !isModeAllowed(m.value, clientOs.value)
 }
 
 function modeTitle(m: ExecMode): string {
-  if (m.platform === 'windows') return isWindowsClient.value ? '' : i18nStore.tl('仅 Windows 客户端可用', 'Windows clients only')
-  if (m.platform === 'linux') return isWindowsClient.value ? i18nStore.tl('仅 Linux 客户端可用', 'Linux clients only') : ''
+  if (!pluginForm.value.clientUid || clientOs.value === '') return ''
+  if (isModeAllowed(m.value, clientOs.value)) {
+    return m.value === 'execute-assembly'
+      ? i18nStore.tl('程序集上限 10MB（客户端硬限制）', 'Assembly limit is 10MB (client hard limit)')
+      : ''
+  }
+  if (clientOs.value === 'darwin') return i18nStore.tl('macOS 暂不支持插件执行', 'Plugin execution is not supported on macOS')
+  const platforms = execModePlatforms(m.value)
+  if (platforms.includes('windows')) return i18nStore.tl('仅 Windows 客户端可用', 'Windows clients only')
+  if (platforms.includes('linux')) return i18nStore.tl('仅 Linux 客户端可用', 'Linux clients only')
   return ''
 }
 
@@ -390,23 +403,10 @@ const getClientDisplayInfo = (client: ClientData) => {
   // 使用数据库自增ID而不是UID的前8位
   const clientId = client.ID || client.id || 'N/A'
   
-  // 获取系统类型（采用客户端管理页面的成功做法）
+  // 获取系统类型：优先客户端上报的 Os，缺失时才退回启发式
   const getSystemType = (client: ClientData) => {
-    let os = 'unknown'
-    let arch = client.Arch || 'unknown'
-    
-    // 根据Process字段判断操作系统
-    if (client.Process && client.Process.includes('.exe')) {
-      os = 'windows'
-    } else if (client.Computer && client.Computer.toLowerCase().includes('linux')) {
-      os = 'linux'
-    } else if (client.Computer && client.Computer.toLowerCase().includes('darwin')) {
-      os = 'darwin'
-    } else {
-      // 默认根据架构推断
-      os = 'windows' // 大部分客户端是Windows
-    }
-    
+    const os = normalizeClientOs(client.Os, client.Arch, client.Computer) || 'unknown'
+    const arch = client.Arch || 'unknown'
     return `${os}_${arch}`
   }
   
@@ -431,6 +431,8 @@ const loadOnlineClients = async () => {
           ExternalIP: c.external_ip || c.ExternalIP || '-',
           Username: c.username || c.Username || 'user',
           Listener: c.listener || c.Listener || 'tcp',
+          Os: c.os || c.Os || '',
+          Arch: c.arch || c.Arch || '',
           Online: '1',
         } as ClientData))
 
@@ -731,7 +733,19 @@ const executePlugin = async () => {
     const pluginName = pluginForm.value.selectedPlugin;
     const clientUid = pluginForm.value.clientUid;
     const args = pluginForm.value.arguments || '';
-    
+
+    // 与服务端/客户端一致的硬限制：.NET 程序集 10MB
+    if (executionMode.value === 'execute-assembly') {
+      const meta = plugins.value.find(p => (p.name || p.Name) === pluginName);
+      const size = Number(meta?.size ?? meta?.Size ?? 0)
+      if (size > 10 * 1024 * 1024) {
+        ElMessage.error(isZh.value
+          ? `Execute Assembly 程序集上限 10MB（当前 ${(size / 1024 / 1024).toFixed(1)}MB，客户端硬限制）`
+          : `Execute Assembly limit is 10MB (current ${(size / 1024 / 1024).toFixed(1)}MB, client hard limit)`)
+        return
+      }
+    }
+
     // 清空之前的输出并显示执行信息
     const pluginArgs = args || (isZh.value ? '无' : 'none');
     pluginOutput.value = isZh.value
@@ -810,9 +824,14 @@ Check:
       ElMessage.error((isZh.value ? '插件执行失败: ' : 'Plugin execution failed: ') + errorMsg);
     }
   } catch (error: unknown) {
+    // 优先展示后端业务文案（如平台不匹配、Donut 转换失败），而不是 axios 的裸 status
+    const respData = (error as { response?: { data?: { data?: unknown; message?: unknown; error?: unknown } } })?.response?.data
+    const backendMsg = respData?.data ?? respData?.message ?? respData?.error
     let errorMessage = isZh.value ? '未知错误' : 'Unknown error';
-    
-    if (error instanceof Error) {
+
+    if (backendMsg && typeof backendMsg === 'string') {
+      errorMessage = backendMsg
+    } else if (error instanceof Error) {
       errorMessage = error.message;
     } else if (typeof error === 'string') {
       errorMessage = error;
@@ -866,19 +885,25 @@ const startPollingForResults = (clientUid: string, pluginName: string, taskId: n
   let pollingInFlight = false;
   let taskStatus = '';
   let taskError = '';
+  let taskResult = '';
   let lastContent = '';
   let stableReads = 0;
 
-  // 读取并过滤当前 shell 回显（展示用；不再参与"是否执行完"的判定）
-  const readShellContent = async (): Promise<string> => {
-    const response = await pluginApi.get_shell_history(clientUid);
-    if (!(response.data && response.data.status === 200)) return lastContent;
-    const fullShellContent = smartDecodeContent(response.data.data || '');
-    const filtered = isMimikatzTool
-      ? filterShellContentForMimikatz(fullShellContent, executionMode.value, pluginName, filterOpts('mimikatz'))
-      : filterShellContentByMode(fullShellContent, executionMode.value, pluginName, filterOpts('mode'));
-    lastContent = filtered;
-    return filtered;
+  // 读取并过滤当前 shell 回显（展示用；不再参与"是否执行完"的判定）。
+  // 失败返回 null，避免一次网络抖动被当成"输出稳定"。
+  const readShellContent = async (): Promise<string | null> => {
+    try {
+      const response = await pluginApi.get_shell_history(clientUid);
+      if (!(response.data && response.data.status === 200)) return null;
+      const fullShellContent = smartDecodeContent(response.data.data || '');
+      const filtered = isMimikatzTool
+        ? filterShellContentForMimikatz(fullShellContent, executionMode.value, pluginName, filterOpts('mimikatz'))
+        : filterShellContentByMode(fullShellContent, executionMode.value, pluginName, filterOpts('mode'));
+      lastContent = filtered;
+      return filtered;
+    } catch {
+      return null;
+    }
   };
 
   const clientLabel = () => {
@@ -926,6 +951,16 @@ Display mode: ${isMimikatzTool ? 'full output (mimikatz tuned)' : 'filtered outp
     }
   };
 
+  // 终态内容兜底：shell 过滤结果为空/仅为"无输出提示"时，用 task.result 或
+  // task.error 补上；两者都没有才显示"无回显"。
+  const noOutputHint = filterOpts(isMimikatzTool ? 'mimikatz' : 'mode').noOutputHint
+  const resolveFinalContent = (content: string): string => {
+    if (content && content.trim() && content.trim() !== noOutputHint.trim()) return content
+    if (taskResult && taskResult.trim()) return taskResult
+    if (taskError && taskError.trim()) return '[!] ' + taskError
+    return ''
+  }
+
   // 回显与任务状态更新之间有毫秒级时差：终态后短轮询补齐输出
   const settleRead = async (): Promise<string> => {
     let best = lastContent;
@@ -933,7 +968,7 @@ Display mode: ${isMimikatzTool ? 'full output (mimikatz tuned)' : 'filtered outp
       await new Promise(r => setTimeout(r, 700));
       try {
         const c = await readShellContent();
-        if (c.length > best.length) best = c;
+        if (c !== null && c.length > best.length) best = c;
         if (best.trim().length > 0 && i >= 1) break;
       } catch { /* 忽略单次失败 */ }
     }
@@ -953,20 +988,23 @@ Display mode: ${isMimikatzTool ? 'full output (mimikatz tuned)' : 'filtered outp
           if (t && t.status) {
             taskStatus = t.status;
             taskError = t.error || '';
+            taskResult = t.result || '';
           }
         } catch { /* 单次查询失败不改变判定，下一轮重试 */ }
       }
 
       // 2) 实时输出（展示用）
-      let shellContent = lastContent;
-      try {
-        shellContent = await readShellContent();
-      } catch (e) {
-        console.error('获取Shell历史失败:', e);
+      const previousContent = lastContent
+      let shellContent = lastContent
+      let fetchOk = false
+      const fetched = await readShellContent()
+      if (fetched !== null) {
+        shellContent = fetched
+        fetchOk = true
       }
 
       if (taskStatus && taskStatus !== 'dispatched') {
-        const content = await settleRead();
+        const content = resolveFinalContent(await settleRead())
         if (taskStatus === 'completed') {
           showFinal(content, { ok: true });
         } else if (taskStatus === 'failed') {
@@ -1014,7 +1052,9 @@ Elapsed: ${elapsedSec()}s${taskId ? '' : ' (no task status; judging by output st
 
 === Live Execution Result ===
 ${shellContent}`;
-        if (shellContent === lastContent) stableReads++; else stableReads = 0;
+        if (fetchOk) {
+          stableReads = shellContent === previousContent ? stableReads + 1 : 0
+        }
       } else {
         pluginOutput.value = isZh.value
           ? `[⏳] 已下发，等待目标回显...
@@ -1034,7 +1074,7 @@ Note: polling transports fetch commands on their next check-in.`;
       }
 
       // 4) 拿不到任务状态时的兜底（DB 不可用/任务未建成）：输出稳定即视为结束
-      if (!taskId && stableReads >= 3 && shellContent.trim().length > 10) {
+      if (!taskId && stableReads >= 3 && shellContent.trim().length > 10 && shellContent.trim() !== noOutputHint.trim()) {
         showFinal(shellContent, {
           ok: true,
           title: isZh.value ? '插件执行完成（按输出稳定性判断）' : 'Plugin finished (judged by output stability)',

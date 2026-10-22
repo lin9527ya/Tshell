@@ -69,9 +69,13 @@ func (c *ClientCommandQueue) AddCommand(clientID string, command []byte) bool {
 		return false
 	}
 	cq.data = append(cq.data, command)
-	// 任务队列可视化:记录入队命令
+	// 任务队列可视化:记录入队命令（大命令只更新时间戳，避免整包复制进历史）
 	if GlobalCmdHistory != nil {
-		GlobalCmdHistory.Record(clientID, string(command))
+		if len(command) <= MaxRecordedCommandBytes {
+			GlobalCmdHistory.Record(clientID, string(command))
+		} else {
+			GlobalCmdHistory.Touch(clientID)
+		}
 	}
 	return true
 }
@@ -95,7 +99,7 @@ func (c *ClientCommandQueue) GetCommand(clientID string) (command []byte, ok boo
 	cq.data[0] = nil
 	// 任务队列可视化:标记已取走
 	if GlobalCmdHistory != nil {
-		GlobalCmdHistory.MarkRemoved(clientID, string(command))
+		markCommandRemoved(clientID, command)
 	}
 	newData := cq.data[1:]
 	if len(newData) == 0 {
@@ -133,7 +137,7 @@ func (c *ClientCommandQueue) GetCommands(clientID string, max int) [][]byte {
 	// 任务队列可视化:标记已取走
 	if GlobalCmdHistory != nil {
 		for _, cmd := range out {
-			GlobalCmdHistory.MarkRemoved(clientID, string(cmd))
+			markCommandRemoved(clientID, cmd)
 		}
 	}
 	// 已取部分置 nil 释放引用(同 GetCommand 的内存泄漏防护),余量前移
@@ -184,7 +188,7 @@ func (c *ClientCommandQueue) GetCommandCoalescingInput(clientID string, interact
 		}
 		cq.mu.Unlock()
 		if GlobalCmdHistory != nil {
-			GlobalCmdHistory.MarkRemoved(clientID, string(first))
+			markCommandRemoved(clientID, first)
 		}
 		return first, true
 	}
@@ -216,7 +220,7 @@ func (c *ClientCommandQueue) GetCommandCoalescingInput(clientID string, interact
 
 	if GlobalCmdHistory != nil {
 		for _, cmd := range popped {
-			GlobalCmdHistory.MarkRemoved(clientID, string(cmd))
+			markCommandRemoved(clientID, cmd)
 		}
 	}
 	return merged, true
@@ -228,6 +232,19 @@ func hasCmdType(cmd []byte, typ uint32) bool {
 		return false
 	}
 	return binary.BigEndian.Uint32(cmd[:4]) == typ
+}
+
+// markCommandRemoved 记录"客户端已取走"；大命令只更新时间戳，
+// 避免把几十 MB 的插件载荷复制成 string 存进任务时间线历史。
+func markCommandRemoved(clientID string, command []byte) {
+	if GlobalCmdHistory == nil {
+		return
+	}
+	if len(command) <= MaxRecordedCommandBytes {
+		GlobalCmdHistory.MarkRemoved(clientID, string(command))
+		return
+	}
+	GlobalCmdHistory.TouchPull(clientID)
 }
 
 // DeleteClient 删除指定客户端的命令队列（断线/删除客户端时调用）

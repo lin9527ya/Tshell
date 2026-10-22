@@ -9,7 +9,7 @@
     <div class="upload-dialog-content">
       <div class="upload-info-banner">
         <el-icon class="info-icon"><InfoFilled /></el-icon>
-        {{ i18nStore.tl('支持exe,net,elf,dll,so,dylib格式，单个文件不超过50MB，最多只能同时上传6个文件', 'Supports exe, net, elf, dll, so, dylib. Max 50MB per file, up to 6 files at once.') }}
+        {{ i18nStore.tl('支持 exe/net/elf/dll/so/dylib/bin/sh/py/ps1/o/obj/coff 格式，单个文件不超过50MB，最多只能同时上传6个文件', 'Supports exe/net/elf/dll/so/dylib/bin/sh/py/ps1/o/obj/coff. Max 50MB per file, up to 6 files at once.') }}
         <el-button type="primary" class="select-file-btn" @click="selectFiles">{{ i18nStore.tl('选择文件', 'Select Files') }}</el-button>
       </div>
 
@@ -46,7 +46,7 @@
         ref="fileInput"
         type="file"
         multiple
-        accept=".exe,.net,.elf,.dll,.so,.dylib"
+        accept=".exe,.net,.elf,.dll,.so,.dylib,.bin,.sh,.py,.ps1,.o,.obj,.coff"
         style="display: none"
         @change="handleFileSelect"
       />

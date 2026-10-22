@@ -14,10 +14,12 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"BackendTemplate/pkg/audit"
+	"BackendTemplate/pkg/command"
 	"BackendTemplate/pkg/config"
 	"BackendTemplate/pkg/database"
 	"BackendTemplate/pkg/errors"
 	"BackendTemplate/pkg/security"
+	"BackendTemplate/pkg/sendcommand"
 	"BackendTemplate/pkg/utils/logx"
 )
 
@@ -463,6 +465,9 @@ type ClientInfo struct {
 	Username   string `json:"username"`
 	Online     string `json:"online"`
 	Listener   string `json:"listener"`
+	// Os/Arch 供插件页按平台禁用执行模式（原前端只能靠主机名猜）
+	Os   string `json:"os"`
+	Arch string `json:"arch"`
 }
 
 func GetOnlineClients(c *gin.Context) {
@@ -488,6 +493,8 @@ func GetOnlineClients(c *gin.Context) {
 			Username:   client.Username,
 			Online:     client.Online,
 			Listener:   client.Listener,
+			Os:         client.Os,
+			Arch:       client.Arch,
 		})
 		// D45: UID 不足 8 位时避免切片越界
 		shortUid := client.Uid
@@ -500,4 +507,15 @@ func GetOnlineClients(c *gin.Context) {
 
 	logx.Infof("[PLUGIN-API] ✅ 成功返回 %d 个客户端信息\n", len(clientInfos))
 	c.JSON(http.StatusOK, gin.H{"status": 200, "message": "success", "data": clientInfos})
+}
+
+// EnableClientExecOutput 通知能力客户端把执行过程输出切到 EXEC_OUTPUT(98)。
+// 未收到该命令的客户端仍用 type=0（旧服务端兼容）。
+func EnableClientExecOutput(uid string) {
+	if uid == "" {
+		return
+	}
+	if err := sendcommand.SendFileUploadCommandChecked(uid, makeCmdType(command.EXEC_OUTPUT_ENABLE, nil)); err != nil {
+		logx.Debugf("⚠️ [PLUGIN] 下发 EXEC_OUTPUT_ENABLE 失败 uid=%s: %v\n", uid, err)
+	}
 }

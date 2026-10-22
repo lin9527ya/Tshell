@@ -84,6 +84,10 @@ func finishTask(id int64, status, result, errMsg string) {
 	if len(result) > taskResultMaxBytes {
 		result = result[:taskResultMaxBytes] + "\n...(已截断)"
 	}
+	// error 列是 varchar(512)（PostgreSQL 会严格拒绝超长）；截断到 500 字节
+	if len(errMsg) > 500 {
+		errMsg = errMsg[:500]
+	}
 	// 读一次取 kind/创建时间供指标用；终态判定仍由下面 UPDATE 的 WHERE 原子保证
 	var snapshot database.Task
 	_, hasSnapshot, _ := database.Tasks().GetByID(id)
@@ -107,11 +111,60 @@ func OnTaskOutput(uid, output string) {
 		return
 	}
 	var task database.Task
-	task, has, err := database.Tasks().NextDispatched(uid, taskStatusDispatched)
+	var has bool
+	var err error
+	if command.IsExecClientCapable(uid) && command.IsExecOutputReady(uid) {
+		// 客户端已确认把执行输出切到 EXEC_OUTPUT(98)，可以安全跳过 exec 队首。
+		task, has, err = database.Tasks().NextDispatchedExcludingKind(uid, "exec", taskStatusDispatched)
+	} else {
+		// 旧客户端，或新客户端尚未收到 EXEC_OUTPUT_ENABLE：exec 输出仍是 type-0，
+		// 只能按"队首即完成"近似；队首是 exec 时保持不动，避免误归给后面的任务。
+		task, has, err = database.Tasks().NextDispatched(uid, taskStatusDispatched)
+		if err == nil && has && task.Kind == "exec" && command.IsExecClientCapable(uid) {
+			return
+		}
+	}
 	if err != nil || !has {
 		return
 	}
 	finishTask(task.Id, taskStatusCompleted, output, "")
+}
+
+// OnExecDone 插件/内存执行完成回执（EXEC_DONE）。
+//
+// taskID>0 时按 ID 精确收敛（校验归属与类型）；taskID=0 表示服务端没下发
+// EXD1 任务头（旧服务端或能力表刚丢失），回退到最早一条 exec 任务。
+func OnExecDone(uid string, taskID int64, ok bool, errMsg string) {
+	if database.DB() == nil || uid == "" {
+		return
+	}
+	var task database.Task
+	var has bool
+	var err error
+	if taskID > 0 {
+		task, has, err = database.Tasks().GetByID(taskID)
+		if err != nil || !has {
+			logx.Warnf("[TASK] EXEC_DONE 找不到任务 id=%d uid=%s: %v\n", taskID, uid, err)
+			return
+		}
+		if task.UID != uid || task.Kind != "exec" {
+			logx.Warnf("[TASK] EXEC_DONE 任务不匹配 id=%d uid=%s kind=%s\n", taskID, uid, task.Kind)
+			return
+		}
+	} else {
+		task, has, err = database.Tasks().NextDispatchedByKind(uid, "exec", taskStatusDispatched)
+		if err != nil || !has {
+			return
+		}
+	}
+	if ok {
+		finishTask(task.Id, taskStatusCompleted, "", "")
+		return
+	}
+	if strings.TrimSpace(errMsg) == "" {
+		errMsg = "execution failed (no detail)"
+	}
+	finishTask(task.Id, taskStatusFailed, "", errMsg)
 }
 
 // taskResultLabel 给旧版任务视图（按 uid 的 results）用的状态文案。

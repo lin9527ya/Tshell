@@ -19,11 +19,11 @@ type CmdRecord struct {
 
 // clientCmdHistory 单客户端命令历史
 type clientCmdHistory struct {
-	mu        sync.Mutex
-	records   []*CmdRecord // 最近记录(头部最新)
-	max       int
-	lastPull  time.Time // 客户端最近一次取走命令时间
-	lastSeen  time.Time // 最近一次活动(入队/取走)
+	mu       sync.Mutex
+	records  []*CmdRecord // 最近记录(头部最新)
+	max      int
+	lastPull time.Time // 客户端最近一次取走命令时间
+	lastSeen time.Time // 最近一次活动(入队/取走)
 }
 
 // CmdHistory 全局命令历史管理
@@ -37,6 +37,46 @@ type CmdHistory struct {
 var GlobalCmdHistory = &CmdHistory{
 	clients: make(map[string]*clientCmdHistory),
 	ttl:     30 * time.Minute,
+}
+
+// MaxRecordedCommandBytes 单条命令进入"任务时间线"历史的大小上限。
+// 插件/内存执行可携带几十 MB 二进制；轮询传输下整包命令会再复制成 string，
+// 100 条历史会成倍放大内存，因此大命令只更新时间戳、不记录内容。
+const MaxRecordedCommandBytes = 1 << 20
+
+// Touch 只更新最近活动时间（大命令不记录内容时使用）。
+func (h *CmdHistory) Touch(clientID string) {
+	if h == nil {
+		return
+	}
+	now := time.Now()
+	h.mu.Lock()
+	ch := h.clients[clientID]
+	h.mu.Unlock()
+	if ch == nil {
+		return
+	}
+	ch.mu.Lock()
+	ch.lastSeen = now
+	ch.mu.Unlock()
+}
+
+// TouchPull 更新"客户端已取走"时间与最近活动时间（大命令跳过内容匹配时使用）。
+func (h *CmdHistory) TouchPull(clientID string) {
+	if h == nil {
+		return
+	}
+	now := time.Now()
+	h.mu.Lock()
+	ch := h.clients[clientID]
+	h.mu.Unlock()
+	if ch == nil {
+		return
+	}
+	ch.mu.Lock()
+	ch.lastPull = now
+	ch.lastSeen = now
+	ch.mu.Unlock()
 }
 
 // Record queued 入队记录(在 ClientCommandQueue.AddCommand 挂钩)

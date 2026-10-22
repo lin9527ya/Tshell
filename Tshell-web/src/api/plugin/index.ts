@@ -21,7 +21,7 @@ const pluginApi = {
   // 获取插件详细信息
   get_plugin_details(pluginName: string) {
     return request({
-      url: `/plugin/details/${pluginName}`,
+      url: `/plugin/details/${encodeURIComponent(pluginName)}`,
       method: 'get'
     });
   },
@@ -82,6 +82,10 @@ export interface ClientInfo {
   external_ip?: string;
   Listener?: string;
   listener?: string;
+  Os?: string;
+  os?: string;
+  Arch?: string;
+  arch?: string;
 }
 
 export interface PluginInfo {

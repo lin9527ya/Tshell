@@ -721,6 +721,33 @@ func (TaskStore) NextDispatched(uid, dispatched string) (Task, bool, error) {
 	return t, has, err
 }
 
+// NextDispatchedByKind 取该 uid 最早一条指定 kind 的 dispatched 任务。
+// 插件/内存执行（EXEC_DONE）按 taskID 精确定位失败时用它回退。
+func (TaskStore) NextDispatchedByKind(uid, kind, dispatched string) (Task, bool, error) {
+	var t Task
+	s := DB()
+	if s == nil {
+		return t, false, ErrStoreUnavailable
+	}
+	has, err := s.Where("uid = ? AND kind = ? AND status = ?", uid, kind, dispatched).
+		OrderBy("id").Get(&t)
+	return t, has, err
+}
+
+// NextDispatchedExcludingKind 取该 uid 最早一条非指定 kind 的 dispatched 任务。
+// 能力客户端的 exec 输出走 EXEC_OUTPUT（不进任务归属），所以 console/batch
+// 可以安全地跳过 exec 队首。
+func (TaskStore) NextDispatchedExcludingKind(uid, kind, dispatched string) (Task, bool, error) {
+	var t Task
+	s := DB()
+	if s == nil {
+		return t, false, ErrStoreUnavailable
+	}
+	has, err := s.Where("uid = ? AND kind <> ? AND status = ?", uid, kind, dispatched).
+		OrderBy("id").Get(&t)
+	return t, has, err
+}
+
 // FindDispatchedDownload 查是否已有同样的下载任务在排队（避免重复下发）
 func (TaskStore) FindDispatchedDownload(uid, filePath, dispatched string) (Task, bool, error) {
 	var t Task

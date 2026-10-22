@@ -9,6 +9,7 @@ import (
 	"BackendTemplate/pkg/connection/oss"
 	"BackendTemplate/pkg/connection/tcp"
 	ws "BackendTemplate/pkg/connection/websocket"
+	"BackendTemplate/pkg/database"
 	"BackendTemplate/pkg/errors"
 	"BackendTemplate/pkg/security"
 	"BackendTemplate/pkg/sendcommand"
@@ -21,6 +22,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -41,10 +43,19 @@ type HVNCSession struct {
 	writeMu  sync.Mutex
 }
 
+const (
+	// hvncViewerGrace 最后一个观看者断开后，给前端重连的宽限时间。
+	// 原实现一断就下发 HVNC_STOP：网络抖动一次会话就被杀，前端却转去 REST 轮询，
+	// 永远等不到新帧。宽限期内重连则取消停止。
+	hvncViewerGrace = 30 * time.Second
+)
+
 var (
-	hvncSessions = make(map[string]*HVNCSession)
-	hvncMutex    sync.RWMutex
-	hvncUpgrader = websocket.Upgrader{
+	hvncSessions    = make(map[string]*HVNCSession)
+	hvncMutex       sync.RWMutex
+	hvncPendingMu   sync.Mutex
+	hvncPendingStop = make(map[string]*time.Timer)
+	hvncUpgrader    = websocket.Upgrader{
 		// 【安全修复】校验 Origin 与请求 Host 同源，防止任意网页跨站连接（CSWSH）
 		CheckOrigin: func(r *http.Request) bool {
 			origin := r.Header.Get("Origin")
@@ -66,8 +77,44 @@ func init() {
 	ws.BroadcastToHVNCSessions = BroadcastToHVNCSessions
 	kcp.BroadcastToHVNCSessions = BroadcastToHVNCSessions
 	communication.BroadcastToHVNCSessions = BroadcastToHVNCSessions
-	oss.BroadcastToHVNCSessions = BroadcastToHVNCSessions  // B4 收敛后 OSS 回包走统一处理器，补注入
-	dns.BroadcastToHVNCSessions = BroadcastToHVNCSessions  // B4 收敛后 DNS 回包走统一处理器，补注入
+	oss.BroadcastToHVNCSessions = BroadcastToHVNCSessions // B4 收敛后 OSS 回包走统一处理器，补注入
+	dns.BroadcastToHVNCSessions = BroadcastToHVNCSessions // B4 收敛后 DNS 回包走统一处理器，补注入
+}
+
+// cancelPendingHvncStop 取消该会话已排队的"无观看者停止"。
+func cancelPendingHvncStop(key string) {
+	hvncPendingMu.Lock()
+	if t, ok := hvncPendingStop[key]; ok {
+		t.Stop()
+		delete(hvncPendingStop, key)
+	}
+	hvncPendingMu.Unlock()
+}
+
+// scheduleHvncStop 最后一个观看者断开后延迟停止客户端推帧。
+func scheduleHvncStop(uid, sid, key string) {
+	hvncPendingMu.Lock()
+	if t, ok := hvncPendingStop[key]; ok {
+		t.Stop()
+	}
+	hvncPendingStop[key] = time.AfterFunc(hvncViewerGrace, func() {
+		hvncPendingMu.Lock()
+		delete(hvncPendingStop, key)
+		hvncPendingMu.Unlock()
+
+		// 宽限期内有人重连 → 不停止
+		hvncMutex.RLock()
+		_, watching := hvncSessions[key]
+		hvncMutex.RUnlock()
+		if watching {
+			return
+		}
+		stopPayload := makeCmdType(command.HVNC_STOP, []byte(sid))
+		sendcommand.SendFileUploadCommand(uid, stopPayload)
+		command.VarHVNCFrameQueue.Remove(uid, sid)
+		log.Printf("🛑 [HVNC] 宽限期结束仍无观看者，通知客户端停止会话: %s", key)
+	})
+	hvncPendingMu.Unlock()
 }
 
 // BroadcastToHVNCSessions 推送帧到指定 UID+SID 的 HVNC 会话。
@@ -164,6 +211,8 @@ func HvncConnectHandler(c *gin.Context) {
 	}
 	hvncSessions[key] = session
 	hvncMutex.Unlock()
+	// 宽限期内重连：取消排队中的停止
+	cancelPendingHvncStop(key)
 
 	defer func() {
 		session.IsActive = false
@@ -177,12 +226,10 @@ func HvncConnectHandler(c *gin.Context) {
 		conn.Close()
 		log.Printf("🔌 [HVNC] WS 会话断开: %s", key)
 
-		// 【优化】无任何观看者时通知客户端停止推帧，避免无谓的 CPU/带宽消耗
+		// 无观看者：延迟停止（给前端 WS 重连留宽限），避免网络抖动一次就杀掉会话
 		if !stillWatched && uid != "" && sid != "" {
-			stopPayload := makeCmdType(command.HVNC_STOP, []byte(sid))
-			sendcommand.SendFileUploadCommand(uid, stopPayload)
-			command.VarHVNCFrameQueue.Remove(uid, sid)
-			log.Printf("🛑 [HVNC] 无观看者，通知客户端停止会话推帧: %s", key)
+			scheduleHvncStop(uid, sid, key)
+			log.Printf("⏳ [HVNC] 无观看者，%s 后停止会话（等待重连）: %s", hvncViewerGrace, key)
 		}
 	}()
 
@@ -209,6 +256,25 @@ func StartHvnc(c *gin.Context) {
 		return
 	}
 
+	// 平台与在线校验：HVNC 客户端实现仅 Windows；离线/不存在时直接报错，
+	// 原实现无条件返回 sid，前端会显示"启动成功"却永远没有画面。
+	client, has, err := database.Clients_().GetByUID(req.UID)
+	if err != nil || !has {
+		c.JSON(http.StatusBadRequest, gin.H{"status": 400, "message": "会话不存在"})
+		return
+	}
+	if !strings.EqualFold(client.Os, "windows") {
+		c.JSON(http.StatusBadRequest, gin.H{"status": 400, "message": "HVNC 仅支持 Windows 客户端（当前 OS=" + client.Os + "）"})
+		return
+	}
+	connection.MuClientListenerType.Lock()
+	_, online := connection.ClientListenerType[req.UID]
+	connection.MuClientListenerType.Unlock()
+	if !online {
+		c.JSON(http.StatusBadRequest, gin.H{"status": 400, "message": "客户端不在线"})
+		return
+	}
+
 	sid := fmt.Sprintf("h%d", time.Now().UnixNano()/1000)
 	payload := utils.BytesCombine(
 		utils.WriteInt(len(sid)), []byte(sid),
@@ -216,7 +282,10 @@ func StartHvnc(c *gin.Context) {
 		utils.WriteInt(len(req.Args)), []byte(req.Args),
 	)
 	byteToSend := makeCmdType(command.HVNC_START, payload)
-	sendcommand.SendFileUploadCommand(req.UID, byteToSend)
+	if err := sendcommand.SendFileUploadCommandChecked(req.UID, byteToSend); err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"status": 502, "message": "下发 HVNC_START 失败: " + err.Error()})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{"status": 200, "data": gin.H{"sid": sid}})
 }
@@ -235,7 +304,8 @@ func StopHvnc(c *gin.Context) {
 	byteToSend := makeCmdType(command.HVNC_STOP, []byte(req.SID))
 	sendcommand.SendFileUploadCommand(req.UID, byteToSend)
 
-	// 清理服务端状态
+	// 清理服务端状态（含宽限期中的待停止定时器）
+	cancelPendingHvncStop(req.UID + "_" + req.SID)
 	command.VarHVNCFrameQueue.Remove(req.UID, req.SID)
 	key := req.UID + "_" + req.SID
 	hvncMutex.Lock()

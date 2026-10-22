@@ -136,6 +136,9 @@ func runLoop() {
 			continue
 		}
 		recvFailCount = 0
+		// 首次成功收包后再上报执行完成能力：此时会话 nonce 已被 Recv 消费，
+		// 回包使用的密钥与服务端一致（提前发会被丢弃）。
+		communication.ReportExecCapabilityOnce()
 
 		if data != nil {
 			app.HandleCommand(data)

@@ -21,6 +21,7 @@ func CleanupClientQueues(uid string) {
 	VarMonitorFrameQueue.RemoveEntries(uid)
 	VarDownloadFiles.CleanupAll(uid)
 	ClearUidFileBrowser(uid)
+	ClearExecClientCapability(uid)
 
 	// I1: 广播离线信号（等待客户端响应的 handler 提前返回，避免白等满超时）
 	// 原为死代码：map 中 channel 只增不减 → 内存泄漏；handler 全部空等到超时

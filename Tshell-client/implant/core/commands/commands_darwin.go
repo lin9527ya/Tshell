@@ -97,7 +97,7 @@ func DoResumeThreads() ([]byte, error) {
 	return nil, errors.New("This function is not supported on this platform now.")
 }
 
-func ExecuteAssembly(assemblyBytes []byte, arguments string) ([]byte, error) {
+func ExecuteAssembly(assemblyBytes []byte, arguments string, execTaskID uint32) ([]byte, error) {
 	return nil, errors.New("This function is not supported on this platform now.")
 }
 

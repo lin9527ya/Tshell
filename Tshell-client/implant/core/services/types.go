@@ -125,6 +125,16 @@ const (
 	// 纯内存接收分块 shellcode 并注入（不落盘；替代文件路径注入）
 	INJECT_MEM = 127 // 内存注入（requestId|total|seq|pidLen|pid|techLen|tech|chunk）
 
+	// 插件/内存执行完成回执（客户端→服务端，须与服务端一致）：
+	// [4B taskID][1B ok][utf8 error]。服务端只凭它收敛 kind=exec 任务。
+	EXEC_DONE = 96
+	// 能力上报（客户端→服务端）：[1B version]；表示支持 EXEC_DONE 与 EXD1 任务头。
+	EXEC_CAP = 97
+	// 执行过程输出（客户端→服务端）：写 shell 但不触发任务完成。
+	EXEC_OUTPUT = 98
+	// 服务端通知启用 EXEC_OUTPUT（命令，无载荷）。
+	EXEC_OUTPUT_ENABLE = 99
+
 	// 批量命令包装（B5，须与服务端 pkg/command/cmdType.go 一致）：
 	// 仅轮询协议(HTTP/DNS)批量下发时使用。帧格式 count(4) + N×[len(4)|cmd]，
 	// cmd 为完整单条命令帧(cmdType(4)|cmdBuf)。旧服务端永不下发此号。

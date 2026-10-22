@@ -605,6 +605,10 @@ func main() {
 	command.LootIngestFunc = func(uid, output string) { api.IngestLootFromOutput(uid, output) }
 	// 任务回显归属：回包到达时把该 uid 最早一条 dispatched 任务置 completed
 	command.TaskOutputFunc = api.OnTaskOutput
+	// 插件/内存执行完成回执（EXEC_DONE）：按 taskID 精确收敛 exec 任务
+	command.ExecDoneFunc = api.OnExecDone
+	// 能力客户端：通知它把执行过程输出切到 EXEC_OUTPUT（不再触发任务完成）
+	command.ExecOutputEnableFunc = api.EnableClientExecOutput
 
 	// 下载终态（完成/中断）→ 收敛任务状态；下载协议无结束报文，只能由数据层判定
 	command.DownloadEndFunc = api.OnDownloadEnd
