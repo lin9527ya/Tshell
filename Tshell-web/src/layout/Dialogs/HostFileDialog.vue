@@ -9,7 +9,7 @@
   >
     <div class="cs-dialog-body cs-font-ui">
       <div class="cs-dialog-desc">
-        {{ i18nStore.tl('上传文件经投递通道(/d/)对外分发,支持 MIME 伪装、一次性下载与配额限制;托管记录出现在站点管理列表,可随时关闭/删除。单文件上限 50MB。', 'Host a file via the delivery hub (/d/). 50MB max per file.') }}
+        {{ i18nStore.tl('上传文件经投递通道对外分发,支持 MIME 伪装、一次性下载与配额限制;托管记录出现在站点管理列表,可随时关闭/删除。单文件上限 50MB。', 'Host a file via the delivery hub. 50MB max per file.') }}
       </div>
 
       <div class="cs-form-row">
@@ -150,7 +150,7 @@ function copyUrl() {
 }
 
 function handleHelp() {
-  ElMessage.info(isZh.value ? '文件经投递通道 /d/{key}/full 分发;访问受 UA/令牌控制,一次性下载后链接失效。关闭与删除在「站点管理」列表操作。' : 'Host File Manual')
+  ElMessage.info(isZh.value ? '文件经投递通道路径分发;访问受 UA/令牌控制,一次性下载后链接失效。关闭与删除在「站点管理」列表操作。' : 'Host File Manual')
 }
 </script>
 

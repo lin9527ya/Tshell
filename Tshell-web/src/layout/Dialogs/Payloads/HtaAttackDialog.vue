@@ -109,9 +109,14 @@ async function handleGenerate() {
     hintNoWebDelivery()
     return
   }
-  // HTA 脚本由 delivery hub 托管：{base}/hta?mode=url|embed（base = ServerAddress 去掉 /full/... 后缀）
-  const serverAddress = field(wd, 'ServerAddress', 'server_address') || ''
-  const base = String(serverAddress).replace(/\/full\/.*$/, '')
+  // HTA 脚本由 delivery hub 托管：{base}/hta?mode=url|embed。
+  // 资源段名可配置后不能再按 /full/ 硬切；优先用 StagerURL 去掉最后一段，
+  // 回退到 ServerAddress 去掉“资源段/文件名”两段。
+  const serverAddress = String(field(wd, 'ServerAddress', 'server_address') || '')
+  const stagerUrl = String(field(wd, 'StagerURL', 'stager_url') || '')
+  const base = stagerUrl
+    ? stagerUrl.replace(/\/[^/]+$/, '')
+    : serverAddress.replace(/\/[^/]+\/[^/]+$/, '')
   if (!base) {
     ElMessage.warning(isZh.value ? '该投递没有公开 URL，无法生成 HTA（shared 模式才有）' : 'No public URL for this delivery (shared mode required)')
     return

@@ -1523,7 +1523,7 @@ function handleHelp() {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 600;
   color: var(--cs-text-bright);
 }
@@ -1581,6 +1581,7 @@ function handleHelp() {
 .fm-file-tree {
   background: transparent !important;
   color: var(--cs-text) !important;
+  font-size: 15px;
 }
 
 .fm-tree-node {
@@ -1594,7 +1595,7 @@ function handleHelp() {
 }
 
 .fm-node-icon {
-  font-size: 14px;
+  font-size: 15px;
   flex-shrink: 0;
 }
 
@@ -1680,7 +1681,7 @@ function handleHelp() {
 .crumb-item {
   padding: 1px 4px;
   border-radius: 4px;
-  font-size: 13px;
+  font-size: 14px;
   color: var(--cs-text);
   white-space: nowrap;
   transition: all 100ms ease;
@@ -1692,14 +1693,14 @@ function handleHelp() {
 }
 .crumb-sep {
   color: var(--cs-text-dim);
-  font-size: 13px;
+  font-size: 14px;
   user-select: none;
 }
 .crumb-edit-icon {
   margin-left: auto;
   padding-left: 6px;
   color: var(--cs-text-dim);
-  font-size: 13px;
+  font-size: 14px;
   opacity: 0.7;
   flex-shrink: 0;
 }
@@ -1714,7 +1715,7 @@ function handleHelp() {
 
 :deep(.fm-path-el-input .el-input__inner) {
   font-family: var(--cs-font-mono);
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .fm-go-btn {
@@ -1781,12 +1782,12 @@ function handleHelp() {
 }
 
 .fm-empty-title {
-  font-size: 14px;
+  font-size: 15px;
   color: var(--cs-text);
 }
 
 .fm-empty-desc {
-  font-size: 13px;
+  font-size: 14px;
   color: var(--cs-text-dim);
 }
 
@@ -1843,7 +1844,7 @@ function handleHelp() {
 }
 
 .fm-status-info {
-  font-size: 13px;
+  font-size: 14px;
   color: var(--cs-text-dim);
   font-family: var(--cs-font-mono);
 }
@@ -1852,7 +1853,7 @@ function handleHelp() {
 .fm-editor-meta {
   display: flex;
   justify-content: space-between;
-  font-size: 13px;
+  font-size: 14px;
   color: var(--cs-text);
   background: var(--cs-panel);
   padding: 8px 12px;
@@ -1879,7 +1880,7 @@ function handleHelp() {
   border-right: 1px solid var(--cs-border);
   color: var(--cs-text-dim);
   font-family: var(--cs-font-mono) !important;
-  font-size: 13px !important;
+  font-size: 14px !important;
   line-height: 20px !important;
   text-align: right;
   overflow: hidden;
@@ -1890,7 +1891,7 @@ function handleHelp() {
 .editor-line-num {
   height: 20px !important;
   line-height: 20px !important;
-  font-size: 13px !important;
+  font-size: 14px !important;
   box-sizing: border-box;
 }
 
@@ -1901,7 +1902,7 @@ function handleHelp() {
   border: none;
   color: var(--cs-text-bright);
   font-family: var(--cs-font-mono) !important;
-  font-size: 13px !important;
+  font-size: 14px !important;
   line-height: 20px !important;
   outline: none;
   resize: none;
@@ -1915,7 +1916,7 @@ function handleHelp() {
 
 /* 上传列表 */
 .fm-upload-path-hint {
-  font-size: 13px;
+  font-size: 14px;
   color: var(--cs-text);
   padding: 4px 0 12px 0;
 }
@@ -1941,7 +1942,7 @@ function handleHelp() {
   background: var(--cs-panel);
   border: 1px solid var(--cs-card-border);
   border-radius: 6px;
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .fm-upload-name {
@@ -1958,20 +1959,20 @@ function handleHelp() {
 
 /* 下载进度对话框 */
 .fm-dl-file {
-  font-size: 13px;
+  font-size: 14px;
   color: var(--cs-text);
   margin-bottom: 12px;
 }
 
 .fm-dl-speed {
-  font-size: 13px;
+  font-size: 14px;
   color: var(--cs-text-dim);
   margin-top: 8px;
 }
 
 .fm-help-body {
   line-height: 1.7;
-  font-size: 13px;
+  font-size: 14px;
   color: var(--cs-text);
 }
 </style>
@@ -1996,7 +1997,7 @@ function handleHelp() {
   display: flex !important;
   align-items: center !important;
   padding: 8px 14px !important;
-  font-size: 13px !important;
+  font-size: 14px !important;
   color: var(--cs-text) !important;
   cursor: pointer !important;
   transition: background 0.1s, color 0.1s !important;

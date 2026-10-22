@@ -219,13 +219,16 @@
           v-if="colVisible.osarch"
           prop="Os"
           :label="t('table.osarch')"
-          width="140"
+          width="160"
           sortable
           :sort-orders="['ascending', 'descending', null]"
           show-overflow-tooltip
         >
           <template #default="{ row }">
-            <span class="cs-font-mono cs-cell-text">{{ osArchLabel(row) }}</span>
+            <span class="cs-os-cell">
+              <VsIcon :name="osIconName(row)" :size="16" class="cs-os-icon" />
+              <span class="cs-font-mono cs-cell-text">{{ osArchLabel(row) }}</span>
+            </span>
           </template>
         </el-table-column>
 
@@ -382,7 +385,7 @@ import { useCollabStore } from '@/stores/collab'
 import { useUserStore } from '@/stores/user'
 import VsIcon from '@/layout-vshell/VsIcon.vue'
 import { useVisibilityInterval } from '@/utils/useVisibilityInterval'
-import { detectClientOs } from '@/utils/clientUtils'
+import { clientOsIcon, detectClientOs } from '@/utils/clientUtils'
 import ClientAPI from '@/api/clients'
 import EmptyState from '@/components/Common/EmptyState.vue'
 // P3：会话操作对话框（页面内局部弹窗）
@@ -588,6 +591,11 @@ function osArchLabel(row: RowData): string {
   return `${os}_${normalizeArch(row.Arch)}`
 }
 
+// 系统类型图标（vshell：devicon windows8 / devicon linux / wpf macos）
+function osIconName(row: RowData): string {
+  return clientOsIcon(row)
+}
+
 function isClientOnline(row: RowData): boolean {
   // Online 可能是 '1'/'true'/true（服务端历史字段类型不一致），统一按字符串比较
   return row.Online === '1' || String(row.Online) === 'true'
@@ -608,7 +616,7 @@ const tableHeaderStyle = {
   background: 'var(--cs-table-head)',
   color: 'var(--cs-text)',
   fontWeight: '600',
-  fontSize: '14px',
+  fontSize: '15px',
   borderBottom: '1px solid var(--cs-card-border)',
   padding: '0',
 }
@@ -995,7 +1003,7 @@ onBeforeUnmount(() => {
 
 .row-link {
   color: var(--cs-active);
-  font-size: 14px;
+  font-size: 15px;
   cursor: pointer;
   white-space: nowrap;
 }
@@ -1031,7 +1039,7 @@ onBeforeUnmount(() => {
 }
 
 .cs-session-title {
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 600;
   color: var(--cs-text-bright);
   white-space: nowrap;
@@ -1050,7 +1058,7 @@ onBeforeUnmount(() => {
   height: 32px;
   padding: 0 28px 0 10px;
   font-family: var(--cs-font-ui);
-  font-size: 14px;
+  font-size: 15px;
   color: var(--cs-text);
   background: var(--cs-panel);
   border: 1px solid var(--cs-border-strong);
@@ -1070,7 +1078,7 @@ onBeforeUnmount(() => {
 .cs-session-search-clear {
   position: absolute;
   right: 9px;
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1;
   color: var(--cs-text-dim);
   cursor: pointer;
@@ -1083,7 +1091,7 @@ onBeforeUnmount(() => {
 .cs-session-count {
   margin-left: auto;
   font-family: var(--cs-font-mono);
-  font-size: 13px;
+  font-size: 14px;
   color: var(--cs-text-dim);
   white-space: nowrap;
 }
@@ -1094,13 +1102,25 @@ onBeforeUnmount(() => {
   color: var(--cs-text);
 }
 
+.cs-os-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.cs-os-icon {
+  color: var(--cs-text-dim);
+  flex-shrink: 0;
+}
+
 .cs-cell-text.is-admin {
   font-weight: 600;
   color: var(--cs-elevated);
 }
 
 .cs-cell-last {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
   font-style: italic;
   color: var(--cs-text);
@@ -1130,7 +1150,7 @@ onBeforeUnmount(() => {
   height: 20px;
   padding: 0 7px;
   border-radius: 4px;
-  font-size: 12px;
+  font-size: 13px;
   font-style: normal;
   line-height: 1;
   vertical-align: middle;
@@ -1151,7 +1171,7 @@ onBeforeUnmount(() => {
   padding: 1px 6px;
   border-radius: 4px;
   font-family: var(--cs-font-mono);
-  font-size: 12px;
+  font-size: 13px;
   background: color-mix(in srgb, var(--cs-active) 12%, transparent);
   color: var(--cs-active);
 }
@@ -1199,7 +1219,7 @@ onBeforeUnmount(() => {
 .cs-group-tag {
   flex-shrink: 0;
   font-family: var(--cs-font-mono);
-  font-size: 12px;
+  font-size: 13px;
   font-style: normal;
   color: var(--cs-active);
   white-space: nowrap;
@@ -1224,7 +1244,7 @@ onBeforeUnmount(() => {
 }
 
 .batch-count {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--cs-active);
   white-space: nowrap;
@@ -1244,7 +1264,7 @@ onBeforeUnmount(() => {
   height: 32px;
   padding: 0 10px;
   font-family: var(--cs-font-mono);
-  font-size: 13px;
+  font-size: 14px;
   color: var(--cs-text);
   background: var(--cs-panel);
   border: 1px solid var(--cs-border-strong);

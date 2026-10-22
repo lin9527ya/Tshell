@@ -12,9 +12,35 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"BackendTemplate/pkg/utils/logx"
+	"github.com/gin-gonic/gin"
 )
+
+// 公开投递路径前缀（由 main 在启动时注入；security 不能 import config —— config 已 import security）
+var deliveryRoutePrefix atomic.Value
+
+// SetDeliveryRoutePrefix 注册当前投递路径前缀，供隐藏入口放行判断使用。
+func SetDeliveryRoutePrefix(prefix string) {
+	prefix = strings.TrimSpace(prefix)
+	if prefix == "" || prefix == "/" {
+		prefix = "/d"
+	}
+	if !strings.HasPrefix(prefix, "/") {
+		prefix = "/" + prefix
+	}
+	deliveryRoutePrefix.Store(strings.TrimRight(prefix, "/"))
+}
+
+func isDeliveryHubPath(path string) bool {
+	prefix, _ := deliveryRoutePrefix.Load().(string)
+	if prefix == "" {
+		prefix = "/d"
+	}
+	// 旧前缀 /d 继续放行，避免升级后旧载荷被隐藏入口挡住
+	return path == prefix || strings.HasPrefix(path, prefix+"/") ||
+		path == "/d" || strings.HasPrefix(path, "/d/") ||
+		strings.Contains(path, prefix+"/")
+}
 
 // HiddenAccessManager 隐藏访问管理器
 type HiddenAccessManager struct {
@@ -114,9 +140,9 @@ func HiddenAccessMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		// Delivery Hub 公开投递路径 /d/{key}/... 不走隐藏入口（自身可配 token/UA）
-		// 【修复】精确匹配 /d/ 前缀段：原 Contains 匹配过宽（如 /admin/foo/d/... 也绕过）
-		if path == "/d/" || strings.HasPrefix(path, "/d/") {
+		// Delivery Hub 公开投递路径 {prefix}/{key}/... 不走隐藏入口（自身可配 token/UA）
+		// 【修复】精确匹配前缀段：原 Contains 匹配过宽（如 /admin/foo/d/... 也绕过）
+		if isDeliveryHubPath(path) {
 			c.Next()
 			return
 		}

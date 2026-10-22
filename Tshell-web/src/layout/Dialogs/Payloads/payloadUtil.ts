@@ -1,6 +1,7 @@
 // 载荷生成共享工具：真实监听器拉取、GenServer 载荷生成、blob 下载
 // 供 Dialogs/Payloads 与 Dialogs/Attacks/WebDeliveryDialog 复用（对齐 ServerGen 的集成方式）
 import ClientAPI from '@/api/clients'
+import { normalizeWebDeliveryList } from '@/utils/webDelivery'
 import { ElMessage } from 'element-plus'
 
 export interface ListenerOption {
@@ -325,7 +326,7 @@ export async function fetchWebDeliveryOptions(onlyRunning = true): Promise<WebDe
   try {
     const res = await ClientAPI.GetWebDeliveryList()
     if (res.status === 200 && res.data?.status === 200) {
-      const list: WebDeliveryRow[] = res.data.data || []
+      const list: WebDeliveryRow[] = normalizeWebDeliveryList(res.data.data || [])
       return onlyRunning
         ? list.filter((w) => Number(field(w, 'Status', 'status')) === 1)
         : list

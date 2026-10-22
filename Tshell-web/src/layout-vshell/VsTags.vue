@@ -120,7 +120,7 @@ function closeCtxTab() {
         @click="onTabClick(tab.path)"
         @contextmenu="onContextMenu($event, tab.path)"
       >
-        <VsIcon v-if="tab.icon" :name="tab.icon" :size="14" class="vs-tag-icon" />
+        <VsIcon v-if="tab.icon" :name="tab.icon" :size="16" class="vs-tag-icon" />
         <span class="vs-tag-title">{{ tab.title }}</span>
         <span v-if="!tab.affix" class="vs-tag-close" @click="onClose($event, tab.path)">
           <VsIcon name="times" :size="12" />

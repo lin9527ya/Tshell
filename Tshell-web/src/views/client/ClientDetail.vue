@@ -3,7 +3,7 @@
     <!-- 客户端信息条（vshell：页头一行元信息） -->
     <div class="cd-head">
       <div class="cd-title">
-        <VsIcon name="desktop" :size="18" />
+        <VsIcon :name="osIcon" :size="18" />
         <span class="cd-host">{{ client?.Computer || uid.slice(0, 8) }}</span>
         <span v-if="client?.Username" class="cd-user">{{ client.Username }}</span>
         <span class="cd-tag" :class="isOnline ? 'is-online' : 'is-offline'">
@@ -50,6 +50,7 @@ import { CLIENT_FUNCS, type ClientFunc } from '@/router/routes'
 import { useClientsStore } from '@/stores/clients'
 import { useI18nStore } from '@/stores/i18n'
 import { useTabsStore } from '@/stores/tabs'
+import { clientOsIcon, formatClientTabTitle } from '@/utils/clientUtils'
 
 defineOptions({ name: 'ClientDetail' })
 
@@ -111,17 +112,41 @@ provide('realUid', uid)
 const client = computed(() => clients.clientsList.find((c) => c.Uid === uid.value) || null)
 const isOnline = computed(() => client.value?.Online === '1' || client.value?.Online === 'true')
 
+// 顶部标签图标：按被控端系统显示（vshell 同款 devicon/wpf 图标）
+const osIcon = computed(() => clientOsIcon(client.value))
+
+// 数据库自增 ID；列表尚未加载时退回 UID 前 8 位，避免标签出现 undefined
+const clientDbId = computed(() => {
+  const c = client.value
+  const id = c?.ID ?? c?.id
+  if (id !== undefined && id !== null && String(id) !== '') return String(id)
+  return uid.value ? uid.value.slice(0, 8) : '?'
+})
+
+const externalIp = computed(() => {
+  const c = client.value
+  return String(c?.ExternalIP || c?.Address || '').trim() || '-'
+})
+
+/** vshell 命名：主机管理 = "ID:3 客户端管理"；文件管理 = "3: 外网IP" */
+const tabTitle = computed(() =>
+  formatClientTabTitle({
+    func: func.value,
+    id: clientDbId.value,
+    externalIp: externalIp.value,
+    zh: isZh.value,
+  }),
+)
+
 function switchTo(f: ClientFunc) {
   router.replace(`/client/${uid.value}/${f}`)
 }
 
-// 标签标题细化：客户端主机名
+// 标签标题/图标细化：随当前功能页与客户端信息更新
 watch(
-  () => [route.fullPath, client.value?.Computer] as const,
+  () => [route.fullPath, client.value?.ID, client.value?.id, client.value?.ExternalIP, client.value?.Address, client.value?.Os, func.value, isZh.value] as const,
   () => {
-    if (client.value) {
-      tabs.setTitle(route.fullPath, `${isZh.value ? '客户端' : 'Client'}: ${client.value.Computer || uid.value.slice(0, 8)}`)
-    }
+    tabs.setTitle(route.fullPath, tabTitle.value, osIcon.value)
   },
   { immediate: true },
 )
@@ -158,7 +183,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 14px;
+  font-size: 15px;
   color: var(--cs-text-bright);
 }
 
@@ -176,7 +201,7 @@ onMounted(() => {
   height: 20px;
   padding: 0 7px;
   border-radius: 4px;
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .cd-tag.is-online {
@@ -194,7 +219,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 12px;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--cs-text-dim);
   font-family: var(--cs-font-mono);
 }
@@ -216,7 +241,7 @@ onMounted(() => {
   display: inline-flex;
   align-items: center;
   padding: 0 12px;
-  font-size: 14px;
+  font-size: 15px;
   color: var(--cs-text);
   cursor: pointer;
   white-space: nowrap;

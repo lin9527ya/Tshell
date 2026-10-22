@@ -1,6 +1,7 @@
 package database
 
 import (
+	"fmt"
 	"time"
 
 	"xorm.io/xorm"
@@ -146,6 +147,97 @@ func (DeliveryStore) UpdateColumns(id int64, cols []string, patch *WebDelivery) 
 		return 0, ErrStoreUnavailable
 	}
 	return s.ID(id).Cols(cols...).Update(patch)
+}
+
+// UpdateEditable 更新投递的可编辑列（不含 id / public_key / status / 命中统计）。
+//
+// 列名必须用数据库里的实际列名：xorm 的 SnakeMapper 把缩写拆成了
+// o_s / u_r_i_path / u_a_allow / stager_u_r_l / shellcode_u_r_l。
+// 用结构体 + Cols 更新时这些列很容易写错（OpenWebDelivery 里就用了不存在的
+// "stager_url"/"shellcode_url"，错误被 `_, _ =` 吞掉）。
+func (DeliveryStore) UpdateEditable(id int64, patch *WebDelivery) (int64, error) {
+	s := DB()
+	if s == nil {
+		return 0, ErrStoreUnavailable
+	}
+	upd := map[string]interface{}{
+		"listener_config":    patch.ListenerConfig,
+		"o_s":                patch.OS,
+		"arch":               patch.Arch,
+		"listening_port":     patch.ListeningPort,
+		"file_name":          patch.FileName,
+		"pass":               patch.Pass,
+		"download_path":      patch.DownloadPath,
+		"save_filename":      patch.SaveFilename,
+		"bind_mode":          patch.BindMode,
+		"public_host":        patch.PublicHost,
+		"public_scheme":      patch.PublicScheme,
+		"base_path":          patch.BasePath,
+		"u_r_i_path":         patch.URIPath,
+		"content_type":       patch.ContentType,
+		"stage_content_type": patch.StageContentType,
+		"access_token":       patch.AccessToken,
+		"u_a_allow":          patch.UAAllow,
+		"max_downloads":      patch.MaxDownloads,
+		"one_time":           patch.OneTime,
+		"crypto_mode":        patch.CryptoMode,
+		"delivery_key":       patch.DeliveryKey,
+		"note":               patch.Note,
+		"server_address":     patch.ServerAddress,
+		"stager_u_r_l":       patch.StagerURL,
+		"shellcode_u_r_l":    patch.ShellcodeURL,
+	}
+	return s.Table("web_delivery").Where("id = ?", id).Update(upd)
+}
+
+// MarkOneTimeUsed 持久化一次性资源的消费状态。
+//
+// 只允许三列，避免把列名拼接引入 SQL 注入。内存里的 CAS 只负责并发互斥，
+// 真正防止"服务重启后一次性 URL 复活"的是这里落库。
+func (DeliveryStore) MarkOneTimeUsed(id int64, publicKey, column string) error {
+	switch column {
+	case "full_used", "stager_used", "sc_used":
+	default:
+		return fmt.Errorf("非法的一次性状态列: %s", column)
+	}
+	s := DB()
+	if s == nil {
+		return ErrStoreUnavailable
+	}
+	q := s.Table("web_delivery")
+	switch {
+	case id > 0:
+		q = q.Where("id = ?", id)
+	case publicKey != "":
+		q = q.Where("public_key = ?", publicKey)
+	default:
+		return fmt.Errorf("缺少投递标识")
+	}
+	_, err := q.Update(map[string]interface{}{column: 1})
+	return err
+}
+
+// UpdateHitStats 写入命中统计。调用方已经用原子计数串行化，这里只做持久化。
+func (DeliveryStore) UpdateHitStats(id int64, publicKey string, hits int64, at, ip string) error {
+	s := DB()
+	if s == nil {
+		return ErrStoreUnavailable
+	}
+	q := s.Table("web_delivery")
+	switch {
+	case id > 0:
+		q = q.Where("id = ?", id)
+	case publicKey != "":
+		q = q.Where("public_key = ?", publicKey)
+	default:
+		return fmt.Errorf("缺少投递标识")
+	}
+	_, err := q.Update(map[string]interface{}{
+		"hit_count":   hits,
+		"last_hit_at": at,
+		"last_hit_ip": ip,
+	})
+	return err
 }
 
 // SetStatusByPort 按端口置状态

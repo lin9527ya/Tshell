@@ -12,6 +12,21 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// 投递路径前缀由 main 启动时注入（audit 不能 import config：config→security→audit 会成环）。
+var deliveryRoutePrefix = "/d"
+
+// SetDeliveryRoutePrefix 更新投递路径前缀。
+func SetDeliveryRoutePrefix(prefix string) {
+	prefix = strings.TrimSpace(prefix)
+	if prefix == "" || prefix == "/" {
+		prefix = "/d"
+	}
+	if !strings.HasPrefix(prefix, "/") {
+		prefix = "/" + prefix
+	}
+	deliveryRoutePrefix = strings.TrimRight(prefix, "/")
+}
+
 // isSkippablePath 无需审计的路径：
 // 静态资源（前端加载 40+ JS/CSS chunk，每次全量缓冲响应体 + 写日志，开销大且无审计价值）
 // 与投递路径（/d/ 下载被流量放大，不应计入审计）。
@@ -21,7 +36,7 @@ func isSkippablePath(path string) bool {
 		path == "/favicon.ico" {
 		return true
 	}
-	if strings.HasPrefix(path, "/d/") || strings.Contains(path, "/d/") {
+	if strings.HasPrefix(path, deliveryRoutePrefix+"/") || strings.Contains(path, deliveryRoutePrefix+"/") || strings.HasPrefix(path, "/d/") {
 		return true
 	}
 	return false

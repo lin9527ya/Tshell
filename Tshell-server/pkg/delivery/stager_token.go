@@ -14,9 +14,14 @@ import (
 // 下载时校验并扣减；用完即废（返回伪装 404）。令牌以 64 位随机整型生成，
 // 以 hex 存储（编译进 Stager 时作为二进制数据，不产生明文字符串痕迹）。
 
-// GenerateStagerToken 为指定投递生成一个带配额的令牌。
-// quota<=0 时默认 3 次。返回令牌 hex 字符串。
+// GenerateStagerToken 为指定投递生成一个带配额的令牌（不过期，兼容旧调用）。
 func GenerateStagerToken(publicKey string, quota int, note string) (string, error) {
+	return GenerateStagerTokenWithTTL(publicKey, quota, note, 0)
+}
+
+// GenerateStagerTokenWithTTL 同上，并设置过期时间（ttl<=0 表示不过期）。
+// 令牌一旦泄露，TTL 是唯一的自动止损手段。
+func GenerateStagerTokenWithTTL(publicKey string, quota int, note string, ttl time.Duration) (string, error) {
 	if quota <= 0 {
 		quota = 3
 	}
@@ -27,19 +32,23 @@ func GenerateStagerToken(publicKey string, quota int, note string) (string, erro
 	}
 	tokenHex := hex.EncodeToString(tok)
 
-	now := time.Now().Format("2006-01-02 15:04:05")
+	now := time.Now()
 	rec := &database.StagerToken{
 		PublicKey: publicKey,
 		Token:     tokenHex,
 		Quota:     quota,
 		Used:      0,
 		Note:      note,
-		CreatedAt: now,
+		CreatedAt: now.Format("2006-01-02 15:04:05"),
+	}
+	if ttl > 0 {
+		rec.ExpiresAt = now.Add(ttl).Format("2006-01-02 15:04:05")
 	}
 	if _, err := database.DB().Insert(rec); err != nil {
 		return "", fmt.Errorf("存储令牌失败: %v", err)
 	}
-	logx.Infof("🔑 [STAGER-TOKEN] 已生成门禁令牌: key=%s quota=%d token=%s\n", publicKey, quota, tokenHex)
+	// 日志不落明文令牌：日志/终端回放是令牌泄露的常见路径
+	logx.Infof("🔑 [STAGER-TOKEN] 已生成门禁令牌: key=%s quota=%d token_id=%d expires=%q\n", publicKey, quota, rec.ID, rec.ExpiresAt)
 	return tokenHex, nil
 }
 
@@ -60,8 +69,15 @@ func ConsumeStagerToken(publicKey, token, clientIP string) bool {
 	if rec.PublicKey != publicKey {
 		return false
 	}
+	// TTL：到期令牌一律拒绝（空=不过期，兼容旧记录）
+	if rec.ExpiresAt != "" {
+		if exp, err := time.ParseInLocation("2006-01-02 15:04:05", rec.ExpiresAt, time.Local); err != nil || time.Now().After(exp) {
+			logx.Warnf("🚫 [STAGER-TOKEN] 令牌已过期: token_id=%d expires=%s ip=%s\n", rec.ID, rec.ExpiresAt, clientIP)
+			return false
+		}
+	}
 	if rec.Used >= rec.Quota {
-		logx.Warnf("🚫 [STAGER-TOKEN] 令牌配额已用完: token=%s used=%d quota=%d ip=%s\n", token, rec.Used, rec.Quota, clientIP)
+		logx.Warnf("🚫 [STAGER-TOKEN] 令牌配额已用完: token_id=%d used=%d quota=%d ip=%s\n", rec.ID, rec.Used, rec.Quota, clientIP)
 		return false
 	}
 	// 原子扣减（CAS：where used=当前值，防并发双消费）
@@ -72,7 +88,7 @@ func ConsumeStagerToken(publicKey, token, clientIP string) bool {
 		// 并发下另一请求已扣减 → 拒绝本次（配额语义：一次一密）
 		return false
 	}
-	logx.Infof("🔑 [STAGER-TOKEN] 令牌消费成功: token=%s used=%d/%d ip=%s\n", token, rec.Used+1, rec.Quota, clientIP)
+	logx.Infof("🔑 [STAGER-TOKEN] 令牌消费成功: token_id=%d used=%d/%d ip=%s\n", rec.ID, rec.Used+1, rec.Quota, clientIP)
 	return true
 }
 

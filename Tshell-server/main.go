@@ -753,7 +753,8 @@ func main() {
 			return
 		}
 		// Delivery Hub 公开路径未命中时返回 404（不回落前端 HTML）
-		if strings.HasPrefix(path, "/d/") || strings.Contains(path, "/d/") {
+		deliveryPrefix := delivery.RoutePrefix()
+		if strings.HasPrefix(path, deliveryPrefix+"/") || strings.Contains(path, deliveryPrefix+"/") || strings.HasPrefix(path, "/d/") {
 			c.Status(http.StatusNotFound)
 			return
 		}
@@ -1008,8 +1009,11 @@ func main() {
 	operatorOnly.POST("/listener/delete", api.DeleteListener)
 	operatorOnly.POST("/listener/batch-delete", api.BatchDeleteListeners)
 
-	protected.GET("/webdelivery/list", api.ListWebDelivery)
+	// 投递列表/命令矩阵会返回 access_token、pass 与带 ?t= 的完整 URL，
+	// 不能对 auditor 开放（原先挂 protected，只读账号可直接调用 API 读到）。
+	operatorOnly.GET("/webdelivery/list", api.ListWebDelivery)
 	operatorOnly.POST("/webdelivery/start", api.StartWebDelivery)
+	operatorOnly.POST("/webdelivery/update", api.UpdateWebDelivery) // 仅允许编辑已关闭的投递
 	// 文件托管: 任意文件经 Delivery Hub /d/ 通道对外分发(复用其访问控制)
 	operatorOnly.POST("/webdelivery/host-file", api.HostFileDelivery)
 	operatorOnly.POST("/webdelivery/close", api.CloseWebDelivery)
@@ -1019,26 +1023,33 @@ func main() {
 	operatorOnly.POST("/webdelivery/token/create", api.CreateStagerToken)
 	operatorOnly.GET("/webdelivery/token/list", api.ListStagerTokens)
 	operatorOnly.POST("/webdelivery/token/delete", api.DeleteStagerToken)
-	protected.GET("/webdelivery/commands", api.GetDeliveryCommands)
+	operatorOnly.GET("/webdelivery/commands", api.GetDeliveryCommands)
 	protected.GET("/webdelivery/logs", api.GetDeliveryAccessLogs)
 	protected.GET("/webdelivery/defaults", api.GetDeliveryDefaults)
 	protected.POST("/webdelivery/preview-urls", api.PreviewDeliveryURLs)
 
-	// Delivery Hub 公开投递路由（无需 JWT）：/d/{key}/full|stager|sc|woff
-	// 同时注册 base_path 前缀（CDN 回源保留前缀时，如 /static/d/...）
+	// Delivery Hub 公开投递路由（无需 JWT）：{prefix}/{key}/full|stager|sc|woff
+	// 同时注册 base_path 前缀（CDN 回源保留前缀时，如 /static{prefix}/...）
 	// r.Any 已覆盖 GET/POST/PUT/PATCH/HEAD/OPTIONS/DELETE，勿再单独注册 HEAD（会与 *filepath 冲突 panic）
 	deliveryHandler := func(c *gin.Context) {
 		delivery.GlobalHub.ServeHTTP(c.Writer, c.Request)
 	}
-	r.Any("/d/*filepath", deliveryHandler)
+	deliveryPrefix := delivery.RoutePrefix()
+	security.SetDeliveryRoutePrefix(deliveryPrefix)
+	audit.SetDeliveryRoutePrefix(deliveryPrefix)
+	r.Any(deliveryPrefix+"/*filepath", deliveryHandler)
+	if deliveryPrefix != "/d" {
+		// 改前缀后继续接旧 /d/ 路由，避免升级瞬间已发出去的旧载荷全体 404
+		r.Any("/d/*filepath", deliveryHandler)
+	}
 	if gcfg := config.GetGlobalConfig(); gcfg != nil {
 		bp := strings.Trim(gcfg.Delivery.BasePath, "/")
 		if bp != "" {
-			// 注意：通配符参数名必须与已有路由一致（*filepath），且路径不能与 /d/*filepath 重复
-			prefix := "/" + bp + "/d/*filepath"
-			if prefix != "/d/*filepath" {
+			// 注意：通配符参数名必须与已有路由一致（*filepath），且路径不能与主投递路由重复
+			prefix := "/" + bp + deliveryPrefix + "/*filepath"
+			if prefix != deliveryPrefix+"/*filepath" {
 				r.Any(prefix, deliveryHandler)
-				fmt.Println("Delivery Hub CDN prefix:", "/"+bp+"/d/{key}/...")
+				fmt.Println("Delivery Hub CDN prefix:", "/"+bp+deliveryPrefix+"/{key}/...")
 			}
 		}
 	}

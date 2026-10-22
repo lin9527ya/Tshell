@@ -162,6 +162,12 @@ delivery:
     cache_max_age: 0            # 投递响应缓存时长（秒）
     cors_allow_origin: ""       # 投递 CORS 允许源（留空不限制）
     trust_proxy_headers: true   # 是否信任 X-Forwarded-For 等代理头
+    route_prefix: /d            # 公开投递路径前缀（改掉可去掉 /d/ 指纹；改后需重新生成载荷）
+    full_segment: full          # 完整载荷资源段名
+    stager_segment: stager      # Stager 资源段名
+    sc_segment: sc              # shellcode 资源段名
+    woff_segment: woff          # Windows woff 资源段名
+    full_content_type: ""       # 完整载荷默认 Content-Type（空=Windows font/woff，其他 octet-stream）
 
 https:
     cert_file: certs/server.pem  # HTTPS 监听器证书文件（留空自动生成自签）

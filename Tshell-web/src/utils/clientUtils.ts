@@ -46,11 +46,12 @@ export function detectClientOs(client: any): 'windows' | 'linux' | 'darwin' | 'u
   ) {
     return 'linux'
   }
-  if (os.includes('win')) {
-    return 'windows'
-  }
+  // darwin 必须放在 windows 之前：字符串 "darwin" 本身包含子串 "win"
   if (os.includes('darwin') || os.includes('mac') || os.includes('apple') || os.includes('osx')) {
     return 'darwin'
+  }
+  if (os.includes('win')) {
+    return 'windows'
   }
 
   // 2. 架构 / 载荷类型判断 (linux_amd64, linux_arm64, elf 等)
@@ -92,4 +93,33 @@ export function detectClientOs(client: any): 'windows' | 'linux' | 'darwin' | 'u
   }
 
   return 'unknown'
+}
+
+/** 系统图标名（与 vshell 的 devicon / wpf 图标一致，VsIcon 已内置） */
+export function clientOsIcon(client: any): string {
+  switch (detectClientOs(client)) {
+    case 'windows':
+      return 'devicon-windows8'
+    case 'linux':
+      return 'devicon-linux'
+    case 'darwin':
+      return 'wpf-macos'
+    default:
+      return 'desktop'
+  }
+}
+
+/**
+ * 客户端详情的顶部标签标题：
+ *   主机管理 → "ID:3 客户端管理"（vshell ClientManagerTab 命名）
+ *   文件管理 → "3: 外网IP"（vshell FileTree 节点命名）
+ */
+export function formatClientTabTitle(opts: {
+  func: string
+  id: string
+  externalIp: string
+  zh: boolean
+}): string {
+  if (opts.func === 'files') return `${opts.id}: ${opts.externalIp || '-'}`
+  return opts.zh ? `ID:${opts.id} 客户端管理` : `ID:${opts.id} Client Management`
 }

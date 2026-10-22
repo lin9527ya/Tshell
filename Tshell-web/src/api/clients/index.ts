@@ -365,6 +365,7 @@ export default {
       uaAllow?: string
       maxDownloads?: number
       oneTime?: boolean
+      cryptoMode?: 'none' | 'xor' | 'aead'
       buildStager?: boolean
       note?: string
     }){
@@ -377,6 +378,40 @@ export default {
     OpenWebDelivery(data:{port?: string, publicKey?: string, id?: number}){
         return request({
             url:"/webdelivery/open",
+            method:"POST",
+            data:data
+        })
+    },
+    // 编辑投递：仅允许已关闭的投递；开启时按新配置重新 patch 载荷
+    UpdateWebDelivery(data: {
+      id: number
+      listener: string
+      os: string
+      arch: string
+      port?: string
+      filename?: string
+      pass?: string
+      format?: string
+      downloadPath?: string
+      saveFilename?: string
+      bindMode?: 'shared' | 'dedicated'
+      publicHost?: string
+      publicScheme?: string
+      basePath?: string
+      uriPath?: string
+      contentType?: string
+      stageContentType?: string
+      accessToken?: string
+      uaAllow?: string
+      maxDownloads?: number
+      oneTime?: boolean
+      cryptoMode?: 'none' | 'xor' | 'aead'
+      regenerateKey?: boolean
+      buildStager?: boolean
+      note?: string
+    }){
+        return request({
+            url:"/webdelivery/update",
             method:"POST",
             data:data
         })
@@ -396,7 +431,7 @@ export default {
         })
     },
     // StagerToken 门禁令牌（防盗门）：生成带配额令牌 / 列表 / 删除
-    CreateStagerToken(data: { public_key: string, quota?: number, note?: string }) {
+    CreateStagerToken(data: { public_key: string, quota?: number, note?: string, ttl_hours?: number }) {
         return request({
             url: "/webdelivery/token/create",
             method: "POST",

@@ -350,11 +350,19 @@ type WebDelivery struct {
 	LastHitIP string `xorm:"varchar(64) default('')" json:"last_hit_ip"`
 	// 一次性链接：1=启用（首次成功下载后作废对应资源）
 	OneTime int `xorm:"default(0)" json:"one_time"`
+	// 一次性消费状态（落库，重启后不会复活）：0=未用 1=已用
+	FullUsed   int `xorm:"default(0)" json:"full_used"`
+	StagerUsed int `xorm:"default(0)" json:"stager_used"`
+	ScUsed     int `xorm:"default(0)" json:"sc_used"`
 	// stager / shellcode 公开 URL（创建时填好，便于前端展示）
 	StagerURL    string `xorm:"varchar(512) default('')" json:"stager_url"`
 	ShellcodeURL string `xorm:"varchar(512) default('')" json:"shellcode_url"`
-	// Stage XOR 混淆密钥（0=不加密；生成投递时随机设置，Stager 模板内置同 key 解密）
+	// Stage XOR 混淆密钥（0=不加密；仅 crypto_mode=xor 时使用）
 	XorKey int `xorm:"default(0)" json:"xor_key"`
+	// 载荷加密模式：none（默认）/ xor（兼容旧单字节）/ aead（AES-256-GCM）
+	CryptoMode string `xorm:"varchar(16) default('')" json:"crypto_mode"`
+	// AEAD 密钥（base64url 编码的 32 字节）；crypto_mode=aead 时由服务端生成
+	DeliveryKey string `xorm:"varchar(128) default('')" json:"delivery_key"`
 	// 备注
 	Note string `xorm:"varchar(500) default('')" json:"note"`
 }
@@ -363,13 +371,15 @@ type WebDelivery struct {
 // 生成 Stager 时随机生成 64 位令牌并记录配额（如 3 次），下载时校验并扣减，
 // 用完返回伪装 404。区别于 WebDelivery.AccessToken（全局静态 token）。
 type StagerToken struct {
-	ID         int64  `xorm:"'id' pk autoincr" json:"id"`
-	PublicKey  string `xorm:"varchar(64) index" json:"public_key"`   // 关联投递 public_key
-	Token      string `xorm:"varchar(64) index unique" json:"token"` // 64 位随机令牌（hex）
-	Quota      int    `json:"quota"`                                 // 允许下载次数
-	Used       int    `json:"used"`                                  // 已使用次数
-	Note       string `xorm:"varchar(200) default('')" json:"note"`  // 备注（如 Stager 标识）
-	CreatedAt  string `xorm:"varchar(32) default('')" json:"created_at"`
+	ID        int64  `xorm:"'id' pk autoincr" json:"id"`
+	PublicKey string `xorm:"varchar(64) index" json:"public_key"`   // 关联投递 public_key
+	Token     string `xorm:"varchar(64) index unique" json:"token"` // 64 位随机令牌（hex）
+	Quota     int    `json:"quota"`                                 // 允许下载次数
+	Used      int    `json:"used"`                                  // 已使用次数
+	Note      string `xorm:"varchar(200) default('')" json:"note"`  // 备注（如 Stager 标识）
+	CreatedAt string `xorm:"varchar(32) default('')" json:"created_at"`
+	// 过期时间（空=不过期）；到期后 ConsumeStagerToken 一律拒绝
+	ExpiresAt  string `xorm:"varchar(32) default('')" json:"expires_at"`
 	LastUsedAt string `xorm:"varchar(32) default('')" json:"last_used_at"`
 	LastUsedIP string `xorm:"varchar(64) default('')" json:"last_used_ip"`
 }

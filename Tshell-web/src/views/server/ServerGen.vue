@@ -482,6 +482,7 @@ import {
 import { defineAsyncComponent } from 'vue';
 const WebDelivery = defineAsyncComponent(() => import('@/views/server/WebDelivery.vue'));
 import ClientAPI from '@/api/clients';
+import { normalizeWebDeliveryList } from '@/utils/webDelivery';
 import HtaAttackDialog from '@/layout/Dialogs/Payloads/HtaAttackDialog.vue';
 import OfficeMacroDialog from '@/layout/Dialogs/Payloads/OfficeMacroDialog.vue';
 import WindowsExeDialog from '@/layout/Dialogs/Payloads/WindowsExeDialog.vue';
@@ -679,11 +680,14 @@ const selectClientType = (clientType: string) => {
   formData.clientType = clientType;
 };
 
+// WebDelivery 列表接口使用 snake_case（listening_port/os/arch/...），
+// 而本页历史代码全部按 PascalCase 访问；统一归一化，避免下拉框显示
+// “端口 undefined | undefined_undefined”。归一化逻辑见 utils/webDelivery。
 const formatWebDeliveryLabel = (item: any) => {
-  const status = item.Status === 1 ? (isZh.value ? '运行中' : 'running') : (isZh.value ? '已关闭' : 'stopped');
+  const status = Number(item.Status) === 1 ? (isZh.value ? '运行中' : 'running') : (isZh.value ? '已关闭' : 'stopped');
   return isZh.value
-    ? `端口 ${item.ListeningPort} | ${item.OS}_${item.Arch} | ${item.ListenerConfig || '-'} | ${status}`
-    : `Port ${item.ListeningPort} | ${item.OS}_${item.Arch} | ${item.ListenerConfig || '-'} | ${status}`;
+    ? `端口 ${item.ListeningPort || '-'} | ${item.OS || '-'}_${item.Arch || '-'} | ${item.ListenerConfig || '-'} | ${status}`
+    : `Port ${item.ListeningPort || '-'} | ${item.OS || '-'}_${item.Arch || '-'} | ${item.ListenerConfig || '-'} | ${status}`;
 };
 
 const isStageFormatAllowed = (fmt: string) => {
@@ -761,7 +765,7 @@ const handleWebDeliveryDropdown = async (visible?: boolean) => {
   try {
     const res = await ClientAPI.GetWebDeliveryList();
     if (res.status === 200 && res.data.status === 200) {
-      webDeliveryOptions.value = res.data.data || [];
+      webDeliveryOptions.value = normalizeWebDeliveryList(res.data.data || []);
       if (!webDeliveryOptions.value.length) {
         ElMessage.warning(isZh.value ? '暂无 WebDelivery，请先到 WebDelivery 页面创建' : 'No WebDelivery yet, create one on the WebDelivery page first');
       }

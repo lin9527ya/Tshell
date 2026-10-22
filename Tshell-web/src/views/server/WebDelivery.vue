@@ -104,7 +104,7 @@
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column :label="i18nStore.tl('操作', 'Actions')" width="220" fixed="right" align="center">
+      <el-table-column :label="i18nStore.tl('操作', 'Actions')" width="280" fixed="right" align="center">
         <template #default="{ row }">
           <div class="wd-action-row">
             <button
@@ -121,6 +121,16 @@
               @click="copyUrl(row)"
             >
               {{ i18nStore.tl('复制URL', 'Copy') }}
+            </button>
+            <button
+              class="cs-btn cs-btn-xs"
+              :disabled="statusOf(row) === 1"
+              :title="statusOf(row) === 1
+                ? i18nStore.tl('请先关闭投递后再编辑', 'Stop the delivery before editing')
+                : i18nStore.tl('编辑投递配置', 'Edit delivery config')"
+              @click="openEdit(row)"
+            >
+              {{ i18nStore.tl('编辑', 'Edit') }}
             </button>
             <el-dropdown trigger="click" @command="(cmd: string) => handleMoreAction(cmd, row)">
               <button class="cs-btn cs-btn-xs" :title="i18nStore.tl('更多操作', 'More Actions')">
@@ -146,11 +156,18 @@
     </div>
 
     <!-- 创建 Delivery Hub -->
-    <el-dialog v-model="dialogVisible" :title="i18nStore.tl('配置 Delivery Hub', 'Configure Delivery Hub')" width="720px" destroy-on-close>
+    <el-dialog
+      v-model="dialogVisible"
+      :title="editingId
+        ? i18nStore.tl('编辑投递', 'Edit Delivery')
+        : i18nStore.tl('配置 Delivery Hub', 'Configure Delivery Hub')"
+      width="720px"
+      destroy-on-close
+    >
       <el-form :model="formData" label-width="130px">
         <el-form-item :label="i18nStore.tl('绑定模式', 'Bind Mode')">
           <el-radio-group v-model="formData.bindMode">
-            <el-radio label="shared">{{ i18nStore.tl('shared（主端口 /d/key，推荐）', 'shared (main port /d/key, recommended)') }}</el-radio>
+            <el-radio label="shared">{{ i18nStore.tl('shared（主端口，推荐）', 'shared (main port, recommended)') }}</el-radio>
             <el-radio label="dedicated">{{ i18nStore.tl('dedicated（独立端口）', 'dedicated (separate port)') }}</el-radio>
           </el-radio-group>
         </el-form-item>
@@ -183,7 +200,7 @@
           <el-input v-model="formData.pass" show-password :placeholder="i18nStore.tl('反沙箱启动口令 / Exec Key', 'Anti-sandbox exec key')" />
         </el-form-item>
         <el-form-item :label="i18nStore.tl('文件名', 'File Name')">
-          <el-input v-model="formData.filename" :placeholder="i18nStore.tl('托管文件名，如 svchost.exe', 'Hosted file name, e.g. svchost.exe')" />
+          <el-input v-model="formData.filename" :placeholder="i18nStore.tl('留空自动生成随机文件名（推荐）', 'Leave empty to auto-generate a random name (recommended)')" />
         </el-form-item>
         <el-form-item v-if="formData.os === 'windows'" :label="i18nStore.tl('载荷格式', 'Payload Format')">
           <el-radio-group v-model="formData.payloadFormat" @change="onFormatChange">
@@ -216,6 +233,12 @@
           </el-radio-group>
           <span class="hint">{{ i18nStore.tl('接 CDN 时选 https；空则用 config delivery.default_scheme', 'Use https behind a CDN; empty falls back to config delivery.default_scheme') }}</span>
         </el-form-item>
+        <div v-if="formData.publicScheme !== 'https' && !deliveryDefaults?.forceHttps" class="hint hint-warn">
+          {{ i18nStore.tl(
+            '当前为明文 HTTP：载荷可被中间人替换，独立端口也没有 TLS。生产环境建议用 HTTPS/CDN 反代，并校验载荷签名。',
+            'Plain HTTP: payloads can be swapped by a MITM and dedicated ports have no TLS. Use HTTPS/CDN in production and verify payload signatures.'
+          ) }}
+        </div>
         <el-form-item :label="i18nStore.tl('路径前缀', 'Base Path')">
           <el-input v-model="formData.basePath" :placeholder="i18nStore.tl('CDN 路径前缀，如 /static 或留空', 'CDN path prefix, e.g. /static, or leave empty')" />
         </el-form-item>
@@ -226,18 +249,26 @@
             <div v-if="previewUrls.shellcode"><b>{{ i18nStore.tl('Shellcode', 'SC') }}:</b> <code>{{ previewUrls.shellcode }}</code></div>
           </div>
           <el-button @click="doPreviewUrls" style="margin-top:6px">{{ i18nStore.tl('刷新预览', 'Refresh Preview') }}</el-button>
+          <div v-if="formData.cryptoMode === 'aead'" class="hint hint-warn">
+            {{ i18nStore.tl(
+              'AEAD 模式下 full / shellcode URL 返回密文，不能直接执行；请通过 Stager 下发。',
+              'In AEAD mode the full/shellcode URLs return ciphertext and cannot be executed directly; deliver via the Stager.'
+            ) }}
+          </div>
         </el-form-item>
         <el-form-item :label="i18nStore.tl('URI 路径', 'URI Path')">
           <el-input v-model="formData.uriPath" :placeholder="i18nStore.tl('可选伪装路径；空则用随机 key', 'Optional decoy path; random key if empty')" />
         </el-form-item>
         <el-form-item :label="i18nStore.tl('内容类型', 'Content-Type')">
-          <el-select v-model="formData.contentType" filterable allow-create style="width:100%">
+          <el-select v-model="formData.contentType" filterable allow-create clearable style="width:100%">
+            <el-option :label="i18nStore.tl('默认（Windows 伪装为 font/woff）', 'Default (font/woff on Windows)')" value="" />
             <el-option label="application/octet-stream" value="application/octet-stream" />
             <el-option label="application/javascript" value="application/javascript" />
             <el-option label="font/woff" value="font/woff" />
             <el-option label="image/png" value="image/png" />
             <el-option label="text/css" value="text/css" />
           </el-select>
+          <span class="hint">{{ i18nStore.tl('默认按系统伪装；浏览器直接打开可能显示异常，建议命令行下载', 'Default masquerades by OS; direct browser opening may render oddly, prefer CLI download') }}</span>
         </el-form-item>
         <el-form-item :label="i18nStore.tl('Stager 内容类型', 'Stage CT')">
           <el-select v-model="formData.stageContentType" filterable allow-create style="width:100%">
@@ -248,10 +279,33 @@
         </el-form-item>
 
         <el-divider content-position="left">{{ i18nStore.tl('防护', 'Protection') }}</el-divider>
+        <el-form-item :label="i18nStore.tl('载荷加密', 'Payload Encryption')">
+          <el-select v-model="formData.cryptoMode" style="width: 220px">
+            <el-option :label="i18nStore.tl('不加密', 'None')" value="none" />
+            <el-option :label="i18nStore.tl('XOR（兼容旧投递）', 'XOR (legacy)')" value="xor" />
+            <el-option :label="i18nStore.tl('AES-256-GCM（推荐）', 'AES-256-GCM (recommended)')" value="aead" />
+          </el-select>
+          <span class="hint">
+            {{ i18nStore.tl(
+              'AEAD 加密完整载荷与 shellcode/woff，Stager 内置密钥自动解密；脚本载荷在 AEAD 模式下不可用。',
+              'AEAD encrypts the full payload and shellcode/woff; the Stager decrypts them with an embedded key. Script payloads are unavailable in AEAD mode.'
+            ) }}
+          </span>
+          <el-checkbox
+            v-if="formData.cryptoMode === 'aead' && editingId"
+            v-model="formData.regenerateKey"
+            style="margin-left: 12px"
+          >
+            {{ i18nStore.tl('重新生成密钥（旧 Stager 失效）', 'Regenerate key (old Stagers stop working)') }}
+          </el-checkbox>
+          <div v-if="formData.cryptoMode === 'aead' && (!formData.buildStager || formData.payloadFormat === 'dll')" class="hint hint-warn">
+            {{ i18nStore.tl('AEAD 必须构建 Stager，且不支持 DLL 格式。', 'AEAD requires a Stager build and does not support DLL format.') }}
+          </div>
+        </el-form-item>
         <el-form-item :label="i18nStore.tl('访问令牌', 'Access Token')">
           <el-input
             v-model="formData.accessToken"
-            :placeholder="i18nStore.tl('可选；请求需 ?t=token 或 Header X-Delivery-Token', 'Optional; request needs ?t=token or X-Delivery-Token header')"
+            :placeholder="i18nStore.tl('可选；优先用 Header X-Delivery-Token，也兼容 ?t=token', 'Optional; prefer X-Delivery-Token header, ?t=token also accepted')"
           />
         </el-form-item>
         <el-form-item :label="i18nStore.tl('UA 白名单', 'UA Allowlist')">
@@ -264,6 +318,12 @@
         <el-form-item :label="i18nStore.tl('一次性链接', 'One-Time Link')">
           <el-switch v-model="formData.oneTime" />
         </el-form-item>
+        <div v-if="deliveryDefaults?.cacheMaxAge > 0 && (formData.oneTime || formData.maxDownloads > 0)" class="hint hint-warn">
+          {{ i18nStore.tl(
+            `CDN 缓存已开启（${deliveryDefaults.cacheMaxAge}s），边缘节点缓存可能绕过一次性链接与最大下载次数`,
+            `CDN cache is on (${deliveryDefaults.cacheMaxAge}s); edge caching can bypass one-time links and max downloads`
+          ) }}
+        </div>
         <el-form-item :label="i18nStore.tl('构建 Stager', 'Build Stager')">
           <el-switch v-model="formData.buildStager" />
           <span class="hint">{{ i18nStore.tl('需要服务端 Go 工具链', 'Requires Go toolchain on server') }}</span>
@@ -274,7 +334,9 @@
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">{{ i18nStore.tl('取消', 'Cancel') }}</el-button>
-        <el-button type="primary" :loading="creating" @click="handleCreate">{{ i18nStore.tl('创建并启动', 'Create & Start') }}</el-button>
+        <el-button type="primary" :loading="creating" @click="handleCreate">
+          {{ editingId ? i18nStore.tl('保存修改', 'Save Changes') : i18nStore.tl('创建并启动', 'Create & Start') }}
+        </el-button>
       </template>
     </el-dialog>
 
@@ -430,6 +492,9 @@
         <el-table-column prop="note" :label="i18nStore.tl('备注', 'Note')" min-width="120">
           <template #default="{ row }">{{ row.note || '-' }}</template>
         </el-table-column>
+        <el-table-column prop="expires_at" :label="i18nStore.tl('到期', 'Expires')" min-width="150">
+          <template #default="{ row }">{{ row.expires_at || i18nStore.tl('永不过期', 'Never') }}</template>
+        </el-table-column>
         <el-table-column prop="last_used_ip" :label="i18nStore.tl('最后使用 IP', 'Last Used IP')" min-width="120">
           <template #default="{ row }">{{ row.last_used_ip || '-' }}</template>
         </el-table-column>
@@ -451,6 +516,10 @@
         <el-form-item :label="i18nStore.tl('配额', 'Quota')">
           <el-input-number v-model="tokenQuota" :min="1" :max="100" />
           <span class="hint">{{ i18nStore.tl('允许下载次数（默认 3）', 'Allowed downloads (default 3)') }}</span>
+        </el-form-item>
+        <el-form-item :label="i18nStore.tl('有效期', 'TTL')">
+          <el-input-number v-model="tokenTtlHours" :min="0" :max="8760" />
+          <span class="hint">{{ i18nStore.tl('小时；0 = 永不过期（建议设置）', 'Hours; 0 = never expire (recommended to set)') }}</span>
         </el-form-item>
         <el-form-item :label="i18nStore.tl('备注', 'Note')">
           <el-input v-model="tokenNote" :placeholder="i18nStore.tl('如：Stager-Win-x64-钓鱼', 'e.g. Stager-Win-x64-phish')" />
@@ -513,6 +582,8 @@ const scriptRows = computed(() =>
   }))
 )
 const creating = ref(false)
+// 非空 = 编辑模式；更新接口只允许已关闭的投递
+const editingId = ref<number | null>(null)
 const dynamicGenerating = ref(false)
 // Stager 构建信息（/shellcode/stager-info）
 const stagerInfo = ref<any>(null)
@@ -537,20 +608,22 @@ const formData = reactive({
   arch: 'amd64',
   payloadFormat: 'exe',
   pass: '',
-  filename: 'svchost.exe',
-  saveFilename: 'svchost.exe',
+  filename: '',
+  saveFilename: '',
   downloadPath: 'C:\\Windows\\Temp',
   port: '',
   publicHost: '',
   publicScheme: '',
   basePath: '',
   uriPath: '',
-  contentType: 'application/octet-stream',
+  contentType: '',
   stageContentType: 'font/woff',
   accessToken: '',
   uaAllow: '',
   maxDownloads: 0,
   oneTime: false,
+  cryptoMode: 'none' as 'none' | 'xor' | 'aead',
+  regenerateKey: false,
   buildStager: true,
   note: '',
 })
@@ -607,9 +680,14 @@ const handleDropdown = async (visible?: boolean) => {
     if (fullListRes.status === 200 && fullListRes.data?.status === 200 && Array.isArray(fullListRes.data.data)) {
       // 仅保留运行中的监听器 (Status === 1)
       const runningListeners = fullListRes.data.data.filter((l: any) => Number(l.Status) === 1)
-      options.value = runningListeners.map(
+      const list = runningListeners.map(
         (item: any) => `${item.Type}://${item.ConnectAddress}`
       )
+      // 编辑时监听器可能已停止/不在运行列表里：仍要保留当前值，否则下拉框显示为空
+      if (formData.listener && !list.includes(formData.listener)) {
+        list.unshift(formData.listener)
+      }
+      options.value = list
       if (!options.value.length) {
         ElMessage.warning(isZh.value ? '暂无运行中的监听器，请先启动监听器' : 'No running listener, start one first')
       }
@@ -662,10 +740,14 @@ const onOSChange = () => {
 
 const onFormatChange = () => {
   const ext = formData.payloadFormat === 'dll' ? '.dll' : '.exe'
-  const base = formData.filename.replace(/\.(exe|dll)$/i, '')
-  formData.filename = base + ext
-  const saveBase = formData.saveFilename.replace(/\.(exe|dll)$/i, '')
-  formData.saveFilename = saveBase + ext
+  if (formData.filename.trim()) {
+    const base = formData.filename.replace(/\.(exe|dll)$/i, '')
+    formData.filename = base + ext
+  }
+  if (formData.saveFilename.trim()) {
+    const saveBase = formData.saveFilename.replace(/\.(exe|dll)$/i, '')
+    formData.saveFilename = saveBase + ext
+  }
 }
 
 
@@ -705,9 +787,88 @@ const doPreviewUrls = async () => {
 }
 
 const openCreate = () => {
+  editingId.value = null
+  resetForm()
   dialogVisible.value = true
   handleDropdown(true)
   loadDeliveryDefaults()
+  doPreviewUrls()
+}
+
+/** 新建前恢复默认值：编辑过一条投递后，表单不能把上次的值带进"新建" */
+const resetForm = () => {
+  Object.assign(formData, {
+    bindMode: 'shared',
+    listener: '',
+    os: 'windows',
+    arch: 'amd64',
+    payloadFormat: 'exe',
+    pass: '',
+    filename: '',
+    saveFilename: '',
+    downloadPath: 'C:\\Windows\\Temp',
+    port: '',
+    publicHost: '',
+    publicScheme: '',
+    basePath: '',
+    uriPath: '',
+    contentType: '',
+    stageContentType: 'font/woff',
+    accessToken: '',
+    uaAllow: '',
+    maxDownloads: 0,
+    oneTime: false,
+    cryptoMode: 'none',
+    regenerateKey: false,
+    buildStager: true,
+    note: '',
+  })
+}
+
+/** 编辑已关闭的投递：把记录回填到表单，保存后仍是"关闭"状态，开启时才重新 patch 载荷 */
+const openEdit = (row: any) => {
+  if (statusOf(row) === 1) {
+    ElMessage.warning(isZh.value ? '请先关闭投递后再编辑' : 'Stop the delivery before editing')
+    return
+  }
+  const id = Number(rowId(row))
+  if (!id) {
+    ElMessage.error(isZh.value ? '该投递缺少 ID，无法编辑' : 'Delivery has no ID; cannot edit')
+    return
+  }
+  editingId.value = id
+
+  const fileName = String(field(row, 'FileName', 'file_name') || '')
+  formData.bindMode = modeOf(row) === 'dedicated' ? 'dedicated' : 'shared'
+  formData.listener = String(field(row, 'ListenerConfig', 'listener_config') || '')
+  formData.os = String(field(row, 'OS', 'os') || 'windows')
+  formData.arch = String(field(row, 'Arch', 'arch') || 'amd64')
+  formData.payloadFormat = fileName.toLowerCase().endsWith('.dll') ? 'dll' : 'exe'
+  formData.pass = String(field(row, 'Pass', 'pass') || '')
+  formData.filename = fileName
+  formData.saveFilename = String(field(row, 'SaveFilename', 'save_filename') || fileName)
+  formData.downloadPath = String(field(row, 'DownloadPath', 'download_path') || '')
+  formData.port = formData.bindMode === 'dedicated' ? String(rowPort(row) || '') : ''
+  formData.publicHost = String(field(row, 'PublicHost', 'public_host') || '')
+  formData.publicScheme = String(field(row, 'PublicScheme', 'public_scheme') || '')
+  formData.basePath = String(field(row, 'BasePath', 'base_path') || '')
+  formData.uriPath = String(field(row, 'URIPath', 'uri_path') || '')
+  formData.contentType = String(field(row, 'ContentType', 'content_type') || '')
+  formData.stageContentType = String(field(row, 'StageContentType', 'stage_content_type') || 'font/woff')
+  formData.accessToken = String(field(row, 'AccessToken', 'access_token') || '')
+  formData.uaAllow = String(field(row, 'UAAllow', 'ua_allow') || '')
+  formData.maxDownloads = Number(field(row, 'MaxDownloads', 'max_downloads') || 0)
+  formData.oneTime = boolOf(row, 'OneTime', 'one_time')
+  const cm = String(field(row, 'CryptoMode', 'crypto_mode') || '')
+  const xorKey = Number(field(row, 'XorKey', 'xor_key') || 0)
+  // 旧记录没有 crypto_mode：XorKey 非零即历史 xor 模式，编辑时不能被静默改成 none
+  formData.cryptoMode = cm === 'aead' || cm === 'xor' ? cm : (cm === '' && xorKey > 0 ? 'xor' : 'none')
+  formData.regenerateKey = false
+  formData.buildStager = true
+  formData.note = String(field(row, 'Note', 'note') || '')
+
+  dialogVisible.value = true
+  handleDropdown(true)
   doPreviewUrls()
 }
 
@@ -742,7 +903,7 @@ const handleCreate = async () => {
   }
   creating.value = true
   try {
-    const res = await ClientAPI.StartWebDelivery({
+    const payload = {
       bindMode: formData.bindMode,
       listener: formData.listener,
       os: formData.os,
@@ -763,9 +924,27 @@ const handleCreate = async () => {
       uaAllow: formData.uaAllow,
       maxDownloads: formData.maxDownloads,
       oneTime: formData.oneTime,
+      cryptoMode: formData.cryptoMode,
+      regenerateKey: formData.regenerateKey,
       buildStager: formData.buildStager,
       note: formData.note,
-    })
+    }
+
+    // 编辑模式：只更新已关闭的投递；开启时 OpenWebDelivery 会按新配置重新 patch 载荷
+    if (editingId.value) {
+      const res = await ClientAPI.UpdateWebDelivery({ id: editingId.value, ...payload })
+      if (res.status === 200 && res.data.status === 200) {
+        ElMessage.success(isZh.value ? '投递已更新，开启后生效' : 'Delivery updated; takes effect on start')
+        dialogVisible.value = false
+        editingId.value = null
+        await getWebDeliveryList()
+      } else {
+        ElMessage.error(res.data?.data || res.data?.error || (isZh.value ? '保存失败' : 'Save failed'))
+      }
+      return
+    }
+
+    const res = await ClientAPI.StartWebDelivery(payload)
     if (res.status === 200 && res.data.status === 200) {
       ElMessage.success(isZh.value ? '投递已创建' : 'Delivery created')
       dialogVisible.value = false
@@ -932,6 +1111,7 @@ const tokenCurrentKey = ref('')
 const tokenRows = ref<any[]>([])
 const tokenCreateVisible = ref(false)
 const tokenQuota = ref(3)
+const tokenTtlHours = ref(24)
 const tokenNote = ref('')
 const tokenCreated = ref<any>(null)
 const tokenCreating = ref(false)
@@ -958,6 +1138,7 @@ const loadTokens = async () => {
 
 const openTokenCreate = () => {
   tokenQuota.value = 3
+  tokenTtlHours.value = 24
   tokenNote.value = ''
   tokenCreated.value = null
   tokenCreateVisible.value = true
@@ -969,7 +1150,8 @@ const createToken = async () => {
     const res = await ClientAPI.CreateStagerToken({
       public_key: tokenCurrentKey.value,
       quota: tokenQuota.value,
-      note: tokenNote.value
+      note: tokenNote.value,
+      ttl_hours: tokenTtlHours.value
     })
     if (res.data?.status === 200) {
       tokenCreated.value = res.data.data
@@ -1233,6 +1415,11 @@ onMounted(() => {
   margin-left: 8px;
   color: var(--cs-text-dim);
   font-size: 12px;
+}
+.hint-warn {
+  margin: 0 0 12px 0;
+  color: var(--cs-error, #e6a23c);
+  line-height: 1.5;
 }
 .url-box {
   background: var(--cs-console);

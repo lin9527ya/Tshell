@@ -7,6 +7,11 @@
  */
 
 /* ================= 表格（vxe 观感：48px 行高、无斑马纹噪点） ================= */
+.cs-shell .el-table {
+  /* vshell 表格正文 14px；这里整体上调 1px，客户端/监听器等列表同步放大 */
+  font-size: 15px;
+}
+
 .cs-shell .el-table th.el-table__cell {
   height: 48px;
   padding: 0;

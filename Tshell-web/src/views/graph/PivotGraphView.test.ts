@@ -78,8 +78,11 @@ describe('PivotGraphView', () => {
     getGraphData.mockResolvedValue({ data: { data: SAMPLE } })
     const w = mountView()
     await flushPromises()
-    // 2 个客户端，1 个在线
-    expect(w.find('.pg-stat').text()).toContain('1 / 2')
+    // 三个统计块：节点 / 在线 / 离线；2 个客户端，1 个在线
+    const chips = w.findAll('.pg-stat-chip')
+    expect(chips).toHaveLength(3)
+    expect(w.find('.pg-stat-chip.is-on').text()).toContain('1')
+    expect(w.find('.pg-stat-chip.is-off').text()).toContain('1')
   })
 
   it('点击节点展开 meta 详情', async () => {
@@ -346,21 +349,23 @@ describe('PivotGraphView 辨识度与导出', () => {
     expect(path.attributes('transform')).toContain('scale(')
   })
 
-  it('离线主机置灰：灰虚线空心圈 + 灰色标签', async () => {
+  it('离线主机置灰：灰虚线空心磁贴 + 灰色标签', async () => {
     getGraphData.mockResolvedValue({ data: { data: SAMPLE } })
     const w = mountView()
     await flushPromises()
 
     const offline = w.findAll('.pg-node-offline')
     expect(offline).toHaveLength(1)
-    const circle = offline[0].findAll('circle')[1] // [0] 是悬停光晕
-    expect(circle.attributes('stroke')).toBe('#9ca3af')
-    expect(circle.attributes('fill')).toBe('transparent')
-    expect(circle.attributes('stroke-dasharray')).toBe('3 2')
+    const tile = offline[0].find('.pg-node-tile')
+    expect(tile.attributes('stroke')).toBe('#9ca3af')
+    expect(tile.attributes('fill-opacity')).toBe('0')
+    expect(tile.attributes('stroke-dasharray')).toBe('3 2')
 
-    // 在线客户端仍是类型色实心
+    // 在线客户端仍是类型色淡底 + 同色描边
     const online = w.findAll('.pg-node').find((n) => n.text().includes('WEB-01'))!
-    expect(online.findAll('circle')[1].attributes('fill')).toBe('#3b82f6')
+    const onlineTile = online.find('.pg-node-tile')
+    expect(onlineTile.attributes('fill')).toBe('#3b82f6')
+    expect(onlineTile.attributes('fill-opacity')).toBe('0.16')
   })
 
   it('连到离线主机的边画虚线，在线的不画', async () => {

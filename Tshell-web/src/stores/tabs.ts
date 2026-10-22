@@ -70,10 +70,13 @@ export const useTabsStore = defineStore('app-tabs', {
       this.activePath = path
     },
 
-    /** 页面加载后可细化标题（如客户端详情补主机名） */
-    setTitle(path: string, title: string) {
+    /** 页面加载后可细化标题（如客户端详情补主机名 / 系统图标） */
+    setTitle(path: string, title: string, icon?: string) {
       const t = this.visited.find((x) => x.path === path)
-      if (t) t.title = title
+      if (t) {
+        t.title = title
+        if (icon !== undefined) t.icon = icon
+      }
     },
 
     /** 关闭一个标签；返回关闭后应跳转的路径（由调用方 router.push） */

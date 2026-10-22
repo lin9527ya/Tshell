@@ -315,17 +315,17 @@ export function estimateTextWidth(text: string, fontSize: number): number {
 }
 
 /**
- * 节点圆的半径（画布与导出共用）。12 而不是 9：圆里要放图标，
- * 18px 的圈里图标只剩 15px，怎么画都糊。
+ * 节点包围盒半径（画布与导出共用）。磁贴是 30×30，取 16 留 1px 余量；
+ * 标签从磁贴右侧 22px 处开始。
  */
-export const NODE_RADIUS = 12
+export const NODE_RADIUS = 16
 /**
  * 节点图标方框的半边长。取 R/√2 再留点余量 —— 图标里最"方"的那类
- * （如 Windows 四方块）对角点在 half*√2 处，超过 R 就会从圆里戳出来。
+ * （如 Windows 四方块）对角点在 half*√2 处，超过磁贴就会戳出来。
  */
 export const GLYPH_HALF = 8.2
 /** 标签相对节点的偏移（画布与导出共用） */
-export const LABEL_DX = 15
+export const LABEL_DX = 22
 
 /**
  * graphBounds 算节点（含右侧标签）的包围盒。

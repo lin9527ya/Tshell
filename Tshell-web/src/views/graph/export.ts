@@ -48,12 +48,12 @@ export interface ExportedSvg {
 function exportCss(t: ExportTheme): string {
   return `
 svg { font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
-.pg-edge { stroke: ${t.edge}; stroke-width: 1.2; opacity: 0.55; }
-.pg-edge-active { stroke: ${t.edgeActive}; opacity: 0.9; }
+.pg-edge { fill: none; stroke: ${t.edge}; stroke-width: 1.3; stroke-linecap: round; opacity: 0.55; }
+.pg-edge-active { stroke: ${t.edgeActive}; stroke-width: 1.5; opacity: 0.9; }
 /* 离线主机：虚线 + 更淡 —— 与在线实线一眼可分 */
-.pg-edge-offline { stroke: ${t.edgeOffline}; stroke-dasharray: 5 4; opacity: 0.9; }
+.pg-edge-offline { stroke: ${t.edgeOffline}; stroke-dasharray: 5 4; opacity: 0.8; }
 .pg-edge-label {
-  font-size: 10px; fill: ${t.text}; opacity: 0.75; text-anchor: middle;
+  font-size: 10px; fill: ${t.text}; opacity: 0.8; text-anchor: middle;
   paint-order: stroke; stroke: ${t.bg}; stroke-width: 3px; stroke-linejoin: round;
 }
 /* 导出不画悬停/选中的光晕；搜索时的淡出也不带进导出（导出要一张完整可读的图） */
@@ -61,12 +61,20 @@ svg { font-family: system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microso
 .pg-node-selected .pg-node-halo { opacity: 0; }
 .pg-node.is-dim { opacity: 1; }
 .pg-edge.is-dim { opacity: 0.55; }
-.pg-node-label { font-size: 12px; fill: ${t.text}; }
-.pg-node-sub { font-size: 10px; fill: ${t.text}; opacity: 0.55; }
+/* 标签描一圈底色：与画布一致，压在连线上仍可读 */
+.pg-node-label {
+  font-size: 12.5px; font-weight: 500; fill: ${t.text};
+  paint-order: stroke; stroke: ${t.bg}; stroke-width: 3px; stroke-linejoin: round;
+}
+.pg-node-sub {
+  font-size: 10.5px; fill: ${t.text}; opacity: 0.55;
+  paint-order: stroke; stroke: ${t.bg}; stroke-width: 3px; stroke-linejoin: round;
+}
 .pg-node-offline .pg-node-label { fill: ${t.offline}; }
 .pg-node-offline .pg-node-sub { fill: ${t.offline}; opacity: 0.7; }
-.pg-node-glyph { fill: #ffffff; }
-.pg-node-offline .pg-node-glyph { fill: ${t.offline}; }
+.pg-node-tile { stroke-linejoin: round; }
+.pg-node-status { stroke: ${t.bg}; }
+.pg-node-glyph { fill: ${t.text}; }
 `.trim()
 }
 
