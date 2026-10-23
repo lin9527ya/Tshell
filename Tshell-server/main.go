@@ -31,6 +31,7 @@ import (
 	"fmt"
 	"html/template"
 	"io/fs"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -72,8 +73,6 @@ func main() {
 			debug.FreeOSMemory()
 		}
 	}()
-
-	gin.SetMode(gin.ReleaseMode)
 
 	// 定期清理超时的下载文件句柄（客户端断线/完成后 120s 无活动自动关闭）
 	go func() {
@@ -117,6 +116,14 @@ func main() {
 	}
 
 	appConfig := config.GetGlobalConfig()
+
+	// gin 运行模式来自 config.server.mode；之前无论配置如何都固定 Release。
+	switch strings.ToLower(strings.TrimSpace(appConfig.Server.Mode)) {
+	case "debug":
+		gin.SetMode(gin.DebugMode)
+	default:
+		gin.SetMode(gin.ReleaseMode)
+	}
 
 	// 下载制品目录（config.storage.downloads_dir）：缺失时按需创建，失败只告警
 	// —— 下载目录不可用不应阻断服务启动（与历史行为一致）
@@ -246,6 +253,15 @@ func main() {
 	// 仅回环 + security.whitelist_ips 显式声明条目豁免限流；强制模式同步配置
 	security.GlobalRateLimiter.RebuildWhitelist(appConfig.Security.WhitelistIPs)
 	security.WhitelistEnforced = appConfig.Security.EnableIPWhitelist
+	// 配置里的限流参数此前只在安全中心接口里更新，启动时从未应用；这里在启动阶段
+	// 统一写入 RateLimiter，使 config.yaml 与运行时一致。
+	security.GlobalRateLimiter.UpdateConfigFull(
+		appConfig.Security.LoginRateLimit,
+		appConfig.Security.APIRateLimit,
+		appConfig.Security.BlockDuration,
+		appConfig.Security.SlidingWindow,
+	)
+	security.GlobalRateLimiter.SetEnabled(appConfig.Security.EnableRateLimit)
 	// 客户端默认心跳间隔（client.sleep，监听器未指定时使用）
 	if appConfig.Client.Sleep > 0 {
 		database.DefaultClientSleep = strconv.Itoa(appConfig.Client.Sleep)
@@ -279,7 +295,7 @@ func main() {
 		// HSTS 开关（security.force_hsts）注入安全头中间件
 		security.InitSecurityHeaders(g.Security.ForceHSTS)
 	}
-	err = security.InitJWTManager(2048, 24*time.Hour) // 2048位RSA密钥，24小时轮换
+	err = security.InitJWTManagerWithTTL(2048, 24*time.Hour, appConfig.JWT.AccessTokenTTL, appConfig.JWT.RefreshTokenTTL)
 	if err != nil {
 		fmt.Printf("JWT管理器初始化失败: %v\n", err)
 		os.Exit(1)
@@ -488,7 +504,34 @@ func main() {
 	fmt.Println("✅ 审计日志系统初始化成功")
 
 	// 初始化连接池管理器
-	err = connection.InitializeConnectionManager(connection.DefaultPoolConfig)
+	// 连接池配置：此前固定使用 connection.DefaultPoolConfig，config.connection_pool 是死配置。
+	poolCfg := &connection.ConnectionPoolConfig{
+		MaxConnections:    appConfig.ConnectionPool.MaxConnections,
+		MaxIdleTime:       appConfig.ConnectionPool.MaxIdleTime,
+		HealthCheckPeriod: appConfig.ConnectionPool.HealthCheckPeriod,
+		ConnTimeout:       appConfig.ConnectionPool.ConnTimeout,
+		ReadTimeout:       appConfig.ConnectionPool.ReadTimeout,
+		WriteTimeout:      appConfig.ConnectionPool.WriteTimeout,
+	}
+	if poolCfg.MaxConnections <= 0 {
+		poolCfg.MaxConnections = connection.DefaultPoolConfig.MaxConnections
+	}
+	if poolCfg.MaxIdleTime <= 0 {
+		poolCfg.MaxIdleTime = connection.DefaultPoolConfig.MaxIdleTime
+	}
+	if poolCfg.HealthCheckPeriod <= 0 {
+		poolCfg.HealthCheckPeriod = connection.DefaultPoolConfig.HealthCheckPeriod
+	}
+	if poolCfg.ConnTimeout <= 0 {
+		poolCfg.ConnTimeout = connection.DefaultPoolConfig.ConnTimeout
+	}
+	if poolCfg.ReadTimeout <= 0 {
+		poolCfg.ReadTimeout = connection.DefaultPoolConfig.ReadTimeout
+	}
+	if poolCfg.WriteTimeout <= 0 {
+		poolCfg.WriteTimeout = connection.DefaultPoolConfig.WriteTimeout
+	}
+	err = connection.InitializeConnectionManager(poolCfg)
 	if err != nil {
 		fmt.Printf("连接池管理器初始化失败: %v\n", err)
 		os.Exit(1)
@@ -560,8 +603,9 @@ func main() {
 	}
 	fmt.Println("✅ 内存优化器初始化成功")
 
-	// 初始化工作池
-	err = connection.InitializeWorkerPool(0, 0) // 使用默认值
+	// 工作池配置：config.worker_pool 之前完全未读取（固定 0,0）。
+	// worker_count=0 表示不预启 worker，由 /worker/resize 按需扩容（保留原语义）。
+	err = connection.InitializeWorkerPool(appConfig.WorkerPool.WorkerCount, appConfig.WorkerPool.MaxQueueSize)
 	if err != nil {
 		fmt.Printf("工作池初始化失败: %v\n", err)
 		os.Exit(1)
@@ -1256,15 +1300,30 @@ func main() {
 	//	t.POST("/sensearch/collection/item/check", communication.Post)
 	//}
 
-	// 创建自定义HTTP服务器配置，增加超时时间
-	// P1-2A: 收紧至 30s/30s/90s（原 120s/120s/300s 慢客户端占满 worker → 慢速 DoS）
-	// 文件上传/下载保持 120s：由 handler 级 context.WithTimeout 覆盖 /client/file/upload 等
+	// 创建自定义HTTP服务器配置。超时来自 config.server.*，缺省回落到
+	// 30s/30s/90s（原实现固定 30/30/90，配置项是死字段）。
+	readTimeout := appConfig.Server.ReadTimeout
+	if readTimeout <= 0 {
+		readTimeout = 30 * time.Second
+	}
+	writeTimeout := appConfig.Server.WriteTimeout
+	if writeTimeout <= 0 {
+		writeTimeout = 30 * time.Second
+	}
+	idleTimeout := appConfig.Server.IdleTimeout
+	if idleTimeout <= 0 {
+		idleTimeout = 90 * time.Second
+	}
+	bindHost := strings.Trim(strings.TrimSpace(appConfig.Server.Host), "[]")
+	if bindHost == "" {
+		bindHost = "0.0.0.0"
+	}
 	server := &http.Server{
-		Addr:           "0.0.0.0:" + strconv.Itoa(*bindPort),
+		Addr:           net.JoinHostPort(bindHost, strconv.Itoa(*bindPort)),
 		Handler:        r,
-		ReadTimeout:    30 * time.Second,
-		WriteTimeout:   30 * time.Second,
-		IdleTimeout:    90 * time.Second,
+		ReadTimeout:    readTimeout,
+		WriteTimeout:   writeTimeout,
+		IdleTimeout:    idleTimeout,
 		MaxHeaderBytes: 1 << 20, // 1MB
 	}
 

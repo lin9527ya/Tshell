@@ -21,10 +21,10 @@ import (
 
 // HTTP隧道管理（新架构：基于SOCKS5设计）
 var (
-
-	// 新架构：HTTP隧道Agent管理
-	httpTunnelAgent *HTTPTunnelAgent
-	httpTunnelMutex sync.RWMutex
+	// HTTP/TCP 隧道 Agent 按 serverAddress 隔离：同一客户端可以同时运行
+	// 多个 HTTP/TCP 隧道（不同 Agent 端口），不再互相顶掉。
+	httpTunnelAgents = make(map[string]*HTTPTunnelAgent)
+	httpTunnelMutex  sync.RWMutex
 
 	// HTTP隧道缓冲池
 	httpBufferPool = bufferpool.NewPool(math.MaxUint16)
@@ -126,8 +126,8 @@ func HandleHTTPTunnelConnect(cmdBuf []byte) ([]byte, error) {
 	serverAddress := parts[0]
 	psk := parts[1]
 
-	// 停止现有的HTTP隧道Agent（如果有）
-	stopHTTPTunnelAgent()
+	// 只停止同一 Agent 地址的旧连接；其它 HTTP/TCP 隧道继续运行
+	stopHTTPTunnelAgent(serverAddress)
 
 	// 启动新的HTTP隧道Agent
 	go func() {
@@ -144,14 +144,23 @@ func startHTTPTunnelAgent(serverAddress, psk string) {
 	log.Printf("%s", fmt.Sprintf(obfs.Dec("JnLFCF7fPx2KWessBMaSWhe52H1pk0W+LPqSsAKibBrVA6UixFGKuRUB8lvS"), serverAddress))
 	log.Printf("%s", fmt.Sprintf(obfs.Dec("JnLFCF7fPx2KWessBMaSWhe52H1pk0W+LPokf8SucwTVIKv9eMQL"), len(psk)))
 
-	httpTunnelMutex.Lock()
-	httpTunnelAgent = &HTTPTunnelAgent{
+	agent := &HTTPTunnelAgent{
 		ServerAddress: serverAddress,
 		PSK:           psk,
 		Running:       true,
 		StopChan:      make(chan bool, 1),
 	}
+	httpTunnelMutex.Lock()
+	httpTunnelAgents[serverAddress] = agent
 	httpTunnelMutex.Unlock()
+	// 本 goroutine 结束时，只有 map 仍指向自己才删除，避免误删新连接
+	defer func() {
+		httpTunnelMutex.Lock()
+		if httpTunnelAgents[serverAddress] == agent {
+			delete(httpTunnelAgents, serverAddress)
+		}
+		httpTunnelMutex.Unlock()
+	}()
 
 	// 🔧 添加重试机制
 	for retry := 0; retry < 3; retry++ {
@@ -161,12 +170,12 @@ func startHTTPTunnelAgent(serverAddress, psk string) {
 
 		// 检查是否需要停止
 		httpTunnelMutex.RLock()
-		if !httpTunnelAgent.Running {
-			httpTunnelMutex.RUnlock()
+		running := agent.Running
+		httpTunnelMutex.RUnlock()
+		if !running {
 			log.Print(obfs.Dec("JnLFCF7fPx2KWessBMaSWhe52H1pQ/oFkPqSuDmibgvVG5Eh9UOLmzTeXclO8IVtaNf+S4g="))
 			return
 		}
-		httpTunnelMutex.RUnlock()
 
 		var conn net.Conn
 		var err error
@@ -207,7 +216,13 @@ func startHTTPTunnelAgent(serverAddress, psk string) {
 		log.Print(obfs.Dec("JnLFCF7fPx2KWessBMaSWhe52H1pQ/oKgfqRpBSiXQHVPpcv706KgBjcRtZF8JNsR8o14hw="))
 		session := mux.Server(conn, psk)
 		httpTunnelMutex.Lock()
-		httpTunnelAgent.Session = session
+		if httpTunnelAgents[serverAddress] != agent || !agent.Running {
+			httpTunnelMutex.Unlock()
+			session.Close()
+			conn.Close()
+			return
+		}
+		agent.Session = session
 		httpTunnelMutex.Unlock()
 		log.Print(obfs.Dec("JnLFCF7fPx2KWessBMaSWhe52H1pUfkbIT/QtmfwSV6UF+pT8AXTvn2UT5sW/uwMc7Kgdg=="))
 
@@ -216,13 +231,13 @@ func startHTTPTunnelAgent(serverAddress, psk string) {
 		for {
 			// 检查是否需要停止
 			httpTunnelMutex.RLock()
-			if !httpTunnelAgent.Running {
-				httpTunnelMutex.RUnlock()
+			running = agent.Running
+			httpTunnelMutex.RUnlock()
+			if !running {
 				log.Print(obfs.Dec("JnLFCF7fPx2KWessBMaSWhe52H1pQ/oFkPqSuDmibgvVG5Eh9UOLmzTeXclO8IVhbeTyW5959m/AGZ4="))
 				session.Close()
 				return
 			}
-			httpTunnelMutex.RUnlock()
 
 			stream, err := session.AcceptStream()
 			if err != nil {
@@ -243,6 +258,11 @@ func startHTTPTunnelAgent(serverAddress, psk string) {
 
 		log.Print(obfs.Dec("JnLFCF7fPx2KWessBMaSWhe52H1pQ/oKm/qRqTyucRbVPpcv706KgBjcRtZF8JNsR8o14hw="))
 		session.Close()
+		httpTunnelMutex.Lock()
+		if agent.Session == session {
+			agent.Session = nil
+		}
+		httpTunnelMutex.Unlock()
 
 		// 如果达到这里，说明连接正常结束，不需要重试
 		break
@@ -320,23 +340,23 @@ func handleHTTPTunnelStream(stream net.Conn) error {
 	return nil
 }
 
-// stopHTTPTunnelAgent 停止HTTP隧道Agent
-func stopHTTPTunnelAgent() {
+// stopHTTPTunnelAgent 停止指定 Agent 地址的 HTTP/TCP 隧道；其它隧道不受影响。
+func stopHTTPTunnelAgent(serverAddress string) {
 	httpTunnelMutex.Lock()
-	defer httpTunnelMutex.Unlock()
-
-	if httpTunnelAgent != nil && httpTunnelAgent.Running {
-		log.Print(obfs.Dec("JnLFCF7fPx2KWessBMaSWhe52H1pQ/oFkPqRrROhSxl4zlmXsXvIzRSokxnEIn2qxnk="))
-		httpTunnelAgent.Running = false
-		if httpTunnelAgent.Session != nil {
-			httpTunnelAgent.Session.Close()
+	agent := httpTunnelAgents[serverAddress]
+	if agent != nil {
+		delete(httpTunnelAgents, serverAddress)
+		agent.Running = false
+		if agent.Session != nil {
+			agent.Session.Close()
 		}
 		select {
-		case httpTunnelAgent.StopChan <- true:
+		case agent.StopChan <- true:
 		default:
 		}
-		log.Print(obfs.Dec("JnLFCF7fPx2KWessBMaSWhe52H1pUfkbIZIgeN+ufBzZG56GP4QBUHCMYJsg0O8pSg=="))
+		log.Print(obfs.Dec("JnLFCF7fPx2KWessBMaSWhe52H1pQ/oFkPqRrROhSxl4zlmXsXvIzRSokxnEIn2qxnk="))
 	}
+	httpTunnelMutex.Unlock()
 }
 
 // HandleUDPTunnelConnect 处理UDP隧道连接请求（复用反向mux，每条数据报独占一流）

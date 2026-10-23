@@ -67,7 +67,7 @@
       </div>
 
       <!-- 维护操作（后端 /client/reset-id：把 clients 表主键重排为 1..N 并复位自增） -->
-      <div class="sv-config-panel">
+      <div v-if="canOperate" class="sv-config-panel">
         <div class="sv-panel-header">{{ i18nStore.tl('维护操作', 'Maintenance') }}</div>
         <div class="sv-panel-body">
           <div class="sv-maintain-row">
@@ -90,15 +90,23 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { getDashboardStats, type DashboardStats } from '@/api/dashboard'
 import ClientAPI from '@/api/clients'
 import { useI18nStore } from '@/stores/i18n'
+import { useUserStore } from '@/stores/user'
 
 const i18nStore = useI18nStore()
+const userStore = useUserStore()
 const isZh = computed(() => i18nStore.isZh)
+// 维护写接口是 operatorOnly；auditor 只展示状态
+const canOperate = computed(() => String(userStore.getRoles() || '').toLowerCase() !== 'auditor')
 
 const loading = ref(false)
 const resettingId = ref(false)
 const stats = reactive<Partial<DashboardStats>>({})
 
 async function handleResetClientId() {
+  if (!canOperate.value) {
+    ElMessage.warning(isZh.value ? '只读账号无法执行维护操作' : 'Read-only account cannot run maintenance')
+    return
+  }
   ElMessageBox.confirm(
     isZh.value
       ? '把客户端编号按上线顺序重排为 1..N？只改编号，不删会话；历史记录里按旧编号的对应关系会对不上，且无法自动还原。'

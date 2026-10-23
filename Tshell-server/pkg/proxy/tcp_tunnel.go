@@ -11,7 +11,6 @@ import (
 	"io"
 	"log"
 	"net"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -21,8 +20,9 @@ import (
 // 复用 HTTP 隧道(http_tunnel.go)的反向mux架构与 httpMagicPacket 认证；客户端侧完全复用
 // handleHTTPTunnelStream（读 target\n -> 拨号 -> 回 OK -> 双向转发），故本文件只实现服务端。
 //
-// 限制：TCP转发与HTTP隧道共用客户端的隧道Agent(同一个 http_tunnel_connect 命令 + 全局 agent)，
-// 同一客户端上两者建议不要同时运行；SOCKS5 与 TCP转发 可共存（各自独立 agent）。
+// 限制：TCP转发与HTTP隧道共用客户端的隧道Agent(同一个 http_tunnel_connect 命令)，
+// 新版客户端按 serverAddress 隔离多个 Agent，可并发运行；旧客户端仍只保留最后一个。
+// SOCKS5 使用独立通道，可同时运行。
 type tcpTunnelInstance struct {
 	tunnelID      int64
 	clientUID     string
@@ -64,10 +64,7 @@ func (tm *TunnelManager) startTCPTunnel(tunnel database.TunnelProxy) error {
 	}
 
 	agentPort := tunnel.ServerPort + 1000
-	serverIP := listener.ConnectAddress
-	if strings.Contains(serverIP, ":") {
-		serverIP = strings.Split(serverIP, ":")[0]
-	}
+	serverHost := tunnelAdvertisedHost(listener)
 	psk := GenerateRandomPSK()
 
 	agentListener, err := net.ListenTCP("tcp", &net.TCPAddr{Port: agentPort})
@@ -98,9 +95,10 @@ func (tm *TunnelManager) startTCPTunnel(tunnel database.TunnelProxy) error {
 	go tcpTunnelAgentServer(inst)
 
 	// 通知客户端回连（复用 http_tunnel_connect；客户端连接后用 handleHTTPTunnelStream 处理流）
-	connectCmd := fmt.Sprintf("%s:%d|%s", serverIP, agentPort, psk)
+	agentAddress := net.JoinHostPort(serverHost, fmt.Sprintf("%d", agentPort))
+	connectCmd := fmt.Sprintf("%s|%s", agentAddress, psk)
 	sendcommand.SendCommand(tunnel.ClientUID, "http_tunnel_connect "+connectCmd)
-	log.Printf("[TUNNEL-TCP] 📤 已通知客户端回连: %s:%d -> 目标 %s", serverIP, agentPort, tunnel.TargetAddress)
+	log.Printf("[TUNNEL-TCP] 📤 已通知客户端回连: %s -> 目标 %s", agentAddress, tunnel.TargetAddress)
 
 	if audit.GlobalAuditLogger != nil {
 		audit.GlobalAuditLogger.Log(audit.LogLevelInfo, audit.CategorySystem, "TCP_TUNNEL_START", "SUCCESS",

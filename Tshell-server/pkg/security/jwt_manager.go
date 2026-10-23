@@ -18,18 +18,20 @@ import (
 
 // JWTManager 增强的JWT管理器
 type JWTManager struct {
-	privateKey     *rsa.PrivateKey
-	publicKey      *rsa.PublicKey
-	keyID          string
-	prevPrivateKey *rsa.PrivateKey // 上一轮换周期的密钥（重叠期内旧令牌仍可验证）
-	prevPublicKey  *rsa.PublicKey
-	prevKeyID      string
-	keyCreatedAt   time.Time
-	keyRotation    time.Duration
-	mu             sync.RWMutex
-	blacklist      map[string]time.Time // token黑名单
-	refreshTokens  map[string]*RefreshToken
-	userBlacklist  map[string]time.Time // 用户级别黑名单，用于撤销特定用户的所有令牌
+	privateKey      *rsa.PrivateKey
+	publicKey       *rsa.PublicKey
+	keyID           string
+	prevPrivateKey  *rsa.PrivateKey // 上一轮换周期的密钥（重叠期内旧令牌仍可验证）
+	prevPublicKey   *rsa.PublicKey
+	prevKeyID       string
+	keyCreatedAt    time.Time
+	keyRotation     time.Duration
+	accessTokenTTL  time.Duration
+	refreshTokenTTL time.Duration
+	mu              sync.RWMutex
+	blacklist       map[string]time.Time // token黑名单
+	refreshTokens   map[string]*RefreshToken
+	userBlacklist   map[string]time.Time // 用户级别黑名单，用于撤销特定用户的所有令牌
 }
 
 // RefreshToken 刷新令牌
@@ -127,13 +129,27 @@ func (jm *JWTManager) saveJWTState() {
 	_ = os.Rename(tmp, jwtStateFile)
 }
 
-// InitJWTManager 初始化JWT管理器
+// InitJWTManager 初始化JWT管理器（使用默认 TTL，兼容旧调用）。
 func InitJWTManager(keySize int, rotationInterval time.Duration) error {
+	return InitJWTManagerWithTTL(keySize, rotationInterval, 15*time.Minute, 7*24*time.Hour)
+}
+
+// InitJWTManagerWithTTL 初始化JWT管理器，并应用 config.jwt.access_token_ttl /
+// refresh_token_ttl。此前这两个配置项未被读取，令牌实际固定 15 分钟/7 天。
+func InitJWTManagerWithTTL(keySize int, rotationInterval, accessTokenTTL, refreshTokenTTL time.Duration) error {
+	if accessTokenTTL <= 0 {
+		accessTokenTTL = 15 * time.Minute
+	}
+	if refreshTokenTTL <= 0 {
+		refreshTokenTTL = 7 * 24 * time.Hour
+	}
 	manager := &JWTManager{
-		keyRotation:   rotationInterval,
-		blacklist:     make(map[string]time.Time),
-		refreshTokens: make(map[string]*RefreshToken),
-		userBlacklist: make(map[string]time.Time),
+		keyRotation:     rotationInterval,
+		accessTokenTTL:  accessTokenTTL,
+		refreshTokenTTL: refreshTokenTTL,
+		blacklist:       make(map[string]time.Time),
+		refreshTokens:   make(map[string]*RefreshToken),
+		userBlacklist:   make(map[string]time.Time),
 	}
 
 	// 生成或加载RSA密钥对
@@ -260,6 +276,14 @@ func (jm *JWTManager) GenerateTokenPair(userID, username, deviceID string) (stri
 	defer jm.mu.Unlock()
 
 	now := time.Now()
+	accessTTL := jm.accessTokenTTL
+	if accessTTL <= 0 {
+		accessTTL = 15 * time.Minute
+	}
+	refreshTTL := jm.refreshTokenTTL
+	if refreshTTL <= 0 {
+		refreshTTL = 7 * 24 * time.Hour
+	}
 
 	// C13 RBAC：从数据库读取用户角色写入 Claims
 	role := "admin"
@@ -278,7 +302,7 @@ func (jm *JWTManager) GenerateTokenPair(userID, username, deviceID string) (stri
 		KeyID:    jm.keyID,
 		Role:     role,
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(now.Add(15 * time.Minute)),
+			ExpiresAt: jwt.NewNumericDate(now.Add(accessTTL)),
 			IssuedAt:  jwt.NewNumericDate(now),
 			NotBefore: jwt.NewNumericDate(now),
 			Issuer:    "Tshell-Server",
@@ -302,7 +326,7 @@ func (jm *JWTManager) GenerateTokenPair(userID, username, deviceID string) (stri
 		Token:     refreshTokenString,
 		UserID:    userID,
 		Username:  username,
-		ExpiresAt: now.Add(7 * 24 * time.Hour),
+		ExpiresAt: now.Add(refreshTTL),
 		DeviceID:  deviceID,
 		LastUsed:  now,
 	}
@@ -470,6 +494,10 @@ func (jm *JWTManager) RefreshAccessToken(refreshTokenString string) (string, str
 
 	// H2: 刷新时从 DB 回填角色与用户名（原 access claims 缺 Role → 空 role 被 RequireRole 当 admin，普通用户可提权）
 	now := time.Now()
+	accessTTL := jm.accessTokenTTL
+	if accessTTL <= 0 {
+		accessTTL = 15 * time.Minute
+	}
 	username := refreshToken.Username
 	role := ""
 	if database.DB() != nil {
@@ -491,7 +519,7 @@ func (jm *JWTManager) RefreshAccessToken(refreshTokenString string) (string, str
 		KeyID:    jm.keyID,
 		Role:     role,
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(now.Add(15 * time.Minute)),
+			ExpiresAt: jwt.NewNumericDate(now.Add(accessTTL)),
 			IssuedAt:  jwt.NewNumericDate(now),
 			NotBefore: jwt.NewNumericDate(now),
 			Issuer:    "Tshell-Server",

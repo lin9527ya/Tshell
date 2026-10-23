@@ -154,14 +154,12 @@ func (tm *TunnelManager) startSocks5Tunnel(tunnel database.TunnelProxy) error {
 	// 【关键修复】构建正确的Agent端口 = SOCKS5端口 + 1000
 	agentPort := tunnel.ServerPort + 1000
 
-	// 从监听器连接地址中提取IP地址
-	serverIP := listener.ConnectAddress
-	if strings.Contains(serverIP, ":") {
-		serverIP = strings.Split(serverIP, ":")[0]
-	}
-
-	// 构建完整的Agent地址和SOCKS5地址
-	agentAddress := fmt.Sprintf("%s:%d", serverIP, agentPort)
+	// 绑定与对外通告分离：服务端监听所有网卡，客户端回连使用可拨号的对外 host。
+	// 原实现把 listener.ConnectAddress 的主机部分同时用于 bind 和下发；当它是
+	// 0.0.0.0/:: 时客户端会拨号失败，且 stopSocks5Tunnel 用 ":port" 找不到 map key。
+	serverHost := tunnelAdvertisedHost(listener)
+	bindAgentAddress := fmt.Sprintf(":%d", agentPort)
+	agentAddress := net.JoinHostPort(serverHost, fmt.Sprintf("%d", agentPort))
 	socksAddress := fmt.Sprintf(":%d", tunnel.ServerPort)
 
 	log.Printf("[TUNNEL-SOCKS5] 📋 配置信息:")
@@ -180,7 +178,7 @@ func (tm *TunnelManager) startSocks5Tunnel(tunnel database.TunnelProxy) error {
 
 	// 同步绑定 Agent 端口：失败要能返回给启动接口（原实现放在 goroutine 里，
 	// 端口被占用时接口仍报"启动成功"、DB 置 1，而实际没有监听）
-	if _, err := ReverseSocksServer(agentAddress, socksAddress, psk, tunnel.Username, tunnel.Password); err != nil {
+	if _, err := ReverseSocksServer(bindAgentAddress, socksAddress, psk, tunnel.Username, tunnel.Password); err != nil {
 		return err
 	}
 

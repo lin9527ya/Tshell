@@ -11,9 +11,12 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// ConfigGetter 接口，用于获取配置信息而不引起循环导入
+// ConfigGetter 接口，用于获取/回写配置而不引起循环导入
 type ConfigGetter interface {
 	GetLogLevel() string
+	// PersistRateLimitConfig 把安全中心修改的限流参数写回配置文件，
+	// 避免重启后回到默认值。
+	PersistRateLimitConfig(loginRateLimit, apiRateLimit, blockMinutes int) error
 }
 
 // GlobalConfigGetter 全局配置获取器
@@ -22,6 +25,10 @@ var GlobalConfigGetter ConfigGetter
 // 登录速率限制中间件
 func LoginRateLimitMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if GlobalRateLimiter == nil || !GlobalRateLimiter.IsEnabled() {
+			c.Next()
+			return
+		}
 		ip := getRealIP(c)
 
 		allowed, retryAfter := GlobalRateLimiter.CheckLoginRateLimit(ip)
@@ -52,6 +59,10 @@ func LoginRateLimitMiddleware() gin.HandlerFunc {
 // API速率限制中间件
 func APIRateLimitMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if GlobalRateLimiter == nil || !GlobalRateLimiter.IsEnabled() {
+			c.Next()
+			return
+		}
 		ip := getRealIP(c)
 
 		allowed, retryAfter := GlobalRateLimiter.CheckAPIRateLimit(ip)
@@ -238,6 +249,10 @@ func RequestLoggerMiddleware() gin.HandlerFunc {
 // 暴力破解防护中间件（针对特定敏感端点）
 func BruteForceProtectionMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if GlobalRateLimiter == nil || !GlobalRateLimiter.IsEnabled() {
+			c.Next()
+			return
+		}
 		ip := getRealIP(c)
 		path := c.Request.URL.Path
 

@@ -70,6 +70,18 @@ var (
 	}
 )
 
+// withDefaultPort 给缺少端口的 host 补默认端口；正确处理 [IPv6] 与裸 IPv6。
+func withDefaultPort(host, defaultPort string) string {
+	host = strings.TrimSpace(host)
+	if host == "" {
+		return host
+	}
+	if _, _, err := net.SplitHostPort(host); err == nil {
+		return host
+	}
+	return net.JoinHostPort(strings.Trim(host, "[]"), defaultPort)
+}
+
 // StartHTTPTunnel 启动HTTP隧道（新架构：基于SOCKS5设计）
 func StartHTTPTunnel(tunnel database.TunnelProxy) error {
 	log.Printf("[HTTP-TUNNEL] 🚀 启动HTTP隧道代理 (新架构)")
@@ -108,11 +120,8 @@ func StartHTTPTunnel(tunnel database.TunnelProxy) error {
 		return fmt.Errorf("agent 端口 %d 已被占用", agentPort)
 	}
 
-	// 从监听器连接地址中提取IP地址
-	serverIP := listener.ConnectAddress
-	if strings.Contains(serverIP, ":") {
-		serverIP = strings.Split(serverIP, ":")[0]
-	}
+	// 对外通告主机：不能把 0.0.0.0/:: 直接下发给客户端
+	serverHost := tunnelAdvertisedHost(listener)
 
 	// 生成随机 PSK（替代原先由 uid+端口推导的可预测密钥），经加密 C2 通道下发
 	psk := GenerateRandomPSK()
@@ -157,10 +166,11 @@ func StartHTTPTunnel(tunnel database.TunnelProxy) error {
 	// 启动Agent连接处理器
 	go httpTunnelAgentServer(instance)
 
-	// 【关键修复】发送连接命令给客户端，使用正确的服务器IP地址
-	connectCmd := fmt.Sprintf("%s:%d|%s", serverIP, agentPort, psk)
+	// 【关键修复】发送连接命令给客户端，使用可拨号的服务器地址
+	agentAddress := net.JoinHostPort(serverHost, fmt.Sprintf("%d", agentPort))
+	connectCmd := fmt.Sprintf("%s|%s", agentAddress, psk)
 	sendcommand.SendCommand(tunnel.ClientUID, "http_tunnel_connect "+connectCmd)
-	log.Printf("[HTTP-TUNNEL] 📤 已向客户端发送连接命令: 服务器地址=%s:%d, PSK长度=%d", serverIP, agentPort, len(psk))
+	log.Printf("[HTTP-TUNNEL] 📤 已向客户端发送连接命令: 服务器地址=%s, PSK长度=%d", agentAddress, len(psk))
 
 	// 记录审计日志
 	if audit.GlobalAuditLogger != nil {
@@ -172,7 +182,7 @@ func StartHTTPTunnel(tunnel database.TunnelProxy) error {
 				"proxy_port": tunnel.ServerPort,
 				"agent_port": agentPort,
 				"client_uid": tunnel.ClientUID,
-				"server_ip":  serverIP,
+				"server_ip":  serverHost,
 			})
 	}
 
@@ -427,10 +437,7 @@ func handleHTTPTunnelConnect(clientConn net.Conn, req *http.Request, instance *H
 	defer stream.Close()
 
 	// 向流发送目标地址信息
-	targetHost := req.Host
-	if !strings.Contains(targetHost, ":") {
-		targetHost = targetHost + ":443" // HTTPS默认端口
-	}
+	targetHost := withDefaultPort(req.Host, "443")
 
 	// 发送目标地址给客户端
 	log.Printf("[HTTP-TUNNEL] 发送目标地址给Agent: %s", targetHost)
@@ -497,14 +504,11 @@ func handleHTTPTunnelProxy(clientConn net.Conn, req *http.Request, instance *HTT
 	}
 
 	// 构建目标地址
-	targetHost := targetURL.Host
-	if !strings.Contains(targetHost, ":") {
-		if targetURL.Scheme == "https" {
-			targetHost = targetHost + ":443"
-		} else {
-			targetHost = targetHost + ":80"
-		}
+	defaultPort := "80"
+	if targetURL.Scheme == "https" {
+		defaultPort = "443"
 	}
+	targetHost := withDefaultPort(targetURL.Host, defaultPort)
 
 	// 发送目标地址给客户端
 	log.Printf("[HTTP-TUNNEL] 发送目标地址给Agent: %s", targetHost)
@@ -525,6 +529,10 @@ func handleHTTPTunnelProxy(clientConn net.Conn, req *http.Request, instance *HTT
 		clientConn.Write([]byte(errorResponse))
 		return
 	}
+
+	// 代理认证信息只用于服务端校验，不能透传给目标站点
+	req.Header.Del("Proxy-Authorization")
+	req.Header.Del("Proxy-Connection")
 
 	// 重新构建HTTP请求并发送给客户端
 	err = forwardHTTPRequestToAgent(req, stream)
@@ -585,6 +593,12 @@ func forwardHTTPRequestToAgent(req *http.Request, agentStream net.Conn) error {
 
 	// 写入请求行
 	headerData.WriteString(fmt.Sprintf("%s %s %s\r\n", req.Method, req.URL.RequestURI(), req.Proto))
+
+	// Go 的 req.Header 不包含 Host（Host 在 req.Host），必须显式写入，
+	// 否则普通 HTTP 代理请求到目标站点会因缺少 Host 被 400。
+	if req.Host != "" && req.Header.Get("Host") == "" {
+		headerData.WriteString("Host: " + req.Host + "\r\n")
+	}
 
 	// 写入请求头
 	req.Header.Write(&headerData)

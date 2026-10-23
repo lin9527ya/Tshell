@@ -15,7 +15,7 @@
         {{ i18nStore.tl('帮助', 'Help') }}
       </button>
 
-      <button class="cs-btn cs-btn-primary" @click="handleSavePoolConfig">
+      <button v-if="canOperate" class="cs-btn cs-btn-primary" @click="handleSavePoolConfig">
         {{ i18nStore.tl('保存连接池参数', 'Save Pool Tuning') }}
       </button>
 
@@ -69,7 +69,7 @@
             <button v-if="protocolFilter || uidFilter" class="cs-btn cs-btn-xs" @click="clearFilters">
               {{ i18nStore.tl('清除过滤', 'Clear') }}
             </button>
-            <button class="cs-btn cs-btn-xs cs-btn-danger" :disabled="!selectedConnection" @click="selectedConnection && handleCloseConn(selectedConnection)">
+            <button v-if="canOperate" class="cs-btn cs-btn-xs cs-btn-danger" :disabled="!selectedConnection" @click="selectedConnection && handleCloseConn(selectedConnection)">
               {{ i18nStore.tl('断开选中连接', 'Disconnect Selected') }}
             </button>
           </div>
@@ -150,19 +150,19 @@
             <div class="cs-form-row">
               <label class="cs-form-label">{{ i18nStore.tl('工作线程数', 'Worker Pool Size') }}:</label>
               <div class="input-with-btn">
-                <el-input-number v-model="workerCount" :min="4" :max="128" />
-                <button class="cs-btn cs-btn-primary" @click="handleResizeWorkers">{{ i18nStore.tl('应用', 'Apply Size') }}</button>
+                <el-input-number v-model="workerCount" :min="4" :max="128" :disabled="!canOperate" />
+                <button v-if="canOperate" class="cs-btn cs-btn-primary" @click="handleResizeWorkers">{{ i18nStore.tl('应用', 'Apply Size') }}</button>
               </div>
             </div>
 
             <div class="cs-form-row">
               <label class="cs-form-label">{{ i18nStore.tl('最大连接数', 'Max Pool Connections') }}:</label>
-              <el-input-number v-model="poolConfig.max_connections" :min="50" :max="5000" />
+              <el-input-number v-model="poolConfig.max_connections" :min="50" :max="5000" :disabled="!canOperate" />
             </div>
 
             <div class="cs-form-row">
               <label class="cs-form-label">{{ i18nStore.tl('最大空闲时间', 'Max Idle Duration') }}:</label>
-              <el-input v-model="poolConfig.max_idle_time" placeholder="300s" class="cp-idle-input" />
+              <el-input v-model="poolConfig.max_idle_time" placeholder="300s" class="cp-idle-input" :disabled="!canOperate" />
             </div>
           </div>
 
@@ -197,9 +197,13 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import ConnectionAPI from '@/api/connection'
 import EmptyState from '@/components/Common/EmptyState.vue'
 import { useI18nStore } from '@/stores/i18n'
+import { useUserStore } from '@/stores/user'
 
 const i18nStore = useI18nStore()
+const userStore = useUserStore()
 const isZh = computed(() => i18nStore.isZh)
+// 连接池写接口是 operatorOnly；auditor 只能看统计与连接列表
+const canOperate = computed(() => String(userStore.getRoles() || '').toLowerCase() !== 'auditor')
 
 const loading = ref(false)
 const healthChecking = ref(false)
@@ -346,7 +350,12 @@ async function fetchData() {
       ConnectionAPI.getWorkerStats(),
     ])
     if (pRes.status === 'fulfilled' && pRes.value?.data?.data) {
-      Object.assign(poolStats, pRes.value.data.data)
+      const data = pRes.value.data.data
+      // 后端把连接数放在 pool_stats 子对象里；同时保留 max_connections 等顶层字段
+      Object.assign(poolStats, data, data.pool_stats || {})
+      if (!poolStats.health_status) {
+        poolStats.health_status = (poolStats.utilization || 0) >= 0.9 ? 'DEGRADED' : 'HEALTHY'
+      }
     }
     if (wRes.status === 'fulfilled' && wRes.value?.data?.data) {
       Object.assign(workerStats, wRes.value.data.data)
@@ -377,6 +386,10 @@ async function handleHealthCheck() {
 }
 
 function handleCloseConn(row: any) {
+  if (!canOperate.value) {
+    ElMessage.warning(isZh.value ? '只读账号无法修改连接池' : 'Read-only account cannot modify the pool')
+    return
+  }
   ElMessageBox.confirm(
       isZh.value ? `终止套接字连接 ${row.id}（${row.client_ip || row.remote_addr || '-'}）吗？` : `Terminate socket connection ${row.id} (${row.client_ip || row.remote_addr || '-'})?`,
       isZh.value ? '断开套接字' : 'Disconnect Socket',
@@ -398,6 +411,10 @@ function handleCloseConn(row: any) {
 }
 
 async function handleResizeWorkers() {
+  if (!canOperate.value) {
+    ElMessage.warning(isZh.value ? '只读账号无法修改连接池' : 'Read-only account cannot modify the pool')
+    return
+  }
   try {
     await ConnectionAPI.resizeWorkerPool(workerCount.value)
     ElMessage.success(isZh.value ? `工作线程池已调整为 ${workerCount.value}` : `Worker thread pool resized to ${workerCount.value}`)
@@ -407,6 +424,10 @@ async function handleResizeWorkers() {
 }
 
 async function handleSavePoolConfig() {
+  if (!canOperate.value) {
+    ElMessage.warning(isZh.value ? '只读账号无法修改连接池' : 'Read-only account cannot modify the pool')
+    return
+  }
   try {
     await ConnectionAPI.updatePoolConfig(poolConfig)
     ElMessage.success(isZh.value ? '连接池配置已应用' : 'Connection pool tuning applied')

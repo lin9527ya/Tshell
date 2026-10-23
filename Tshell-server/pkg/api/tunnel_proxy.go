@@ -5,6 +5,7 @@ import (
 	"BackendTemplate/pkg/database"
 	"BackendTemplate/pkg/proxy"
 	"fmt"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -59,6 +60,27 @@ func requireTunnelAuth(protocol, username, password string) error {
 	case "socks5", "http":
 		if username == "" || password == "" {
 			return fmt.Errorf("%s 隧道必须设置用户名和密码（无认证时等同于公开代理）", protocol)
+		}
+	}
+	return nil
+}
+
+// validateTunnelTarget tcp/udp 必须填写可解析的 host:port 目标；
+// 创建/更新时就拦住，避免"创建成功、启动时才报缺目标"。
+func validateTunnelTarget(protocol, target string) error {
+	switch strings.ToLower(protocol) {
+	case "tcp", "udp":
+		target = strings.TrimSpace(target)
+		if target == "" {
+			return fmt.Errorf("%s 隧道必须填写目标地址（host:port）", protocol)
+		}
+		host, portStr, err := net.SplitHostPort(target)
+		if err != nil || strings.TrimSpace(host) == "" {
+			return fmt.Errorf("目标地址格式错误，应为 host:port（IPv6 使用 [::1]:80）")
+		}
+		port, err := strconv.Atoi(portStr)
+		if err != nil || port < 1 || port > 65535 {
+			return fmt.Errorf("目标端口非法: %s", portStr)
 		}
 	}
 	return nil
@@ -120,6 +142,10 @@ func CreateTunnelProxy(c *gin.Context) {
 		return
 	}
 	if err := requireTunnelAuth(req.Protocol, req.Username, req.Password); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := validateTunnelTarget(req.Protocol, req.TargetAddress); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -364,6 +390,23 @@ func UpdateTunnelProxy(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if err := validateTunnelTarget(req.Protocol, req.TargetAddress); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// 运行中的隧道已在内存里绑定监听器/Agent 会话，直接改库会造成"界面配置 A、
+	// 实际运行 B"，甚至停止时按新协议去找旧监听器。仅允许运行中改备注。
+	if tunnel.Status == 1 {
+		protocolChanged := !strings.EqualFold(req.Protocol, tunnel.Protocol)
+		targetChanged := (strings.EqualFold(req.Protocol, "tcp") || strings.EqualFold(req.Protocol, "udp")) &&
+			strings.TrimSpace(req.TargetAddress) != strings.TrimSpace(tunnel.TargetAddress)
+		if req.ClientUID != tunnel.ClientUID || protocolChanged || req.ServerPort != tunnel.ServerPort ||
+			targetChanged || req.Username != tunnel.Username || req.Password != tunnel.Password {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "隧道正在运行，请先停止后再修改连接配置（备注可直接编辑）"})
+			return
+		}
+	}
 
 	if req.ServerPort != tunnel.ServerPort {
 		if err := checkTunnelPortAvailable(req.ServerPort, id); err != nil {
@@ -570,6 +613,8 @@ func StartTunnelProxy(c *gin.Context) {
 	tunnel.UpdatedAt = time.Now()
 	affected, err := database.Tunnels().UpdateColumns(id, []string{"status", "updated_at"}, &tunnel)
 	if err != nil {
+		// 状态写不进库就把刚启动的监听器回滚，避免"实际在跑、界面显示停止"
+		_ = proxy.GlobalTunnelManager.StopTunnel(id)
 		if audit.GlobalAuditLogger != nil {
 			audit.GlobalAuditLogger.LogWithContext(c, audit.LogLevelError, audit.CategoryAPI, "TUNNEL_PROXY_START", "FAILURE", "更新状态失败: "+err.Error(), nil)
 		}

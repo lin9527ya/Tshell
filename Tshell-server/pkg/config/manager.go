@@ -931,6 +931,23 @@ func (cm *ConfigManager) GetLogLevel() string {
 	return cm.config.Logging.Level
 }
 
+// PersistRateLimitConfig 实现 security.ConfigGetter：把安全中心修改的限流参数
+// 写回 config.security，确保重启后仍然生效。
+func (cm *ConfigManager) PersistRateLimitConfig(loginRateLimit, apiRateLimit, blockMinutes int) error {
+	return cm.UpdateConfig(func(c *Config) error {
+		if loginRateLimit > 0 {
+			c.Security.LoginRateLimit = loginRateLimit
+		}
+		if apiRateLimit > 0 {
+			c.Security.APIRateLimit = apiRateLimit
+		}
+		if blockMinutes > 0 {
+			c.Security.BlockDuration = time.Duration(blockMinutes) * time.Minute
+		}
+		return nil
+	})
+}
+
 // ClientConfig 客户端默认配置（服务端生成/监听器默认值时使用）
 type ClientConfig struct {
 	// 默认心跳间隔（秒）：客户端回连/休眠间隔，监听器未配置时使用

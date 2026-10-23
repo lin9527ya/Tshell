@@ -3,6 +3,7 @@ package connection
 import (
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -26,6 +27,16 @@ func GetConnectionPoolStats(c *gin.Context) {
 		protocolStats[conn.Protocol]++
 	}
 
+	poolCfg := GlobalConnectionManager.GetConfig()
+	maxConnections := poolCfg.MaxConnections
+	if maxConnections <= 0 {
+		maxConnections = 1
+	}
+	utilization := float64(stats.ActiveConnections) / float64(maxConnections)
+	healthStatus := "HEALTHY"
+	if utilization >= 0.9 {
+		healthStatus = "DEGRADED"
+	}
 	response := gin.H{
 		"pool_stats": gin.H{
 			"total_connections":      stats.TotalConnections,
@@ -38,8 +49,9 @@ func GetConnectionPoolStats(c *gin.Context) {
 			"last_update":            stats.LastUpdate,
 		},
 		"protocol_stats":  protocolStats,
-		"max_connections": DefaultPoolConfig.MaxConnections,
-		"utilization":     float64(stats.ActiveConnections) / float64(DefaultPoolConfig.MaxConnections),
+		"max_connections": maxConnections,
+		"utilization":     utilization,
+		"health_status":   healthStatus,
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -80,9 +92,9 @@ func GetWorkerPoolStats(c *gin.Context) {
 			"worker_utilization": stats.WorkerUtilization,
 			"last_update":        stats.LastUpdate,
 		},
-		"worker_info":       workerInfo,
-		"queue_size":        queueSize,
-		"max_queue_size":    GlobalWorkerPool.maxQueueSize,
+		"worker_info":    workerInfo,
+		"queue_size":     queueSize,
+		"max_queue_size": GlobalWorkerPool.maxQueueSize,
 		// J2: worker_count 经锁内 GetWorkerInfo 读取（原无锁读与 ResizePool 写竞争）
 		"worker_count":      len(workerInfo),
 		"queue_utilization": queueUtilization,
@@ -147,11 +159,11 @@ func GetConnectionDetails(c *gin.Context) {
 		uptime, bytesRead, bytesWritten, errorCount := conn.GetStats()
 
 		connectionData = append(connectionData, gin.H{
-			"id":            conn.ID,
-			"uid":           conn.UID,
-			"protocol":      conn.Protocol,
-			"client_ip":     conn.ClientIP,
-			"created_at":    conn.CreatedAt,
+			"id":         conn.ID,
+			"uid":        conn.UID,
+			"protocol":   conn.Protocol,
+			"client_ip":  conn.ClientIP,
+			"created_at": conn.CreatedAt,
 			// 【并发修复】LastActivity/IsActive 在 ci.mu 保护下被热路径修改，
 			// 必须经 Safe 读取避免数据竞争
 			"last_activity": conn.LastActivitySafe(),
@@ -243,6 +255,32 @@ func UpdatePoolConfig(c *gin.Context) {
 	if req.MaxConnections != nil && *req.MaxConnections > 0 {
 		newCfg.MaxConnections = *req.MaxConnections
 	}
+	// 其余字段此前只解析不应用：页面保存成功但实际配置没变。
+	durationFields := []struct {
+		name string
+		raw  *string
+		dst  *time.Duration
+	}{
+		{"max_idle_time", req.MaxIdleTime, &newCfg.MaxIdleTime},
+		{"health_check_period", req.HealthCheckPeriod, &newCfg.HealthCheckPeriod},
+		{"conn_timeout", req.ConnTimeout, &newCfg.ConnTimeout},
+		{"read_timeout", req.ReadTimeout, &newCfg.ReadTimeout},
+		{"write_timeout", req.WriteTimeout, &newCfg.WriteTimeout},
+	}
+	for _, f := range durationFields {
+		if f.raw == nil {
+			continue
+		}
+		d, err := time.ParseDuration(*f.raw)
+		if err != nil || d <= 0 {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"status": http.StatusBadRequest,
+				"error":  f.name + " 必须是大于 0 的 duration（如 30s、5m）",
+			})
+			return
+		}
+		*f.dst = d
+	}
 
 	GlobalConnectionManager.setConfig(newCfg)
 	cfg := GlobalConnectionManager.getConfig()
@@ -326,10 +364,10 @@ func GetConnectionsByProtocol(c *gin.Context) {
 		uptime, bytesRead, bytesWritten, errorCount := conn.GetStats()
 
 		connectionData = append(connectionData, gin.H{
-			"id":            conn.ID,
-			"uid":           conn.UID,
-			"client_ip":     conn.ClientIP,
-			"created_at":    conn.CreatedAt,
+			"id":         conn.ID,
+			"uid":        conn.UID,
+			"client_ip":  conn.ClientIP,
+			"created_at": conn.CreatedAt,
 			// 【并发修复】LastActivity 在 ci.mu 保护下被热路径修改，必须经 Safe 读取
 			"last_activity": conn.LastActivitySafe(),
 			"uptime":        uptime,

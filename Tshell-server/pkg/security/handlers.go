@@ -146,6 +146,25 @@ func UpdateRateLimitConfigHandler(c *gin.Context) {
 		})
 		return
 	}
+	if config.LoginRateLimit <= 0 || config.APIRateLimit <= 0 || config.BlockDuration <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"status":  http.StatusBadRequest,
+			"message": "login_rate_limit / api_rate_limit / block_duration 必须大于 0",
+		})
+		return
+	}
+
+	// 先持久化到 config.yaml，再改运行时；否则重启后回到默认值。
+	if GlobalConfigGetter != nil {
+		if err := GlobalConfigGetter.PersistRateLimitConfig(config.LoginRateLimit, config.APIRateLimit, config.BlockDuration); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"status":  http.StatusInternalServerError,
+				"message": "限流配置保存失败",
+				"error":   err.Error(),
+			})
+			return
+		}
+	}
 
 	GlobalRateLimiter.UpdateConfig(config.LoginRateLimit, config.APIRateLimit, time.Duration(config.BlockDuration)*time.Minute)
 
@@ -177,6 +196,7 @@ func GetRealTimeStatsHandler(c *gin.Context) {
 		},
 	})
 }
+
 // auditSecurityEvent 安全操作审计（D18）
 func auditSecurityEvent(action, message string, details map[string]interface{}) {
 	if audit.GlobalAuditLogger != nil {

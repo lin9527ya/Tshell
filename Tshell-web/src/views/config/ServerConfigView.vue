@@ -37,7 +37,11 @@
         >
           <span class="nav-icon">{{ sectionIcon(section) }}</span>
           <span class="nav-label">{{ sectionLabel(section) }}</span>
-          <span v-if="SUPPORTED_SECTIONS.includes(section)" class="nav-badge">{{ i18nStore.tl('可编辑', 'editable') }}</span>
+          <span v-if="SUPPORTED_SECTIONS.includes(section)" class="nav-badge">
+            {{ FULLY_EDITABLE_SECTIONS.includes(section)
+              ? i18nStore.tl('可编辑', 'editable')
+              : i18nStore.tl('部分可编辑', 'partial') }}
+          </span>
         </div>
       </div>
 
@@ -48,10 +52,10 @@
             <span class="panel-title">{{ selectedSection === 'all' ? (i18nStore.tl('完整 JSON 配置', 'Full JSON Configuration')) : (i18nStore.tl(`配置段：${sectionLabel(selectedSection)}`, `Section: ${selectedSection}`)) }}</span>
             <span class="panel-hint">
               {{ selectedSection === 'all'
-                ? (i18nStore.tl('在线保存当前仅写入 server / security / logging 三个配置段', 'Online save currently only writes server / security / logging sections'))
+                ? (i18nStore.tl('在线保存当前仅写入 server / security / logging / opsec 四个配置段', 'Online save currently only writes server / security / logging / opsec sections'))
                 : SUPPORTED_SECTIONS.includes(selectedSection)
-                  ? (i18nStore.tl('该配置段支持在线保存', 'This section supports online save'))
-                  : (i18nStore.tl('该配置段暂不支持在线保存，请修改 config.yaml 后 Reload', 'This section is read-only online. Edit config.yaml and Reload instead.')) }}
+                  ? sectionEditHint(selectedSection)
+                  : sectionReadOnlyHint(selectedSection) }}
             </span>
           </div>
 
@@ -129,6 +133,8 @@ import EmptyState from '@/components/Common/EmptyState.vue'
 // 可在本页单独编辑并保存的段（其余段只读展示，见后端 applyConfigUpdates 白名单）。
 // opsec：载荷生成期开关的团队级默认值（P4）。
 const SUPPORTED_SECTIONS: string[] = ['server', 'security', 'logging', 'opsec']
+// 仅 opsec 的每个字段都会被 applyOpsecUpdates 逐个校验并应用；其余段只识别部分字段
+const FULLY_EDITABLE_SECTIONS: string[] = ['opsec']
 
 const i18nStore = useI18nStore()
 const isZh = computed(() => i18nStore.isZh)
@@ -171,6 +177,12 @@ function sectionIcon(section: string): string {
     logging: '📋',
     client: '💤',
     security: '🛡️',
+    metrics: '📊',
+    signing: '✍️',
+    backup: '💾',
+    obfuscation: '🎭',
+    storage: '📁',
+    opsec: '🕵️',
     connection_pool: '🔗',
     worker_pool: '⚙️',
     auth: '👤',
@@ -190,6 +202,12 @@ const SECTION_LABELS_ZH: Record<string, string> = {
   logging: '日志配置',
   client: '客户端默认',
   security: '安全配置',
+  metrics: '监控指标',
+  signing: '代码签名',
+  backup: '备份配置',
+  obfuscation: '载荷混淆',
+  storage: '本地存储',
+  opsec: 'OPSEC 默认值',
   connection_pool: '连接池配置',
   worker_pool: '工作池配置',
   auth: '认证配置',
@@ -201,6 +219,108 @@ const SECTION_LABELS_ZH: Record<string, string> = {
 
 function sectionLabel(section: string): string {
   return isZh.value ? (SECTION_LABELS_ZH[section] || section) : section
+}
+
+// 在线保存的真实边界（与后端 applyConfigUpdates 白名单一致）。
+// 不能简单写"支持在线保存"：多数段只识别少数字段，且部分字段仍需重启。
+function sectionEditHint(section: string): string {
+  if (isZh.value) {
+    switch (section) {
+      case 'opsec':
+        return '该配置段全部字段支持在线保存，下一次生成载荷时生效'
+      case 'server':
+        return '在线保存仅写入 host / port / mode；监听地址、端口与超时需重启生效；auto_detect_ip 仍未使用'
+      case 'security':
+        return '在线保存的白名单与限流字段会立即同步到运行时并写入配置；max_login_attempts 仍未使用'
+      case 'logging':
+        return '在线保存仅写入 level / enable_console；enable_console 仍未使用，日志级别、格式、输出目录需重启'
+      default:
+        return '该配置段仅部分字段支持在线保存'
+    }
+  }
+  switch (section) {
+    case 'opsec':
+      return 'All fields are saved online and apply to the next payload generation'
+    case 'server':
+      return 'Online save only writes host / port / mode; binding and timeouts need a restart. auto_detect_ip is still unused'
+    case 'security':
+      return 'Online save applies whitelist and rate-limit fields to the running limiter and persists them; max_login_attempts is still unused'
+    case 'logging':
+      return 'Online save only writes level / enable_console; enable_console is still unused, and log level/format/output need a restart'
+    default:
+      return 'Only some fields in this section can be saved online'
+  }
+}
+
+// 非在线保存段的生效方式。差异很大：有的 Reload 即生效，有的必须重启，
+// 还有两段当前完全没被代码读取（死配置），不能一律提示"改文件后 Reload"。
+function sectionReadOnlyHint(section: string): string {
+  if (isZh.value) {
+    switch (section) {
+      case 'metrics':
+      case 'signing':
+      case 'backup':
+        return '启动期配置：修改 config.yaml 后需重启服务端'
+      case 'database':
+        return '启动期配置：修改后需重启，不会热重连数据库'
+      case 'jwt':
+        return '启动期配置；access_token_ttl / refresh_token_ttl 已接入令牌签发，secret_key_file / max_refresh_count 仍未读取'
+      case 'connection_pool':
+        return '启动期配置：连接池初始化时读取，修改后需重启'
+      case 'worker_pool':
+        return '启动期配置：worker_count / max_queue_size 已接入，enable_metrics 仍未使用；修改后需重启'
+      case 'https':
+        return '启动 HTTPS 监听器时读取；修改后需重启对应监听器'
+      case 'auth':
+        return '启动期读取默认账号与隐蔽入口；force_change_password 仍未使用；修改后需重启，隐蔽入口建议用专用页面'
+      case 'application':
+        return 'version 会显示在仪表盘；name / author 当前未使用'
+      case 'client':
+      case 'obfuscation':
+      case 'storage':
+        return '只读在线；修改 config.yaml 后点 Reload 即可生效'
+      case 'http':
+        return '只读在线；修改 config.yaml 后点 Reload 会热应用伪装配置'
+      case 'notifications':
+        return '请使用通知配置页面在线修改；此处仅展示'
+      case 'delivery':
+        return '只读在线；修改 config.yaml 后 Reload 生效；route_prefix 需重启'
+      default:
+        return '该配置段暂不支持在线保存，请修改 config.yaml 后 Reload'
+    }
+  }
+  switch (section) {
+    case 'metrics':
+    case 'signing':
+    case 'backup':
+      return 'Startup-time config: edit config.yaml and restart the server'
+    case 'database':
+      return 'Startup-time config: restart required, no hot reconnect'
+    case 'jwt':
+      return 'Startup-time config; access_token_ttl / refresh_token_ttl are wired into token issuance, secret_key_file / max_refresh_count are still unused'
+    case 'connection_pool':
+      return 'Startup-time config: read when the connection pool initializes; restart after editing'
+    case 'worker_pool':
+      return 'Startup-time config: worker_count / max_queue_size are wired, enable_metrics is still unused; restart after editing'
+    case 'https':
+      return 'Read when an HTTPS listener starts; restart that listener after editing'
+    case 'auth':
+      return 'Read at startup for the default account and hidden access; force_change_password is still unused. Restart after editing; use the Hidden Access page for that feature'
+    case 'application':
+      return 'version is shown on the dashboard; name / author are unused'
+    case 'client':
+    case 'obfuscation':
+    case 'storage':
+      return 'Read-only online; edit config.yaml and click Reload to apply'
+    case 'http':
+      return 'Read-only online; Reload hot-applies the masquerade profile'
+    case 'notifications':
+      return 'Use the notification settings page; this editor is read-only'
+    case 'delivery':
+      return 'Read-only online; Reload applies changes; route_prefix needs a restart'
+    default:
+      return 'This section is read-only online. Edit config.yaml and Reload instead.'
+  }
 }
 
 async function fetchConfig() {
@@ -256,6 +376,7 @@ async function handleSave() {
         server: cfg.server,
         security: cfg.security,
         logging: cfg.logging,
+        opsec: cfg.opsec,
       }
     } else if (SUPPORTED_SECTIONS.includes(selectedSection.value)) {
       payload = { [selectedSection.value]: cfg[selectedSection.value] }

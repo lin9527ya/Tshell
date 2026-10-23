@@ -304,6 +304,15 @@ const selectedBlockedRow = ref<any>(null)
 const showAddWhitelistDialog = ref(false)
 const newWhitelistIP = ref('')
 
+
+function durationMinutes(v: any): number {
+  if (typeof v === 'number') return Math.round(v / 60000000000)
+  if (typeof v !== 'string') return 0
+  const h = /^(\d+)h/.exec(v)
+  const m = /^(\d+)m/.exec(v)
+  return (h ? Number(h[1]) * 60 : 0) + (m ? Number(m[1]) : 0)
+}
+
 async function fetchData() {
   loading.value = true
   try {
@@ -340,6 +349,13 @@ async function fetchData() {
     }
     if (stRes.status === 'fulfilled' && stRes.value?.data?.data) {
       Object.assign(stats, stRes.value.data.data)
+      // /security/stats 已返回当前限流参数；回填表单，避免保存时用硬编码默认值覆盖真实配置
+      if (stats.login_rate_limit != null) rateLimitForm.login_rate_limit = Number(stats.login_rate_limit)
+      if (stats.api_rate_limit != null) rateLimitForm.api_rate_limit = Number(stats.api_rate_limit)
+      const minutes = durationMinutes(stats.block_duration)
+      if (minutes > 0) rateLimitForm.block_duration = minutes
+      if (stats.enabled != null) stats.active_defense = stats.enabled ? 'ON' : 'OFF'
+      if (stats.throttled_requests != null) stats.rate_limit_hits = Number(stats.throttled_requests) || 0
     }
   } catch {} finally {
     loading.value = false

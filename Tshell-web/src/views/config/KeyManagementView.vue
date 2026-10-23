@@ -192,12 +192,12 @@
                 <el-table-column prop="listen_address" :label="i18nStore.tl('监听地址', 'Listen Address')" width="200" sortable show-overflow-tooltip />
                 <el-table-column prop="vkey" :label="i18nStore.tl('验证密钥（VKey）', 'Verification Key (VKey)')" min-width="220" show-overflow-tooltip>
                   <template #default="{ row }">
-                    <span class="cs-font-mono">{{ row.vkey || (i18nStore.tl('默认_VKEY', 'DEFAULT_VKEY')) }}</span>
+                    <span class="cs-font-mono">{{ row.vkey_preview || (row.has_custom_vkey ? '******' : (i18nStore.tl('默认_VKEY', 'DEFAULT_VKEY'))) }}</span>
                   </template>
                 </el-table-column>
                 <el-table-column prop="encryption_salt" :label="i18nStore.tl('加密盐', 'Encryption Salt')" width="160" show-overflow-tooltip>
                   <template #default="{ row }">
-                    <span class="cs-font-mono">{{ row.encryption_salt || (i18nStore.tl('默认_SALT', 'DEFAULT_SALT')) }}</span>
+                    <span class="cs-font-mono">{{ row.salt_preview || (row.has_custom_salt ? '****' : (i18nStore.tl('默认_SALT', 'DEFAULT_SALT'))) }}</span>
                   </template>
                 </el-table-column>
                 <el-table-column :label="i18nStore.tl('操作', 'Actions')" width="200" align="center">
@@ -587,15 +587,21 @@ function handleEditKey(row: any) {
       {
         confirmButtonText: isZh.value ? '保存' : 'Save',
         cancelButtonText: isZh.value ? '取消' : 'Cancel',
-        inputValue: row.vkey,
+        inputValue: '',
       },
     ).then(async ({ value }) => {
     if (value) {
-      row.vkey = value
       try {
-        await KeyManagementAPI.updateListenerKeyConfig({ listen_address: row.listen_address, vkey: value })
-        ElMessage.success(isZh.value ? 'VKey 已更新' : 'VKey updated')
-      } catch {}
+        const res = await KeyManagementAPI.updateListenerKeyConfig({ listen_address: row.listen_address, vkey: value })
+        if (res?.data?.status === 200) {
+          ElMessage.success(isZh.value ? 'VKey 已更新' : 'VKey updated')
+          await fetchConfigs()
+        } else {
+          ElMessage.error(res?.data?.message || (isZh.value ? 'VKey 更新失败' : 'Failed to update VKey'))
+        }
+      } catch (e: any) {
+        ElMessage.error(e?.message || (isZh.value ? 'VKey 更新失败' : 'Failed to update VKey'))
+      }
     }
   }).catch(() => {})
 }
@@ -606,10 +612,10 @@ async function handleViewKeyDetail(row: any) {
     const res = await KeyManagementAPI.getListenerKeyConfig({ address: row.listen_address })
     const data = res?.data?.data || {}
     const lines = [
-      isZh.value ? '监听器类型: ' : 'Listener Type: ' + (data.listener_type || '-'),
-      isZh.value ? '监听地址: ' : 'Listen Address: ' + (data.listen_address || row.listen_address || '-'),
-      isZh.value ? '主密钥长度: ' : 'Master Key Length: ' + (data.master_key_length ?? 0),
-      isZh.value ? '加密盐长度: ' : 'Salt Length: ' + (data.salt_length ?? 0),
+      (isZh.value ? '监听器类型: ' : 'Listener Type: ') + (data.listener_type || '-'),
+      (isZh.value ? '监听地址: ' : 'Listen Address: ') + (data.listen_address || row.listen_address || '-'),
+      (isZh.value ? '主密钥长度: ' : 'Master Key Length: ') + (data.master_key_length ?? 0),
+      (isZh.value ? '加密盐长度: ' : 'Salt Length: ') + (data.salt_length ?? 0),
       (isZh.value ? '自定义配置: ' : 'Custom Config: ') + (data.has_custom_config ? (isZh.value ? '是' : 'Yes') : (isZh.value ? '否' : 'No')),
     ]
     ElMessageBox.alert(lines.join('\n'), isZh.value ? '监听器密钥配置' : 'Listener Key Config', {

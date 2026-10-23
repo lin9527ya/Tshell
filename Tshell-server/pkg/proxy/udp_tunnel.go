@@ -12,7 +12,6 @@ import (
 	"io"
 	"log"
 	"net"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -65,10 +64,7 @@ func (tm *TunnelManager) startUDPTunnel(tunnel database.TunnelProxy) error {
 	}
 
 	agentPort := tunnel.ServerPort + 1000
-	serverIP := listener.ConnectAddress
-	if strings.Contains(serverIP, ":") {
-		serverIP = strings.Split(serverIP, ":")[0]
-	}
+	serverHost := tunnelAdvertisedHost(listener)
 	psk := GenerateRandomPSK()
 
 	agentListener, err := net.ListenTCP("tcp", &net.TCPAddr{Port: agentPort})
@@ -104,9 +100,10 @@ func (tm *TunnelManager) startUDPTunnel(tunnel database.TunnelProxy) error {
 	go udpTunnelAgentServer(inst)
 
 	// 通知客户端回连（复用 http_tunnel_connect，第3段 udp 标识UDP模式）
-	connectCmd := fmt.Sprintf("%s:%d|%s|udp", serverIP, agentPort, psk)
+	agentAddress := net.JoinHostPort(serverHost, fmt.Sprintf("%d", agentPort))
+	connectCmd := fmt.Sprintf("%s|%s|udp", agentAddress, psk)
 	sendcommand.SendCommand(tunnel.ClientUID, "http_tunnel_connect "+connectCmd)
-	log.Printf("[TUNNEL-UDP] 📤 已通知客户端回连: %s:%d -> 目标 %s", serverIP, agentPort, tunnel.TargetAddress)
+	log.Printf("[TUNNEL-UDP] 📤 已通知客户端回连: %s -> 目标 %s", agentAddress, tunnel.TargetAddress)
 
 	if audit.GlobalAuditLogger != nil {
 		audit.GlobalAuditLogger.Log(audit.LogLevelInfo, audit.CategorySystem, "UDP_TUNNEL_START", "SUCCESS",

@@ -103,6 +103,15 @@
                 <el-radio-button label="tcp">TCP</el-radio-button>
                 <el-radio-button label="udp">UDP</el-radio-button>
               </el-radio-group>
+              <div v-if="tunnelForm.protocol === 'udp'" class="cs-hint">
+                {{ i18nStore.tl('UDP 为每数据报独立的请求-响应转发，适合 DNS 等场景；不保持多包会话。', 'UDP forwards each datagram as an independent request/response (good for DNS); multi-packet sessions are not kept.') }}
+              </div>
+              <div v-else-if="tunnelForm.protocol === 'http' || tunnelForm.protocol === 'tcp'" class="cs-hint">
+                {{ i18nStore.tl('新版客户端按 Agent 地址隔离，可同时运行多个 HTTP/TCP 隧道。', 'New clients isolate agents by address, so multiple HTTP/TCP tunnels can run concurrently.') }}
+              </div>
+              <div v-else class="cs-hint">
+                {{ i18nStore.tl('新版客户端支持多个 SOCKS5 隧道并发；UDP 隧道也可同时运行。', 'New clients support multiple concurrent SOCKS5 tunnels; UDP tunnels can run alongside them.') }}
+              </div>
             </div>
           </div>
 
@@ -116,7 +125,7 @@
           <div class="cs-form-row">
             <label class="cs-form-label"><span class="req">*</span> {{ i18nStore.tl('服务端端口', 'Port') }}</label>
             <div class="cs-form-input-wrap">
-              <el-input-number v-model="tunnelForm.serverPort" :min="1" :max="65535" :placeholder="i18nStore.tl('服务端代理端口', 'Port')" />
+              <el-input-number v-model="tunnelForm.serverPort" :min="1" :max="64535" :placeholder="i18nStore.tl('服务端代理端口（Agent 端口 = 此端口 + 1000）', 'Proxy port (agent port = this + 1000)')" />
             </div>
           </div>
 
@@ -130,14 +139,14 @@
           <div v-if="tunnelForm.protocol === 'socks5' || tunnelForm.protocol === 'http'" class="cs-form-row">
             <label class="cs-form-label">{{ i18nStore.tl('用户名', 'Username') }}</label>
             <div class="cs-form-input-wrap">
-              <el-input v-model="tunnelForm.username" :placeholder="i18nStore.tl('可选认证用户名', 'Optional username')" />
+              <el-input v-model="tunnelForm.username" :placeholder="i18nStore.tl('认证用户名（必填）', 'Auth username (required)')" />
             </div>
           </div>
 
           <div v-if="tunnelForm.protocol === 'socks5' || tunnelForm.protocol === 'http'" class="cs-form-row">
             <label class="cs-form-label">{{ i18nStore.tl('密码', 'Password') }}</label>
             <div class="cs-form-input-wrap">
-              <el-input v-model="tunnelForm.password" type="password" :placeholder="i18nStore.tl('可选认证密码', 'Optional password')" show-password />
+              <el-input v-model="tunnelForm.password" type="password" :placeholder="i18nStore.tl('认证密码（必填）', 'Auth password (required)')" show-password />
             </div>
           </div>
 
@@ -260,7 +269,7 @@
                     <span v-if="row.status === 'loading'" class="cs-btn-spin" />
                     {{ i18nStore.tl('停止', 'Stop') }}
                   </button>
-                  <button class="cs-btn cs-btn-xs" :disabled="row.status === 'loading'" @click="editTunnel(row)">
+                  <button class="cs-btn cs-btn-xs" :disabled="row.status === 'loading' || row.status === 'active'" :title="row.status === 'active' ? i18nStore.tl('请先停止隧道再编辑', 'Stop the tunnel before editing') : ''" @click="editTunnel(row)">
                     {{ i18nStore.tl('编辑', 'Edit') }}
                   </button>
                   <button
@@ -402,12 +411,36 @@ const tunnelRules = computed(() => ({
             callback(new Error(isZh.value ? '请输入目标地址' : 'Please enter the target address'))
             return
           }
-          // 验证格式: IP:端口 或 域名:端口
-          const addressRegex = /^[a-zA-Z0-9.-]+:\d+$/
+          // 验证格式: IPv4/域名:端口 或 [IPv6]:端口
+          const addressRegex = /^(\[[0-9a-fA-F:]+\]|[a-zA-Z0-9._-]+):\d{1,5}$/
           if (!addressRegex.test(value.trim())) {
-            callback(new Error(isZh.value ? '目标地址格式不正确，请使用 IP:端口 或 域名:端口 的格式' : 'Invalid target address; use IP:port or host:port'))
+            callback(new Error(isZh.value ? '目标地址格式不正确，请使用 IP:端口 或 [IPv6]:端口 的格式' : 'Invalid target address; use IP:port or [IPv6]:port'))
             return
           }
+        }
+        callback()
+      },
+      trigger: 'blur'
+    }
+  ],
+  username: [
+    {
+      validator: (rule: any, value: any, callback: any) => {
+        if ((tunnelForm.value.protocol === 'socks5' || tunnelForm.value.protocol === 'http') && !String(value || '').trim()) {
+          callback(new Error(isZh.value ? 'SOCKS5/HTTP 隧道必须填写用户名' : 'SOCKS5/HTTP tunnels require a username'))
+          return
+        }
+        callback()
+      },
+      trigger: 'blur'
+    }
+  ],
+  password: [
+    {
+      validator: (rule: any, value: any, callback: any) => {
+        if ((tunnelForm.value.protocol === 'socks5' || tunnelForm.value.protocol === 'http') && !String(value || '').trim()) {
+          callback(new Error(isZh.value ? 'SOCKS5/HTTP 隧道必须填写密码' : 'SOCKS5/HTTP tunnels require a password'))
+          return
         }
         callback()
       },
@@ -647,6 +680,12 @@ const validateTunnelForm = () => {
   if (tunnelForm.value.protocol === 'tcp' || tunnelForm.value.protocol === 'udp') {
     if (!tunnelForm.value.targetAddress || !tunnelForm.value.targetAddress.trim()) {
       ElMessage.warning(isZh.value ? '请输入目标地址 (IP:端口)' : 'Please enter target address')
+      return false
+    }
+  }
+  if (tunnelForm.value.protocol === 'socks5' || tunnelForm.value.protocol === 'http') {
+    if (!tunnelForm.value.username.trim() || !tunnelForm.value.password.trim()) {
+      ElMessage.warning(isZh.value ? 'SOCKS5/HTTP 隧道必须填写用户名和密码' : 'SOCKS5/HTTP tunnels require username and password')
       return false
     }
   }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -245,6 +246,14 @@ func sanitizeConfig(config *Config) *Config {
 		sanitized.Notifications.Feishu.Secret = "[REDACTED]"
 	}
 
+	// 指标抓取 token 与代码签名密码
+	if sanitized.Metrics.Token != "" {
+		sanitized.Metrics.Token = "[REDACTED]"
+	}
+	if sanitized.Signing.Password != "" {
+		sanitized.Signing.Password = "[REDACTED]"
+	}
+
 	// HTTP配置中可能包含敏感信息也要脱敏
 	if len(sanitized.HTTP.GetMetadataPrepend) > 50 {
 		sanitized.HTTP.GetMetadataPrepend = sanitized.HTTP.GetMetadataPrepend[:50] + "...[REDACTED]"
@@ -276,16 +285,30 @@ func applyConfigUpdates(config *Config, updates map[string]interface{}) error {
 		}
 	}
 
-	if security, ok := updates["security"].(map[string]interface{}); ok {
-		if enableRateLimit, ok := security["enable_rate_limit"].(bool); ok {
+	if sec, ok := updates["security"].(map[string]interface{}); ok {
+		if enableRateLimit, ok := sec["enable_rate_limit"].(bool); ok {
 			config.Security.EnableRateLimit = enableRateLimit
 		}
-		if loginRateLimit, ok := security["login_rate_limit"].(float64); ok {
+		if loginRateLimit, ok := sec["login_rate_limit"].(float64); ok {
 			config.Security.LoginRateLimit = int(loginRateLimit)
 		}
-		if apiRateLimit, ok := security["api_rate_limit"].(float64); ok {
+		if apiRateLimit, ok := sec["api_rate_limit"].(float64); ok {
 			config.Security.APIRateLimit = int(apiRateLimit)
 		}
+		if d, ok := durationValue(sec["block_duration"]); ok {
+			config.Security.BlockDuration = d
+		}
+		if d, ok := durationValue(sec["sliding_window"]); ok {
+			config.Security.SlidingWindow = d
+		}
+		// 配置写入后同步运行时，否则页面显示已保存、实际限流仍是旧值。
+		security.GlobalRateLimiter.UpdateConfigFull(
+			config.Security.LoginRateLimit,
+			config.Security.APIRateLimit,
+			config.Security.BlockDuration,
+			config.Security.SlidingWindow,
+		)
+		security.GlobalRateLimiter.SetEnabled(config.Security.EnableRateLimit)
 	}
 
 	// 白名单/强制模式独立块：避免局部变量 security 遮蔽包名
@@ -325,6 +348,21 @@ func applyConfigUpdates(config *Config, updates map[string]interface{}) error {
 	}
 
 	return nil
+}
+
+// durationValue 解析 JSON 中的 duration：既接受 time.Duration 的数字（纳秒），
+// 也接受 "15m" 这类字符串，便于手工编辑配置文件。
+func durationValue(v interface{}) (time.Duration, bool) {
+	switch x := v.(type) {
+	case float64:
+		return time.Duration(x), true
+	case string:
+		d, err := time.ParseDuration(strings.TrimSpace(x))
+		if err == nil {
+			return d, true
+		}
+	}
+	return 0, false
 }
 
 // applyOpsecUpdates 逐字段更新 opsec 段（字段名与 OpsecConfig 的 json tag 一致）。

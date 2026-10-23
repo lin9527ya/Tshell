@@ -86,8 +86,8 @@
             </div>
 
             <div class="cs-form-row">
-              <label class="cs-form-label">{{ i18nStore.tl('会话有效期（分钟）', 'Stealth Session TTL in Minutes') }}:</label>
-              <el-input-number v-model="form.session_ttl" :min="5" :max="1440" style="width: 140px" />
+              <label class="cs-form-label">{{ i18nStore.tl('会话有效期（小时）', 'Stealth Session TTL in Hours') }}:</label>
+              <el-input-number v-model="form.session_ttl" :min="1" :max="168" style="width: 140px" />
             </div>
 
             <div class="ha-action-row">
@@ -118,15 +118,15 @@ const loading = ref(false)
 const saving = ref(false)
 
 const form = reactive({
-  enabled: true,
-  access_paths: ['/api/v1/telemetry', '/gateway/health'],
-  param_names: ['sec_token', '_k'],
-  secret_key: 'SecTshell2026x9948FaK',
-  session_ttl: 60,
+  enabled: false,
+  access_paths: [] as string[],
+  param_names: [] as string[],
+  secret_key: '',
+  session_ttl: 2,
 })
 
-const pathsText = ref('/api/v1/telemetry\n/gateway/health')
-const paramsText = ref('sec_token, _k')
+const pathsText = ref('')
+const paramsText = ref('')
 
 async function fetchStatus() {
   loading.value = true
@@ -135,7 +135,7 @@ async function fetchStatus() {
     if (res.data && res.data.data) {
       const d = res.data.data
       Object.assign(form, d)
-      if (d.session_ttl == null) form.session_ttl = 60
+      if (d.session_ttl == null) form.session_ttl = 2
       if (Array.isArray(d.access_paths)) {
         pathsText.value = d.access_paths.join('\n')
       }
@@ -164,7 +164,7 @@ async function handleSave() {
       .filter(Boolean)
 
     if (form.session_ttl == null || isNaN(form.session_ttl) || form.session_ttl <= 0) {
-      form.session_ttl = 60
+      form.session_ttl = 2
     }
 
     const res = await SecurityAPI.updateHiddenAccessConfig(form)

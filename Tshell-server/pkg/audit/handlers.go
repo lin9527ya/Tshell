@@ -176,13 +176,22 @@ func ExportAuditLogs(c *gin.Context) {
 // CleanupOldLogs 清理旧日志
 func CleanupOldLogs(c *gin.Context) {
 	var req struct {
-		Days int `json:"days" binding:"required,min=1"`
+		// 指针 + required：显式传 0 表示清空全部，但字段缺失必须拒绝，
+		// 避免一个空 body 误删所有审计日志。
+		Days *int `json:"days" binding:"required"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"status": http.StatusBadRequest,
 			"error":  "参数错误: " + err.Error(),
+		})
+		return
+	}
+	if req.Days == nil || *req.Days < 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"status": http.StatusBadRequest,
+			"error":  "days 必须大于等于 0（0 = 清空全部）",
 		})
 		return
 	}
@@ -196,7 +205,7 @@ func CleanupOldLogs(c *gin.Context) {
 	}
 
 	// 执行清理
-	cutoff := time.Now().AddDate(0, 0, -req.Days)
+	cutoff := time.Now().AddDate(0, 0, -*req.Days)
 	deletedCount := 0
 
 	err := filepath.Walk(GlobalAuditLogger.logDir, func(path string, info os.FileInfo, err error) error {
@@ -271,7 +280,6 @@ func QueryLoginFailures(since time.Time, limit int) []string {
 	}
 	return out
 }
-
 
 func generateStatistics(startTime time.Time) (*LogStatistics, error) {
 	params := LogQueryParams{

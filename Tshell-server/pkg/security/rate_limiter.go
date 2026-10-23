@@ -5,10 +5,11 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"BackendTemplate/pkg/utils/logx"
+	"github.com/gin-gonic/gin"
 )
 
 // 速率限制配置
@@ -19,7 +20,7 @@ const (
 	DEFAULT_BLOCK_DURATION   = 15 * time.Minute // 默认封禁时长
 	DEFAULT_SLIDING_WINDOW   = 1 * time.Minute  // 滑动窗口大小
 
-	rateLimiterShards    = 16  // 分段锁分片数
+	rateLimiterShards       = 16   // 分段锁分片数
 	maxLoginEntriesPerShard = 1024 // 每分片登录记录上限（防 map 无界增长的内存 DoS）
 	maxAPIEntriesPerShard   = 4096 // 每分片 API 记录上限
 )
@@ -49,6 +50,8 @@ type RateLimiter struct {
 	apiRateLimit   int
 	blockDuration  time.Duration
 	slidingWindow  time.Duration
+	enabled        bool
+	throttled      int64
 	cleanupTicker  *time.Ticker
 	stopCh         chan struct{}
 }
@@ -79,6 +82,7 @@ func NewRateLimiter() *RateLimiter {
 		apiRateLimit:   DEFAULT_API_RATE_LIMIT,
 		blockDuration:  DEFAULT_BLOCK_DURATION,
 		slidingWindow:  DEFAULT_SLIDING_WINDOW,
+		enabled:        true,
 		stopCh:         make(chan struct{}),
 	}
 	for i := range rl.shards {
@@ -280,6 +284,7 @@ func (rl *RateLimiter) CheckLoginRateLimit(ip string) (bool, time.Duration) {
 	// 检查是否被封禁
 	if record.Blocked && now.Sub(record.BlockedAt) < blockDuration {
 		remaining := blockDuration - now.Sub(record.BlockedAt)
+		atomic.AddInt64(&rl.throttled, 1)
 		return false, remaining
 	}
 
@@ -305,6 +310,7 @@ func (rl *RateLimiter) CheckLoginRateLimit(ip string) (bool, time.Duration) {
 	if record.Count > loginRateLimit {
 		record.Blocked = true
 		record.BlockedAt = now
+		atomic.AddInt64(&rl.throttled, 1)
 		logx.Infof("🚫 IP %s 因登录尝试过频被封禁 %v\n", ip, blockDuration)
 		return false, blockDuration
 	}
@@ -360,6 +366,7 @@ func (rl *RateLimiter) CheckAPIRateLimit(ip string) (bool, time.Duration) {
 		if remaining <= 0 {
 			remaining = slidingWindow
 		}
+		atomic.AddInt64(&rl.throttled, 1)
 		return false, remaining
 	}
 
@@ -401,6 +408,11 @@ func (rl *RateLimiter) GetBlockedIPs() []map[string]interface{} {
 
 // UpdateConfig 更新限流配置（仅 >0 的字段生效）
 func (rl *RateLimiter) UpdateConfig(loginRateLimit, apiRateLimit int, blockDuration time.Duration) {
+	rl.UpdateConfigFull(loginRateLimit, apiRateLimit, blockDuration, 0)
+}
+
+// UpdateConfigFull 更新限流配置，含滑动窗口（仅 >0 的字段生效）。
+func (rl *RateLimiter) UpdateConfigFull(loginRateLimit, apiRateLimit int, blockDuration, slidingWindow time.Duration) {
 	rl.cfgMu.Lock()
 	defer rl.cfgMu.Unlock()
 	if loginRateLimit > 0 {
@@ -412,6 +424,23 @@ func (rl *RateLimiter) UpdateConfig(loginRateLimit, apiRateLimit int, blockDurat
 	if blockDuration > 0 {
 		rl.blockDuration = blockDuration
 	}
+	if slidingWindow > 0 {
+		rl.slidingWindow = slidingWindow
+	}
+}
+
+// SetEnabled 开启/关闭限流（config.security.enable_rate_limit）。
+func (rl *RateLimiter) SetEnabled(enabled bool) {
+	rl.cfgMu.Lock()
+	rl.enabled = enabled
+	rl.cfgMu.Unlock()
+}
+
+// IsEnabled 返回限流是否启用。
+func (rl *RateLimiter) IsEnabled() bool {
+	rl.cfgMu.RLock()
+	defer rl.cfgMu.RUnlock()
+	return rl.enabled
 }
 
 // GetConfigSnapshot 返回当前配置快照（cfgMu 保护）
@@ -507,6 +536,13 @@ func (rl *RateLimiter) cleanupExpiredRecords() {
 
 // 获取统计信息
 func (rl *RateLimiter) GetStats() map[string]interface{} {
+	rl.cfgMu.RLock()
+	loginRateLimit := rl.loginRateLimit
+	apiRateLimit := rl.apiRateLimit
+	blockDuration := rl.blockDuration
+	enabled := rl.enabled
+	rl.cfgMu.RUnlock()
+
 	blockedIPs := make([]string, 0)
 	loginTracked := 0
 	apiTracked := 0
@@ -528,9 +564,11 @@ func (rl *RateLimiter) GetStats() map[string]interface{} {
 		"api_requests_tracked":   apiTracked,
 		"blocked_ips":            blockedIPs,
 		"whitelist_count":        rl.ipWhitelist.Count(),
-		"login_rate_limit":       rl.loginRateLimit,
-		"api_rate_limit":         rl.apiRateLimit,
-		"block_duration":         rl.blockDuration.String(),
+		"login_rate_limit":       loginRateLimit,
+		"api_rate_limit":         apiRateLimit,
+		"block_duration":         blockDuration.String(),
+		"enabled":                enabled,
+		"throttled_requests":     atomic.LoadInt64(&rl.throttled),
 	}
 }
 

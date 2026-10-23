@@ -247,7 +247,8 @@ func UpdateListenerKeyConfig(c *gin.Context) {
 	// 【修复】支持只更新单字段：VKey 与 Salt 可单独更新（原实现要求同时非空）
 	// 先查出旧值，未提交的字段保留原值
 	var oldListener database.Listener
-	if _, oldHas, _ := database.Listeners().GetByAddress(req.ListenAddress); oldHas {
+	if rec, oldHas, _ := database.Listeners().GetByAddress(req.ListenAddress); oldHas {
+		oldListener = rec
 		if req.VKey == "" {
 			req.VKey = oldListener.VKey
 		}
@@ -307,6 +308,8 @@ func UpdateListenerKeyConfig(c *gin.Context) {
 		})
 		return
 	}
+	// 监听器密钥有 5 分钟缓存；更新后必须失效，否则新 VKey 不会立即生效
+	encrypt.InvalidateListenerKeyCache()
 	auditLogEvent("KEY_CONFIG_UPDATE", "SUCCESS", "更新监听器密钥 "+req.ListenAddress, nil)
 
 	c.JSON(http.StatusOK, KeyStatusResponse{

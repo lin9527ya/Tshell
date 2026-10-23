@@ -3,6 +3,7 @@ package api
 import (
 	"BackendTemplate/pkg/config"
 	"BackendTemplate/pkg/database"
+	"BackendTemplate/pkg/delivery"
 	"BackendTemplate/pkg/errors"
 	"path/filepath"
 	"runtime"
@@ -88,10 +89,15 @@ func GetDashboardStats(c *gin.Context) {
 	// 获取配置信息
 	appConfig := config.GetGlobalConfig()
 	if appConfig != nil {
+		webPort := appConfig.Server.Port
+		// -p 可覆盖配置端口；Hub 在启动时记录实际监听端口，优先用它
+		if actual := delivery.GlobalHub.MainPort(); actual > 0 {
+			webPort = actual
+		}
 		stats.ConfigInfo = ConfigInfo{
 			LogLevel:    appConfig.Logging.Level,
 			LogFilePath: getAbsoluteLogPath(appConfig.Logging.AuditLogDir),
-			WebPort:     appConfig.Server.Port,
+			WebPort:     webPort,
 			BasicAuth:   false,                         // 当前项目使用JWT认证，不是Basic认证
 			Version:     appConfig.Application.Version, // 从配置文件获取版本号
 		}

@@ -1,18 +1,19 @@
 package connection
 
 import (
+	"BackendTemplate/pkg/utils/logx"
 	"context"
 	"fmt"
 	"net"
 	"sync"
 	"sync/atomic"
 	"time"
-	"BackendTemplate/pkg/utils/logx"
 )
 
 // 静态计数器，用于控制日志输出频率
 // static_counter 健康检查计数（原子，防 HTTP 与 ticker 并发触发时数据竞争）
 var static_counter int64
+
 // 保护列表，防止健康检查期间误删正在初始化的连接
 var protected_connections = make(map[string]time.Time)
 var protected_mutex sync.RWMutex
@@ -94,8 +95,8 @@ func (ci *ConnectionInfo) GetStats() (time.Duration, int64, int64, int) {
 type EnhancedConnectionManager struct {
 	config        *ConnectionPoolConfig
 	configMu      sync.RWMutex // J2: 配置读写锁（UpdatePoolConfig 无锁改写 vs AddConnection/清理读竞争）
-	connections   sync.Map // map[string]*ConnectionInfo
-	uidIndex      sync.Map // map[string]string —— UID → 连接ID 二级索引（GetConnectionByUID O(1)，避免全表扫描）
+	connections   sync.Map     // map[string]*ConnectionInfo
+	uidIndex      sync.Map     // map[string]string —— UID → 连接ID 二级索引（GetConnectionByUID O(1)，避免全表扫描）
 	stats         *ConnectionStats
 	ctx           context.Context
 	cancel        context.CancelFunc
@@ -141,12 +142,16 @@ func NewEnhancedConnectionManager(config *ConnectionPoolConfig) *EnhancedConnect
 	return manager
 }
 
-
 // getConfig 快照读取配置（J2: 原子化配置访问）
 func (m *EnhancedConnectionManager) getConfig() ConnectionPoolConfig {
 	m.configMu.RLock()
 	defer m.configMu.RUnlock()
 	return *m.config
+}
+
+// GetConfig 返回当前连接池配置快照（供统计接口读取实际生效值）。
+func (m *EnhancedConnectionManager) GetConfig() ConnectionPoolConfig {
+	return m.getConfig()
 }
 
 // setConfig 更新配置（J2: 与读取方互斥）
@@ -183,6 +188,7 @@ func (ci *ConnectionInfo) LastActivitySafe() time.Time {
 	defer ci.mu.RUnlock()
 	return ci.LastActivity
 }
+
 // AddConnection 添加连接到池中
 func (manager *EnhancedConnectionManager) AddConnection(id, uid, protocol, clientIP string, conn net.Conn) error {
 	// 检查连接数限制（【修复】计数与存储原子化：防止并发接入超 MaxConnections）
@@ -415,7 +421,7 @@ func (manager *EnhancedConnectionManager) performHealthCheck() {
 		protected_mutex.RLock()
 		_, isProtected := protected_connections[id]
 		protected_mutex.RUnlock()
-		
+
 		if isProtected {
 			// 跳过被保护的连接
 			return true
@@ -439,12 +445,12 @@ func (manager *EnhancedConnectionManager) performHealthCheck() {
 
 		// 隧道友好检查：只有在长时间无活动且错误过多时才认为不健康
 		timeSinceLastActivity := time.Since(lastActivity)
-		
+
 		// 只有同时满足以下条件才认为连接不健康：
 		// 1. 超过30分钟无活动 AND
 		// 2. 错误次数超过20次
 		if timeSinceLastActivity > 30*time.Minute && errorCount > 20 {
-			logx.Infof("🏥 连接长时间无活动且错误过多，移除: %s (无活动%.1f分钟, 错误%d次)\n", 
+			logx.Infof("🏥 连接长时间无活动且错误过多，移除: %s (无活动%.1f分钟, 错误%d次)\n",
 				id, timeSinceLastActivity.Minutes(), errorCount)
 			unhealthyConnections = append(unhealthyConnections, id)
 		}

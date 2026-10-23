@@ -52,9 +52,9 @@ func TestStartTunnelFailsWhenAgentPortBusy(t *testing.T) {
 	setupProxyTestDB(t)
 
 	const port = 19111
-	// 与 StartTunnel 实际绑定的地址一致（serverIP:port+1000），
-	// 否则 Windows 上通配绑定与具体地址绑定可以共存，测试会假通过/假失败。
-	blocker, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port+1000))
+	// 服务端现在绑定通配地址 ":port+1000"（对外通告地址与 bind 分离），
+	// 这里也用通配地址占位，确保在 Windows 上能真实触发绑定失败。
+	blocker, err := net.Listen("tcp", fmt.Sprintf(":%d", port+1000))
 	if err != nil {
 		t.Fatalf("占位 agent 端口失败: %v", err)
 	}

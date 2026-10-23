@@ -12,6 +12,36 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// TestValidateTunnelTarget tcp/udp 必须有 host:port；socks5/http 不要求目标。
+func TestValidateTunnelTarget(t *testing.T) {
+	cases := []struct {
+		name     string
+		protocol string
+		target   string
+		wantErr  bool
+	}{
+		{"tcp 空目标", "tcp", "", true},
+		{"tcp 缺端口", "tcp", "10.0.0.1", true},
+		{"tcp 非法端口", "tcp", "10.0.0.1:70000", true},
+		{"tcp 正常", "tcp", "10.0.0.1:3306", false},
+		{"tcp 域名", "tcp", "db.internal:5432", false},
+		{"tcp IPv6", "tcp", "[2001:db8::1]:443", false},
+		{"udp 正常", "udp", "1.1.1.1:53", false},
+		{"udp 空目标", "udp", "", true},
+		{"socks5 可空", "socks5", "", false},
+		{"http 可空", "http", "", false},
+	}
+	for _, c := range cases {
+		err := validateTunnelTarget(c.protocol, c.target)
+		if c.wantErr && err == nil {
+			t.Errorf("%s: 期望拒绝，实际通过", c.name)
+		}
+		if !c.wantErr && err != nil {
+			t.Errorf("%s: 期望通过，实际 %v", c.name, err)
+		}
+	}
+}
+
 // TestRequireTunnelAuth socks5/http 的端口直接对外提供服务，必须配凭据；
 // tcp/udp 是按目标地址的定向转发，不涉及。
 func TestRequireTunnelAuth(t *testing.T) {
