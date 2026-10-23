@@ -136,7 +136,7 @@
       <el-pagination
         small
         background
-        layout="prev, pager, next, sizes, total"
+        layout="total, sizes, prev, pager, next, jumper"
         :total="total"
         :current-page="page"
         :page-size="size"

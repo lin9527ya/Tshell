@@ -80,12 +80,43 @@ export function formatUploadFileSize(size: number): string {
   return `${(size / 1024 ** 2).toFixed(1)} MB`
 }
 
-/** formatPermissions 权限列；后端可能回 '-'/'undefined' 这类占位符 */
+/**
+ * formatPermissions 权限列，统一显示成八进制（如 0755 / 0644）。
+ *
+ * 后端可能回三种形态：
+ *   - 符号式：`rwxr-xr-x`、`-rw-r--r--`、`drwxr-xr-x`（首字符是文件类型）
+ *   - 已是八进制：`755`、`0755`、`0644`
+ *   - 占位符：`-` / `undefined` / `null` / 空串
+ * 符号式里带 s/S/t/T 时，把 setuid/setgid/sticky 折进最高位（4755 / 2755 / 1755）。
+ */
 export function formatPermissions(perm: unknown): string {
   if (perm === null || perm === undefined) return '-'
-  const s = String(perm)
+  const s = String(perm).trim()
   if (!s || s === '-' || s === 'undefined' || s === 'null') return '-'
-  return s
+
+  // 已是八进制（3~4 位、只含 0-7）→ 补足 4 位，统一带前导 0
+  if (/^[0-7]{3,4}$/.test(s)) return s.padStart(4, '0')
+
+  // 符号式：[文件类型]rwxrwxrwx，允许 setuid/setgid/sticky 的 s/S/t/T
+  const m = /^[bcdlps-]?([rwxstST-]{9})$/.exec(s)
+  if (!m) return s
+  const bits = m[1]
+
+  let special = 0
+  if (bits[2] === 's' || bits[2] === 'S') special += 4
+  if (bits[5] === 's' || bits[5] === 'S') special += 2
+  if (bits[8] === 't' || bits[8] === 'T') special += 1
+
+  let oct = ''
+  for (let i = 0; i < 9; i += 3) {
+    let v = 0
+    if (bits[i] === 'r') v += 4
+    if (bits[i + 1] === 'w') v += 2
+    // x 与 s/t 都表示可执行位（s/t 只是附加 setuid/setgid/sticky）
+    if (bits[i + 2] === 'x' || bits[i + 2] === 's' || bits[i + 2] === 't') v += 1
+    oct += String(v)
+  }
+  return `${special}${oct}`
 }
 
 /**

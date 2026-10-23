@@ -296,7 +296,7 @@
             v-model:page-size="pageSize"
             :page-sizes="[10, 20, 50, 100]"
             :total="filteredTunnelList.length"
-            layout="total, prev, pager, next"
+            layout="total, sizes, prev, pager, next, jumper"
             @size-change="handleSizeChange"
             @current-change="handleCurrentChange"
           />

@@ -111,9 +111,28 @@ describe('formatPermissions', () => {
     expect(formatPermissions(undefined)).toBe('-')
   })
 
-  it('真实权限原样返回', () => {
-    expect(formatPermissions('rwxr-xr-x')).toBe('rwxr-xr-x')
-    expect(formatPermissions('-rw-r--r--')).toBe('-rw-r--r--')
+  it('符号式权限转换为八进制', () => {
+    expect(formatPermissions('rwxr-xr-x')).toBe('0755')
+    expect(formatPermissions('-rw-r--r--')).toBe('0644')
+    expect(formatPermissions('drwxr-xr-x')).toBe('0755')
+    expect(formatPermissions('-rw-rw-rw-')).toBe('0666')
+  })
+
+  it('setuid / setgid / sticky 折进最高位', () => {
+    expect(formatPermissions('-rwsr-xr-x')).toBe('4755')
+    expect(formatPermissions('-rwxr-sr-x')).toBe('2755')
+    expect(formatPermissions('drwxrwxrwt')).toBe('1777')
+  })
+
+  it('已是八进制时补足 4 位前导 0', () => {
+    expect(formatPermissions('755')).toBe('0755')
+    expect(formatPermissions('0755')).toBe('0755')
+    expect(formatPermissions('644')).toBe('0644')
+  })
+
+  it('无法识别的形态原样返回', () => {
+    expect(formatPermissions('unknown')).toBe('unknown')
+    expect(formatPermissions('drwxr-xr-x@')).toBe('drwxr-xr-x@')
   })
 })
 

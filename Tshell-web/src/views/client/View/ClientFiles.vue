@@ -47,11 +47,11 @@
             <template #default="{ data }">
               <div class="fm-tree-node" :class="{ active: data.path === currentPath }">
                 <el-icon class="fm-node-icon">
-                  <Monitor v-if="data.type === 'group'" />
+                  <VsIcon v-if="data.type === 'group'" :name="data.osIcon || 'desktop'" :size="15" />
                   <Loading v-else-if="loadingNodes.has(data.path)" class="is-loading" />
                   <Folder v-else class="folder-gold" />
                 </el-icon>
-                <span class="fm-node-label" :title="data.name">{{ data.name }}</span>
+                <span class="fm-node-label" :class="{ 'is-root': data.type === 'group' }" :title="data.name">{{ data.name }}</span>
               </div>
             </template>
           </el-tree>
@@ -177,6 +177,7 @@
 
         <!-- 文件列表表格 -->
         <div class="fm-table-wrap" v-loading="treeLoading">
+          <div class="fm-table-scroll">
           <el-table
             ref="tableRef"
             :data="paginatedFiles"
@@ -205,23 +206,23 @@
               </template>
             </el-table-column>
 
-            <el-table-column prop="size" :label="i18nStore.tl('大小', 'Size')" width="115" sortable align="right">
-              <template #default="{ row }">
-                <span class="fm-size-text cs-font-mono" :class="{ 'is-dir': row.type === 'D' }">
-                  {{ row.type === 'D' ? '<DIR>' : formatFileSize(row.size) }}
-                </span>
-              </template>
-            </el-table-column>
-
             <el-table-column prop="modifiedTime" :label="i18nStore.tl('修改时间', 'Modified Date')" width="230" sortable align="center">
               <template #default="{ row }">
                 <span class="cs-font-mono text-dim fm-time-text">{{ formatDateTime(row) }}</span>
               </template>
             </el-table-column>
 
-            <el-table-column prop="permissions" :label="i18nStore.tl('权限', 'Mode')" width="145" align="center">
+            <el-table-column prop="permissions" :label="i18nStore.tl('权限', 'Mode')" width="90" align="center">
               <template #default="{ row }">
                 <span class="cs-font-mono text-dim fm-perm-text">{{ formatPermissions(row.permissions) }}</span>
+              </template>
+            </el-table-column>
+
+            <el-table-column prop="size" :label="i18nStore.tl('大小', 'Size')" width="115" sortable align="right">
+              <template #default="{ row }">
+                <span class="fm-size-text cs-font-mono" :class="{ 'is-dir': row.type === 'D' }">
+                  {{ row.type === 'D' ? '<DIR>' : formatFileSize(row.size) }}
+                </span>
               </template>
             </el-table-column>
 
@@ -233,13 +234,18 @@
               </div>
             </template>
           </el-table>
+          </div>
 
-          <div v-if="filteredFiles.length > PAGE_SIZE" class="fm-pager">
+          <!-- 分页：目录非空时常驻底部（含每页条数与跳页），不遮挡文件列表 -->
+          <div v-if="filteredFiles.length" class="fm-pager">
             <el-pagination
               v-model:current-page="currentPage"
-              :page-size="PAGE_SIZE"
+              v-model:page-size="pageSize"
+              :page-sizes="[20, 50, 100, 200]"
               :total="filteredFiles.length"
-              layout="prev, pager, next"
+              size="small"
+              background
+              layout="total, sizes, prev, pager, next, jumper"
             />
           </div>
         </div>
@@ -534,7 +540,7 @@ import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Search, Refresh, FolderAdd, DocumentAdd, Download, Upload,
-  Folder, Document, Fold, FolderOpened, Monitor, HomeFilled, Top, Loading, QuestionFilled
+  Folder, Document, Fold, FolderOpened, HomeFilled, Top, Loading, QuestionFilled
 } from '@element-plus/icons-vue'
 import ClientAPI from '@/api/clients'
 import TaskAPI from '@/api/tasks'
@@ -542,7 +548,8 @@ import { useGlobalFileTreeStore } from '@/stores/fileTree'
 import { useCurrentFileNode } from '@/stores/currentFileNode'
 import { useClientsStore } from '@/stores/clients'
 import { useI18nStore } from '@/stores/i18n'
-import { detectClientOs } from '@/utils/clientUtils'
+import { detectClientOs, clientOsIcon, formatClientTreeRoot } from '@/utils/clientUtils'
+import VsIcon from '@/layout-vshell/VsIcon.vue'
 
 const i18nStore = useI18nStore()
 const isZh = computed(() => i18nStore.isZh)
@@ -678,12 +685,22 @@ const treeProps = {
 
 const groupNodeKey = computed(() => `group:${uid.value}`)
 
+// 文件树根节点（vshell 命名）："{数据库ID}: {外网IP} {备注}"，备注为空时不显示。
+// 数据库 ID 缺失时退回 UID 前 8 位，避免出现 undefined。
+const clientInfo = computed(() => clientsStore.getClientByUid(uid.value) || null)
+
 const clientGroupLabel = computed(() => {
-  const info = clientsStore.getClientByUid(uid.value)
-  const id = info?.Uid ? info.Uid.slice(0, 8) : 'Host'
-  const ip = info?.ExternalIP || info?.InternalIP || '0.0.0.0'
-  return `${id} (${ip})`
+  const info = clientInfo.value
+  const rawId = info?.ID ?? info?.id
+  const id = rawId !== undefined && rawId !== null && String(rawId) !== ''
+    ? String(rawId)
+    : (info?.Uid ? info.Uid.slice(0, 8) : 'Host')
+  const ip = info?.ExternalIP || info?.Address || info?.InternalIP || '0.0.0.0'
+  return formatClientTreeRoot({ id, externalIp: String(ip), note: info?.Note })
 })
+
+// 根节点图标按被控端系统显示（Windows / Linux / macOS）
+const clientRootIcon = computed(() => clientOsIcon(clientInfo.value))
 
 const filteredFileTree = computed(() => {
   const filterNodes = (nodes: any[]): any[] => {
@@ -704,6 +721,8 @@ const filteredFileTree = computed(() => {
       name: clientGroupLabel.value,
       path: groupNodeKey.value,
       type: 'group',
+      // 根节点按被控端系统显示图标
+      osIcon: clientRootIcon.value,
       children,
     },
   ]
@@ -746,15 +765,21 @@ const filteredFiles = computed(() => {
   return files
 })
 
-const PAGE_SIZE = 200
+const DEFAULT_PAGE_SIZE = 200
+// 每页条数可调（右下角分页器），默认 200：大目录(如 System32)全量渲染会卡
+const pageSize = ref(DEFAULT_PAGE_SIZE)
 const currentPage = ref(1)
-// 大目录(如 System32)全量渲染会卡;前端分页,勾选经 reserve-selection 跨页保留
+// 前端分页，勾选经 reserve-selection 跨页保留
 const paginatedFiles = computed(() => {
-  const start = (currentPage.value - 1) * PAGE_SIZE
-  return filteredFiles.value.slice(start, start + PAGE_SIZE)
+  const start = (currentPage.value - 1) * pageSize.value
+  return filteredFiles.value.slice(start, start + pageSize.value)
 })
 
 watch(filteredFiles, () => {
+  currentPage.value = 1
+})
+
+watch(pageSize, () => {
   currentPage.value = 1
 })
 
@@ -1369,10 +1394,18 @@ function copyPath(item: any) {
 async function modifyTime(item: any) {
   closeContextMenu()
   if (!item) return
+  // 输入框预填该文件当前时间（统一成 YYYY/MM/DD HH:mm:ss），方便直接在原值上改
+  const current = formatDateTime(item)
+  const prefilled = current && current !== '-' ? current : ''
   ElMessageBox.prompt(
     isZh.value ? '设置新时间 (YYYY/MM/DD HH:mm:ss):' : 'Set timestamp (YYYY/MM/DD HH:mm:ss):',
     isZh.value ? '修改文件时间' : 'Touch File Time',
-    { confirmButtonText: isZh.value ? '确定' : 'OK', cancelButtonText: isZh.value ? '取消' : 'Cancel' }
+    {
+      confirmButtonText: isZh.value ? '确定' : 'OK',
+      cancelButtonText: isZh.value ? '取消' : 'Cancel',
+      inputValue: prefilled,
+      inputPlaceholder: 'YYYY/MM/DD HH:mm:ss',
+    }
   ).then(async ({ value }) => {
     if (!value?.trim()) return
     await ClientAPI.modify_file_time({ uid: uid.value, filePath: item.path, newTime: value.trim() })
@@ -1605,6 +1638,13 @@ function handleHelp() {
   white-space: nowrap;
 }
 
+/* 根节点（ID: IP 备注）：备注可能较长，允许换行完整显示 */
+.fm-node-label.is-root {
+  white-space: normal;
+  word-break: break-all;
+  line-height: 1.45;
+}
+
 /* 右侧主内容卡片 */
 .fm-content {
   flex: 1;
@@ -1749,20 +1789,29 @@ function handleHelp() {
 }
 
 .fm-pager {
-  position: absolute;
-  right: 16px;
-  bottom: 12px;
-  z-index: 5;
-  padding: 4px 8px;
+  /* 独立底栏：与文件列表上下隔开，不再浮在表格上遮挡最后几行 */
+  flex-shrink: 0;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  padding: 6px 12px;
   background: var(--cs-panel);
-  border: 1px solid var(--cs-card-border);
-  border-radius: 8px;
+  border-top: 1px solid var(--cs-card-border);
 }
 
 .fm-table-wrap {
   flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
-  position: relative;
+}
+
+/* 表格占满剩余高度，分页条固定在其下方 */
+.fm-table-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 
 /* 空状态：文件夹图标 48px + 说明 */

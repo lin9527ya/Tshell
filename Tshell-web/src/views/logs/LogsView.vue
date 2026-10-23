@@ -164,7 +164,7 @@
           v-model:current-page="query.page"
           v-model:page-size="query.page_size"
           :total="total"
-          layout="total, prev, pager, next"
+          layout="total, sizes, prev, pager, next, jumper"
           @change="loadLogs"
         />
       </div>

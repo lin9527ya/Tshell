@@ -112,7 +112,7 @@ provide('realUid', uid)
 const client = computed(() => clients.clientsList.find((c) => c.Uid === uid.value) || null)
 const isOnline = computed(() => client.value?.Online === '1' || client.value?.Online === 'true')
 
-// 顶部标签图标：按被控端系统显示（vshell 同款 devicon/wpf 图标）
+// 页头信息条的系统图标（顶部页签不显示图标，与 vshell 一致）
 const osIcon = computed(() => clientOsIcon(client.value))
 
 // 数据库自增 ID；列表尚未加载时退回 UID 前 8 位，避免标签出现 undefined
@@ -128,7 +128,7 @@ const externalIp = computed(() => {
   return String(c?.ExternalIP || c?.Address || '').trim() || '-'
 })
 
-/** vshell 命名：主机管理 = "ID:3 客户端管理"；文件管理 = "3: 外网IP" */
+/** vshell 命名：标签恒为 "ID: 3 客户端管理" */
 const tabTitle = computed(() =>
   formatClientTabTitle({
     func: func.value,
@@ -142,11 +142,11 @@ function switchTo(f: ClientFunc) {
   router.replace(`/client/${uid.value}/${f}`)
 }
 
-// 标签标题/图标细化：随当前功能页与客户端信息更新
+// 标签标题细化：随当前功能页与客户端信息更新；icon 传空串以去掉左侧图标
 watch(
-  () => [route.fullPath, client.value?.ID, client.value?.id, client.value?.ExternalIP, client.value?.Address, client.value?.Os, func.value, isZh.value] as const,
+  () => [route.fullPath, client.value?.ID, client.value?.id, client.value?.ExternalIP, client.value?.Address, func.value, isZh.value] as const,
   () => {
-    tabs.setTitle(route.fullPath, tabTitle.value, osIcon.value)
+    tabs.setTitle(route.fullPath, tabTitle.value, '')
   },
   { immediate: true },
 )

@@ -21,7 +21,7 @@
     <div class="ct-action-bar">
       <span class="ct-selected-hint">
         {{ selectedTool
-          ? `${selectedTool.name} (${selectedTool.category})`
+          ? `${toolName(selectedTool)} (${toolCategory(selectedTool)})`
           : (i18nStore.tl('未选择模块', 'No module selected')) }}
       </span>
 
@@ -84,19 +84,20 @@
           class="cs-session-table"
           @current-change="onSelectTool"
         >
-          <el-table-column prop="name" :label="i18nStore.tl('功能模块', 'Module')" width="148" sortable show-overflow-tooltip>
+          <el-table-column prop="name" :label="i18nStore.tl('功能模块', 'Module')" width="164" sortable show-overflow-tooltip>
             <template #default="{ row }">
-              <span class="tool-name font-bold">{{ row.name }}</span>
+              <span class="tool-name font-bold">{{ toolName(row) }}</span>
             </template>
           </el-table-column>
-          <el-table-column prop="category" :label="i18nStore.tl('分类', 'Category')" width="86" sortable align="center">
+          <el-table-column prop="category" :label="i18nStore.tl('分类', 'Category')" width="96" sortable align="center">
             <template #default="{ row }">
-              <span class="category-badge">{{ row.category }}</span>
+              <span class="category-badge">{{ toolCategory(row) }}</span>
             </template>
           </el-table-column>
-          <el-table-column prop="desc" :label="i18nStore.tl('功能说明', 'Description')" min-width="150" show-overflow-tooltip>
+          <!-- 功能说明：不省略、整段换行显示（宽度已按最长中文说明留足） -->
+          <el-table-column prop="desc" :label="i18nStore.tl('功能说明', 'Description')" min-width="300">
             <template #default="{ row }">
-              <span class="text-dim">{{ row.desc }}</span>
+              <span class="tool-desc text-dim">{{ toolDesc(row) }}</span>
             </template>
           </el-table-column>
         </el-table>
@@ -106,8 +107,8 @@
       <div class="ct-right-panel">
         <div v-if="selectedTool" class="ct-config-card">
           <div class="ct-card-header">
-            <span class="header-title">{{ selectedTool.name }} ({{ selectedTool.category }})</span>
-            <span class="header-desc">{{ selectedTool.desc }}</span>
+            <span class="header-title">{{ toolName(selectedTool) }} ({{ toolCategory(selectedTool) }})</span>
+            <span class="header-desc">{{ toolDesc(selectedTool) }}</span>
           </div>
 
           <div class="ct-card-form">
@@ -199,7 +200,16 @@ interface ToolItem {
   name: string
   category: string
   desc: string
+  // 中文模式下的展示文案（模块名 / 分类 / 功能说明）
+  nameZh: string
+  categoryZh: string
+  descZh: string
 }
+
+// 中文优先：中文模式下模块名、分类、功能说明全部走 zh 字段
+const toolName = (t: ToolItem | null | undefined) => (t ? (isZh.value ? t.nameZh : t.name) : '')
+const toolCategory = (t: ToolItem | null | undefined) => (t ? (isZh.value ? t.categoryZh : t.category) : '')
+const toolDesc = (t: ToolItem | null | undefined) => (t ? (isZh.value ? t.descZh : t.desc) : '')
 
 interface ConsoleLog {
   time: string
@@ -241,43 +251,55 @@ const binExecDlg = ref({ visible: false, uid: '', mode: '' })
 const opsecDlg = ref({ visible: false, uid: '' })
 
 const toolList = ref<ToolItem[]>([
-  { id: 'clipboard', name: 'Clipboard Dump', category: 'Gather', desc: 'Read target user active clipboard text content' },
-  { id: 'wifi', name: 'WiFi Passwords', category: 'Credentials', desc: 'Extract stored WiFi profile names and cleartext passwords' },
-  { id: 'keylog', name: 'Keystroke Logger', category: 'Spying', desc: 'Capture keyboard inputs (Windows API Hook / Linux input device)' },
-  { id: 'services', name: 'Services Manager', category: 'System', desc: 'List, start, or stop Windows/Linux background system services' },
-  { id: 'reg_query', name: 'Registry Query', category: 'Persistence', desc: 'Query Windows Registry key values and startup items' },
-  { id: 'migrate', name: 'Process Migration', category: 'Injection', desc: 'In-memory injection: generate stageless shellcode and inject into a process (no disk write)' },
-  { id: 'hideprocess', name: 'Process Masquerade', category: 'Stealth', desc: 'Override process name & argv on Linux (ps/top masquerading)' },
-  { id: 'hidenet', name: 'Network Connection Hide', category: 'Stealth', desc: 'LD_PRELOAD /proc/net hook to hide active listening port' },
-  { id: 'selfdelete', name: 'Self Delete / Wipe', category: 'Evasion', desc: 'Permanently remove beacon binary from disk and terminate' },
-  { id: 'etw_patch', name: 'ETW Patch', category: 'Evasion', desc: 'Patch Event Tracing for Windows to blind ETW-based detection' },
-  { id: 'unhook_ntdll', name: 'Unhook NTDLL', category: 'Evasion', desc: 'Restore ntdll.dll hooks/patches to bypass userland monitoring' },
-  { id: 'sandbox_check', name: 'Sandbox Check', category: 'Evasion', desc: 'Probe for sandbox/VM artifacts; adjust behavior accordingly' },
-  { id: 'antidebug', name: 'Anti-Debug', category: 'Evasion', desc: 'Enable anti-debugger protections (IsDebuggerPresent & friends)' },
+  // ---- 信息收集 ----
+  { id: 'clipboard', name: 'Clipboard Dump', category: 'Gather', desc: 'Read target user active clipboard text content', nameZh: '剪贴板提取', categoryZh: '信息收集', descZh: '读取目标用户当前剪贴板中的文本内容' },
+  { id: 'wifi', name: 'WiFi Passwords', category: 'Credentials', desc: 'Extract stored WiFi profile names and cleartext passwords', nameZh: 'WiFi 密码', categoryZh: '凭据', descZh: '提取已保存的 WiFi 配置名称与明文口令' },
+  // ---- 监视 ----
+  { id: 'keylog', name: 'Keystroke Logger', category: 'Spying', desc: 'Capture keyboard inputs (Windows API Hook / Linux input device)', nameZh: '键盘记录', categoryZh: '监视', descZh: '捕获键盘输入（Windows API 钩子 / Linux 输入设备）' },
+  // ---- 系统 ----
+  { id: 'services', name: 'Services Manager', category: 'System', desc: 'List, start, or stop Windows/Linux background system services', nameZh: '服务管理', categoryZh: '系统', descZh: '列出、启动或停止 Windows/Linux 后台系统服务' },
+  { id: 'service_stop', name: 'Service Stop', category: 'System', desc: 'Stop a Windows service by name', nameZh: '停止服务', categoryZh: '系统', descZh: '按名称停止指定的 Windows 服务' },
+  // ---- 持久化 ----
+  { id: 'reg_query', name: 'Registry Query', category: 'Persistence', desc: 'Query Windows Registry key values and startup items', nameZh: '注册表查询', categoryZh: '持久化', descZh: '查询 Windows 注册表键值与自启动项' },
+  // ---- 注入 ----
+  { id: 'migrate', name: 'Process Migration', category: 'Injection', desc: 'In-memory injection: generate stageless shellcode and inject into a process (no disk write)', nameZh: '进程迁移', categoryZh: '注入', descZh: '内存注入：生成无阶段 shellcode 并注入目标进程（不落盘）' },
+  // ---- 隐蔽 ----
+  { id: 'hideprocess', name: 'Process Masquerade', category: 'Stealth', desc: 'Override process name & argv on Linux (ps/top masquerading)', nameZh: '进程伪装', categoryZh: '隐蔽', descZh: '在 Linux 上改写进程名与命令行参数（骗过 ps/top）' },
+  { id: 'hidenet', name: 'Network Connection Hide', category: 'Stealth', desc: 'LD_PRELOAD /proc/net hook to hide active listening port', nameZh: '网络连接隐藏', categoryZh: '隐蔽', descZh: 'LD_PRELOAD 挂钩 /proc/net，隐藏正在监听的端口' },
+  // ---- 规避 ----
+  { id: 'selfdelete', name: 'Self Delete / Wipe', category: 'Evasion', desc: 'Permanently remove beacon binary from disk and terminate', nameZh: '自删除 / 抹除', categoryZh: '规避', descZh: '从磁盘永久删除 Beacon 本体并终止进程' },
+  { id: 'etw_patch', name: 'ETW Patch', category: 'Evasion', desc: 'Patch Event Tracing for Windows to blind ETW-based detection', nameZh: 'ETW 补丁', categoryZh: '规避', descZh: '修补 Windows 事件追踪，致盲基于 ETW 的检测' },
+  { id: 'unhook_ntdll', name: 'Unhook NTDLL', category: 'Evasion', desc: 'Restore ntdll.dll hooks/patches to bypass userland monitoring', nameZh: '解除 NTDLL 钩子', categoryZh: '规避', descZh: '还原 ntdll.dll 中的钩子与补丁，绕过用户态监控' },
+  { id: 'sandbox_check', name: 'Sandbox Check', category: 'Evasion', desc: 'Probe for sandbox/VM artifacts; adjust behavior accordingly', nameZh: '沙箱检测', categoryZh: '规避', descZh: '探测沙箱/虚拟机痕迹，并据此调整行为' },
+  { id: 'antidebug', name: 'Anti-Debug', category: 'Evasion', desc: 'Enable anti-debugger protections (IsDebuggerPresent & friends)', nameZh: '反调试', categoryZh: '规避', descZh: '启用反调试保护（IsDebuggerPresent 等检测）' },
   // P4：会话内开关（ETW/AMSI/摘链/伪栈/PPID/BlockDLLs/unhook），免重新生成载荷
-  { id: 'opsec_switches', name: 'Evasion Switches', category: 'Evasion', desc: 'Turn host-evasion capabilities on/off at runtime (no re-payload needed)' },
-  { id: 'service_stop', name: 'Service Stop', category: 'System', desc: 'Stop a Windows service by name' },
-  // ---- 凭证/提权（移植自已移除的会话右键菜单）----
-  { id: 'hashdump', name: 'Hash Dump', category: 'Access', desc: 'Dump local SAM/LSA password hashes (Windows)' },
-  { id: 'rev2self', name: 'Revert Token', category: 'Access', desc: 'Revert to the original process token' },
-  { id: 'make_token', name: 'Make Token', category: 'Access', desc: 'Create a token from plaintext credentials (prompts domain\\user, password)' },
-  { id: 'steal_token', name: 'Steal Token', category: 'Access', desc: 'Clone a token from another process (prompts PID)' },
-  { id: 'oneliner', name: 'PowerShell One-liner', category: 'Access', desc: 'Execute a PowerShell one-liner (prompts command)' },
-  { id: 'netview', name: 'Network View', category: 'Recon', desc: 'Enumerate domain computers (net view)' },
+  { id: 'opsec_switches', name: 'Evasion Switches', category: 'Evasion', desc: 'Turn host-evasion capabilities on/off at runtime (no re-payload needed)', nameZh: '对抗开关', categoryZh: '规避', descZh: '运行期开关主机对抗能力（ETW/AMSI/摘链/伪栈/PPID/BlockDLLs），无需重新生成载荷' },
+  // ---- 访问 ----
+  { id: 'hashdump', name: 'Hash Dump', category: 'Access', desc: 'Dump local SAM/LSA password hashes (Windows)', nameZh: '哈希导出', categoryZh: '访问', descZh: '导出本地 SAM/LSA 口令哈希（Windows）' },
+  { id: 'rev2self', name: 'Revert Token', category: 'Access', desc: 'Revert to the original process token', nameZh: '还原令牌', categoryZh: '访问', descZh: '回退到进程的原始访问令牌' },
+  { id: 'make_token', name: 'Make Token', category: 'Access', desc: 'Create a token from plaintext credentials (prompts domain\\user, password)', nameZh: '创建令牌', categoryZh: '访问', descZh: '用明文凭据创建令牌（需输入 域\\用户 与口令）' },
+  { id: 'steal_token', name: 'Steal Token', category: 'Access', desc: 'Clone a token from another process (prompts PID)', nameZh: '窃取令牌', categoryZh: '访问', descZh: '从其它进程克隆访问令牌（需输入 PID）' },
+  { id: 'oneliner', name: 'PowerShell One-liner', category: 'Access', desc: 'Execute a PowerShell one-liner (prompts command)', nameZh: 'PowerShell 单行命令', categoryZh: '访问', descZh: '执行一条 PowerShell 单行命令（需输入命令内容）' },
+  // ---- 侦察 ----
+  { id: 'netview', name: 'Network View', category: 'Recon', desc: 'Enumerate domain computers (net view)', nameZh: '网络视图', categoryZh: '侦察', descZh: '枚举域内计算机（net view）' },
   // ---- 内存执行（打开内存执行对话框）----
-  { id: 'exec_assembly', name: 'Execute Assembly', category: 'Memory Execution', desc: '.NET assembly in memory' },
-  { id: 'exec_inline', name: 'Inline Bin', category: 'Memory Execution', desc: 'Other exe in memory' },
-  { id: 'exec_shellcode', name: 'Shellcode Inject', category: 'Memory Execution', desc: 'Execute raw shellcode' },
-  { id: 'exec_bof', name: 'BOF (COFF)', category: 'Memory Execution', desc: 'Beacon Object File in memory' },
-  { id: 'exec_script', name: 'Linux Script', category: 'Memory Execution', desc: 'Run script on Linux beacon' },
-  { id: 'exec_binary', name: 'Linux Binary', category: 'Memory Execution', desc: 'Run ELF binary on Linux beacon' },
+  { id: 'exec_assembly', name: 'Execute Assembly', category: 'Memory Execution', desc: '.NET assembly in memory', nameZh: '执行 .NET 程序集', categoryZh: '内存执行', descZh: '在内存中加载并执行 .NET 程序集' },
+  { id: 'exec_inline', name: 'Inline Bin', category: 'Memory Execution', desc: 'Other exe in memory', nameZh: '内存执行 EXE', categoryZh: '内存执行', descZh: '在内存中执行其它 EXE，不落盘' },
+  { id: 'exec_shellcode', name: 'Shellcode Inject', category: 'Memory Execution', desc: 'Execute raw shellcode', nameZh: 'Shellcode 注入', categoryZh: '内存执行', descZh: '直接执行原始 shellcode' },
+  { id: 'exec_bof', name: 'BOF (COFF)', category: 'Memory Execution', desc: 'Beacon Object File in memory', nameZh: 'BOF（COFF）', categoryZh: '内存执行', descZh: '在内存中执行 Beacon Object File' },
+  { id: 'exec_script', name: 'Linux Script', category: 'Memory Execution', desc: 'Run script on Linux beacon', nameZh: 'Linux 脚本', categoryZh: '内存执行', descZh: '在 Linux Beacon 上运行脚本' },
+  { id: 'exec_binary', name: 'Linux Binary', category: 'Memory Execution', desc: 'Run ELF binary on Linux beacon', nameZh: 'Linux 二进制', categoryZh: '内存执行', descZh: '在 Linux Beacon 上运行 ELF 二进制' },
 ])
 
 const filteredToolList = computed(() => {
   if (!searchKeyword.value.trim()) return toolList.value
   const kw = searchKeyword.value.toLowerCase().trim()
-  return toolList.value.filter(
-    (t) => t.name.toLowerCase().includes(kw) || t.desc.toLowerCase().includes(kw) || t.category.toLowerCase().includes(kw),
+  // 名称/说明/分类的中英文都参与匹配，中文模式下可用中文关键词过滤
+  return toolList.value.filter((t) =>
+    [t.name, t.desc, t.category, t.nameZh, t.descZh, t.categoryZh]
+      .join(' ')
+      .toLowerCase()
+      .includes(kw),
   )
 })
 
@@ -522,7 +544,9 @@ function handleHelp() {
 }
 
 .ct-left-panel {
-  width: 400px;
+  /* 加宽以完整显示「功能模块 / 分类 / 功能说明」三列（说明整段不省略） */
+  width: clamp(480px, 46%, 660px);
+  min-width: 480px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
@@ -555,6 +579,15 @@ function handleHelp() {
 
 .text-dim {
   color: var(--cs-text-dim);
+}
+
+/* 功能说明整段展示：允许换行，不省略、不截断 */
+.tool-desc {
+  display: block;
+  white-space: normal;
+  word-break: break-word;
+  line-height: 1.5;
+  font-size: 12.5px;
 }
 
 .ct-config-card {

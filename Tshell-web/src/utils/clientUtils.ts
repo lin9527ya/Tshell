@@ -110,9 +110,9 @@ export function clientOsIcon(client: any): string {
 }
 
 /**
- * 客户端详情的顶部标签标题：
- *   主机管理 → "ID:3 客户端管理"（vshell ClientManagerTab 命名）
- *   文件管理 → "3: 外网IP"（vshell FileTree 节点命名）
+ * 客户端详情的顶部标签标题（与 vshell 一致）：
+ *   无论当前是哪个功能页，都显示 "ID: 3 客户端管理"；
+ *   文件树的根节点才用 "3: 外网IP"（见 ClientFiles.vue）。
  */
 export function formatClientTabTitle(opts: {
   func: string
@@ -120,6 +120,12 @@ export function formatClientTabTitle(opts: {
   externalIp: string
   zh: boolean
 }): string {
-  if (opts.func === 'files') return `${opts.id}: ${opts.externalIp || '-'}`
-  return opts.zh ? `ID:${opts.id} 客户端管理` : `ID:${opts.id} Client Management`
+  return opts.zh ? `ID: ${opts.id} 客户端管理` : `ID: ${opts.id} Client Management`
+}
+
+/** 文件树根节点标签（vshell FileTree）："987: 172.171.247.253"，有备注时追加在 IP 右侧 */
+export function formatClientTreeRoot(opts: { id: string; externalIp: string; note?: string }): string {
+  const base = `${opts.id}: ${opts.externalIp || '-'}`
+  const note = String(opts.note || '').trim()
+  return note ? `${base} ${note}` : base
 }
