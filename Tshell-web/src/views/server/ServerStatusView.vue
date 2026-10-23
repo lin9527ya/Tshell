@@ -62,6 +62,9 @@
             <div><b>{{ i18nStore.tl('Web 端口', 'Web Port') }}:</b> {{ stats.config_info?.web_port || '-' }}</div>
             <div><b>{{ i18nStore.tl('日志路径', 'Log Path') }}:</b> {{ stats.config_info?.log_file_path || '-' }}</div>
             <div><b>Basic Auth:</b> {{ stats.config_info?.basic_auth ? 'On' : 'Off' }}</div>
+            <div><b>Commit:</b> <span class="sv-mono">{{ build.commit || '-' }}</span></div>
+            <div><b>{{ i18nStore.tl('构建时间', 'Build Time') }}:</b> {{ build.build_time || '-' }}</div>
+            <div><b>{{ i18nStore.tl('库结构版本', 'Schema Version') }}:</b> {{ build.schema_version ?? '-' }}</div>
           </div>
         </div>
       </div>
@@ -87,7 +90,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getDashboardStats, type DashboardStats } from '@/api/dashboard'
+import { getDashboardStats, getServerVersion, type DashboardStats, type ServerVersionInfo } from '@/api/dashboard'
 import ClientAPI from '@/api/clients'
 import { useI18nStore } from '@/stores/i18n'
 import { useUserStore } from '@/stores/user'
@@ -101,6 +104,8 @@ const canOperate = computed(() => String(userStore.getRoles() || '').toLowerCase
 const loading = ref(false)
 const resettingId = ref(false)
 const stats = reactive<Partial<DashboardStats>>({})
+// 构建溯源信息（/version：ldflags 注入的 commit / build_time / schema_version）
+const build = reactive<Partial<ServerVersionInfo>>({})
 
 async function handleResetClientId() {
   if (!canOperate.value) {
@@ -145,6 +150,15 @@ async function fetchStats() {
     ElMessage.error(e?.message || (isZh.value ? '获取服务器状态失败' : 'Failed to fetch server status'))
   } finally {
     loading.value = false
+  }
+
+  // 构建信息单独取：失败不影响状态面板
+  try {
+    const vres = await getServerVersion()
+    const vdata = vres.data?.data || vres.data
+    if (vdata && typeof vdata === 'object') Object.assign(build, vdata)
+  } catch {
+    /* /version 不可用时保持占位 '-' */
   }
 }
 
@@ -211,6 +225,7 @@ onMounted(() => {
 .sv-panel-body { padding: 16px; }
 .sv-config-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px 16px; font-size: 14px; color: var(--cs-text); }
 .sv-config-grid b { color: var(--cs-text-bright); font-weight: 600; }
+.sv-mono { font-family: var(--cs-font-mono); font-size: 13px; }
 .sv-maintain-row { display: flex; align-items: center; gap: 16px; }
 .sv-maintain-desc { flex: 1; font-size: 13px; color: var(--cs-text-dim); line-height: 1.6; }
 </style>

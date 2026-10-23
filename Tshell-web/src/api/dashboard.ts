@@ -27,3 +27,15 @@ export interface DashboardStats {
 export const getDashboardStats = () => {
   return request({ url: '/dashboard/stats', method: 'GET' })
 }
+
+// 构建信息（ldflags 注入）：版本 / commit / 构建时间 / 库结构版本
+export interface ServerVersionInfo {
+  version: string
+  commit: string
+  build_time: string
+  schema_version: number
+}
+
+export const getServerVersion = () => {
+  return request({ url: '/version', method: 'GET' })
+}

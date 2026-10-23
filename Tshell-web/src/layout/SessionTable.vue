@@ -342,6 +342,7 @@
                     <el-dropdown-item command="disconnect">{{ i18nStore.tl('断开连接', 'Disconnect') }}</el-dropdown-item>
                     <el-dropdown-item command="remove">{{ i18nStore.tl('删除进程文件', 'Delete Process File') }}</el-dropdown-item>
                     <el-dropdown-item command="cleanup">{{ i18nStore.tl('清理会话记录', 'Clean Session Record') }}</el-dropdown-item>
+                    <el-dropdown-item command="exitPurge" divided>{{ i18nStore.tl('退出并清除记录', 'Exit & Purge Record') }}</el-dropdown-item>
                   </el-dropdown-menu>
                 </template>
               </el-dropdown>
@@ -772,6 +773,8 @@ function onRowCmd(cmd: string, row: RowData) {
     actRemove(row)
   } else if (cmd === 'cleanup') {
     actCleanup(row)
+  } else if (cmd === 'exitPurge') {
+    actExitPurge(row)
   } else if (cmd === 'lock') {
     actLock(row)
   } else if (cmd === 'unlock') {
@@ -891,6 +894,36 @@ function actCleanup(row: RowData) {
     await ClientAPI.batch_delete_clients({ uids: [row.Uid] })
     clientsStore.fetchClients()
     ElMessage.success(isZh.value ? '已清理' : 'Cleaned')
+  }).catch(() => {})
+}
+
+// 退出并清除：/client/exit 让客户端执行 exit，并在一个 sleep 周期后级联清除
+// 数据库记录、战利品与文件浏览缓存（区别于“断开连接”保留记录、“清理记录”只删库）
+function actExitPurge(row: RowData) {
+  ElMessageBox.confirm(
+    isZh.value
+      ? `让该会话的客户端执行 exit 退出，并在约一个心跳周期后彻底清除它的记录（含战利品与文件浏览缓存）？\n\n此操作不可恢复。只想保留记录请用「断开连接」。`
+      : `Make this client run exit, then permanently purge its record (loot and file-browser cache included) after roughly one beacon cycle?\n\nThis cannot be undone. Use "Disconnect" if you want to keep the record.`,
+    isZh.value ? '退出并清除记录' : 'Exit & Purge Record',
+    {
+      type: 'warning',
+      confirmButtonText: isZh.value ? '退出并清除' : 'Exit & Purge',
+      cancelButtonText: isZh.value ? '取消' : 'Cancel',
+    },
+  ).then(async () => {
+    try {
+      const res = await ClientAPI.do_exit({ uid: row.Uid })
+      if (res?.data?.status === 200 || res?.status === 200) {
+        ElMessage.success(
+          isZh.value ? '已下发退出指令，记录将在客户端退出后清除' : 'Exit sent; the record will be purged after the client exits',
+        )
+        clientsStore.fetchClients()
+      } else {
+        ElMessage.error(res?.data?.error || (isZh.value ? '下发退出指令失败' : 'Failed to send exit'))
+      }
+    } catch (e: any) {
+      ElMessage.error(e?.response?.data?.error || e?.message || (isZh.value ? '下发退出指令失败' : 'Failed to send exit'))
+    }
   }).catch(() => {})
 }
 
