@@ -218,6 +218,17 @@ func (wm *IPWhitelistManager) RemoveIP(ip string) {
 	wm.mu.Lock()
 	defer wm.mu.Unlock()
 	delete(wm.whitelist, ip)
+	// CIDR 还要从预解析网络段里删掉，否则 delete(map) 只是删了展示项，
+	// IsWhitelisted 仍会命中 networks，表现为“移除后依然放行”。
+	if _, target, err := net.ParseCIDR(ip); err == nil {
+		networks := wm.networks[:0]
+		for _, n := range wm.networks {
+			if n.String() != target.String() {
+				networks = append(networks, n)
+			}
+		}
+		wm.networks = networks
+	}
 	logx.Infof("🗑️ IP %s 已从白名单移除\n", ip)
 }
 

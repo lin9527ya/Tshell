@@ -33,3 +33,19 @@ func TestRateLimiterUpdateConfigFullAndEnabled(t *testing.T) {
 		t.Fatal("SetEnabled(true) 后仍为禁用")
 	}
 }
+
+// TestRemoveCIDRWhitelist 移除 CIDR 必须同时清理预解析的 networks，
+// 否则页面显示已移除、请求仍然免限流。
+func TestRemoveCIDRWhitelist(t *testing.T) {
+	rl := NewRateLimiter()
+	defer rl.Stop()
+
+	rl.ipWhitelist.AddNetwork("10.0.0.0/24")
+	if !rl.ipWhitelist.IsWhitelisted("10.0.0.5") {
+		t.Fatal("CIDR 添加后应命中网段")
+	}
+	rl.ipWhitelist.RemoveIP("10.0.0.0/24")
+	if rl.ipWhitelist.IsWhitelisted("10.0.0.5") {
+		t.Fatal("CIDR 移除后不应再命中网段")
+	}
+}

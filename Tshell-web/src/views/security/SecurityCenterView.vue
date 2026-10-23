@@ -327,7 +327,9 @@ async function fetchData() {
         ? wlRes.value.data.data
         : wlRes.value.data.data.whitelist || []
       whitelist.value = wlRaw.map((item: any) =>
-        typeof item === 'string' ? { ip: item, network: '', created_at: '-' } : item,
+        typeof item === 'string'
+          ? { ip: item, network: item.includes('/') ? item : '', created_at: '-' }
+          : item,
       )
     } else {
       whitelist.value = []
@@ -363,11 +365,15 @@ async function fetchData() {
 }
 
 async function handleAddWhitelist() {
-  if (!newWhitelistIP.value.trim()) return
+  const value = newWhitelistIP.value.trim()
+  if (!value) return
+  const isCIDR = value.includes('/')
   try {
-    await SecurityAPI.addWhitelist({ ip: newWhitelistIP.value.trim() })
-    whitelist.value.push({ ip: newWhitelistIP.value.trim(), network: '255.255.255.255', created_at: new Date().toLocaleString() })
-    ElMessage.success(isZh.value ? `已将 ${newWhitelistIP.value} 添加到白名单` : `Added ${newWhitelistIP.value} to Whitelist`)
+    // 后端 AddNetwork 与 AddIP 是两个分支：CIDR 必须走 network 字段，
+    // 否则会被当成普通 IP 字符串写进 map，实际不参与网段匹配。
+    await SecurityAPI.addWhitelist(isCIDR ? { ip: value, network: value } : { ip: value })
+    whitelist.value.push({ ip: value, network: isCIDR ? value : '', created_at: new Date().toLocaleString() })
+    ElMessage.success(isZh.value ? `已将 ${value} 添加到白名单` : `Added ${value} to Whitelist`)
     newWhitelistIP.value = ''
     showAddWhitelistDialog.value = false
   } catch (e: any) {
