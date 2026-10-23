@@ -203,7 +203,7 @@
                 <el-table-column :label="i18nStore.tl('操作', 'Actions')" width="200" align="center">
                   <template #default="{ row }">
                     <button class="cs-btn cs-btn-xs" @click="handleResetKey(row)">{{ i18nStore.tl('重置', 'Reset') }}</button>
-                    <button class="cs-btn cs-btn-xs cs-btn-primary" style="margin-left: 4px" @click="handleEditKey(row)">{{ i18nStore.tl('编辑', 'Edit') }}</button>
+                    <button class="cs-btn cs-btn-xs cs-btn-primary" style="margin-left: 4px" @click="openEditKey(row)">{{ i18nStore.tl('编辑', 'Edit') }}</button>
                     <button class="cs-btn cs-btn-xs" style="margin-left: 4px" @click="handleViewKeyDetail(row)">{{ i18nStore.tl('详情', 'Info') }}</button>
                   </template>
                 </el-table-column>
@@ -324,6 +324,56 @@
         </div>
       </div>
     </div>
+
+    <!-- 监听器密钥编辑：VKey 与加密盐可单独改，留空保留原值 -->
+    <el-dialog
+      v-model="editKeyDlg.visible"
+      :title="i18nStore.tl('编辑监听器密钥', 'Edit Listener Keys')"
+      width="520px"
+      append-to-body
+      class="cs-dialog"
+    >
+      <div class="cs-form-container">
+        <div class="cs-form-row">
+          <label class="cs-form-label">{{ i18nStore.tl('监听地址', 'Listen Address') }}:</label>
+          <el-input :model-value="editKeyDlg.listen_address" disabled class="cs-input-mono" />
+        </div>
+        <div class="cs-form-row">
+          <label class="cs-form-label">{{ i18nStore.tl('验证密钥 VKey', 'VKey') }}:</label>
+          <el-input
+            v-model="editKeyDlg.vkey"
+            show-password
+            class="cs-input-mono"
+            :placeholder="i18nStore.tl('留空则保留当前 VKey（至少 32 字节）', 'Leave blank to keep current (min 32 bytes)')"
+          />
+          <button class="cs-btn cs-btn-xs" @click="editKeyDlg.vkey = randomHex(32)">{{ i18nStore.tl('随机', 'Random') }}</button>
+        </div>
+        <div class="cs-form-row">
+          <label class="cs-form-label">{{ i18nStore.tl('加密盐 Salt', 'Salt') }}:</label>
+          <el-input
+            v-model="editKeyDlg.encryption_salt"
+            show-password
+            class="cs-input-mono"
+            :placeholder="i18nStore.tl('留空则保留当前加密盐（至少 16 字节）', 'Leave blank to keep current (min 16 bytes)')"
+          />
+          <button class="cs-btn cs-btn-xs" @click="editKeyDlg.encryption_salt = randomHex(16)">{{ i18nStore.tl('随机', 'Random') }}</button>
+        </div>
+        <div class="km-key-warn">
+          {{ i18nStore.tl(
+            '密钥变更后需重启该监听器，且用旧密钥生成的客户端将无法再回连（需重新生成载荷）。',
+            'After a key change, restart the listener; clients built with the old key can no longer call back (regenerate payloads).'
+          ) }}
+        </div>
+      </div>
+      <template #footer>
+        <div class="cs-dialog-footer">
+          <button class="cs-btn cs-btn-primary" :disabled="savingKey" @click="submitEditKey">
+            {{ savingKey ? (i18nStore.tl('保存中...', 'Saving...')) : (i18nStore.tl('保存', 'Save')) }}
+          </button>
+          <button class="cs-btn" @click="editKeyDlg.visible = false">{{ i18nStore.tl('取消', 'Cancel') }}</button>
+        </div>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -580,30 +630,59 @@ function handleResetKey(row: any) {
   }).catch(() => {})
 }
 
-function handleEditKey(row: any) {
-  ElMessageBox.prompt(
-      isZh.value ? '输入新的验证密钥（VKey）：' : 'Enter new Verification Key (VKey):',
-      isZh.value ? '编辑 VKey' : 'Edit VKey',
-      {
-        confirmButtonText: isZh.value ? '保存' : 'Save',
-        cancelButtonText: isZh.value ? '取消' : 'Cancel',
-        inputValue: '',
-      },
-    ).then(async ({ value }) => {
-    if (value) {
-      try {
-        const res = await KeyManagementAPI.updateListenerKeyConfig({ listen_address: row.listen_address, vkey: value })
-        if (res?.data?.status === 200) {
-          ElMessage.success(isZh.value ? 'VKey 已更新' : 'VKey updated')
-          await fetchConfigs()
-        } else {
-          ElMessage.error(res?.data?.message || (isZh.value ? 'VKey 更新失败' : 'Failed to update VKey'))
-        }
-      } catch (e: any) {
-        ElMessage.error(e?.message || (isZh.value ? 'VKey 更新失败' : 'Failed to update VKey'))
-      }
+// ---- 监听器密钥编辑：VKey / 加密盐（留空 = 保留原值；后端按单字段合并）----
+const editKeyDlg = reactive({ visible: false, listen_address: '', vkey: '', encryption_salt: '' })
+const savingKey = ref(false)
+
+function randomHex(bytes: number): string {
+  const arr = new Uint8Array(bytes)
+  crypto.getRandomValues(arr)
+  return Array.from(arr).map((b) => b.toString(16).padStart(2, '0')).join('')
+}
+
+function openEditKey(row: any) {
+  editKeyDlg.listen_address = row.listen_address
+  editKeyDlg.vkey = ''
+  editKeyDlg.encryption_salt = ''
+  editKeyDlg.visible = true
+}
+
+async function submitEditKey() {
+  const vkey = editKeyDlg.vkey.trim()
+  const salt = editKeyDlg.encryption_salt.trim()
+  if (!vkey && !salt) {
+    ElMessage.warning(isZh.value ? 'VKey 与加密盐至少填一项' : 'Fill in VKey or Salt')
+    return
+  }
+  // 与后端 ValidateListenerKeyLength 对齐：VKey ≥32 字节、盐 ≥16 字节、均 ≤128
+  if (vkey && (vkey.length < 32 || vkey.length > 128)) {
+    ElMessage.warning(isZh.value ? 'VKey 长度需在 32–128 字节之间' : 'VKey must be 32–128 bytes')
+    return
+  }
+  if (salt && (salt.length < 16 || salt.length > 128)) {
+    ElMessage.warning(isZh.value ? '加密盐长度需在 16–128 字节之间' : 'Salt must be 16–128 bytes')
+    return
+  }
+  savingKey.value = true
+  try {
+    const res = await KeyManagementAPI.updateListenerKeyConfig({
+      listen_address: editKeyDlg.listen_address,
+      // 只提交填写的字段：空串会被后端当作「保留原值」
+      ...(vkey ? { vkey } : {}),
+      ...(salt ? { encryption_salt: salt } : {}),
+    })
+    if (res?.data?.status === 200) {
+      ElMessage.success(isZh.value ? '密钥已更新（需重启监听器生效）' : 'Keys updated (restart the listener to apply)')
+      editKeyDlg.visible = false
+      await fetchConfigs()
+    } else {
+      ElMessage.error(res?.data?.message || (isZh.value ? '密钥更新失败' : 'Failed to update keys'))
     }
-  }).catch(() => {})
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.message || e?.message || (isZh.value ? '密钥更新失败' : 'Failed to update keys'))
+  } finally {
+    savingKey.value = false
+  }
 }
 
 // 查看监听器密钥配置详情（getListenerKeyConfig）
@@ -827,6 +906,23 @@ onMounted(() => {
 
 .cs-input-mono {
   font-family: var(--cs-font-mono);
+}
+
+/* 密钥编辑弹窗：变更后果提示 */
+.km-key-warn {
+  margin-top: 6px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--cs-warning, #d97706) 12%, transparent);
+  color: var(--cs-text);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.cs-dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 /* 会话密钥指标卡 + 轮换配置 */

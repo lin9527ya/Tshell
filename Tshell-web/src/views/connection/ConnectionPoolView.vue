@@ -164,6 +164,32 @@
               <label class="cs-form-label">{{ i18nStore.tl('最大空闲时间', 'Max Idle Duration') }}:</label>
               <el-input v-model="poolConfig.max_idle_time" placeholder="300s" class="cp-idle-input" :disabled="!canOperate" />
             </div>
+
+            <div class="cs-form-row">
+              <label class="cs-form-label">{{ i18nStore.tl('健康检查周期', 'Health Check Period') }}:</label>
+              <el-input v-model="poolConfig.health_check_period" placeholder="30s" class="cp-duration-input" :disabled="!canOperate" />
+            </div>
+          </div>
+
+          <div class="cp-form-col">
+            <div class="cs-form-row">
+              <label class="cs-form-label">{{ i18nStore.tl('建连超时', 'Connect Timeout') }}:</label>
+              <el-input v-model="poolConfig.conn_timeout" placeholder="10s" class="cp-duration-input" :disabled="!canOperate" />
+            </div>
+
+            <div class="cs-form-row">
+              <label class="cs-form-label">{{ i18nStore.tl('读超时', 'Read Timeout') }}:</label>
+              <el-input v-model="poolConfig.read_timeout" placeholder="10m" class="cp-duration-input" :disabled="!canOperate" />
+            </div>
+
+            <div class="cs-form-row">
+              <label class="cs-form-label">{{ i18nStore.tl('写超时', 'Write Timeout') }}:</label>
+              <el-input v-model="poolConfig.write_timeout" placeholder="30s" class="cp-duration-input" :disabled="!canOperate" />
+            </div>
+
+            <div class="cs-form-hint">
+              {{ i18nStore.tl('时长格式：30s / 5m / 1h；读超时需覆盖最长隧道空闲。', 'Duration format: 30s / 5m / 1h; read timeout must cover the longest idle tunnel.') }}
+            </div>
           </div>
 
           <div class="cp-stats-col">
@@ -227,6 +253,9 @@ const poolConfig = reactive({
   max_connections: 1000,
   max_idle_time: '300s',
   health_check_period: '30s',
+  conn_timeout: '10s',
+  read_timeout: '30s',
+  write_timeout: '30s',
 })
 
 const connections = ref<any[]>([])
@@ -356,6 +385,14 @@ async function fetchData() {
       if (!poolStats.health_status) {
         poolStats.health_status = (poolStats.utilization || 0) >= 0.9 ? 'DEGRADED' : 'HEALTHY'
       }
+      // 回填后端当前生效的池参数（含超时项），避免保存后刷新又被默认值覆盖
+      const cfg = data.config
+      if (cfg && typeof cfg === 'object') {
+        if (Number(cfg.max_connections) > 0) poolConfig.max_connections = Number(cfg.max_connections)
+        for (const key of ['max_idle_time', 'health_check_period', 'conn_timeout', 'read_timeout', 'write_timeout'] as const) {
+          if (typeof cfg[key] === 'string' && cfg[key]) poolConfig[key] = cfg[key]
+        }
+      }
     }
     if (wRes.status === 'fulfilled' && wRes.value?.data?.data) {
       Object.assign(workerStats, wRes.value.data.data)
@@ -423,16 +460,47 @@ async function handleResizeWorkers() {
   }
 }
 
+// Go duration 子集：30s / 1m30s / 500ms / 1h
+const DURATION_RE = /^(?:\d+(?:\.\d+)?(?:ns|us|µs|μs|ms|s|m|h))+$/
+
 async function handleSavePoolConfig() {
   if (!canOperate.value) {
     ElMessage.warning(isZh.value ? '只读账号无法修改连接池' : 'Read-only account cannot modify the pool')
     return
   }
+  // 先在前端挡掉非法时长，避免一次错值让整批保存 400
+  const durationFields: { key: 'max_idle_time' | 'health_check_period' | 'conn_timeout' | 'read_timeout' | 'write_timeout'; zh: string; en: string }[] = [
+    { key: 'max_idle_time', zh: '最大空闲时间', en: 'Max idle duration' },
+    { key: 'health_check_period', zh: '健康检查周期', en: 'Health check period' },
+    { key: 'conn_timeout', zh: '建连超时', en: 'Connect timeout' },
+    { key: 'read_timeout', zh: '读超时', en: 'Read timeout' },
+    { key: 'write_timeout', zh: '写超时', en: 'Write timeout' },
+  ]
+  for (const f of durationFields) {
+    const v = String(poolConfig[f.key] || '').trim()
+    if (!DURATION_RE.test(v)) {
+      ElMessage.warning(
+        isZh.value
+          ? `${f.zh}格式不对：需为大于 0 的时长（如 30s、5m、1h）`
+          : `${f.en} must be a positive duration (e.g. 30s, 5m, 1h)`,
+      )
+      return
+    }
+    poolConfig[f.key] = v
+  }
   try {
-    await ConnectionAPI.updatePoolConfig(poolConfig)
+    const res = await ConnectionAPI.updatePoolConfig(poolConfig)
+    // 后端返回实际生效值，回填一次（含被钳制的值）
+    const cfg = res.data?.config
+    if (cfg && typeof cfg === 'object') {
+      if (Number(cfg.max_connections) > 0) poolConfig.max_connections = Number(cfg.max_connections)
+      for (const f of durationFields) {
+        if (typeof cfg[f.key] === 'string' && cfg[f.key]) poolConfig[f.key] = cfg[f.key]
+      }
+    }
     ElMessage.success(isZh.value ? '连接池配置已应用' : 'Connection pool tuning applied')
   } catch (e: any) {
-    ElMessage.error(e?.message || (isZh.value ? '保存连接池配置失败' : 'Failed to save pool tuning'))
+    ElMessage.error(e?.response?.data?.error || e?.message || (isZh.value ? '保存连接池配置失败' : 'Failed to save pool tuning'))
   }
 }
 
@@ -599,6 +667,17 @@ onMounted(() => {
 
 .cp-idle-input {
   width: 160px;
+}
+
+.cp-duration-input {
+  width: 160px;
+}
+
+.cs-form-hint {
+  padding: 0 0 4px 122px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--cs-text-dim);
 }
 
 .stat-mini-card {

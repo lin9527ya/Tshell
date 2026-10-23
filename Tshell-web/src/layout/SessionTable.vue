@@ -91,6 +91,13 @@
           :sort-orders="['ascending', 'descending', null]"
         >
           <template #default="{ row }">
+            <!-- 自定义标记色：ID 前的小色块，便于在长列表里一眼分组 -->
+            <span
+              v-if="row.Color"
+              class="cs-color-dot"
+              :style="{ background: row.Color }"
+              :title="i18nStore.tl('标记颜色', 'Marked color')"
+            />
             <span class="cs-font-mono cs-cell-text">{{ clientId(row) }}</span>
             <!-- 协作占用提示：原来挂在最左侧图标列的锁徽标挪到这里，省掉整列 -->
             <VsIcon
@@ -323,6 +330,7 @@
                       {{ i18nStore.tl('已被 ' + collabStore.lockOf(row.Uid)?.owner + ' 占用', 'Locked by ' + collabStore.lockOf(row.Uid)?.owner) }}
                     </el-dropdown-item>
                     <el-dropdown-item command="note" divided>{{ i18nStore.tl('备注', 'Note') }}</el-dropdown-item>
+                    <el-dropdown-item command="color">{{ i18nStore.tl('标记颜色', 'Mark Color') }}</el-dropdown-item>
                     <el-dropdown-item command="sleep">{{ i18nStore.tl('回连间隔', 'Sleep') }}</el-dropdown-item>
                     <el-dropdown-item command="group">{{ i18nStore.tl('设置分组', 'Set Group') }}</el-dropdown-item>
                     <el-dropdown-item command="alive">{{ i18nStore.tl('检查存活', 'Check Alive') }}</el-dropdown-item>
@@ -370,6 +378,46 @@
     <ClientReportDialog v-model="reportDlg.visible" :uid="reportDlg.uid" />
     <CredentialDumpDialog v-model="credDlg.visible" :uid="credDlg.uid" />
     <ForwardConnectDialog v-model="forwardDlg" />
+
+    <!-- 标记颜色：预设色板 + 自定义 + 清除（写 /client/color，列表刷新后 ID 前显示色块） -->
+    <el-dialog
+      v-model="colorDlg.visible"
+      :title="i18nStore.tl('标记颜色', 'Mark Color')"
+      width="360px"
+      append-to-body
+      class="cs-dialog"
+    >
+      <div class="cs-color-grid">
+        <button
+          v-for="c in PRESET_COLORS"
+          :key="c"
+          type="button"
+          class="cs-color-swatch"
+          :class="{ 'is-active': colorDlg.color.toLowerCase() === c.toLowerCase() }"
+          :style="{ background: c }"
+          :title="c"
+          @click="colorDlg.color = c"
+        />
+      </div>
+      <div class="cs-color-custom">
+        <span class="cs-color-label">{{ i18nStore.tl('自定义', 'Custom') }}:</span>
+        <el-color-picker v-model="colorDlg.color" />
+        <span class="cs-color-value">{{ colorDlg.color || (i18nStore.tl('未设置', 'Not set')) }}</span>
+      </div>
+      <template #footer>
+        <div class="cs-color-footer">
+          <button class="cs-btn cs-btn-danger" :disabled="colorSaving" @click="clearClientColor">
+            {{ i18nStore.tl('清除颜色', 'Clear') }}
+          </button>
+          <div class="cs-color-footer-right">
+            <button class="cs-btn cs-btn-primary" :disabled="colorSaving" @click="saveClientColor">
+              {{ colorSaving ? (i18nStore.tl('保存中...', 'Saving...')) : (i18nStore.tl('保存', 'Save')) }}
+            </button>
+            <button class="cs-btn" @click="colorDlg.visible = false">{{ i18nStore.tl('取消', 'Cancel') }}</button>
+          </div>
+        </div>
+      </template>
+    </el-dialog>
 
   </div>
 </template>
@@ -649,6 +697,50 @@ const sleepDlg = ref<{ visible: boolean; uid: string; sleep?: number | string }>
 const migrateDlg = ref({ visible: false, uid: '', pid: '' })
 const reportDlg = ref({ visible: false, uid: '' })
 const credDlg = ref({ visible: false, uid: '' })
+// 标记颜色（/client/color）：color 为空串表示清除
+const colorDlg = ref({ visible: false, uid: '', color: '' })
+const colorSaving = ref(false)
+const PRESET_COLORS = ['#e5484d', '#f76b15', '#f5d90a', '#30a46c', '#00a2c7', '#3e63dd', '#8e4ec6', '#e93d82']
+
+function openColor(row: RowData) {
+  selectedRow.value = row
+  workspace.setSelectedUids([row.Uid])
+  colorDlg.value = { visible: true, uid: row.Uid, color: row.Color || '' }
+}
+
+async function writeColor(uid: string, color: string) {
+  colorSaving.value = true
+  try {
+    const res = await ClientAPI.select_color({ uid, color })
+    if (res?.data?.status === 200) {
+      ElMessage.success(color ? (isZh.value ? '已标记颜色' : 'Color saved') : (isZh.value ? '已清除颜色' : 'Color cleared'))
+      colorDlg.value.visible = false
+      await clientsStore.refreshClients().catch(() => {})
+      return true
+    }
+    ElMessage.error(res?.data?.error || (isZh.value ? '保存颜色失败' : 'Failed to save color'))
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.error || e?.message || (isZh.value ? '保存颜色失败' : 'Failed to save color'))
+  } finally {
+    colorSaving.value = false
+  }
+  return false
+}
+
+async function saveClientColor() {
+  if (!colorDlg.value.uid) return
+  const color = String(colorDlg.value.color || '').trim()
+  if (!/^#[0-9a-fA-F]{3,8}$/.test(color)) {
+    ElMessage.warning(isZh.value ? '请选择或输入一个有效颜色（如 #e5484d）' : 'Pick a valid color (e.g. #e5484d)')
+    return
+  }
+  await writeColor(colorDlg.value.uid, color)
+}
+
+async function clearClientColor() {
+  if (!colorDlg.value.uid) return
+  await writeColor(colorDlg.value.uid, '')
+}
 
 // 备注单元格里的铅笔 / 右键菜单「备注」共用同一个弹窗
 function openNote(row: RowData) {
@@ -662,6 +754,8 @@ function onRowCmd(cmd: string, row: RowData) {
   workspace.setSelectedUids([row.Uid])
   if (cmd === 'note') {
     openNote(row)
+  } else if (cmd === 'color') {
+    openColor(row)
   } else if (cmd === 'sleep') {
     sleepDlg.value = { visible: true, uid: row.Uid, sleep: row.Sleep }
   } else if (cmd === 'group') {
@@ -1188,6 +1282,73 @@ onBeforeUnmount(() => {
   gap: 4px;
   min-width: 0;
   cursor: text;
+}
+
+/* ID 前的自定义标记色块 */
+.cs-color-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 5px;
+  border-radius: 50%;
+  vertical-align: middle;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--cs-card-border) 80%, transparent);
+}
+
+/* 颜色弹窗：预设色板 */
+.cs-color-grid {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 8px;
+}
+
+.cs-color-swatch {
+  width: 100%;
+  aspect-ratio: 1;
+  border: 1px solid var(--cs-card-border);
+  border-radius: 6px;
+  cursor: pointer;
+  padding: 0;
+  transition: transform 120ms ease, box-shadow 120ms ease;
+}
+
+.cs-color-swatch:hover {
+  transform: scale(1.08);
+}
+
+.cs-color-swatch.is-active {
+  box-shadow: 0 0 0 2px var(--cs-active);
+}
+
+.cs-color-custom {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.cs-color-label {
+  font-size: 13px;
+  color: var(--cs-text);
+}
+
+.cs-color-value {
+  font-family: var(--cs-font-mono);
+  font-size: 12px;
+  color: var(--cs-text-dim);
+}
+
+.cs-color-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.cs-color-footer-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 /* 备注文字按内容占宽：短备注不会把分组标签/铅笔推到单元格最右侧，形成空洞 */

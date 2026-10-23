@@ -90,6 +90,25 @@
               <el-input-number v-model="form.session_ttl" :min="1" :max="168" style="width: 140px" />
             </div>
 
+            <!-- 现成入口链接：路径 × 参数 × 当前密钥，重新生成密钥后自动刷新 -->
+            <div class="cs-form-row">
+              <label class="cs-form-label">{{ i18nStore.tl('访问链接', 'Access URLs') }}:</label>
+              <div class="ha-field">
+                <div v-if="accessUrls.length" class="ha-url-list">
+                  <div v-for="u in accessUrls" :key="u" class="ha-url-item">
+                    <code class="ha-url-text">{{ u }}</code>
+                    <button class="cs-btn cs-btn-xs" @click="copyUrl(u)">{{ i18nStore.tl('复制', 'Copy') }}</button>
+                  </div>
+                </div>
+                <span v-else class="cs-hint">
+                  {{ i18nStore.tl('启用并保存后生成；每个路径 × 参数组合一条链接。', 'Generated after enabling and saving: one link per path × param combination.') }}
+                </span>
+                <span class="cs-hint">
+                  {{ i18nStore.tl('链接带当前访问密钥，等同于凭据，勿外发。', 'Links embed the current secret key — treat them as credentials.') }}
+                </span>
+              </div>
+            </div>
+
             <div class="ha-action-row">
               <span class="ha-action-desc">
                 {{ i18nStore.tl('清空后，当前所有未认证的隐藏访问会话将立即失效。', 'Existing unauthenticated stealth sessions are invalidated immediately.') }}
@@ -127,6 +146,28 @@ const form = reactive({
 
 const pathsText = ref('')
 const paramsText = ref('')
+// 现成入口链接（后端 GetConfig 返回 access_urls，路径相对站点根，展示时补 origin）
+const accessUrls = ref<string[]>([])
+
+function normalizeUrl(u: string): string {
+  if (!u) return ''
+  if (/^https?:\/\//i.test(u)) return u
+  return `${window.location.origin}${u.startsWith('/') ? '' : '/'}${u}`
+}
+
+function applyAccessUrls(list: unknown) {
+  accessUrls.value = Array.isArray(list) ? (list as string[]).map(normalizeUrl).filter(Boolean) : []
+}
+
+async function copyUrl(u: string) {
+  try {
+    await navigator.clipboard.writeText(u)
+    ElMessage.success(isZh.value ? '链接已复制' : 'Link copied')
+  } catch {
+    // 非 HTTPS / 剪贴板被拒时退回手动复制提示
+    ElMessage.info(u)
+  }
+}
 
 async function fetchStatus() {
   loading.value = true
@@ -142,6 +183,7 @@ async function fetchStatus() {
       if (Array.isArray(d.param_names)) {
         paramsText.value = d.param_names.join(', ')
       }
+      applyAccessUrls(d.access_urls)
     }
   } catch {} finally {
     loading.value = false
@@ -170,6 +212,8 @@ async function handleSave() {
     const res = await SecurityAPI.updateHiddenAccessConfig(form)
     if (res?.data?.success || res?.data?.status === 200) {
       ElMessage.success(isZh.value ? '隐藏访问网关配置已更新' : 'Stealth access gateway configuration updated')
+      // 配置变更（含密钥/路径/参数）后链接会变，重新拉一次状态
+      await fetchStatus()
     } else {
       ElMessage.error(res?.data?.message || (isZh.value ? '更新配置失败' : 'Failed to update configuration'))
     }
@@ -186,7 +230,9 @@ async function handleRegenerateKey() {
     // 后端返回 data:{new_secret_key, access_urls, message}
     if (res.data && res.data.data?.new_secret_key) {
       form.secret_key = res.data.data.new_secret_key
-      ElMessage.success(isZh.value ? '密钥已重新生成' : 'Secret key regenerated')
+      // 密钥变了，旧链接全部失效：直接展示新链接
+      applyAccessUrls(res.data.data.access_urls)
+      ElMessage.success(isZh.value ? '密钥已重新生成，旧访问链接已失效' : 'Secret key regenerated; previous access URLs are now invalid')
     } else {
       ElMessage.error(res.data?.message || (isZh.value ? '重新生成密钥失败' : 'Failed to regenerate key'))
     }
@@ -356,6 +402,35 @@ onMounted(() => {
   font-size: 12px;
   color: var(--cs-text-dim);
   line-height: 1.6;
+}
+
+/* 访问链接列表：等宽 + 单行省略 + 复制按钮 */
+.ha-url-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ha-url-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 4px 8px;
+  background: var(--cs-bg);
+  border: 1px solid var(--cs-card-border);
+  border-radius: 6px;
+}
+
+.ha-url-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--cs-font-mono);
+  font-size: 12px;
+  color: var(--cs-text);
 }
 
 .ha-action-row {

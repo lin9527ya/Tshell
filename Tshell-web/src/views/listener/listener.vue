@@ -58,6 +58,13 @@
       <div class="cs-spacer" />
       <button class="cs-btn cs-btn-primary" @click="openAddDialog">{{ i18nStore.tl('添加', 'Add') }}</button>
       <button class="cs-btn" @click="handleHelp">{{ i18nStore.tl('帮助', 'Help') }}</button>
+      <button
+        v-if="selectedListeners.length"
+        class="cs-btn cs-btn-danger"
+        @click="handleBatchDelete"
+      >
+        {{ i18nStore.tl(`删除选中 (${selectedListeners.length})`, `Delete Selected (${selectedListeners.length})`) }}
+      </button>
       <span class="cs-toolbar-hint">
         {{ i18nStore.tl(`共 ${filteredListeners.length} 个反向监听器`, `${filteredListeners.length} reverse listener(s)`) }}
       </span>
@@ -89,7 +96,9 @@
             :class="['cs-session-table', density === 'default' ? '' : 'cs-density-' + density]"
             @row-click="onRowClick"
             @row-dblclick="onRowDblClick"
+            @selection-change="onListenerSelectionChange"
           >
+            <el-table-column type="selection" width="34" />
             <!-- vshell 监听器列：ID / 备注 / 模式 / 监听地址 / 外网连接地址 / 超时心跳 / 心跳间隔 / 间隔 / 状态 / 操作 -->
             <el-table-column v-if="colVisible.id" prop="Id" label="ID" width="64" align="center" sortable :sort-orders="['ascending', 'descending', null]">
               <template #default="{ row }">
@@ -139,7 +148,7 @@
             </el-table-column>
 
             <!-- vshell 操作列：图标 + 文字；启用/停用常显，不可用的一侧置灰 -->
-            <el-table-column :label="i18nStore.tl('操作', 'Actions')" width="360">
+            <el-table-column :label="i18nStore.tl('操作', 'Actions')" width="430">
               <template #default="{ row }">
                 <div class="row-actions">
                   <a class="row-link" :class="{ 'is-disabled': row.Status === 1 }" @click.stop="handleStart(row)">
@@ -147,6 +156,9 @@
                   </a>
                   <a class="row-link" :class="{ 'is-disabled': row.Status !== 1 }" @click.stop="handleStop(row)">
                     <VsIcon name="stop" :size="12" /><span>{{ i18nStore.tl('停用', 'Stop') }}</span>
+                  </a>
+                  <a class="row-link" @click.stop="handleRestart(row)">
+                    <VsIcon name="refresh" :size="12" /><span>{{ i18nStore.tl('重启', 'Restart') }}</span>
                   </a>
                   <a class="row-link" @click.stop="openEditDialog(row)">
                     <VsIcon name="pen" :size="12" /><span>{{ i18nStore.tl('编辑', 'Edit') }}</span>
@@ -249,6 +261,8 @@ const loading = ref(false)
 const savingListener = ref(false)
 const searchKey = ref('')
 const selectedRow = ref<ListenerItem | null>(null)
+// 多选（批量删除）：勾选框集合，与单选高亮 selectedRow 互不影响
+const selectedListeners = ref<ListenerItem[]>([])
 const editingListener = ref<ListenerItem | null>(null)
 const showEditDialog = ref(false)
 // 攻击工具弹窗（页面内局部状态）
@@ -462,6 +476,89 @@ async function handleStop(item: ListenerItem | null) {
   } catch (error: any) {
     ElMessage.error(error?.response?.data?.data || (isZh.value ? '关闭失败' : 'Failed to stop'))
   }
+}
+
+// 勾选集合由 el-table 维护，缓存一份供工具条按钮显示计数
+function onListenerSelectionChange(rows: ListenerItem[]) {
+  selectedListeners.value = rows
+}
+
+// 重启：先停后启，该监听器下全部客户端会掉线并等待重连
+async function handleRestart(item: ListenerItem | null) {
+  if (!item) return
+  try {
+    await ElMessageBox.confirm(
+      isZh.value
+        ? `确定重启监听器 "${item.ListenAddress}" 吗？该监听器下的所有在线客户端会掉线，并在一个心跳周期内重连。`
+        : `Restart listener "${item.ListenAddress}"? All clients on it will drop and reconnect within one heartbeat.`,
+      isZh.value ? '重启监听器' : 'Restart Listener',
+      {
+        confirmButtonText: isZh.value ? '重启' : 'Restart',
+        cancelButtonText: isZh.value ? '取消' : 'Cancel',
+        type: 'warning',
+      },
+    )
+  } catch {
+    return
+  }
+  try {
+    const res = await ListenerAPI.restartListener({ listenAddress: item.ListenAddress })
+    if (res.data?.status === 200 || res.status === 200) {
+      ElMessage.success(isZh.value ? `监听器 ${item.ListenAddress} 已重启` : `Listener ${item.ListenAddress} restarted`)
+    } else {
+      ElMessage.error(res.data?.error || res.data?.data || (isZh.value ? '重启失败' : 'Failed to restart'))
+    }
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.error || error?.message || (isZh.value ? '重启失败' : 'Failed to restart'))
+  }
+  // 后端 handleOpenPort 是异步起监听，稍等再刷新，避免仍显示“已停止”
+  await new Promise((resolve) => setTimeout(resolve, 600))
+  await fetchListeners()
+}
+
+// 批量删除：后端会先关闭在线监听器再删记录，失败项单独回显
+async function handleBatchDelete() {
+  const addresses = selectedListeners.value.map((row) => row.ListenAddress).filter(Boolean)
+  if (!addresses.length) return
+  const preview =
+    addresses.slice(0, 5).join('\n') + (addresses.length > 5 ? `\n…${isZh.value ? '共' : 'of'} ${addresses.length}` : '')
+  try {
+    await ElMessageBox.confirm(
+      isZh.value
+        ? `确定删除选中的 ${addresses.length} 个监听器吗？\n${preview}\n\n监听中的会先关闭，相关客户端将失去回连入口。`
+        : `Delete ${addresses.length} selected listener(s)?\n${preview}\n\nRunning ones will be stopped first; their clients lose the callback entry.`,
+      isZh.value ? '批量删除监听器' : 'Batch Delete Listeners',
+      {
+        confirmButtonText: isZh.value ? '删除' : 'Delete',
+        cancelButtonText: isZh.value ? '取消' : 'Cancel',
+        type: 'warning',
+      },
+    )
+  } catch {
+    return
+  }
+  try {
+    const res = await ListenerAPI.batchDeleteListeners({ listen_addresses: addresses })
+    const body = res.data || {}
+    const ok = Number(body.success_count) || 0
+    const failed = Number(body.failed_count) || 0
+    const failedList: string[] = Array.isArray(body.failed_addresses) ? body.failed_addresses : []
+    if (failed > 0 && ok === 0) {
+      ElMessage.error(body.message || (isZh.value ? `删除失败：${failedList.join('、') || failed + ' 个'}` : `Failed to delete`))
+    } else if (failed > 0) {
+      ElMessage.warning(
+        isZh.value
+          ? `已删除 ${ok} 个，失败 ${failed} 个：${failedList.join('、')}`
+          : `Deleted ${ok}, failed ${failed}: ${failedList.join(', ')}`,
+      )
+    } else {
+      ElMessage.success(body.message || (isZh.value ? `已删除 ${ok} 个监听器` : `Deleted ${ok} listener(s)`))
+    }
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.error || error?.message || (isZh.value ? '批量删除失败' : 'Failed to delete listeners'))
+  }
+  selectedListeners.value = []
+  await fetchListeners()
 }
 
 // 上线命令：找该监听器（protocol://connectAddress）关联的 WebDelivery，

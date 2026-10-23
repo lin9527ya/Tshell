@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/hex"
+	"fmt"
 	"net/http"
 	"strings"
 	"sync"
@@ -453,7 +454,21 @@ func (ham *HiddenAccessManager) GetConfig() map[string]interface{} {
 		"secret_key":    secretKey,
 		"session_ttl":   sessionTTL,
 		"session_count": ham.GetSessionCount(), // 这个方法内部已经有锁保护
+		// 现成的隐藏入口链接：此前只有「重新生成密钥」的响应里带 access_urls，
+		// 刷新页面后前端就拿不到可复制的入口地址了。
+		"access_urls": buildAccessURLs(accessPaths, paramNames, secretKey),
 	}
+}
+
+// buildAccessURLs 由路径 × 参数 × 密钥拼出隐藏入口链接（调用方负责取快照，避免持锁读字段）。
+func buildAccessURLs(paths, params []string, secretKey string) []string {
+	urls := make([]string, 0, len(paths)*len(params))
+	for _, path := range paths {
+		for _, param := range params {
+			urls = append(urls, fmt.Sprintf("%s?%s=%s", path, param, secretKey))
+		}
+	}
+	return urls
 }
 
 // hamIsAccessLimited 判断 IP 是否处于密钥尝试限流封禁窗口（J5）

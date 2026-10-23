@@ -52,6 +52,16 @@ func GetConnectionPoolStats(c *gin.Context) {
 		"max_connections": maxConnections,
 		"utilization":     utilization,
 		"health_status":   healthStatus,
+		// 回传当前生效的超时配置，前端据此回填（此前只能回填 max_connections / max_idle_time，
+		// 超时项保存后刷新又从默认值覆盖，看不出实际生效值）
+		"config": gin.H{
+			"max_connections":     maxConnections,
+			"max_idle_time":       poolCfg.MaxIdleTime.String(),
+			"health_check_period": poolCfg.HealthCheckPeriod.String(),
+			"conn_timeout":        poolCfg.ConnTimeout.String(),
+			"read_timeout":        poolCfg.ReadTimeout.String(),
+			"write_timeout":       poolCfg.WriteTimeout.String(),
+		},
 	}
 
 	c.JSON(http.StatusOK, gin.H{

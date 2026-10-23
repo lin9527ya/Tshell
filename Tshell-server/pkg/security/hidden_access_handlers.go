@@ -1,13 +1,12 @@
 package security
 
 import (
-	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"BackendTemplate/pkg/utils/logx"
+	"github.com/gin-gonic/gin"
 )
 
 // HiddenAccessConfigPersister 由 config 包在初始化时注入，用于将隐藏访问配置持久化到配置文件
@@ -78,19 +77,21 @@ func ClearHiddenAccessSessionsHandler(c *gin.Context) {
 	})
 }
 
-// generateAccessURLs 生成访问 URL 列表
+// generateAccessURLs 生成访问 URL 列表（读锁取快照后再拼，避免无锁读字段）
 func generateAccessURLs(secretKey string) []string {
 	if GlobalHiddenAccessManager == nil {
 		return []string{}
 	}
 
-	var urls []string
-	for _, path := range GlobalHiddenAccessManager.accessPaths {
-		for _, param := range GlobalHiddenAccessManager.paramNames {
-			urls = append(urls, fmt.Sprintf("%s?%s=%s", path, param, secretKey))
-		}
-	}
-	return urls
+	ham := GlobalHiddenAccessManager
+	ham.mu.RLock()
+	paths := make([]string, len(ham.accessPaths))
+	copy(paths, ham.accessPaths)
+	params := make([]string, len(ham.paramNames))
+	copy(params, ham.paramNames)
+	ham.mu.RUnlock()
+
+	return buildAccessURLs(paths, params, secretKey)
 }
 
 // persistHiddenAccessConfig 将当前隐藏访问配置持久化到配置文件

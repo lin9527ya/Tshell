@@ -52,9 +52,17 @@
         </el-table-column>
         <el-table-column prop="created_at" :label="i18nStore.tl('创建时间', 'Created At')" width="180" sortable show-overflow-tooltip />
         <el-table-column prop="last_login" :label="i18nStore.tl('最后登录', 'Last Login')" width="180" sortable show-overflow-tooltip />
-        <el-table-column :label="i18nStore.tl('操作', 'Actions')" width="200" fixed="right" align="center">
+        <el-table-column :label="i18nStore.tl('操作', 'Actions')" width="300" fixed="right" align="center">
           <template #default="{ row }">
             <button class="cs-btn cs-btn-xs" @click="openEditDialog(row)">{{ i18nStore.tl('编辑', 'Edit') }}</button>
+            <button
+              v-if="row.username !== currentUsername"
+              class="cs-btn cs-btn-xs"
+              style="margin-left: 4px"
+              @click="openMfaReset(row)"
+            >
+              {{ i18nStore.tl('重置 MFA', 'Reset MFA') }}
+            </button>
             <button class="cs-btn cs-btn-xs cs-btn-danger" style="margin-left: 4px" @click="handleDelete(row)">{{ i18nStore.tl('删除', 'Delete') }}</button>
           </template>
         </el-table-column>
@@ -139,6 +147,34 @@
         </div>
       </template>
     </el-dialog>
+
+    <!-- 管理员重置他人 MFA（需管理员自己的口令） -->
+    <el-dialog v-model="mfaResetDialogVisible" :title="i18nStore.tl('重置用户 MFA', 'Reset User MFA')" width="440px" append-to-body class="cs-dialog">
+      <div class="cs-form-container">
+        <div class="cs-form-row">
+          <label class="cs-form-label">{{ i18nStore.tl('用户名', 'Username') }}:</label>
+          <el-input :model-value="mfaResetForm.username" disabled />
+        </div>
+        <div class="cs-form-row">
+          <label class="cs-form-label">{{ i18nStore.tl('管理员口令', 'Admin Password') }}:</label>
+          <el-input
+            v-model="mfaResetForm.password"
+            type="password"
+            show-password
+            :placeholder="i18nStore.tl('输入你自己的登录口令以确认', 'Enter your own password to confirm')"
+          />
+        </div>
+        <div class="cs-hint">{{ i18nStore.tl('该用户现有 MFA 与恢复码会被清空，旧会话立即失效。', 'The user MFA and recovery codes will be cleared, and existing sessions revoked.') }}</div>
+      </div>
+      <template #footer>
+        <div class="cs-dialog-footer">
+          <button class="cs-btn cs-btn-danger" :disabled="mfaResetting" @click="handleMfaReset">
+            {{ mfaResetting ? (i18nStore.tl('重置中...', 'Resetting...')) : (i18nStore.tl('确认重置', 'Reset')) }}
+          </button>
+          <button class="cs-btn" @click="mfaResetDialogVisible = false">{{ i18nStore.tl('取消', 'Cancel') }}</button>
+        </div>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -147,6 +183,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import UserApi from '@/api/user'
 import { useI18nStore } from '@/stores/i18n'
+import { useUserStore } from '@/stores/user'
 import EmptyState from '@/components/Common/EmptyState.vue'
 
 interface UserRow {
@@ -158,7 +195,9 @@ interface UserRow {
 }
 
 const i18nStore = useI18nStore()
+const userStore = useUserStore()
 const isZh = computed(() => i18nStore.isZh)
+const currentUsername = computed(() => userStore.getUserName())
 
 const users = ref<UserRow[]>([])
 const total = ref(0)
@@ -168,6 +207,8 @@ const selectedRow = ref<UserRow | null>(null)
 
 const addDialogVisible = ref(false)
 const resetDialogVisible = ref(false)
+const mfaResetDialogVisible = ref(false)
+const mfaResetting = ref(false)
 
 const addForm = reactive({
   username: '',
@@ -176,6 +217,11 @@ const addForm = reactive({
 })
 
 const resetForm = reactive({
+  username: '',
+  password: '',
+})
+
+const mfaResetForm = reactive({
   username: '',
   password: '',
 })
@@ -302,8 +348,40 @@ async function handleReset() {
   }
 }
 
-function handleDelete(row: UserRow) {
-  ElMessageBox.confirm(
+function openMfaReset(row: UserRow) {
+  mfaResetForm.username = row.username
+  mfaResetForm.password = ''
+  mfaResetDialogVisible.value = true
+}
+
+async function handleMfaReset() {
+  if (!mfaResetForm.password) {
+    ElMessage.warning(isZh.value ? '请输入管理员口令' : 'Enter your admin password')
+    return
+  }
+  mfaResetting.value = true
+  try {
+    const res = await UserApi.mfaReset({
+      username: mfaResetForm.username,
+      password: mfaResetForm.password,
+    })
+    if (res.data?.success) {
+      ElMessage.success(
+        res.data?.data?.message ||
+          (isZh.value ? `已重置 ${mfaResetForm.username} 的 MFA` : `MFA reset for ${mfaResetForm.username}`),
+      )
+      mfaResetDialogVisible.value = false
+    } else {
+      ElMessage.error(res.data?.message || (isZh.value ? '重置 MFA 失败' : 'Failed to reset MFA'))
+    }
+  } catch (e: any) {
+    ElMessage.error(e?.message || (isZh.value ? '重置 MFA 失败' : 'Failed to reset MFA'))
+  } finally {
+    mfaResetting.value = false
+  }
+}
+
+function handleDelete(row: UserRow) {  ElMessageBox.confirm(
       isZh.value ? `确定要删除用户 "${row.username}" 吗？其所有会话将被吊销。` : `Delete user "${row.username}"? This will revoke all of their sessions.`,
       isZh.value ? '删除用户' : 'Delete User',
       {
