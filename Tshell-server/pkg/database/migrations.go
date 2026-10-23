@@ -36,7 +36,22 @@ func migrations() []Migration {
 		{4, "listener 表补齐 profile 字段", migrateListenerProfileColumn},
 		{5, "listener 表补齐 beacon sleep/jitter 字段", migrateListenerBeaconColumns},
 		{6, "旧版 SOCKS5 代理并入统一隧道表", migrateLegacySocks5ToTunnels},
+		{7, "downloads 表补 created_at（下载日期）", migrateDownloadsCreatedAt},
 	}
+}
+
+// migrateDownloadsCreatedAt downloads 表补发起时间：下载列表的"下载日期"此前没有数据源。
+func migrateDownloadsCreatedAt() error {
+	const tableName = "downloads"
+	if !tableColumns(tableName)["created_at"] {
+		if err := ExecuteSQL(Engine, fmt.Sprintf("ALTER TABLE %s ADD COLUMN created_at VARCHAR(32) DEFAULT ''", tableName)); err != nil {
+			return fmt.Errorf("添加 downloads.created_at 失败: %v", err)
+		}
+		logx.Println("✅ downloads 表已补 created_at 字段")
+		return nil
+	}
+	logx.Println("✅ downloads 表已存在 created_at 字段，跳过迁移")
+	return nil
 }
 
 // SchemaVersion 返回当前已应用的最高版本（未初始化时返回 0）

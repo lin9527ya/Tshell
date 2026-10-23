@@ -123,7 +123,7 @@
           <template #default="{ row }">
             <div class="cs-note-cell" @click.stop="openNote(row)">
               <span class="cs-cell-note" :title="row.Note || ''">{{ row.Note || '' }}</span>
-              <span v-if="row.Group" class="cs-group-tag" :title="`Group: ${row.Group}`">[{{ row.Group }}]</span>
+              <span v-if="clientGroup(row)" class="cs-group-tag" :title="`Group: ${clientGroup(row)}`">[{{ clientGroup(row) }}]</span>
               <VsIcon name="pen" :size="11" class="cs-note-edit" :title="i18nStore.tl('编辑备注', 'Edit note')" />
             </div>
           </template>
@@ -819,15 +819,22 @@ async function actUnlock(row: RowData) {
   }
 }
 
+// 分组字段：后端 Clients.Group 带 json:"group" → 响应键是小写 group，
+// 早期版本按 row.Group 读取导致分组标签与回填一直为空，这里两种都认。
+function clientGroup(row: RowData | null | undefined): string {
+  return (row?.group ?? row?.Group ?? '') || ''
+}
+
 async function actSetGroup(row: RowData) {
   ElMessageBox.prompt(
     isZh.value ? '设置会话分组（留空清除）:' : 'Set session group (empty clears):',
     isZh.value ? '设置分组' : 'Set Group',
-    { confirmButtonText: isZh.value ? '设置' : 'Set', cancelButtonText: isZh.value ? '取消' : 'Cancel', inputValue: row.Group || '' },
+    { confirmButtonText: isZh.value ? '设置' : 'Set', cancelButtonText: isZh.value ? '取消' : 'Cancel', inputValue: clientGroup(row) },
   ).then(async ({ value }) => {
     try {
       await ClientAPI.update_client_group({ uid: row.Uid, group: value || '' })
-      clientsStore.updateClient(row.Uid, { Group: value || '' })
+      // 同时写两种键名：列表接口返回 group、本地类型历史上用 Group
+      clientsStore.updateClient(row.Uid, { Group: value || '', group: value || '' })
       ElMessage.success(isZh.value ? '分组已更新' : 'Group updated')
     } catch (e: any) {
       ElMessage.error(e?.message || (isZh.value ? '设置分组失败' : 'Failed to set group'))

@@ -85,9 +85,9 @@ func TestCreateTunnelProxyRequiresAuth(t *testing.T) {
 
 	// 隧道接口的响应是 {message} 或 {error}（HTTP 状态码表达结果），与监听器接口不同，
 	// 故不复用 postJSON
-	create := func(protocol, user, pass string, port int) (int, string) {
-		body := fmt.Sprintf(`{"client_uid":"uid-tunnel","protocol":%q,"server_port":%d,"username":%q,"password":%q}`,
-			protocol, port, user, pass)
+	create := func(protocol, user, pass, target string, port int) (int, string) {
+		body := fmt.Sprintf(`{"client_uid":"uid-tunnel","protocol":%q,"server_port":%d,"username":%q,"password":%q,"target_address":%q}`,
+			protocol, port, user, pass, target)
 		req := httptest.NewRequest(http.MethodPost, "/tunnel-proxy/", strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		w := httptest.NewRecorder()
@@ -104,7 +104,7 @@ func TestCreateTunnelProxyRequiresAuth(t *testing.T) {
 	}
 
 	// socks5 缺凭据 → 拒绝且不落库
-	if st, _ := create("socks5", "", "", 19001); st != 400 {
+	if st, _ := create("socks5", "", "", "", 19001); st != 400 {
 		t.Errorf("socks5 无凭据应返回 400，实际 %d", st)
 	}
 	var n int64
@@ -114,12 +114,16 @@ func TestCreateTunnelProxyRequiresAuth(t *testing.T) {
 	}
 
 	// socks5 带凭据 → 允许
-	if st, msg := create("socks5", "op", "s3cret", 19002); st != 200 {
+	if st, msg := create("socks5", "op", "s3cret", "", 19002); st != 200 {
 		t.Errorf("socks5 带凭据应成功，实际 %d %s", st, msg)
 	}
-	// tcp 不需要凭据 → 允许
-	if st, msg := create("tcp", "", "", 19003); st != 200 {
-		t.Errorf("tcp 不需要凭据，应成功，实际 %d %s", st, msg)
+	// tcp 不需要凭据，但必须给目标地址（validateTunnelTarget 拒绝空目标）
+	if st, msg := create("tcp", "", "", "127.0.0.1:3389", 19003); st != 200 {
+		t.Errorf("tcp 带目标地址应成功，实际 %d %s", st, msg)
+	}
+	// tcp 缺目标地址 → 拒绝
+	if st, _ := create("tcp", "", "", "", 19004); st != 400 {
+		t.Errorf("tcp 缺目标地址应返回 400，实际 %d", st)
 	}
 }
 

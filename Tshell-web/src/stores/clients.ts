@@ -21,6 +21,8 @@ export interface ClientData {
   Online: string
   Color: string
   Group?: string
+  // 列表接口按 Go 的 json:"group" 返回小写键；保留 Group 供本地乐观更新，读取时两者都认
+  group?: string
   HeartbeatTimeout?: string // 心跳超时次数，默认30次
   HeartbeatInterval?: string // 心跳检测间隔（秒），默认10秒
   // 【类型补全】以下字段由后端 returns/事件 payload 携带,此前类型缺失导致多处 TS 报错

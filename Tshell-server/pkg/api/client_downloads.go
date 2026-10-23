@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -73,7 +74,12 @@ func DownloadFile(c *gin.Context) {
 
 	exist, _ := database.DownloadsStore_().ExistsByPath(fileBody.Uid, fileBody.FilePath)
 	if !exist {
-		_, _ = database.DownloadsStore_().Insert(&database.Downloads{Uid: fileBody.Uid, FileName: filepath.Base(fileBody.FilePath), FilePath: fileBody.FilePath})
+		_, _ = database.DownloadsStore_().Insert(&database.Downloads{
+			Uid:       fileBody.Uid,
+			FileName:  filepath.Base(fileBody.FilePath),
+			FilePath:  fileBody.FilePath,
+			CreatedAt: time.Now().Format("2006-01-02 15:04:05"),
+		})
 	} else {
 		sql := `
 UPDATE downloads
@@ -104,6 +110,8 @@ type DownloadsInfo struct {
 	FilePath       string `json:"filePath"`
 	FileSize       string `json:"fileSize"`
 	DownloadedPart string `json:"downloadPart"`
+	// DownloadTime 下载发起时间（迁移 7 起的记录才有；老记录为空，前端显示 '-'）
+	DownloadTime string `json:"downloadTime"`
 }
 
 func GetDownloadsInfo(c *gin.Context) {
@@ -121,6 +129,7 @@ func GetDownloadsInfo(c *gin.Context) {
 		tmpDownloadsInfo.FileName = download.FileName
 		tmpDownloadsInfo.FilePath = download.FilePath
 		tmpDownloadsInfo.FileSize = utils.BytesToSize(strconv.Itoa(download.FileSize))
+		tmpDownloadsInfo.DownloadTime = download.CreatedAt
 		if download.FileSize != 0 {
 			tmpDownloadsInfo.DownloadedPart = strconv.Itoa(download.DownloadedSize * 100 / download.FileSize)
 		} else {

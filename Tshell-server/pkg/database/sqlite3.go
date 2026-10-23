@@ -269,11 +269,13 @@ type Shell struct {
 	ShellContent string
 }
 type Downloads struct {
-	Uid            string `xorm:"index"`
-	FileName       string
-	FilePath       string `xorm:"index"`
-	FileSize       int
-	DownloadedSize int
+	Uid            string `json:"uid" xorm:"index"`
+	FileName       string `json:"file_name"`
+	FilePath       string `json:"file_path" xorm:"index"`
+	FileSize       int    `json:"file_size"`
+	DownloadedSize int    `json:"downloaded_size"`
+	// CreatedAt 下载发起时间（列表展示"下载日期"用；老库由迁移 7 补列，历史行为空）
+	CreatedAt string `json:"created_at" xorm:"varchar(32) default('')"`
 }
 type Listener struct {
 	Id                int64  `xorm:"pk autoincr"`

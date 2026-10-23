@@ -208,9 +208,10 @@
                   <span class="cs-font-mono font-bold">{{ row.ip }}</span>
                 </template>
               </el-table-column>
-              <el-table-column prop="count" :label="i18nStore.tl('请求次数', 'Requests')" width="120" align="right" sortable>
+              <el-table-column prop="requests" :label="i18nStore.tl('请求次数', 'Requests')" width="120" align="right" sortable>
                 <template #default="{ row }">
-                  <span class="cs-font-mono">{{ row.count ?? row.request_count ?? '-' }}</span>
+                  <!-- 后端 GetRecentActiveIPs 的键是 requests（不是 count / request_count） -->
+                  <span class="cs-font-mono">{{ row.requests ?? row.count ?? '-' }}</span>
                 </template>
               </el-table-column>
               <el-table-column prop="last_seen" :label="i18nStore.tl('最后活跃', 'Last Seen')" width="180" sortable>

@@ -43,9 +43,9 @@
             <div class="report-section-title">{{ i18nStore.tl('下载记录 (Downloads)', 'Download History') }}</div>
             <div v-if="report.downloads && report.downloads.length" class="report-log-list">
               <div v-for="(d, idx) in report.downloads" :key="idx" class="report-log-row cs-font-mono">
-                <span class="log-file">{{ d.file_name }}</span>
-                <span class="log-size">{{ formatSize(d.downloaded_size) }} / {{ formatSize(d.file_size) }}</span>
-                <span class="log-time">{{ d.file_path }}</span>
+                <span class="log-file">{{ d.file_name ?? d.FileName }}</span>
+                <span class="log-size">{{ formatSize(d.downloaded_size ?? d.DownloadedSize) }} / {{ formatSize(d.file_size ?? d.FileSize) }}</span>
+                <span class="log-time">{{ d.file_path ?? d.FilePath }}</span>
               </div>
             </div>
             <div v-else class="report-empty">{{ i18nStore.tl('暂无下载记录', 'No download history') }}</div>
