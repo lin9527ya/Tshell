@@ -453,6 +453,12 @@
             <el-input v-model="wgetForm.path" :placeholder="currentPath" />
           </div>
         </div>
+        <div class="fm-dl-hint">
+          {{ i18nStore.tl(
+            `目标系统: ${remoteOs === 'windows' ? 'Windows（PowerShell 下载，失败回退 curl.exe）' : 'Linux/macOS（wget 下载，未安装时回退 curl）'}，文件名取自 URL`,
+            `Target OS: ${remoteOs === 'windows' ? 'Windows (PowerShell, falls back to curl.exe)' : 'Linux/macOS (wget, falls back to curl)'}; file name comes from the URL`,
+          ) }}
+        </div>
       </div>
       <template #footer>
         <div class="cs-dialog-footer-center">
@@ -487,8 +493,8 @@
       </div>
       <template #footer>
         <div class="cs-dialog-footer-center">
-          <button v-if="downloadStatus === 'success'" class="cs-btn cs-btn-primary" @click="openDownloadFolder">
-            {{ i18nStore.tl('保存到本地', 'Save Locally') }}
+          <button v-if="downloadStatus === 'success'" class="cs-btn cs-btn-primary" :disabled="savingLocal" @click="openDownloadFolder">
+            {{ savingLocal ? (i18nStore.tl('保存中...', 'Saving...')) : (i18nStore.tl('保存到本地', 'Save Locally')) }}
           </button>
           <button class="cs-btn" @click="dl.close">{{ i18nStore.tl('关闭', 'Close') }}</button>
         </div>
@@ -535,6 +541,7 @@ import {
 } from '@/views/client/files/format'
 import { decodeFileContent } from '@/views/client/files/decodeContent'
 import { useFileDownload } from '@/views/client/files/useFileDownload'
+import { buildWgetCommand, joinRemotePath, replaceLastSegment, type RemoteOs } from '@/views/client/files/remotePath'
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -701,6 +708,9 @@ const clientGroupLabel = computed(() => {
 
 // 根节点图标按被控端系统显示（Windows / Linux / macOS）
 const clientRootIcon = computed(() => clientOsIcon(clientInfo.value))
+
+// 目标机 OS：决定路径分隔符与下载命令（wget / PowerShell）
+const remoteOs = computed<RemoteOs>(() => detectClientOs(clientInfo.value) as RemoteOs)
 
 const filteredFileTree = computed(() => {
   const filterNodes = (nodes: any[]): any[] => {
@@ -1113,7 +1123,7 @@ async function createNewFolder() {
       { confirmButtonText: isZh.value ? '创建' : 'Create', cancelButtonText: isZh.value ? '取消' : 'Cancel' }
     )
     if (!value?.trim()) return
-    const newPath = `${currentPath.value}/${value.trim()}`
+    const newPath = joinRemotePath(currentPath.value, value.trim(), remoteOs.value)
     const res = await ClientAPI.make_dir({ uid: uid.value, dirPath: newPath })
     if (res.data?.status === 200) {
       ElMessage.success(isZh.value ? '文件夹创建成功' : 'Directory created')
@@ -1133,7 +1143,7 @@ async function createNewFile() {
       { confirmButtonText: isZh.value ? '创建' : 'Create', cancelButtonText: isZh.value ? '取消' : 'Cancel' }
     )
     if (!value?.trim()) return
-    const filePath = `${currentPath.value}/${value.trim()}`
+    const filePath = joinRemotePath(currentPath.value, value.trim(), remoteOs.value)
     const res = await ClientAPI.create_file({ uid: uid.value, filePath })
     if (res.data?.status === 200) {
       ElMessage.success(isZh.value ? '文件创建成功' : 'File created')
@@ -1224,36 +1234,70 @@ function handleFileDownload(file?: any) {
     ElMessage.warning(isZh.value ? '无法直接下载目录' : 'Cannot download directory directly')
     return
   }
+  // 保存到本地时要用到这份文件信息（此前 ref 一直为 null → 点「保存到本地」静默返回）
+  currentDownloadFile.value = target
   dl.start(target)
 }
 
 
+// 保存到本地：把服务端 Downloads 目录里的文件取回浏览器。
+// 兼容两种失败：文件已清理（404）与空响应（0 字节，浏览器不会弹保存框）。
+const savingLocal = ref(false)
+
+function filenameFromDisposition(header: string | undefined, fallback: string): string {
+  if (!header) return fallback
+  const star = /filename\*=UTF-8''([^;]+)/i.exec(header)
+  if (star) {
+    try {
+      return decodeURIComponent(star[1])
+    } catch {
+      /* 解码失败改用兜底 */
+    }
+  }
+  const plain = /filename="?([^";]+)"?/i.exec(header)
+  return plain ? plain[1] : fallback
+}
+
 async function openDownloadFolder() {
-  if (!currentDownloadFile.value) return
+  const file = currentDownloadFile.value
+  if (!file?.path) {
+    ElMessage.warning(isZh.value ? '尚未选择要保存的文件' : 'No downloaded file selected')
+    return
+  }
+  savingLocal.value = true
   try {
     const res = await ClientAPI.download_downloaded_file({
       uid: uid.value,
-      filePath: currentDownloadFile.value.path,
+      filePath: file.path,
     })
-    if (res.status === 200 && res.data) {
-      // responseType='blob' 时 res.data 已是 Blob；兼容字符串/JSON 兜底包装
-      const blob = res.data instanceof Blob
-        ? res.data
-        : new Blob([res.data as BlobPart], { type: 'application/octet-stream' })
-      const link = document.createElement('a')
-      link.href = URL.createObjectURL(blob)
-      link.download = currentDownloadFile.value.name || 'download'
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      // 延迟 revoke：立即调用会在部分浏览器触发下载前释放对象 URL 导致保存失败
-      setTimeout(() => URL.revokeObjectURL(link.href), 2000)
-      ElMessage.success(isZh.value ? '文件已保存到本地' : 'Saved locally')
-    } else {
+    if (res.status !== 200 || !res.data) {
       ElMessage.error(isZh.value ? '下载到本地失败（文件不存在或已被清理）' : 'Failed to save (file missing or cleaned up)')
+      return
     }
+    // responseType='blob' 时 res.data 已是 Blob；兼容字符串兜底包装
+    const blob = res.data instanceof Blob
+      ? res.data
+      : new Blob([res.data as BlobPart], { type: 'application/octet-stream' })
+    if (!blob.size) {
+      ElMessage.error(isZh.value ? '服务端返回空文件，无法保存' : 'Server returned an empty file')
+      return
+    }
+    const disposition = (res.headers?.['content-disposition'] || res.headers?.['Content-Disposition']) as string | undefined
+    const name = filenameFromDisposition(disposition, file.name || 'download')
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = name
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    // 延迟 revoke：立即调用会在部分浏览器触发下载前释放对象 URL 导致保存失败
+    setTimeout(() => URL.revokeObjectURL(url), 2000)
+    ElMessage.success(isZh.value ? `文件已保存到本地: ${name}` : `Saved locally: ${name}`)
   } catch (e: any) {
     ElMessage.error(e?.message || (isZh.value ? '下载到本地失败' : 'Failed to save'))
+  } finally {
+    savingLocal.value = false
   }
 }
 
@@ -1333,15 +1377,18 @@ async function renameItem(item: any) {
     { inputValue: item.name, confirmButtonText: isZh.value ? '确定' : 'OK', cancelButtonText: isZh.value ? '取消' : 'Cancel' }
   ).then(async ({ value }) => {
     if (!value?.trim() || value.trim() === item.name) return
-    const parts = item.path.split('/')
-    parts[parts.length - 1] = value.trim()
-    const newPath = parts.join('/')
-    const res = await ClientAPI.rename_file({ uid: uid.value, oldPath: item.path, newPath })
-    if (res.data?.status === 200) {
-      ElMessage.success(isZh.value ? '重命名成功' : 'Renamed')
-      await refreshCurrentFolder()
-    } else {
-      ElMessage.error(res.data?.message || '重命名失败')
+    // 同时识别 "/" 与 "\"：Windows 路径按 "/" 拆会把整条路径当成文件名
+    const newPath = replaceLastSegment(item.path, value.trim())
+    try {
+      const res = await ClientAPI.rename_file({ uid: uid.value, oldPath: item.path, newPath })
+      if (res.data?.status === 200) {
+        ElMessage.success(isZh.value ? '重命名成功' : 'Renamed')
+        await refreshCurrentFolder()
+      } else {
+        ElMessage.error(res.data?.message || '重命名失败')
+      }
+    } catch (e: any) {
+      ElMessage.error(e?.response?.data?.error || e?.message || (isZh.value ? '重命名失败' : 'Rename failed'))
     }
   }).catch(() => {})
 }
@@ -1355,12 +1402,16 @@ async function copyItem(item: any) {
     { inputValue: item.path, confirmButtonText: isZh.value ? '确定' : 'OK', cancelButtonText: isZh.value ? '取消' : 'Cancel' }
   ).then(async ({ value }) => {
     if (!value?.trim() || value.trim() === item.path) return
-    const res = await ClientAPI.copy_file({ uid: uid.value, oldPath: item.path, newPath: value.trim() })
-    if (res.data?.status === 200) {
-      ElMessage.success(isZh.value ? '复制成功' : 'Copied')
-      await refreshCurrentFolder()
-    } else {
-      ElMessage.error(res.data?.message || '复制失败')
+    try {
+      const res = await ClientAPI.copy_file({ uid: uid.value, oldPath: item.path, newPath: value.trim() })
+      if (res.data?.status === 200) {
+        ElMessage.success(isZh.value ? '复制成功' : 'Copied')
+        await refreshCurrentFolder()
+      } else {
+        ElMessage.error(res.data?.message || '复制失败')
+      }
+    } catch (e: any) {
+      ElMessage.error(e?.response?.data?.error || e?.message || (isZh.value ? '复制失败' : 'Copy failed'))
     }
   }).catch(() => {})
 }
@@ -1374,12 +1425,16 @@ async function moveItem(item: any) {
     { inputValue: item.path, confirmButtonText: isZh.value ? '确定' : 'OK', cancelButtonText: isZh.value ? '取消' : 'Cancel' }
   ).then(async ({ value }) => {
     if (!value?.trim() || value.trim() === item.path) return
-    const res = await ClientAPI.rename_file({ uid: uid.value, oldPath: item.path, newPath: value.trim() })
-    if (res.data?.status === 200) {
-      ElMessage.success(isZh.value ? '移动成功' : 'Moved')
-      await refreshCurrentFolder()
-    } else {
-      ElMessage.error(res.data?.message || '移动失败')
+    try {
+      const res = await ClientAPI.rename_file({ uid: uid.value, oldPath: item.path, newPath: value.trim() })
+      if (res.data?.status === 200) {
+        ElMessage.success(isZh.value ? '移动成功' : 'Moved')
+        await refreshCurrentFolder()
+      } else {
+        ElMessage.error(res.data?.message || '移动失败')
+      }
+    } catch (e: any) {
+      ElMessage.error(e?.response?.data?.error || e?.message || (isZh.value ? '移动失败' : 'Move failed'))
     }
   }).catch(() => {})
 }
@@ -1408,9 +1463,17 @@ async function modifyTime(item: any) {
     }
   ).then(async ({ value }) => {
     if (!value?.trim()) return
-    await ClientAPI.modify_file_time({ uid: uid.value, filePath: item.path, newTime: value.trim() })
-    ElMessage.success(isZh.value ? '修改时间指令已发送' : 'Time updated')
-    setTimeout(refreshCurrentFolder, 1000)
+    try {
+      const res = await ClientAPI.modify_file_time({ uid: uid.value, filePath: item.path, newTime: value.trim() })
+      if (res?.data?.status === 200 || res?.status === 200) {
+        ElMessage.success(isZh.value ? '修改时间指令已发送' : 'Time updated')
+        setTimeout(refreshCurrentFolder, 1000)
+      } else {
+        ElMessage.error(res?.data?.error || res?.data?.message || (isZh.value ? '修改时间失败' : 'Touch failed'))
+      }
+    } catch (e: any) {
+      ElMessage.error(e?.response?.data?.error || e?.message || (isZh.value ? '修改时间失败' : 'Touch failed'))
+    }
   }).catch(() => {})
 }
 
@@ -1426,8 +1489,16 @@ async function hideItem(item: any) {
   } catch {
     return
   }
-  await ClientAPI.hide_file({ uid: uid.value, filePath: item.path })
-  ElMessage.success(isZh.value ? '已发送隐藏指令' : 'Hidden')
+  try {
+    const res = await ClientAPI.hide_file({ uid: uid.value, filePath: item.path })
+    if (res?.data?.status === 200 || res?.status === 200) {
+      ElMessage.success(isZh.value ? '已发送隐藏指令' : 'Hidden')
+    } else {
+      ElMessage.error(res?.data?.error || (isZh.value ? '隐藏失败' : 'Hide failed'))
+    }
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.error || e?.message || (isZh.value ? '隐藏失败' : 'Hide failed'))
+  }
   refreshCurrentFolder()
 }
 
@@ -1443,8 +1514,16 @@ async function unhideItem(item: any) {
   } catch {
     return
   }
-  await ClientAPI.unhide_file({ uid: uid.value, filePath: item.path })
-  ElMessage.success(isZh.value ? '已发送取消隐藏指令' : 'Unhidden')
+  try {
+    const res = await ClientAPI.unhide_file({ uid: uid.value, filePath: item.path })
+    if (res?.data?.status === 200 || res?.status === 200) {
+      ElMessage.success(isZh.value ? '已发送取消隐藏指令' : 'Unhidden')
+    } else {
+      ElMessage.error(res?.data?.error || (isZh.value ? '取消隐藏失败' : 'Unhide failed'))
+    }
+  } catch (e: any) {
+    ElMessage.error(e?.response?.data?.error || e?.message || (isZh.value ? '取消隐藏失败' : 'Unhide failed'))
+  }
   refreshCurrentFolder()
 }
 
@@ -1476,7 +1555,7 @@ async function startUpload() {
       const res = await ClientAPI.upload_file({
         uid: uid.value,
         file: f.raw,
-        uploadPath: `${currentPath.value}/${f.name}`,
+        uploadPath: joinRemotePath(currentPath.value, f.name, remoteOs.value),
       })
       if (res.data?.status === 200 || res.status === 200) succ++
     } catch {}
@@ -1493,13 +1572,21 @@ function showWgetDialog() {
 }
 
 async function executeWget() {
-  if (!wgetForm.url) return
-  const cmd = `wget -O "${wgetForm.path}/${wgetForm.url.split('/').pop() || 'download'}" "${wgetForm.url}"`
+  const url = wgetForm.url.trim()
+  if (!url) return
+  // 按目标机系统选择下载方式：Windows 用 PowerShell（备选 curl.exe），Linux/macOS 用 wget（备选 curl）
+  let cmd: string
+  try {
+    cmd = buildWgetCommand({ url, dir: wgetForm.path.trim() || currentPath.value, os: remoteOs.value })
+  } catch (e: any) {
+    ElMessage.error(e?.message || (isZh.value ? 'URL 或保存路径非法' : 'Invalid URL or path'))
+    return
+  }
   try {
     await ClientAPI.send_commands({ uid: uid.value, command: cmd })
-    ElMessage.success(isZh.value ? '已下发 wget 下载指令' : 'wget task dispatched')
+    ElMessage.success(isZh.value ? '已下发远程下载指令，稍后刷新目录查看' : 'Download task dispatched')
     wgetDialogVisible.value = false
-    setTimeout(refreshCurrentFolder, 2000)
+    setTimeout(refreshCurrentFolder, 3000)
   } catch {
     ElMessage.error(isZh.value ? '下发失败' : 'Failed')
   }
@@ -2017,6 +2104,14 @@ function handleHelp() {
   font-size: 14px;
   color: var(--cs-text-dim);
   margin-top: 8px;
+}
+
+.fm-dl-hint {
+  margin-top: 6px;
+  padding-left: 110px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--cs-text-dim);
 }
 
 .fm-help-body {

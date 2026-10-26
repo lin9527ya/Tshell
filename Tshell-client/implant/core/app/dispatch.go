@@ -213,7 +213,8 @@ func HandleCommand(data []byte) {
 		callbackType = 0
 	case services.CP: //cp
 		result, err = services.CmdCp(cmdBuf)
-		callbackType = 0
+		// 服务端等待 FILE_OP_RESULT 确认（copy 与 mv 同一契约）
+		callbackType = services.FILE_OP_RESULT
 	case services.MV: //mv
 		result, err = services.CmdMv(cmdBuf)
 		callbackType = services.FILE_OP_RESULT

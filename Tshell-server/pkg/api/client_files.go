@@ -145,7 +145,7 @@ func FileDelete(c *gin.Context) {
 	queue := command.VarFileBrowserQueue.GetOrCreateQueue(fileBody.Uid)
 
 	var dirPath string
-	lastSlashIndex := strings.LastIndex(fileBody.FilePath, "/")
+	lastSlashIndex := strings.LastIndexAny(fileBody.FilePath, "/\\")
 	if lastSlashIndex != -1 {
 		dirPath = fileBody.FilePath[:lastSlashIndex+1]
 	}
@@ -203,7 +203,7 @@ func MakeDir(c *gin.Context) {
 	queue := command.VarFileBrowserQueue.GetOrCreateQueue(dirBody.Uid)
 
 	var dirPath string
-	lastSlashIndex := strings.LastIndex(dirBody.DirPath, "/")
+	lastSlashIndex := strings.LastIndexAny(dirBody.DirPath, "/\\")
 	if lastSlashIndex != -1 {
 		dirPath = dirBody.DirPath[:lastSlashIndex+1]
 	}
@@ -532,7 +532,7 @@ func CreateFile(c *gin.Context) {
 	queue := command.VarFileBrowserQueue.GetOrCreateQueue(fileBody.Uid)
 
 	var dirPath string
-	lastSlashIndex := strings.LastIndex(fileBody.FilePath, "/")
+	lastSlashIndex := strings.LastIndexAny(fileBody.FilePath, "/\\")
 	if lastSlashIndex != -1 {
 		dirPath = fileBody.FilePath[:lastSlashIndex+1]
 	} else {
@@ -674,7 +674,7 @@ func HideFile(c *gin.Context) {
 	queue := command.VarFileBrowserQueue.GetOrCreateQueue(hideBody.Uid)
 
 	var dirPath string
-	lastSlashIndex := strings.LastIndex(hideBody.FilePath, "/")
+	lastSlashIndex := strings.LastIndexAny(hideBody.FilePath, "/\\")
 	if lastSlashIndex != -1 {
 		dirPath = hideBody.FilePath[:lastSlashIndex+1]
 	} else {
@@ -753,7 +753,7 @@ func UnhideFile(c *gin.Context) {
 	queue := command.VarFileBrowserQueue.GetOrCreateQueue(unhideBody.Uid)
 
 	var dirPath string
-	lastSlashIndex := strings.LastIndex(unhideBody.FilePath, "/")
+	lastSlashIndex := strings.LastIndexAny(unhideBody.FilePath, "/\\")
 	if lastSlashIndex != -1 {
 		dirPath = unhideBody.FilePath[:lastSlashIndex+1]
 	} else {
@@ -832,7 +832,7 @@ func RenameFile(c *gin.Context) {
 	queue := command.VarFileBrowserQueue.GetOrCreateQueue(renameBody.Uid)
 
 	var dirPath string
-	lastSlashIndex := strings.LastIndex(renameBody.OldPath, "/")
+	lastSlashIndex := strings.LastIndexAny(renameBody.OldPath, "/\\")
 	if lastSlashIndex != -1 {
 		dirPath = renameBody.OldPath[:lastSlashIndex+1]
 	}
@@ -900,7 +900,7 @@ func CopyFile(c *gin.Context) {
 	// 等待命令执行后刷新文件列表
 	queue := command.VarFileBrowserQueue.GetOrCreateQueue(copyBody.Uid)
 	var dirPath string
-	if lastSlashIndex := strings.LastIndex(copyBody.OldPath, "/"); lastSlashIndex != -1 {
+	if lastSlashIndex := strings.LastIndexAny(copyBody.OldPath, "/\\"); lastSlashIndex != -1 {
 		dirPath = copyBody.OldPath[:lastSlashIndex+1]
 	}
 	sendcommand.SendCommand(copyBody.Uid, "filebrowse "+dirPath)

